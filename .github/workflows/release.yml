@@ -20,7 +20,7 @@ jobs:
   draft:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Versão do app bate com a tag
         run: test "v$(node -p "require('./app/package.json').version")" = "$GITHUB_REF_NAME"
       - name: Cria a release como rascunho
@@ -38,8 +38,8 @@ jobs:
             targets: --win nsis zip
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 24
           cache: npm
@@ -48,7 +48,8 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y libarchive-tools zstd
       # Sem scripts de instalação: o Electron do empacotamento é baixado pelo
       # electron-builder, e o venmic já vem com o binário pronto no pacote npm.
-      - run: npm ci --ignore-scripts
+      # No Windows o --force passa por cima do "venmic é só Linux" (lá ele nem é usado).
+      - run: npm ci --ignore-scripts ${{ runner.os == 'Windows' && '--force' || '' }}
       - name: Gera e envia pra release
         working-directory: app
         shell: bash
@@ -58,6 +59,6 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Publica a release (é aqui que os apps instalados enxergam a versão nova)
         run: gh release edit "$GITHUB_REF_NAME" --draft=false --latest
