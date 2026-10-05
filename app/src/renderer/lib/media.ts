@@ -29,6 +29,8 @@ export class LevelMeter {
 
   constructor(track: MediaStreamTrack) {
     audioContext ??= new AudioContext({ latencyHint: 'interactive' })
+    // Criado fora de um clique, o contexto pode nascer pausado e o medidor ficaria parado em zero.
+    if (audioContext.state === 'suspended') audioContext.resume().catch(() => {})
     this.source = audioContext.createMediaStreamSource(new MediaStream([track]))
     this.analyser = audioContext.createAnalyser()
     this.analyser.fftSize = 512
@@ -57,6 +59,28 @@ async function findDevice(label: string, timeout = 3000): Promise<string | null>
     await new Promise((r) => setTimeout(r, 150))
   }
   return null
+}
+
+/**
+ * Imagem grande -> no máximo 2560 px no lado maior, em WebP. GIF fica como
+ * está (pode ser animado). Se não compensar, manda o original.
+ */
+export async function compressImage(file: File): Promise<File> {
+  if (!/^image\/(png|jpeg|webp|bmp)$/.test(file.type) || file.size < 150 * 1024) return file
+  try {
+    const bitmap = await createImageBitmap(file)
+    const scale = Math.min(1, 2560 / Math.max(bitmap.width, bitmap.height))
+    const width = Math.round(bitmap.width * scale)
+    const height = Math.round(bitmap.height * scale)
+    const canvas = new OffscreenCanvas(width, height)
+    canvas.getContext('2d')!.drawImage(bitmap, 0, 0, width, height)
+    bitmap.close()
+    const blob = await canvas.convertToBlob({ type: 'image/webp', quality: 0.88 })
+    if (blob.size >= file.size * 0.9) return file
+    return new File([blob], file.name.replace(/\.[^.]+$/, '') + '.webp', { type: 'image/webp' })
+  } catch {
+    return file
+  }
 }
 
 export interface ScreenCapture {

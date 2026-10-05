@@ -1,6 +1,6 @@
 import { SELF, abortAllDurableObjects, env, evictAllDurableObjects, runInDurableObject } from 'cloudflare:test'
 import { afterEach, describe, expect, it } from 'vitest'
-import type { AuthResponse, ClientMessage, ServerMessage } from '../../shared/protocol'
+import { dmChannelId, type AuthResponse, type ClientMessage, type ServerMessage } from '../../shared/protocol'
 import { signFileUrl, verifyFileSignature } from '../src/auth'
 
 const BASE = 'https://resenha.test'
@@ -221,6 +221,43 @@ describe('chat', () => {
 
     const tampered = message.attachments[0].url.replace(/sig=./, 'sig=A')
     expect((await SELF.fetch(BASE + tampered)).status).toBe(403)
+  })
+})
+
+describe('mensagens privadas', () => {
+  it('chegam só pros dois, e um terceiro não lê nem escreve', async () => {
+    const { admin, friend, a, b } = await setup()
+    a.send({ t: 'invite.create' })
+    const { code } = await a.next('invite.created')
+    const third = await register('Terceiro', code)
+    const c = await Client.open(third.token)
+    await c.next('ready')
+
+    const dm = dmChannelId(admin.user.id, friend.user.id)
+    a.send({ t: 'chat.send', channelId: dm, content: 'só entre nós', attachmentIds: [], nonce: 'p' })
+    expect((await b.next('chat.message')).message.channelId).toBe(dm)
+    await a.next('chat.message')
+    await c.nothing('chat.message')
+
+    c.send({ t: 'chat.history', reqId: 'x', channelId: dm })
+    await c.nothing('chat.history')
+    c.send({ t: 'chat.send', channelId: dm, content: 'intruso', attachmentIds: [], nonce: 'i' })
+    expect((await c.next('error')).message).toBe('Canal não existe.')
+
+    b.send({ t: 'typing', channelId: dm })
+    expect((await a.next('typing')).channelId).toBe(dm)
+    await c.nothing('typing')
+
+    b.send({ t: 'chat.history', reqId: 'h', channelId: dm })
+    expect((await b.next('chat.history')).messages.map((m) => m.content)).toEqual(['só entre nós'])
+  })
+
+  it('não dá pra abrir conversa consigo mesmo nem com quem não existe', async () => {
+    const { admin, a } = await setup()
+    a.send({ t: 'chat.send', channelId: dmChannelId(admin.user.id, 'zzzz'), content: 'oi', attachmentIds: [], nonce: 'n' })
+    expect((await a.next('error')).message).toBe('Canal não existe.')
+    a.send({ t: 'chat.send', channelId: `dm:${admin.user.id}:${admin.user.id}`, content: 'oi', attachmentIds: [], nonce: 'm' })
+    expect((await a.next('error')).message).toBe('Canal não existe.')
   })
 })
 

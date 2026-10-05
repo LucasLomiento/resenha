@@ -1,5 +1,6 @@
 import { DurableObject } from 'cloudflare:workers'
 import {
+  dmMembers,
   HISTORY_PAGE,
   MAX_MESSAGE_LENGTH,
   MAX_UPLOAD_BYTES,
@@ -454,7 +455,7 @@ export class Space extends DurableObject<Env> {
         const attachmentIds = Array.isArray(msg.attachmentIds) ? msg.attachmentIds.slice(0, 10).map(String) : []
         if (content.length > MAX_MESSAGE_LENGTH) return this.send(ws, { t: 'error', message: 'Mensagem grande demais.' })
         if (!content && attachmentIds.length === 0) return
-        if (!this.channel(msg.channelId, 'text')) return this.send(ws, { t: 'error', message: 'Canal não existe.' })
+        if (!this.canWrite(msg.channelId, user.id)) return this.send(ws, { t: 'error', message: 'Canal não existe.' })
 
         const id = this.nextId()
         this.sql.exec(
@@ -475,7 +476,11 @@ export class Space extends DurableObject<Env> {
           )
         }
         const [message] = await this.loadMessages(this.sql.exec<MessageRow>('SELECT * FROM messages WHERE id = ?', id).toArray())
-        return this.broadcast({ t: 'chat.message', message, nonce: typeof msg.nonce === 'string' ? msg.nonce : undefined })
+        return this.sendToChannel(msg.channelId, {
+          t: 'chat.message',
+          message,
+          nonce: typeof msg.nonce === 'string' ? msg.nonce : undefined,
+        })
       }
 
       case 'chat.edit': {
@@ -485,21 +490,22 @@ export class Space extends DurableObject<Env> {
         if (!content && this.sql.exec('SELECT 1 FROM attachments WHERE message_id = ?', row.id).toArray().length === 0) return
         this.sql.exec('UPDATE messages SET content = ?, edited_at = ? WHERE id = ?', content, Date.now(), row.id)
         const [message] = await this.loadMessages(this.sql.exec<MessageRow>('SELECT * FROM messages WHERE id = ?', row.id).toArray())
-        return this.broadcast({ t: 'chat.edited', message })
+        return this.sendToChannel(row.channel_id, { t: 'chat.edited', message })
       }
 
       case 'chat.delete': {
         const row = this.sql.exec<MessageRow>('SELECT * FROM messages WHERE id = ?', msg.id).toArray()[0]
-        if (!row || (row.author_id !== user.id && !user.admin)) return
+        // Admin apaga no grupo, mas conversa privada só quem escreveu.
+        if (!row || (row.author_id !== user.id && (!user.admin || dmMembers(row.channel_id)))) return
         const files = this.sql.exec<{ id: string }>('SELECT id FROM attachments WHERE message_id = ?', row.id).toArray()
         this.sql.exec('DELETE FROM attachments WHERE message_id = ?', row.id)
         this.sql.exec('DELETE FROM messages WHERE id = ?', row.id)
-        this.broadcast({ t: 'chat.deleted', id: row.id, channelId: row.channel_id })
+        this.sendToChannel(row.channel_id, { t: 'chat.deleted', id: row.id, channelId: row.channel_id })
         return this.deleteFiles(files.map((f) => f.id))
       }
 
       case 'chat.history': {
-        if (!this.channel(msg.channelId, 'text')) return
+        if (!this.canWrite(msg.channelId, user.id)) return
         const before = typeof msg.before === 'string' ? msg.before : '~' // '~' fica depois de qualquer id
         const rows = this.sql
           .exec<MessageRow>(
@@ -515,8 +521,8 @@ export class Space extends DurableObject<Env> {
       }
 
       case 'typing':
-        if (!this.channel(msg.channelId, 'text')) return
-        return this.broadcast({ t: 'typing', channelId: msg.channelId, userId: user.id }, state.connId)
+        if (!this.canWrite(msg.channelId, user.id)) return
+        return this.sendToChannel(msg.channelId, { t: 'typing', channelId: msg.channelId, userId: user.id }, state.connId)
 
       case 'channel.create': {
         if (!user.admin) return
@@ -607,6 +613,33 @@ export class Space extends DurableObject<Env> {
   }
 
   // ---------- Leitura ----------
+
+  /** Canal de texto do grupo, ou conversa privada da qual o usuário faz parte (com o outro existindo). */
+  private canWrite(channelId: unknown, userId: string): boolean {
+    if (typeof channelId !== 'string') return false
+    const dm = dmMembers(channelId)
+    if (!dm) return !!this.channel(channelId, 'text')
+    if (!dm.includes(userId)) return false
+    const other = dm[0] === userId ? dm[1] : dm[0]
+    return other !== userId && this.sql.exec('SELECT 1 FROM users WHERE id = ?', other).toArray().length > 0
+  }
+
+  /** Conversa privada vai só pros dois; canal do grupo vai pra todo mundo. */
+  private sendToChannel(channelId: string, msg: ServerMessage, exceptConnId?: string) {
+    const dm = dmMembers(channelId)
+    if (!dm) return this.broadcast(msg, exceptConnId)
+    const text = JSON.stringify(msg)
+    for (const userId of new Set(dm)) {
+      for (const ws of this.ctx.getWebSockets(userId)) {
+        if (ws.readyState !== WebSocket.OPEN || this.state(ws).connId === exceptConnId) continue
+        try {
+          ws.send(text)
+        } catch {
+          // conexão caindo
+        }
+      }
+    }
+  }
 
   private channel(id: unknown, kind?: ChannelKind): Channel | null {
     if (typeof id !== 'string') return null

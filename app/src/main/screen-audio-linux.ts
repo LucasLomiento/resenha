@@ -76,12 +76,13 @@ export function startScreenAudio(): { ok: boolean; error?: string } {
 }
 
 export function unmuteScreenAudio() {
-  obtain()?.unmute()
+  patchBay?.unmute()
 }
 
+/** Só mexe no PipeWire se o venmic chegou a ser usado. */
 export function stopScreenAudio() {
   stopWatchdog()
-  obtain()?.unlink()
+  patchBay?.unlink()
   linkedPid = null
 }
 

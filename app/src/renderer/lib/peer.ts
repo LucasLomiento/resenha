@@ -277,6 +277,18 @@ export class Peer {
     return created
   }
 
+  /** Troca qualidade, prioridade ou codec da tela que já está sendo enviada, sem renegociar. */
+  async updateVideo(options: VideoSendOptions) {
+    if (!this.screenVideo?.sender.track) return
+    this.videoOptions = options
+    try {
+      this.screenVideo.setCodecPreferences(codecOrder(options.codec))
+    } catch {
+      // vale pra próxima negociação; a troca imediata é pelo setParameters abaixo
+    }
+    await this.applyVideoParameters()
+  }
+
   /**
    * Bitrate, 60 fps e o que sacrificar quando a rede apertar: em "movimento"
    * cai a resolução e mantém os 60 fps; em "nitidez" é o contrário.

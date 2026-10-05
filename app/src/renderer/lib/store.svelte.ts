@@ -1,15 +1,22 @@
-import type {
-  Channel,
-  ClientMessage,
-  Message,
-  ServerMessage,
-  User,
-  VoiceMember,
+import {
+  dmChannelId,
+  dmMembers,
+  type Channel,
+  type ClientMessage,
+  type Message,
+  type ServerMessage,
+  type User,
+  type VoiceMember,
 } from '../../../../shared/protocol'
-import type { PlatformInfo, SavedSession } from '../../preload/api'
+import type { DesktopPrefs, PlatformInfo, SavedSession, ShortcutAction, UpdateState } from '../../preload/api'
 import { Api } from './api'
 import { Call } from './call.svelte'
+import { playSound } from './sounds'
+import { ui } from './ui.svelte'
 import { Connection, type ConnectionStatus } from './ws'
+
+/** O servidor do grupo é sempre o mesmo; definido no build (VITE_DEFAULT_SERVER) pra testes locais. */
+export const DEFAULT_SERVER = import.meta.env.VITE_DEFAULT_SERVER || 'https://resenha.lucaslomiento.workers.dev'
 
 export interface Toast {
   id: number
@@ -30,6 +37,8 @@ class Store {
   phase = $state<'boot' | 'login' | 'app'>('boot')
   status = $state<ConnectionStatus>('connecting')
   platform = $state<PlatformInfo | null>(null)
+  desktop = $state<DesktopPrefs | null>(null)
+  update = $state<UpdateState>({ status: 'idle' })
 
   me = $state<User | null>(null)
   connId = $state<string | null>(null)
@@ -73,6 +82,10 @@ class Store {
 
   async boot() {
     this.platform = await window.resenha.platform()
+    this.desktop = await window.resenha.desktop.get()
+    this.update = await window.resenha.update.state()
+    window.resenha.update.onState((state) => (this.update = state))
+    window.resenha.onAction((action) => this.runAction(action))
     const saved = await window.resenha.session.get()
     if (saved) this.start(saved)
     else this.phase = 'login'
@@ -123,6 +136,33 @@ class Store {
     this.phase = 'login'
   }
 
+  private lastAction: Partial<Record<ShortcutAction, number>> = {}
+
+  /** Atalho (global ou da janela), item da bandeja ou `resenha --action=...`. */
+  runAction(action: ShortcutAction) {
+    // Atalho global e o da janela podem disparar juntos: ignora a repetição imediata.
+    if (Date.now() - (this.lastAction[action] ?? 0) < 250) return
+    this.lastAction[action] = Date.now()
+    switch (action) {
+      case 'toggle-mute':
+        return this.call.toggleMute()
+      case 'toggle-deafen':
+        return this.call.toggleDeafen()
+      case 'leave-call':
+        return this.call.leave()
+      case 'toggle-share':
+        if (this.call.sharing) return this.call.stopShare()
+        if (this.call.channelId) ui.share = true
+        return
+    }
+  }
+
+  async setDesktop(patch: Partial<DesktopPrefs>) {
+    const { prefs, failed } = await window.resenha.desktop.set($state.snapshot(patch) as Partial<DesktopPrefs>)
+    this.desktop = prefs
+    return failed
+  }
+
   send(msg: ClientMessage): boolean {
     const ok = this.conn?.send(msg) ?? false
     if (!ok) this.toast('Sem conexão com o servidor agora.')
@@ -146,7 +186,9 @@ class Store {
         this.online = Object.fromEntries(msg.online.map((id) => [id, true]))
         this.channels = msg.channels
         this.voice = msg.voice
-        if (!this.currentChannel || !msg.channels.some((c) => c.id === this.currentChannel)) {
+        const dmPeer = this.currentChannel ? this.dmPeer(this.currentChannel) : null
+        const stillThere = dmPeer ? !!this.users[dmPeer] : msg.channels.some((c) => c.id === this.currentChannel)
+        if (!this.currentChannel || !stillThere) {
           this.currentChannel = msg.channels.find((c) => c.kind === 'text')?.id ?? null
         }
         // Reconectou: busca o que perdeu no canal aberto e volta pra call.
@@ -238,18 +280,42 @@ class Store {
     const focused = document.hasFocus()
     if (focused && this.currentChannel === message.channelId && this.view === 'chat') return
     this.unread[message.channelId] = true
+    playSound('message')
     if (focused) return
     const author = this.users[message.authorId]?.name ?? 'Alguém'
+    const isDm = !!dmMembers(message.channelId)
     const channel = this.channels.find((c) => c.id === message.channelId)?.name ?? ''
     const body = message.content || (message.attachments.length ? `📎 ${message.attachments[0].name}` : '')
-    const notification = new Notification(`${author} em #${channel}`, { body: body.slice(0, 200) })
+    const notification = new Notification(isDm ? `${author} (mensagem privada)` : `${author} em #${channel}`, {
+      body: body.slice(0, 200),
+      silent: true,
+    })
     notification.onclick = () => this.openChannel(message.channelId)
     window.resenha.attention()
   }
 
   // ---------- Ações ----------
 
+  /** Com quem é a conversa privada (ou null se não for DM). */
+  dmPeer(channelId: string): string | null {
+    const members = dmMembers(channelId)
+    if (!members || !this.me) return null
+    return members[0] === this.me.id ? members[1] : members[0]
+  }
+
+  openDm(userId: string) {
+    if (!this.me || userId === this.me.id) return
+    this.openChannel(dmChannelId(this.me.id, userId))
+  }
+
   openChannel(id: string) {
+    if (this.dmPeer(id)) {
+      this.currentChannel = id
+      this.view = 'chat'
+      this.unread[id] = false
+      if (!this.messages[id]) this.loadHistory(id)
+      return
+    }
     const channel = this.channels.find((c) => c.id === id)
     if (!channel) return
     if (channel.kind === 'voice') {

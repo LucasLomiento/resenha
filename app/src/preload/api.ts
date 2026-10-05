@@ -13,7 +13,37 @@ export interface PlatformInfo {
    */
   screenAudio: 'venmic' | 'exclude-self' | 'loopback-all' | 'none'
   version: string
+  /** No Hyprland atalho global só funciona por bind no config dele. */
+  hyprland: boolean
 }
+
+export type ShortcutAction = 'toggle-mute' | 'toggle-deafen' | 'toggle-share' | 'leave-call' | 'show-window'
+
+/** Preferências que o processo principal precisa já na partida (bandeja, atalhos, início com o PC). */
+export interface DesktopPrefs {
+  tray: boolean
+  closeToTray: boolean
+  autostart: boolean
+  startHidden: boolean
+  zoom: number
+  /** Atalhos no formato de accelerator do Electron (ex.: "CommandOrControl+Shift+M"). */
+  shortcuts: Record<ShortcutAction, string | null>
+}
+
+export interface CallState {
+  inCall: boolean
+  muted: boolean
+  deafened: boolean
+  sharing: boolean
+}
+
+export type UpdateState =
+  | { status: 'idle' | 'checking' | 'none' | 'unsupported' }
+  | { status: 'available'; version: string }
+  | { status: 'downloading'; version: string; percent: number }
+  | { status: 'ready'; version: string }
+  | { status: 'installing'; version: string }
+  | { status: 'error'; message: string }
 
 export interface SavedSession {
   server: string
@@ -46,4 +76,20 @@ export interface ResenhaApi {
   attention(): void
   /** Baixa um anexo com o diálogo de salvar do sistema. */
   download(url: string): void
+  desktop: {
+    get(): Promise<DesktopPrefs>
+    /** Aplica e salva; devolve as preferências e os atalhos que o sistema recusou. */
+    set(patch: Partial<DesktopPrefs>): Promise<{ prefs: DesktopPrefs; failed: ShortcutAction[] }>
+  }
+  /** Estado da call, pra bandeja e barra de tarefas. */
+  callState(state: CallState): void
+  /** Ações vindas da bandeja, de atalho global ou da linha de comando. */
+  onAction(callback: (action: ShortcutAction) => void): void
+  update: {
+    state(): Promise<UpdateState>
+    check(): Promise<void>
+    download(): Promise<void>
+    install(): Promise<void>
+    onState(callback: (state: UpdateState) => void): void
+  }
 }

@@ -18,6 +18,7 @@
   let video = $state<HTMLVideoElement>()
   let container = $state<HTMLDivElement>()
   let fullscreen = $state(false)
+  let nativePip = $state(false)
   let stats = $state<{ inbound: VideoStats | null; outbound: { userId: string; stats: VideoStats }[] } | null>(null)
 
   $effect(() => {
@@ -46,63 +47,159 @@
     return () => clearInterval(timer)
   })
 
+  // Os eventos da janela flutuante saem do próprio <video>.
+  $effect(() => {
+    if (!video) return
+    const enter = () => (nativePip = true)
+    const leave = () => (nativePip = false)
+    video.addEventListener('enterpictureinpicture', enter)
+    video.addEventListener('leavepictureinpicture', leave)
+    return () => {
+      video?.removeEventListener('enterpictureinpicture', enter)
+      video?.removeEventListener('leavepictureinpicture', leave)
+    }
+  })
+
   function toggleFullscreen() {
     if (document.fullscreenElement) document.exitFullscreen()
     else container?.requestFullscreen()
   }
 
+  /** Janela flutuante do próprio sistema: fica por cima de tudo, dá pra mover e redimensionar. */
+  async function togglePip() {
+    if (!video) return
+    if (document.pictureInPictureElement) await document.exitPictureInPicture()
+    else await video.requestPictureInPicture().catch(() => store.toast('Não deu pra abrir a janela flutuante.'))
+  }
+
   function describe(s: VideoStats) {
     return `${s.width}×${s.height} · ${s.fps} fps · ${formatBitrate(s.bitrate)} · ${s.codec}`
+  }
+
+  // ---------- Miniatura: arrastar e redimensionar ----------
+
+  const MIN_WIDTH = 240
+  let pip = $state(settings.pip ?? { x: -1, y: -1, width: 360 })
+
+  /** Mantém a miniatura inteira dentro da janela (e no canto inferior direito na primeira vez). */
+  function clamp(next: { x: number; y: number; width: number }) {
+    const width = Math.min(Math.max(next.width, MIN_WIDTH), window.innerWidth - 24)
+    const height = (width * 9) / 16
+    const x = next.x < 0 ? window.innerWidth - width - 20 : Math.min(Math.max(next.x, 8), window.innerWidth - width - 8)
+    const y = next.y < 0 ? window.innerHeight - height - 84 : Math.min(Math.max(next.y, 8), window.innerHeight - height - 8)
+    return { x, y, width }
+  }
+
+  const placed = $derived(clamp(pip))
+
+  function startDrag(event: PointerEvent, mode: 'move' | 'resize') {
+    if (full || event.button !== 0) return
+    if (mode === 'move' && (event.target as HTMLElement).closest('button:not(.drag-surface)')) return
+    event.preventDefault()
+    const start = { px: event.clientX, py: event.clientY, ...placed }
+    let moved = false
+    const target = event.currentTarget as HTMLElement
+    target.setPointerCapture(event.pointerId)
+
+    const move = (e: PointerEvent) => {
+      const dx = e.clientX - start.px
+      const dy = e.clientY - start.py
+      if (Math.abs(dx) + Math.abs(dy) > 4) moved = true
+      pip =
+        mode === 'move'
+          ? { x: start.x + dx, y: start.y + dy, width: start.width }
+          : { x: start.x, y: start.y, width: start.width + dx }
+    }
+    const up = () => {
+      target.removeEventListener('pointermove', move)
+      target.removeEventListener('pointerup', up)
+      pip = clamp(pip)
+      settings.pip = { ...pip }
+      // Clique sem arrastar na miniatura abre a transmissão grande.
+      if (!moved && mode === 'move') store.view = 'stream'
+    }
+    target.addEventListener('pointermove', move)
+    target.addEventListener('pointerup', up)
   }
 </script>
 
 <svelte:document onfullscreenchange={() => (fullscreen = !!document.fullscreenElement)} />
+<svelte:window onresize={() => (pip = clamp(pip))} />
 
-<div class="stream" class:full class:mini={!full} bind:this={container}>
+<div
+  class="stream"
+  class:full
+  class:mini={!full}
+  bind:this={container}
+  style:left={full ? null : `${placed.x}px`}
+  style:top={full ? null : `${placed.y}px`}
+  style:width={full ? null : `${placed.width}px`}
+>
   <!-- svelte-ignore a11y_media_has_caption -->
   <video bind:this={video} autoplay playsinline ondblclick={toggleFullscreen}></video>
 
   {#if !stream}
     <div class="waiting">Conectando à transmissão…</div>
+  {:else if nativePip}
+    <div class="waiting">Na janela flutuante</div>
   {/if}
 
   {#if !full}
-    <button class="expand-hit" aria-label="Abrir transmissão" onclick={() => (store.view = 'stream')}></button>
+    <button
+      class="drag-surface"
+      aria-label="Arraste pra mover, clique pra abrir"
+      onpointerdown={(e) => startDrag(e, 'move')}
+    ></button>
   {/if}
 
-  <div class="bar">
+  <div class="who">
     {#if user && sharer}
-      <Avatar id={sharer.userId} name={user.name} size={24} />
-      <span class="who">{self ? 'Sua tela' : user.name}</span>
+      <Avatar id={sharer.userId} name={user.name} size={22} />
+      <span>{self ? 'Sua tela' : user.name}</span>
       <span class="live">AO VIVO</span>
     {/if}
-    <span class="spacer"></span>
+  </div>
 
-    {#if full && !self}
-      <div class="volume">
+  <!-- Controles sempre centralizados embaixo, na mesma ordem, em qualquer tamanho de tela. -->
+  <div class="controls">
+    {#if full}
+      <div class="volume" class:disabled={self}>
         <button
           class="icon-btn"
-          title="Som da transmissão"
+          title={self ? 'Sua prévia fica sem som' : 'Som da transmissão'}
+          disabled={self}
           onclick={() => (settings.streamVolume = settings.streamVolume > 0 ? 0 : 1)}
         >
-          <Icon name={settings.streamVolume > 0 ? 'volume' : 'volume-off'} />
+          <Icon name={self || settings.streamVolume === 0 ? 'volume-off' : 'volume'} />
         </button>
-        <input type="range" min="0" max="1" step="0.01" bind:value={settings.streamVolume} />
+        <input type="range" min="0" max="1" step="0.01" disabled={self} bind:value={settings.streamVolume} />
       </div>
-    {/if}
-    {#if full}
       <button class="icon-btn" class:active={settings.showStats} title="Estatísticas" onclick={() => (settings.showStats = !settings.showStats)}>
         <Icon name="stats" />
       </button>
-      <button class="icon-btn" title="Voltar pro chat (miniatura)" onclick={() => (store.view = 'chat')}>
-        <Icon name="pip" />
+    {/if}
+    <button class="icon-btn" class:active={nativePip} title="Janela flutuante (fica por cima de tudo)" onclick={togglePip}>
+      <Icon name="pip" />
+    </button>
+    {#if full}
+      <button class="icon-btn" title="Miniatura (volta pro chat)" onclick={() => (store.view = 'chat')}>
+        <Icon name="shrink" />
       </button>
       <button class="icon-btn" title="Tela cheia" onclick={toggleFullscreen}>
         <Icon name={fullscreen ? 'shrink' : 'expand'} />
       </button>
+    {:else}
+      <button class="icon-btn" title="Abrir grande" onclick={() => (store.view = 'stream')}>
+        <Icon name="expand" />
+      </button>
     {/if}
-    <button class="icon-btn" title="Parar de assistir" onclick={() => call.unwatch()}><Icon name="x" /></button>
+    <button class="icon-btn stop" title="Parar de assistir" onclick={() => call.unwatch()}><Icon name="x" /></button>
   </div>
+
+  {#if !full}
+    <button class="resize" aria-label="Redimensionar" title="Arraste pra redimensionar" onpointerdown={(e) => startDrag(e, 'resize')}
+    ></button>
+  {/if}
 
   {#if stats}
     <div class="stats">
@@ -140,9 +237,6 @@
 
   .mini {
     position: fixed;
-    right: 20px;
-    bottom: 84px;
-    width: 360px;
     aspect-ratio: 16 / 9;
     border-radius: 12px;
     box-shadow: 0 12px 40px rgb(0 0 0 / 0.55);
@@ -163,56 +257,81 @@
     display: grid;
     place-items: center;
     color: var(--text-dim);
+    pointer-events: none;
   }
 
-  .expand-hit {
+  .drag-surface {
     position: absolute;
     inset: 0;
+    cursor: grab;
   }
 
-  .bar {
+  .drag-surface:active {
+    cursor: grabbing;
+  }
+
+  .who {
     position: absolute;
-    left: 0;
-    right: 0;
-    top: 0;
+    top: 10px;
+    left: 12px;
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 10px 12px;
-    background: linear-gradient(rgb(0 0 0 / 0.7), transparent);
+    padding: 4px 10px 4px 4px;
+    border-radius: 999px;
+    background: rgb(0 0 0 / 0.55);
+    font-weight: 700;
+    pointer-events: none;
     opacity: 0;
     transition: opacity 150ms;
   }
 
-  .stream:hover .bar,
-  .mini .bar {
+  .controls {
+    position: absolute;
+    left: 50%;
+    bottom: 14px;
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 4px;
+    border-radius: 12px;
+    background: rgb(16 17 21 / 0.82);
+    border: 1px solid rgb(255 255 255 / 0.08);
+    box-shadow: 0 8px 24px rgb(0 0 0 / 0.45);
+    white-space: nowrap;
+    opacity: 0;
+    transition: opacity 150ms;
+  }
+
+  .mini .controls {
+    bottom: 8px;
+    padding: 2px;
+  }
+
+  .stream:hover .controls,
+  .stream:hover .who,
+  .stream:focus-within .controls {
     opacity: 1;
   }
 
-  .mini .bar {
-    padding: 6px 8px;
-  }
-
-  .who {
-    font-weight: 700;
-  }
-
-  .spacer {
-    flex: 1;
-  }
-
-  .bar .icon-btn {
+  .controls .icon-btn {
     color: #e8e8ee;
   }
 
-  .bar .icon-btn:hover,
-  .bar .icon-btn.active {
+  .controls .icon-btn:hover:not(:disabled),
+  .controls .icon-btn.active {
     background: rgb(255 255 255 / 0.14);
+  }
+
+  .stop:hover {
+    color: var(--red) !important;
   }
 
   .volume {
     display: flex;
     align-items: center;
+    padding-right: 6px;
   }
 
   .volume input {
@@ -220,10 +339,25 @@
     accent-color: var(--accent);
   }
 
+  .volume.disabled input {
+    opacity: 0.4;
+  }
+
+  .resize {
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    width: 18px;
+    height: 18px;
+    cursor: nwse-resize;
+    background: linear-gradient(135deg, transparent 50%, rgb(255 255 255 / 0.35) 50%);
+    border-bottom-right-radius: 12px;
+  }
+
   .stats {
     position: absolute;
     left: 12px;
-    bottom: 12px;
+    top: 48px;
     padding: 8px 10px;
     border-radius: 8px;
     background: rgb(0 0 0 / 0.7);

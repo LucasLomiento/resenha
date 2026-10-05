@@ -2,10 +2,12 @@
   import { untrack } from 'svelte'
   import { MAX_MESSAGE_LENGTH, MAX_UPLOAD_BYTES, type Attachment } from '../../../../shared/protocol'
   import { formatSize } from '../lib/format'
+  import { compressImage } from '../lib/media'
+  import { settings } from '../lib/settings.svelte'
   import { store } from '../lib/store.svelte'
   import Icon from './Icon.svelte'
 
-  let { channelId, channelName }: { channelId: string; channelName: string } = $props()
+  let { channelId, placeholder }: { channelId: string; placeholder: string } = $props()
 
   interface Upload {
     key: number
@@ -14,6 +16,8 @@
     progress: number
     attachment: Attachment | null
     error: string | null
+    /** Diminuindo a imagem antes de enviar. */
+    preparing: boolean
     abort: () => void
   }
 
@@ -38,29 +42,36 @@
   })
 
   export function addFiles(files: File[]) {
-    const api = store.api
-    if (!api) return
-    for (const file of files) {
-      if (file.size > MAX_UPLOAD_BYTES) {
-        store.toast(`${file.name} passa de ${formatSize(MAX_UPLOAD_BYTES)}.`)
-        continue
-      }
+    if (!store.api) return
+    for (const original of files) {
       const key = ++uploadKey
-      const job = api.upload(file, (fraction) => update(key, { progress: fraction }))
       uploads.push({
         key,
-        file,
-        preview: file.type.startsWith('image/') ? URL.createObjectURL(file) : null,
+        file: original,
+        preview: original.type.startsWith('image/') ? URL.createObjectURL(original) : null,
         progress: 0,
         attachment: null,
         error: null,
-        abort: job.abort,
+        preparing: settings.compressImages && original.type.startsWith('image/'),
+        abort: () => {},
       })
-      job.promise
-        .then((attachment) => update(key, { attachment, progress: 1 }))
-        .catch((err: Error) => update(key, { error: err.message }))
+      startUpload(key, original)
     }
     input?.focus()
+  }
+
+  async function startUpload(key: number, original: File) {
+    const file = settings.compressImages ? await compressImage(original) : original
+    const current = uploads.find((u) => u.key === key)
+    if (!current || !store.api) return // removido enquanto comprimia
+    if (file.size > MAX_UPLOAD_BYTES) {
+      return update(key, { preparing: false, error: `Passa de ${formatSize(MAX_UPLOAD_BYTES)}` })
+    }
+    const job = store.api.upload(file, (fraction) => update(key, { progress: fraction }))
+    update(key, { file, preparing: false, abort: job.abort })
+    job.promise
+      .then((attachment) => update(key, { attachment, progress: 1 }))
+      .catch((err: Error) => update(key, { error: err.message }))
   }
 
   function update(key: number, patch: Partial<Upload>) {
@@ -145,8 +156,10 @@
             <div class="file-icon"><Icon name="file" size={30} stroke={1.5} /></div>
           {/if}
           <span class="upload-name" title={u.file.name}>{u.file.name}</span>
-          <span class="upload-meta">{u.error ?? (u.attachment ? formatSize(u.file.size) : `${Math.round(u.progress * 100)}%`)}</span>
-          {#if !u.attachment && !u.error}
+          <span class="upload-meta">
+            {u.error ?? (u.preparing ? 'comprimindo…' : u.attachment ? formatSize(u.file.size) : `${Math.round(u.progress * 100)}%`)}
+          </span>
+          {#if !u.attachment && !u.error && !u.preparing}
             <div class="bar"><div style:width="{u.progress * 100}%"></div></div>
           {/if}
           <button class="remove" title="Remover" onclick={() => removeUpload(u.key)}><Icon name="x" size={14} /></button>
@@ -161,7 +174,7 @@
       bind:this={input}
       bind:value={text}
       rows="1"
-      placeholder="Conversar em #{channelName}"
+      {placeholder}
       onkeydown={onKeydown}
       oninput={onInput}
       onpaste={onPaste}

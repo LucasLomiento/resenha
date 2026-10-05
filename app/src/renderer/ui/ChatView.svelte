@@ -3,11 +3,18 @@
   import type { Message } from '../../../../shared/protocol'
   import { formatDay } from '../lib/format'
   import { store } from '../lib/store.svelte'
+  import Avatar from './Avatar.svelte'
   import Composer from './Composer.svelte'
   import Icon from './Icon.svelte'
   import MessageItem from './MessageItem.svelte'
 
-  const channel = $derived(store.channels.find((c) => c.id === store.currentChannel))
+  // Canal do grupo, ou conversa privada (que não está na lista de canais).
+  const dmUser = $derived(store.currentChannel ? store.dmPeer(store.currentChannel) : null)
+  const channel = $derived(
+    dmUser && store.currentChannel
+      ? { id: store.currentChannel, name: store.users[dmUser]?.name ?? '?', kind: 'text' as const, position: 0 }
+      : store.channels.find((c) => c.id === store.currentChannel),
+  )
   const messages = $derived<Message[]>((channel && store.messages[channel.id]) || [])
   const typing = $derived(channel ? store.typingIn(channel.id) : [])
 
@@ -86,16 +93,28 @@
   ondrop={onDrop}
 >
   <header>
-    <Icon name="hash" size={20} />
-    <span class="title">{channel?.name ?? ''}</span>
+    {#if dmUser}
+      <Avatar id={dmUser} name={channel?.name ?? '?'} size={24} />
+      <span class="title">{channel?.name ?? ''}</span>
+      <span class="online" class:on={store.online[dmUser]}></span>
+    {:else}
+      <Icon name="hash" size={20} />
+      <span class="title">{channel?.name ?? ''}</span>
+    {/if}
   </header>
 
   <div class="scroller" bind:this={scroller} onscroll={onScroll}>
     {#if channel && store.hasMore[channel.id] === false}
       <div class="start">
-        <div class="start-icon"><Icon name="hash" size={30} /></div>
-        <h2>Bem-vindo a #{channel.name}</h2>
-        <p>Este é o começo do canal.</p>
+        {#if dmUser}
+          <Avatar id={dmUser} name={channel.name} size={64} />
+          <h2>{channel.name}</h2>
+          <p>Começo da conversa privada com {channel.name}. Só vocês dois veem.</p>
+        {:else}
+          <div class="start-icon"><Icon name="hash" size={30} /></div>
+          <h2>Bem-vindo a #{channel.name}</h2>
+          <p>Este é o começo do canal.</p>
+        {/if}
       </div>
     {:else if channel && store.loadingHistory[channel.id]}
       <div class="loading">Carregando…</div>
@@ -110,7 +129,7 @@
   </div>
 
   {#if channel}
-    <Composer bind:this={composer} channelId={channel.id} channelName={channel.name} />
+    <Composer bind:this={composer} channelId={channel.id} placeholder={dmUser ? `Mensagem para @${channel.name}` : `Conversar em #${channel.name}`} />
   {/if}
   <div class="typing">
     {#if typing.length === 1}<b>{typing[0].name}</b> está digitando…
@@ -118,7 +137,7 @@
   </div>
 
   {#if dragging}
-    <div class="drop">Solte pra enviar em #{channel?.name}</div>
+    <div class="drop">Solte pra enviar {dmUser ? `pra ${channel?.name}` : `em #${channel?.name}`}</div>
   {/if}
 </section>
 
@@ -147,8 +166,20 @@
     font-size: 15px;
   }
 
+  .online {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--text-faint);
+  }
+
+  .online.on {
+    background: var(--green);
+  }
+
   .scroller {
     flex: 1;
+    min-height: 0;
     overflow-y: auto;
     padding: 12px 0 8px;
   }

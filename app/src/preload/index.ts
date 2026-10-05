@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { ResenhaApi } from './api'
+import type { ResenhaApi, ShortcutAction, UpdateState } from './api'
 
 const api: ResenhaApi = {
   platform: () => ipcRenderer.invoke('platform:info'),
@@ -18,6 +18,23 @@ const api: ResenhaApi = {
   },
   attention: () => ipcRenderer.send('attention'),
   download: (url) => ipcRenderer.send('download', url),
+  desktop: {
+    get: () => ipcRenderer.invoke('desktop:get'),
+    set: (patch) => ipcRenderer.invoke('desktop:set', patch),
+  },
+  callState: (state) => ipcRenderer.send('call-state', state),
+  onAction: (callback) => {
+    ipcRenderer.on('action', (_event, action: ShortcutAction) => callback(action))
+  },
+  update: {
+    state: () => ipcRenderer.invoke('update:state'),
+    check: () => ipcRenderer.invoke('update:check'),
+    download: () => ipcRenderer.invoke('update:download'),
+    install: () => ipcRenderer.invoke('update:install'),
+    onState: (callback) => {
+      ipcRenderer.on('update:state', (_event, state: UpdateState) => callback(state))
+    },
+  },
 }
 
 contextBridge.exposeInMainWorld('resenha', api)

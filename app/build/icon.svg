@@ -1,16 +1,60 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!-- Resenha: balão de fala rindo (XD) de headset, sobre squircle violeta→rosa -->
   <defs>
-    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#7c8cff"/>
-      <stop offset="1" stop-color="#3fbf7f"/>
+    <linearGradient id="fundo" gradientUnits="userSpaceOnUse" x1="60" y1="40" x2="452" y2="472">
+      <stop offset="0" stop-color="#6f7dff"/>
+      <stop offset=".5" stop-color="#9150ff"/>
+      <stop offset="1" stop-color="#ff5a7a"/>
     </linearGradient>
   </defs>
-  <rect x="16" y="16" width="480" height="480" rx="112" fill="url(#g)"/>
-  <path d="M136 140h240a40 40 0 0 1 40 40v140a40 40 0 0 1-40 40H250l-74 60v-60h-40a40 40 0 0 1-40-40V180a40 40 0 0 1 40-40z" fill="#fff"/>
-  <g fill="#5d6ef0">
-    <rect x="178" y="220" width="26" height="60" rx="13"/>
-    <rect x="220" y="185" width="26" height="130" rx="13"/>
-    <rect x="262" y="205" width="26" height="90" rx="13"/>
-    <rect x="304" y="228" width="26" height="44" rx="13"/>
+
+  <!-- squircle (superelipse n=5), margem de 31px -->
+  <path fill="url(#fundo)" d="M481 256C481 479.9 479.9 481 256 481C32.1 481 31 479.9 31 256C31 32.1 32.1 31 256 31C479.9 31 481 32.1 481 256Z"/>
+
+  <g transform="translate(0 -16)">
+    <!-- sombra projetada -->
+    <g fill="#2a0d63" opacity=".22" transform="translate(0 12)">
+      <path d="M126 270A130 130 0 0 1 386 270" fill="none" stroke="#2a0d63" stroke-width="28" stroke-linecap="round"/>
+      <path d="M164.6 349.4A116 116 0 1 1 239.9 392.9Q200 414 116 424Q164 400 164.6 349.4Z"/>
+      <rect x="102" y="226" width="58" height="106" rx="27"/>
+      <rect x="352" y="226" width="58" height="106" rx="27"/>
+    </g>
+
+    <!-- arco do headset -->
+    <path d="M126 270A130 130 0 0 1 386 270" fill="none" stroke="#1c1640" stroke-width="28" stroke-linecap="round"/>
+
+    <!-- balão: base lilás (rabinho e lado da sombra) + luz branca -->
+    <path fill="#e8e2ff" d="M164.6 349.4A116 116 0 1 1 239.9 392.9Q200 414 116 424Q164 400 164.6 349.4Z"/>
+    <path fill="#fff" d="M155.4 335.7A116 116 0 0 1 328.4 187.4A114 114 0 1 1 155.4 335.7Z"/>
+
+    <!-- conchas do fone -->
+    <g fill="#1c1640">
+      <rect x="102" y="226" width="58" height="106" rx="27"/>
+      <rect x="352" y="226" width="58" height="106" rx="27"/>
+    </g>
+    <g fill="#3a2f86">
+      <rect x="114" y="244" width="12" height="70" rx="6"/>
+      <rect x="386" y="244" width="12" height="70" rx="6"/>
+    </g>
+
+    <!-- bochechas -->
+    <g fill="#ffb0c3">
+      <ellipse cx="180" cy="290" rx="15" ry="10"/>
+      <ellipse cx="332" cy="290" rx="15" ry="10"/>
+    </g>
+
+    <!-- olhos > < -->
+    <g fill="none" stroke="#1c1640" stroke-width="18" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M194 224L227 245L194 266"/>
+      <path d="M318 224L285 245L318 266"/>
+    </g>
+
+    <!-- boca rindo + língua -->
+    <path fill="#1c1640" d="M196 292H316A60 60 0 0 1 196 292Z"/>
+    <path fill="#ff6b8f" d="M228.05 345.09A30 30 0 0 1 283.95 345.09A60 60 0 0 1 228.05 345.09Z"/>
+
+    <!-- microfone do headset -->
+    <path d="M384 328Q384 388 326 392" fill="none" stroke="#1c1640" stroke-width="16" stroke-linecap="round"/>
+    <rect x="296" y="377" width="44" height="30" rx="15" fill="#1c1640"/>
   </g>
 </svg>

@@ -1,15 +1,29 @@
 <script lang="ts">
-  import type { VoiceMember } from '../../../../shared/protocol'
+  import { dmChannelId, type VoiceMember } from '../../../../shared/protocol'
   import { settings } from '../lib/settings.svelte'
   import { store } from '../lib/store.svelte'
   import { ui } from '../lib/ui.svelte'
   import Avatar from './Avatar.svelte'
   import Icon from './Icon.svelte'
+  import SharePanel from './SharePanel.svelte'
 
   const call = store.call
   const textChannels = $derived(store.channels.filter((c) => c.kind === 'text'))
   const voiceChannels = $derived(store.channels.filter((c) => c.kind === 'voice'))
   const callChannel = $derived(store.channels.find((c) => c.id === call.channelId))
+  /** Todo mundo menos você, quem está online primeiro, pra conversa privada. */
+  const people = $derived(
+    Object.values(store.users)
+      .filter((u) => u.id !== store.me?.id)
+      .sort((a, b) => Number(!!store.online[b.id]) - Number(!!store.online[a.id]) || a.name.localeCompare(b.name)),
+  )
+  const dmUser = $derived(store.currentChannel ? store.dmPeer(store.currentChannel) : null)
+  const update = $derived(store.update)
+
+  function updateClick() {
+    if (update.status === 'available') window.resenha.update.download()
+    else if (update.status === 'ready') window.resenha.update.install()
+  }
 
   /** Pior ping entre as conexões da call, pro resumo no painel. */
   const worstLink = $derived.by(() => {
@@ -44,6 +58,19 @@
 <aside>
   <header>
     <span class="title">Resenha</span>
+    {#if update.status === 'available' || update.status === 'ready' || update.status === 'downloading' || update.status === 'installing'}
+      <button
+        class="update"
+        disabled={update.status === 'downloading' || update.status === 'installing'}
+        title="Nova versão {update.version}"
+        onclick={updateClick}
+      >
+        {#if update.status === 'available'}Atualizar
+        {:else if update.status === 'downloading'}Baixando {update.percent}%
+        {:else if update.status === 'installing'}Instalando…
+        {:else}Reiniciar e atualizar{/if}
+      </button>
+    {/if}
     <span class="dot" class:on={store.status === 'open'} title={store.status === 'open' ? 'Conectado' : 'Sem conexão'}></span>
   </header>
 
@@ -120,39 +147,52 @@
         {/each}
       </div>
     {/each}
+
+    <div class="section">
+      <span class="label">Mensagens diretas</span>
+    </div>
+    {#each people as person (person.id)}
+      {@const dm = store.me ? dmChannelId(store.me.id, person.id) : ''}
+      <button
+        class="channel person"
+        class:active={dmUser === person.id && store.view === 'chat'}
+        class:unread={store.unread[dm]}
+        onclick={() => store.openDm(person.id)}
+      >
+        <span class="presence-wrap">
+          <Avatar id={person.id} name={person.name} size={22} />
+          <span class="presence" class:on={store.online[person.id]}></span>
+        </span>
+        <span class="name">{person.name}</span>
+      </button>
+    {/each}
   </nav>
 
-  {#if call.channelId}
+  {#if call.channelId || call.joining}
     <div class="voice-panel">
       <div class="voice-info">
-        <span class="connected">Voz conectada</span>
+        <span class="connected">{call.joining ? 'Entrando na call…' : call.sharing ? 'Ao vivo' : 'Voz conectada'}</span>
         <span class="where">
-          {callChannel?.name}
-          {#if worstLink}<span class="ping {pingClass(worstLink.rtt)}">· {worstLink.rtt}ms</span>{/if}
+          {callChannel?.name ?? ''}
+          {#if call.sharing}· {call.viewerCount} assistindo
+          {:else if worstLink}<span class="ping {pingClass(worstLink.rtt)}">· {worstLink.rtt}ms</span>{/if}
         </span>
       </div>
+      <!-- Sempre os mesmos dois botões, no mesmo lugar: muda só o que eles fazem. -->
       <button
         class="icon-btn"
-        class:on={call.sharing}
-        title={call.sharing ? 'Parar de compartilhar' : 'Compartilhar tela'}
-        onclick={() => (call.sharing ? call.stopShare() : (ui.share = true))}
+        class:live-on={call.sharing}
+        disabled={!call.channelId}
+        title={call.sharing ? 'Transmissão: qualidade, codec, parar' : 'Compartilhar tela'}
+        onclick={() => (call.sharing ? (ui.sharePanel = !ui.sharePanel) : (ui.share = true))}
       >
-        <Icon name={call.sharing ? 'screen-off' : 'screen'} />
+        <Icon name="screen" />
       </button>
-      {#if call.sharing}
-        <button
-          class="icon-btn"
-          title="Ver minha transmissão"
-          onclick={() => {
-            call.watch(store.connId!)
-            store.view = 'stream'
-          }}><Icon name="eye" /></button
-        >
-      {/if}
-      <button class="icon-btn hangup" title="Sair da call" onclick={() => call.leave()}><Icon name="hangup" /></button>
+      <button class="icon-btn hangup" title="Sair da call" disabled={!call.channelId} onclick={() => call.leave()}>
+        <Icon name="hangup" />
+      </button>
     </div>
-  {:else if call.joining}
-    <div class="voice-panel"><span class="connected">Entrando na call…</span></div>
+    {#if ui.sharePanel && call.sharing}<SharePanel />{/if}
   {/if}
 
   <footer>
@@ -172,6 +212,7 @@
 
 <style>
   aside {
+    position: relative;
     display: flex;
     flex-direction: column;
     min-height: 0;
@@ -194,7 +235,24 @@
     letter-spacing: -0.01em;
   }
 
+  .update {
+    margin-left: auto;
+    margin-right: 10px;
+    padding: 3px 9px;
+    border-radius: 999px;
+    background: var(--green);
+    color: #0f2a1c;
+    font-size: 12px;
+    font-weight: 700;
+    white-space: nowrap;
+  }
+
+  .update:disabled {
+    opacity: 0.85;
+  }
+
   .dot {
+    flex: none;
     width: 8px;
     height: 8px;
     border-radius: 50%;
@@ -207,6 +265,7 @@
 
   nav {
     flex: 1;
+    min-height: 0;
     overflow-y: auto;
     padding: 8px 8px 16px;
   }
@@ -366,6 +425,35 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  .person {
+    padding: 4px 8px;
+  }
+
+  .presence-wrap {
+    position: relative;
+    display: inline-grid;
+  }
+
+  .presence {
+    position: absolute;
+    right: -2px;
+    bottom: -2px;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--text-faint);
+    border: 2px solid var(--bg-sidebar);
+  }
+
+  .presence.on {
+    background: var(--green);
+  }
+
+  .live-on {
+    color: var(--red) !important;
+    background: var(--red-soft);
   }
 
   .hangup:hover {

@@ -1,4 +1,6 @@
 <script lang="ts">
+  import type { ShortcutAction } from '../../preload/api'
+  import { acceleratorFrom } from '../lib/shortcuts'
   import { store } from '../lib/store.svelte'
   import { ui } from '../lib/ui.svelte'
   import ChatView from './ChatView.svelte'
@@ -14,7 +16,42 @@
   $effect(() => {
     if (!store.call.watching && store.view === 'stream') store.view = 'chat'
   })
+
+  // Bandeja e barra de tarefas acompanham o estado da call.
+  $effect(() => {
+    window.resenha.callState({
+      inCall: !!store.call.channelId,
+      muted: store.call.muted,
+      deafened: store.call.deafened,
+      sharing: store.call.sharing,
+    })
+  })
+
+  function onKeydown(event: KeyboardEvent) {
+    if (ui.recordingShortcut) return
+    // Zoom da interface: Ctrl + / Ctrl - / Ctrl 0.
+    if (event.ctrlKey && !event.altKey && store.desktop) {
+      const zoom = store.desktop.zoom
+      const next =
+        event.key === '=' || event.key === '+' ? zoom + 0.1 : event.key === '-' ? zoom - 0.1 : event.key === '0' ? 1 : null
+      if (next !== null) {
+        event.preventDefault()
+        store.setDesktop({ zoom: Math.round(next * 10) / 10 })
+        return
+      }
+    }
+    const accelerator = acceleratorFrom(event)
+    if (!accelerator || !store.desktop) return
+    const action = (Object.entries(store.desktop.shortcuts) as [ShortcutAction, string | null][]).find(
+      ([, value]) => value === accelerator,
+    )?.[0]
+    if (!action) return
+    event.preventDefault()
+    store.runAction(action)
+  }
 </script>
+
+<svelte:window onkeydown={onKeydown} />
 
 <div class="shell">
   <Sidebar />
@@ -39,12 +76,16 @@
   .shell {
     height: 100%;
     display: grid;
-    grid-template-columns: 260px 1fr;
+    grid-template-columns: 260px minmax(0, 1fr);
+    /* Sem isso a linha cresce com o conteúdo e o chat nunca ganha barra de rolagem. */
+    grid-template-rows: minmax(0, 1fr);
   }
 
   main {
     position: relative;
     min-width: 0;
+    min-height: 0;
+    overflow: hidden;
     background: var(--bg-main);
   }
 

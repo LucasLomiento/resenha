@@ -3,6 +3,7 @@ import {
   BrowserWindow,
   desktopCapturer,
   ipcMain,
+  Menu,
   safeStorage,
   session,
   shell,
@@ -11,8 +12,11 @@ import {
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { release } from 'node:os'
 import { dirname, join } from 'node:path'
-import type { CaptureSource, PlatformInfo, SavedSession } from '../preload/api'
+import type { CallState, CaptureSource, DesktopPrefs, PlatformInfo, SavedSession, ShortcutAction } from '../preload/api'
+import { appIcon, hasTray, registerShortcuts, setAutostart, setTray, showCallState } from './desktop'
+import { isHyprland, loadPrefs, savePrefs } from './prefs'
 import { screenAudioAvailable, startScreenAudio, stopScreenAudio, unmuteScreenAudio } from './screen-audio-linux'
+import { checkForUpdates, downloadUpdate, installUpdate, setupUpdater, updateState } from './updater'
 
 // RESENHA_PROFILE=b roda uma segunda instância com outra conta no mesmo PC.
 const profile = process.env.RESENHA_PROFILE
@@ -39,12 +43,38 @@ app.commandLine.appendSwitch(
     'WebRtcHideLocalIpsWithMdns',
   ].join(','),
 )
-if (isLinux) app.commandLine.appendSwitch('enable-features', 'WebRTCPipeWireCapturer')
+// No Wayland os atalhos globais passam pelo portal do desktop (KDE, GNOME, Hyprland).
+if (isLinux) app.commandLine.appendSwitch('enable-features', 'WebRTCPipeWireCapturer,GlobalShortcutsPortal')
+if (isWindows) app.setAppUserModelId('com.lucasreis.resenha')
+
+const ACTIONS: ShortcutAction[] = ['toggle-mute', 'toggle-deafen', 'toggle-share', 'leave-call', 'show-window']
+
+/** `resenha --action=toggle-mute`: dá pra ligar num atalho do Hyprland ou de qualquer lugar. */
+function actionFromArgs(argv: string[]): ShortcutAction | null {
+  const arg = argv.find((a) => a.startsWith('--action='))?.slice('--action='.length)
+  return ACTIONS.includes(arg as ShortcutAction) ? (arg as ShortcutAction) : null
+}
 
 if (!app.requestSingleInstanceLock()) app.quit()
 
 let win: BrowserWindow | null = null
+let quitting = false
+let prefs: DesktopPrefs
 const hidden = process.env.RESENHA_HIDDEN === '1'
+/** Aberto pelo início automático do sistema: fica quietinho na bandeja. */
+const startedHidden = process.argv.includes('--hidden')
+
+function showWindow() {
+  if (!win) return
+  if (win.isMinimized()) win.restore()
+  win.show()
+  win.focus()
+}
+
+function dispatch(action: ShortcutAction) {
+  if (action === 'show-window') return showWindow()
+  win?.webContents.send('action', action)
+}
 
 function createWindow() {
   win = new BrowserWindow({
@@ -55,8 +85,8 @@ function createWindow() {
     title: 'Resenha',
     backgroundColor: '#17181c',
     autoHideMenuBar: true,
-    show: !hidden,
-    icon: join(__dirname, '../../build/icon.png'),
+    show: false,
+    icon: appIcon(),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: true,
@@ -78,6 +108,29 @@ function createWindow() {
     if (url !== win?.webContents.getURL()) event.preventDefault()
   })
   win.on('focus', () => win?.flashFrame(false))
+  win.once('ready-to-show', () => {
+    if (hidden) return
+    if (startedHidden && prefs.startHidden) {
+      // Sem bandeja não tem como reabrir uma janela escondida: só minimiza.
+      if (!hasTray()) win?.minimize()
+      return
+    }
+    win?.show()
+  })
+  // Fechar a janela com a bandeja ligada só esconde; a call continua.
+  win.on('close', (event) => {
+    if (quitting || !hasTray() || !prefs.closeToTray) return
+    event.preventDefault()
+    win?.hide()
+  })
+  win.webContents.on('did-finish-load', () => win?.webContents.setZoomFactor(prefs.zoom))
+  // Sem menu de aplicativo (evita Ctrl+W/Ctrl+R por engano); DevTools no F12.
+  win.webContents.on('before-input-event', (event, input) => {
+    if (input.type === 'keyDown' && (input.key === 'F12' || (input.control && input.shift && input.key.toLowerCase() === 'i'))) {
+      win?.webContents.toggleDevTools()
+      event.preventDefault()
+    }
+  })
   win.webContents.on('render-process-gone', (_event, details) => {
     console.error('renderer caiu:', details.reason, details.exitCode)
     if (details.reason !== 'clean-exit') win?.webContents.reload()
@@ -139,7 +192,7 @@ ipcMain.handle('platform:info', (): PlatformInfo => {
   let screenAudio: PlatformInfo['screenAudio'] = 'none'
   if (isLinux && screenAudioAvailable()) screenAudio = 'venmic'
   else if (isWindows) screenAudio = windowsExcludesSelf ? 'exclude-self' : 'loopback-all'
-  return { platform: process.platform, portalPicker, screenAudio, version: app.getVersion() }
+  return { platform: process.platform, portalPicker, screenAudio, version: app.getVersion(), hyprland: isHyprland }
 })
 
 ipcMain.on('attention', () => {
@@ -149,6 +202,32 @@ ipcMain.on('attention', () => {
 ipcMain.on('download', (_event, url: string) => {
   if (/^https?:\/\//.test(url)) win?.webContents.downloadURL(url)
 })
+
+// ---------- Bandeja, atalhos, início automático, zoom ----------
+
+function applyPrefs(previous: DesktopPrefs | null): ShortcutAction[] {
+  setTray(prefs.tray, showWindow, dispatch)
+  if (!previous || previous.autostart !== prefs.autostart) setAutostart(prefs.autostart)
+  win?.webContents.setZoomFactor(prefs.zoom)
+  return registerShortcuts(prefs.shortcuts, dispatch)
+}
+
+ipcMain.handle('desktop:get', () => prefs)
+
+ipcMain.handle('desktop:set', (_event, patch: Partial<DesktopPrefs>) => {
+  const previous = prefs
+  prefs = { ...prefs, ...patch, shortcuts: { ...prefs.shortcuts, ...patch.shortcuts } }
+  prefs.zoom = Math.min(2, Math.max(0.5, Number(prefs.zoom) || 1))
+  savePrefs(prefs)
+  return { prefs, failed: applyPrefs(previous) }
+})
+
+ipcMain.on('call-state', (_event, state: CallState) => showCallState(state, win, showWindow, dispatch))
+
+ipcMain.handle('update:state', () => updateState())
+ipcMain.handle('update:check', () => checkForUpdates())
+ipcMain.handle('update:download', () => downloadUpdate())
+ipcMain.handle('update:install', () => installUpdate())
 
 // ---------- Sessão salva (criptografada com o chaveiro do sistema quando dá) ----------
 
@@ -176,21 +255,31 @@ ipcMain.handle('session:set', (_event, value: SavedSession | null) => {
 // ---------- App ----------
 
 app.whenReady().then(() => {
+  Menu.setApplicationMenu(null)
+  prefs = loadPrefs()
   const allowed = new Set(['media', 'display-capture', 'notifications', 'clipboard-sanitized-write', 'fullscreen'])
   session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => callback(allowed.has(permission)))
   session.defaultSession.setPermissionCheckHandler((_wc, permission) => allowed.has(permission))
   setupDisplayMedia()
   createWindow()
+  applyPrefs(null)
+  if (!hidden) setupUpdater((state) => win?.webContents.send('update:state', state))
 })
 
-app.on('second-instance', () => {
-  if (!win) return
-  if (win.isMinimized()) win.restore()
-  win.show()
-  win.focus()
+app.on('second-instance', (_event, argv) => {
+  const action = actionFromArgs(argv)
+  if (action) dispatch(action)
+  else showWindow()
+})
+
+app.on('before-quit', () => {
+  quitting = true
+})
+
+app.on('will-quit', () => {
+  stopScreenAudio()
 })
 
 app.on('window-all-closed', () => {
-  stopScreenAudio()
   app.quit()
 })

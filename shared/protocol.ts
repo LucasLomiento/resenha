@@ -8,6 +8,17 @@ export const HISTORY_PAGE = 50
 
 export type ChannelKind = 'text' | 'voice'
 
+// Conversa privada entre duas pessoas: o "canal" é só um id com os dois
+// usuários em ordem, sem registro na tabela de canais.
+export function dmChannelId(a: string, b: string): string {
+  return a < b ? `dm:${a}:${b}` : `dm:${b}:${a}`
+}
+
+export function dmMembers(channelId: string): [string, string] | null {
+  const match = /^dm:([^:]+):([^:]+)$/.exec(channelId)
+  return match && match[1] < match[2] ? [match[1], match[2]] : null
+}
+
 export interface User {
   id: string
   name: string

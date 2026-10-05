@@ -1,7 +1,7 @@
 {
   "name": "resenha",
   "productName": "Resenha",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "Voz, chat e compartilhamento de tela pro grupo",
   "author": "Lucas Reis",
@@ -15,7 +15,7 @@
     "dist:arch": "electron-vite build && electron-builder --linux pacman",
     "dist:appimage": "electron-vite build && electron-builder --linux AppImage",
     "dist:win": "electron-vite build && electron-builder --win nsis",
-    "e2e": "electron-vite build && node test/e2e.mjs",
+    "e2e": "VITE_DEFAULT_SERVER=http://127.0.0.1:8787 electron-vite build && node test/e2e.mjs",
     "dist:win:zip": "electron-vite build && electron-builder --win zip"
   },
   "devDependencies": {
@@ -41,7 +41,6 @@
     },
     "files": [
       "out/**/*",
-      "build/icon.png",
       "package.json"
     ],
     "npmRebuild": false,
@@ -49,6 +48,12 @@
       "target": [
         {
           "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "zip",
           "arch": [
             "x64"
           ]
@@ -113,6 +118,26 @@
         "xdg-utils",
         "pipewire"
       ]
-    }
+    },
+    "extraResources": [
+      {
+        "from": "build",
+        "to": "build",
+        "filter": [
+          "*.png"
+        ]
+      }
+    ],
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "LucasLomiento",
+        "repo": "resenha",
+        "releaseType": "draft"
+      }
+    ]
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.9"
   }
 }

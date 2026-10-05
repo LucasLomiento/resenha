@@ -1,8 +1,11 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte'
   import type { ChannelKind } from '../../../../shared/protocol'
+  import type { ShortcutAction } from '../../preload/api'
   import { getMicTrack, LevelMeter } from '../lib/media'
   import { PRESETS, settings, type ScreenPreset, type VideoCodec } from '../lib/settings.svelte'
+  import { ACTIONS, acceleratorFrom, describeAccelerator } from '../lib/shortcuts'
+  import { playSound } from '../lib/sounds'
   import { store } from '../lib/store.svelte'
   import { ui, type SettingsTab } from '../lib/ui.svelte'
   import Icon from './Icon.svelte'
@@ -12,6 +15,8 @@
   const tabs: { id: SettingsTab; label: string }[] = [
     { id: 'voice', label: 'Voz' },
     { id: 'screen', label: 'Tela' },
+    { id: 'shortcuts', label: 'Atalhos' },
+    { id: 'app', label: 'App' },
     { id: 'group', label: 'Grupo' },
     { id: 'account', label: 'Conta' },
   ]
@@ -42,32 +47,38 @@
     return () => navigator.mediaDevices.removeEventListener('devicechange', loadDevices)
   })
 
-  // --- teste do microfone ---
+  // --- teste do microfone: medidor + sua voz de volta no fone, como no Discord ---
   let testing = $state(false)
   let level = $state(0)
   let testTrack: MediaStreamTrack | null = null
   let testMeter: LevelMeter | null = null
-  let frame = 0
+  let testAudio: HTMLAudioElement | null = null
+  let timer: ReturnType<typeof setInterval> | null = null
 
   async function startTest() {
     stopTest()
     try {
       testTrack = await getMicTrack()
       testMeter = new LevelMeter(testTrack)
+      testAudio = new Audio()
+      testAudio.srcObject = new MediaStream([testTrack])
+      await testAudio.setSinkId(settings.outputDevice === 'default' ? '' : settings.outputDevice).catch(() => {})
+      await testAudio.play()
       testing = true
-      const loop = () => {
-        level = Math.min(1, (testMeter?.level() ?? 0) * 6)
-        frame = requestAnimationFrame(loop)
-      }
-      loop()
+      timer = setInterval(() => (level = Math.min(1, (testMeter?.level() ?? 0) * 6)), 50)
       loadDevices()
     } catch (err) {
+      stopTest()
       store.toast(`Sem acesso ao microfone: ${(err as Error).message}`)
     }
   }
 
   function stopTest() {
-    cancelAnimationFrame(frame)
+    if (timer) clearInterval(timer)
+    timer = null
+    testAudio?.pause()
+    if (testAudio) testAudio.srcObject = null
+    testAudio = null
     testMeter?.close()
     testTrack?.stop()
     testMeter = null
@@ -102,14 +113,55 @@
     delete renaming[id]
   }
 
+  // --- atalhos ---
+  let recording = $state<ShortcutAction | null>(null)
+  let failed = $state<ShortcutAction[]>([])
+
+  function record(action: ShortcutAction) {
+    recording = action
+    ui.recordingShortcut = true
+  }
+
+  function stopRecording() {
+    recording = null
+    ui.recordingShortcut = false
+  }
+
+  async function setShortcut(action: ShortcutAction, accelerator: string | null) {
+    if (!store.desktop) return
+    // O mesmo atalho não pode ficar em duas ações.
+    const shortcuts = { ...store.desktop.shortcuts }
+    for (const key of Object.keys(shortcuts) as ShortcutAction[]) if (accelerator && shortcuts[key] === accelerator) shortcuts[key] = null
+    shortcuts[action] = accelerator
+    failed = await store.setDesktop({ shortcuts })
+  }
+
+  function onRecordKey(event: KeyboardEvent) {
+    if (!recording) return
+    event.preventDefault()
+    event.stopPropagation()
+    if (event.key === 'Escape') return stopRecording()
+    const accelerator = acceleratorFrom(event)
+    if (!accelerator) return // só modificador até agora: espera a tecla de verdade
+    const action = recording
+    stopRecording()
+    setShortcut(action, accelerator)
+  }
+
+  onDestroy(() => (ui.recordingShortcut = false))
+
   async function copyInvite() {
-    await navigator.clipboard.writeText(`Servidor: ${store.server}\nConvite: ${store.invite}`)
+    await navigator.clipboard.writeText(
+      `Bora pro Resenha! Baixa aqui: https://github.com/LucasLomiento/resenha/releases/latest\nNa hora de criar a conta, usa o convite: ${store.invite}`,
+    )
     copied = true
     setTimeout(() => (copied = false), 1500)
   }
 </script>
 
-<Modal title="Configurações" width={640} onclose={() => (ui.settings = null)}>
+<svelte:window onkeydowncapture={onRecordKey} />
+
+<Modal title="Configurações" width={680} onclose={() => (recording ? stopRecording() : (ui.settings = null))}>
   <div class="tabs">
     {#each tabs as tab (tab.id)}
       <button class:on={ui.settings === tab.id} onclick={() => (ui.settings = tab.id)}>{tab.label}</button>
@@ -121,13 +173,19 @@
       <label>
         <span class="label">Microfone</span>
         <select class="field" bind:value={settings.inputDevice} onchange={micChanged}>
-          {#each inputs as d (d.deviceId)}<option value={d.deviceId}>{d.label || 'Microfone'}</option>{/each}
+          <option value="default">Padrão do sistema</option>
+          {#each inputs.filter((d) => d.deviceId && d.deviceId !== 'default') as d (d.deviceId)}
+            <option value={d.deviceId}>{d.label || 'Microfone'}</option>
+          {/each}
         </select>
       </label>
       <label>
         <span class="label">Saída de áudio</span>
         <select class="field" bind:value={settings.outputDevice} onchange={() => call.applyOutput()}>
-          {#each outputs as d (d.deviceId)}<option value={d.deviceId}>{d.label || 'Alto-falante'}</option>{/each}
+          <option value="default">Padrão do sistema</option>
+          {#each outputs.filter((d) => d.deviceId && d.deviceId !== 'default') as d (d.deviceId)}
+            <option value={d.deviceId}>{d.label || 'Alto-falante'}</option>
+          {/each}
         </select>
       </label>
     </div>
@@ -138,6 +196,7 @@
       </button>
       <div class="meter"><div style:width="{level * 100}%"></div></div>
     </div>
+    <p class="hint">No teste você se ouve de volta. Use fone, senão dá microfonia.</p>
 
     <div class="toggles">
       <label class="check">
@@ -157,7 +216,7 @@
     <div class="grid">
       <label>
         <span class="label">Qualidade padrão</span>
-        <select class="field" bind:value={settings.screenPreset}>
+        <select class="field" bind:value={settings.screenPreset} onchange={() => call.updateShare()}>
           {#each Object.entries(PRESETS) as [key, preset] (key)}
             <option value={key as ScreenPreset}>{preset.label} · 60 fps · até {preset.bitrate / 1_000_000} Mbps</option>
           {/each}
@@ -165,18 +224,21 @@
       </label>
       <label>
         <span class="label">Codec de vídeo</span>
-        <select class="field" bind:value={settings.codec}>
+        <select class="field" bind:value={settings.codec} onchange={() => call.updateShare()}>
           {#each ['VP9', 'VP8', 'H264', 'AV1'] as codec (codec)}<option value={codec as VideoCodec}>{codec}</option>{/each}
         </select>
       </label>
     </div>
     <p class="hint">
       No P2P, cada pessoa assistindo é uma codificação a mais no seu PC e uma cópia a mais no seu upload. Se a CPU apertar,
-      VP8 e H264 pesam menos que VP9 e AV1. Vale pra próxima transmissão.
+      VP8 e H264 pesam menos que VP9 e AV1. Muda na hora, mesmo com a transmissão rolando.
     </p>
     <div class="toggles">
       <label class="check">
-        <input type="checkbox" checked={settings.screenMode === 'motion'} onchange={(e) => (settings.screenMode = e.currentTarget.checked ? 'motion' : 'detail')} />
+        <input type="checkbox" checked={settings.screenMode === 'motion'} onchange={(e) => {
+            settings.screenMode = e.currentTarget.checked ? 'motion' : 'detail'
+            call.updateShare()
+          }} />
         <span>Priorizar fluidez <small>Com a rede apertada, baixa a resolução e mantém 60 fps.</small></span>
       </label>
       <label class="check">
@@ -187,6 +249,119 @@
         <input type="checkbox" bind:checked={settings.showStats} />
         <span>Mostrar estatísticas na transmissão <small>Resolução, fps, bitrate, codec, ping e buffer.</small></span>
       </label>
+    </div>
+  {:else if ui.settings === 'shortcuts' && store.desktop}
+    <p class="hint first">
+      Funcionam mesmo com o Resenha minimizado. Clique no atalho e aperte a combinação nova; Esc cancela.
+    </p>
+    <ul class="shortcuts">
+      {#each ACTIONS as action (action.id)}
+        {@const value = store.desktop.shortcuts[action.id]}
+        <li>
+          <span>{action.label}</span>
+          <button class="key" class:recording={recording === action.id} onclick={() => record(action.id)}>
+            {recording === action.id ? 'Aperte as teclas…' : describeAccelerator(value, store.platform?.platform ?? '')}
+          </button>
+          <button class="icon-btn" title="Remover atalho" disabled={!value} onclick={() => setShortcut(action.id, null)}>
+            <Icon name="x" size={16} />
+          </button>
+        </li>
+        {#if failed.includes(action.id)}
+          <li class="warn">O sistema não deixou usar esse atalho globalmente (já está em uso?). Dentro do app ele funciona.</li>
+        {/if}
+      {/each}
+    </ul>
+    {#if store.platform?.hyprland}
+      <p class="hint">
+        No Hyprland, atalho que funciona com o app em segundo plano é um bind no seu config rodando
+        <code class="selectable">resenha --action=toggle-mute</code> (ou <code>toggle-deafen</code>, <code>toggle-share</code>,
+        <code>leave-call</code>, <code>show-window</code>). Os de cima valem com a janela em foco.
+      </p>
+    {/if}
+  {:else if ui.settings === 'app' && store.desktop}
+    {@const desktop = store.desktop}
+    <div class="toggles first">
+      <label class="check">
+        <input type="checkbox" checked={desktop.autostart} onchange={(e) => store.setDesktop({ autostart: e.currentTarget.checked })} />
+        <span>Abrir junto com o computador</span>
+      </label>
+      <label class="check sub" class:disabled={!desktop.autostart}>
+        <input
+          type="checkbox"
+          checked={desktop.startHidden}
+          disabled={!desktop.autostart}
+          onchange={(e) => store.setDesktop({ startHidden: e.currentTarget.checked })}
+        />
+        <span>Começar escondido <small>Na bandeja (ou minimizado, se a bandeja estiver desligada).</small></span>
+      </label>
+      <label class="check">
+        <input type="checkbox" checked={desktop.tray} onchange={(e) => store.setDesktop({ tray: e.currentTarget.checked })} />
+        <span>Ícone na bandeja do sistema <small>Ao lado do relógio, com mutar, ensurdecer e sair da call.</small></span>
+      </label>
+      <label class="check sub" class:disabled={!desktop.tray}>
+        <input
+          type="checkbox"
+          checked={desktop.closeToTray}
+          disabled={!desktop.tray}
+          onchange={(e) => store.setDesktop({ closeToTray: e.currentTarget.checked })}
+        />
+        <span>Fechar a janela só esconde <small>A call continua; pra sair de vez, use a bandeja.</small></span>
+      </label>
+    </div>
+
+    <div class="row">
+      <span class="label">Tamanho da interface</span>
+      <div class="zoom">
+        <button class="icon-btn" title="Diminuir (Ctrl -)" onclick={() => store.setDesktop({ zoom: Math.round((desktop.zoom - 0.1) * 10) / 10 })}>−</button>
+        <span>{Math.round(desktop.zoom * 100)}%</span>
+        <button class="icon-btn" title="Aumentar (Ctrl +)" onclick={() => store.setDesktop({ zoom: Math.round((desktop.zoom + 0.1) * 10) / 10 })}>+</button>
+        <button class="btn secondary small" onclick={() => store.setDesktop({ zoom: 1 })}>Padrão</button>
+      </div>
+    </div>
+
+    <div class="toggles">
+      <label class="check">
+        <input type="checkbox" bind:checked={settings.sounds} />
+        <span>Sons <small>Entrar e sair da call, mutar, ensurdecer, alguém começando a transmitir.</small></span>
+      </label>
+      <div class="row sub" class:disabled={!settings.sounds}>
+        <input type="range" min="0" max="1" step="0.05" bind:value={settings.soundVolume} disabled={!settings.sounds} />
+        <button class="btn secondary small" disabled={!settings.sounds} onclick={() => playSound('self-join')}>Ouvir</button>
+      </div>
+      <label class="check sub" class:disabled={!settings.sounds}>
+        <input type="checkbox" bind:checked={settings.messageSound} disabled={!settings.sounds} />
+        <span>Som de mensagem nova</span>
+      </label>
+      <label class="check">
+        <input type="checkbox" bind:checked={settings.compressImages} />
+        <span>Comprimir imagens ao enviar <small>No máximo 2560 px, em WebP. Economiza espaço no servidor.</small></span>
+      </label>
+    </div>
+
+    <span class="label">Atualizações</span>
+    <div class="updates">
+      <span>
+        Versão {store.platform?.version}
+        {#if store.update.status === 'none'}· é a mais nova
+        {:else if store.update.status === 'checking'}· procurando…
+        {:else if store.update.status === 'available'}· a {store.update.version} saiu
+        {:else if store.update.status === 'downloading'}· baixando {store.update.version} ({store.update.percent}%)
+        {:else if store.update.status === 'ready'}· {store.update.version} pronta pra instalar
+        {:else if store.update.status === 'installing'}· instalando…
+        {:else if store.update.status === 'unsupported'}· este jeito de instalar não se atualiza sozinho
+        {:else if store.update.status === 'error'}· erro: {store.update.message}{/if}
+      </span>
+      {#if store.update.status === 'available'}
+        <button class="btn" onclick={() => window.resenha.update.download()}>Baixar</button>
+      {:else if store.update.status === 'ready'}
+        <button class="btn" onclick={() => window.resenha.update.install()}>Reiniciar e atualizar</button>
+      {:else if store.update.status !== 'unsupported'}
+        <button
+          class="btn secondary"
+          disabled={store.update.status === 'checking' || store.update.status === 'downloading' || store.update.status === 'installing'}
+          onclick={() => window.resenha.update.check()}>Procurar atualização</button
+        >
+      {/if}
     </div>
   {:else if ui.settings === 'group'}
     <span class="label">Pessoas</span>
@@ -202,7 +377,7 @@
         <button class="btn secondary" onclick={() => store.send({ t: 'invite.create' })}>Gerar convite</button>
         {#if store.invite}
           <code class="selectable">{store.invite}</code>
-          <button class="icon-btn" title="Copiar servidor e convite" onclick={copyInvite}>
+          <button class="icon-btn" title="Copiar mensagem com o link e o convite" onclick={copyInvite}>
             <Icon name={copied ? 'check' : 'copy'} />
           </button>
         {/if}
@@ -241,7 +416,7 @@
       </form>
     {/if}
   {:else if ui.settings === 'account'}
-    <p>Conectado como <b>{store.me?.name}</b> em <code class="selectable">{store.server}</code>.</p>
+    <p>Conectado como <b>{store.me?.name}</b>.</p>
     <p class="hint">Resenha {store.platform?.version} · {store.platform?.platform}</p>
     <button class="btn danger" onclick={() => store.logout()}><Icon name="logout" size={16} />Sair da conta</button>
   {/if}
@@ -386,6 +561,96 @@
     padding: 6px 10px;
     border-radius: 6px;
     background: var(--bg-deep);
+  }
+
+  .first {
+    margin-top: 0;
+  }
+
+  .sub {
+    margin-left: 26px;
+  }
+
+  .disabled {
+    opacity: 0.5;
+  }
+
+  .row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 16px 0 4px;
+  }
+
+  .row.sub {
+    margin-top: -4px;
+  }
+
+  .row input[type='range'] {
+    flex: 1;
+    max-width: 260px;
+    accent-color: var(--accent);
+  }
+
+  .zoom {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .zoom span {
+    min-width: 48px;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .btn.small {
+    padding: 4px 10px;
+    font-size: 12px;
+  }
+
+  .shortcuts {
+    list-style: none;
+    margin: 0 0 12px;
+    padding: 0;
+  }
+
+  .shortcuts li {
+    display: grid;
+    grid-template-columns: 1fr 200px 32px;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 0;
+  }
+
+  .shortcuts li.warn {
+    display: block;
+    color: var(--yellow);
+    font-size: 12px;
+    padding-top: 0;
+  }
+
+  .key {
+    padding: 6px 10px;
+    border-radius: 6px;
+    background: var(--bg-deep);
+    border: 1px solid var(--border);
+    font: 13px var(--mono);
+    text-align: center;
+  }
+
+  .key.recording {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+
+  .updates {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-top: 8px;
+    color: var(--text-dim);
   }
 
   .new-channel {

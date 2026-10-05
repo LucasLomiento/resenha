@@ -39,7 +39,7 @@ No teste local (duas instâncias no mesmo PC), o atraso de ponta a ponta medido 
 ```bash
 npm install                    # instala tudo e baixa o Electron
 npm run dev:server             # Worker em http://127.0.0.1:8787 (crie server/.dev.vars, abaixo)
-npm run dev:app                # app com hot reload
+VITE_DEFAULT_SERVER=http://127.0.0.1:8787 npm run dev:app   # app com hot reload, no servidor local
 ```
 
 `server/.dev.vars`:
@@ -48,7 +48,7 @@ npm run dev:app                # app com hot reload
 FILE_SECRET=qualquer-coisa-local
 ```
 
-No login, use `http://127.0.0.1:8787` como servidor. A primeira conta criada vira a do admin. Pra abrir uma segunda instância com outra conta no mesmo PC: `RESENHA_PROFILE=b npm -w app run start`.
+O servidor do app vem do build: `VITE_DEFAULT_SERVER`, e sem ela vale o de produção. A primeira conta criada vira a do admin. Pra abrir uma segunda instância com outra conta no mesmo PC: `RESENHA_PROFILE=b npm -w app run start`.
 
 ## Colocar no ar (Cloudflare)
 
@@ -73,17 +73,41 @@ openssl rand -base64 32 | tr -d '\n' | npx wrangler secret put FILE_SECRET
 
 Sem essas duas variáveis o app usa só STUN e tenta sempre a conexão direta. O TURN tem 1000 GB grátis por mês, e como aqui ele só entra quando o direto falha, na prática fica de graça.
 
-## Gerar o app
+## Lançar uma versão nova
+
+Quem gera os pacotes é o GitHub Actions (`.github/workflows/release.yml`), e os apps instalados se atualizam sozinhos a partir das Releases (electron-updater):
+
+1. Suba a versão em `app/package.json` e escreva o `RELEASE_NOTES.md`.
+2. Faça o commit e rode `git tag vX.Y.Z && git push origin main vX.Y.Z`.
+3. O Actions gera o `.pacman`, o AppImage, o instalador do Windows e o `.zip`, junta tudo numa release e publica.
+
+Formatos que se atualizam pelo app:
+- **Instalador do Windows (NSIS):** o electron-updater instala sozinho.
+- **AppImage:** o electron-updater instala sozinho.
+- **`.pacman`:** a gente instala (`app/src/main/updater.ts`). Primeiro tenta o `pkexec`, que funciona quando há agente do polkit (KDE). Sem agente, abre um terminal com `sudo`.
+
+O `.zip` do Windows não se atualiza.
+
+Pra gerar localmente:
 
 ```bash
 cd app
-VITE_DEFAULT_SERVER=https://resenha.lucaslomiento.workers.dev npm run dist:arch      # .pacman (Arch/Omarchy)
-VITE_DEFAULT_SERVER=... npm run dist:appimage                                        # AppImage (outras distros)
-VITE_DEFAULT_SERVER=... npm run dist:win:zip                                         # Windows: zip, extrair e abrir Resenha.exe
-VITE_DEFAULT_SERVER=... npm run dist:win                                             # Windows: instalador NSIS (no Linux precisa do wine)
+VITE_DEFAULT_SERVER=https://resenha.lucaslomiento.workers.dev npm run dist:arch      # .pacman
+VITE_DEFAULT_SERVER=... npm run dist:appimage                                        # AppImage
+VITE_DEFAULT_SERVER=... npm run dist:win:zip                                         # Windows .zip (o instalador precisa do wine no Linux)
 ```
 
-`VITE_DEFAULT_SERVER` só preenche o campo de servidor na tela de login.
+## Atalhos globais e linha de comando
+
+Os atalhos de Configurações → Atalhos são registrados no sistema: direto no Windows e no X11, e pelo portal `GlobalShortcuts` no Wayland (KDE, GNOME).
+
+No **Hyprland** o portal não usa as teclas escolhidas pelo app, então lá o jeito é um bind no seu config chamando o app:
+
+```
+resenha --action=toggle-mute      # também: toggle-deafen, toggle-share, leave-call, show-window
+```
+
+Com o Resenha aberto, esse comando só manda a ação pra janela que já está rodando.
 
 ## Testes
 

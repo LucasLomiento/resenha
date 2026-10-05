@@ -1,8 +1,10 @@
 <script lang="ts">
-  import { Api, normalizeServer } from '../lib/api'
-  import { store } from '../lib/store.svelte'
+  import { onMount } from 'svelte'
+  import { Api } from '../lib/api'
+  import { DEFAULT_SERVER, store } from '../lib/store.svelte'
+  import logo from '../../../build/icon.svg?url'
 
-  let server = $state(localStorage.getItem('resenha.server') ?? import.meta.env.VITE_DEFAULT_SERVER ?? '')
+  const server = DEFAULT_SERVER
   let mode = $state<'login' | 'register'>('login')
   let name = $state('')
   let password = $state('')
@@ -12,10 +14,8 @@
   let error = $state('')
 
   async function checkServer() {
-    const url = normalizeServer(server)
-    if (!url) return
     try {
-      const status = await new Api(url).status()
+      const status = await new Api(server).status()
       needsInvite = status.needsInvite
       // Servidor vazio: a primeira conta vira a do admin.
       if (!status.needsInvite) mode = 'register'
@@ -26,41 +26,38 @@
 
   async function submit(event: SubmitEvent) {
     event.preventDefault()
-    const url = normalizeServer(server)
-    if (!url) return (error = 'Coloque o endereço do servidor.')
+    const url = server
     busy = true
     error = ''
     try {
       const api = new Api(url)
       const auth = mode === 'login' ? await api.login(name, password) : await api.register(name, password, invite)
-      localStorage.setItem('resenha.server', url)
       await store.start({ server: url, token: auth.token })
     } catch (err) {
       error = (err as Error).message
+      // Alguém criou a primeira conta enquanto esta tela estava aberta: agora precisa de convite.
+      if ((err as { status?: number }).status === 403) needsInvite = true
     } finally {
       busy = false
     }
   }
 
-  // Descobre se o servidor é novo (sem contas) enquanto a pessoa digita.
-  $effect(() => {
-    if (!server) return
-    const timer = setTimeout(checkServer, 400)
-    return () => clearTimeout(timer)
+  // Servidor novo (sem contas) já abre em "criar conta". Enquanto estiver
+  // sem contas, confere de novo: alguém pode criar a primeira nesse meio-tempo.
+  onMount(() => {
+    checkServer()
+    const timer = setInterval(() => !needsInvite && checkServer(), 4000)
+    return () => clearInterval(timer)
   })
 </script>
 
 <div class="screen">
   <form class="card" onsubmit={submit}>
+    <img class="logo" src={logo} alt="" width="72" height="72" />
     <h1>Resenha</h1>
     <p class="sub">
       {mode === 'login' ? 'Bem-vindo de volta.' : needsInvite ? 'Entre com o convite que te mandaram.' : 'Servidor novo: esta conta vira a do admin.'}
     </p>
-
-    <label>
-      <span class="label">Servidor</span>
-      <input class="field" bind:value={server} placeholder="resenha.seudominio.workers.dev" spellcheck="false" />
-    </label>
 
     <label>
       <span class="label">Apelido</span>
@@ -121,13 +118,20 @@
     box-shadow: 0 20px 60px rgb(0 0 0 / 0.45);
   }
 
+  .logo {
+    align-self: center;
+    margin-bottom: -4px;
+  }
+
   h1 {
     margin: 0;
+    text-align: center;
     font-size: 26px;
     letter-spacing: -0.02em;
   }
 
   .sub {
+    text-align: center;
     margin: -8px 0 4px;
     color: var(--text-dim);
   }

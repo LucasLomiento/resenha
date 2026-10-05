@@ -19,6 +19,14 @@ export interface Settings {
   userVolumes: Record<string, number>
   streamVolume: number
   showStats: boolean
+  sounds: boolean
+  /** 0..1 */
+  soundVolume: number
+  messageSound: boolean
+  /** Diminui e converte imagens pra WebP antes de enviar. */
+  compressImages: boolean
+  /** Miniatura da transmissão: posição (px a partir da esquerda/topo) e largura. */
+  pip: { x: number; y: number; width: number } | null
 }
 
 const KEY = 'resenha.settings'
@@ -36,6 +44,11 @@ const defaults: Settings = {
   userVolumes: {},
   streamVolume: 1,
   showStats: false,
+  sounds: true,
+  soundVolume: 0.6,
+  messageSound: true,
+  compressImages: true,
+  pip: null,
 }
 
 function load(): Settings {

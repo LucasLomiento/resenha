@@ -19,7 +19,6 @@ import { join } from 'node:path'
 import electronPath from 'electron'
 import { _electron as electron } from 'playwright-core'
 
-const SERVER = process.env.RESENHA_SERVER ?? 'http://127.0.0.1:8787'
 /** RESENHA_SHOTS=pasta salva capturas da interface pra revisão visual. */
 const SHOTS = process.env.RESENHA_SHOTS
 const APP_DIR = new URL('..', import.meta.url).pathname
@@ -50,6 +49,9 @@ async function launch(profile) {
     env: { ...process.env, RESENHA_PROFILE: profile, RESENHA_HIDDEN: '1' },
   })
   const page = await app.firstWindow()
+  // Sem sons do app durante o teste (nada toca na caixa de som de quem roda).
+  await page.evaluate(() => localStorage.setItem('resenha.settings', JSON.stringify({ sounds: false })))
+  await page.reload()
   page.on('console', (msg) => {
     if (msg.type() === 'error') console.log(`   [${profile}] ${msg.text()}`)
   })
@@ -147,7 +149,7 @@ function median(values) {
 }
 
 async function login(page, name, invite) {
-  await page.getByLabel('Servidor').fill(SERVER)
+  // O servidor vem do build (VITE_DEFAULT_SERVER); espera a tela descobrir se é servidor novo.
   await page.waitForTimeout(700)
   if (invite) {
     if (await page.getByText('Tenho um convite').isVisible()) await page.getByText('Tenho um convite').click({ force: true })
@@ -253,6 +255,30 @@ try {
   await a.page.getByText('olha esse código').waitFor()
   await shot(a, '1-chat')
 
+  // Rolagem do chat: com mensagem suficiente, a lista tem que rolar (era o bug da 0.1.0).
+  for (let i = 0; i < 30; i++) {
+    await b.page.getByPlaceholder('Conversar em #geral').fill(`mensagem ${i}`)
+    await b.page.keyboard.press('Enter')
+  }
+  await a.page.getByText('mensagem 29').waitFor()
+  const scroll = await a.page.locator('.scroller').evaluate((el) => {
+    const before = el.scrollTop
+    el.scrollTop = 0
+    return { scrollable: el.scrollHeight > el.clientHeight + 50, moved: before !== el.scrollTop }
+  })
+  check(scroll.scrollable && scroll.moved, 'chat rola quando tem mensagem que não cabe')
+
+  // Mensagem privada: B manda pra A; A vê o aviso e abre.
+  await b.page.locator('button.person', { hasText: 'Lucas' }).click({ force: true })
+  await b.page.getByPlaceholder('Mensagem para @Lucas').fill('oi no privado')
+  await b.page.keyboard.press('Enter')
+  await a.page.locator('button.person.unread', { hasText: 'Amigo' }).waitFor({ timeout: 5000 })
+  await a.page.locator('button.person', { hasText: 'Amigo' }).click({ force: true })
+  await a.page.locator('.scroller').getByText('oi no privado').waitFor({ timeout: 5000 })
+  check(true, 'mensagem privada chega e aparece como não lida')
+  await a.page.locator('nav button.channel', { hasText: 'geral' }).click({ force: true })
+  await b.page.locator('nav button.channel', { hasText: 'geral' }).click({ force: true })
+
   // Call P2P.
   await fakeMic(a.page)
   await fakeMic(b.page)
@@ -326,13 +352,29 @@ try {
   await b.page.locator('.stats').waitFor()
   await b.page.waitForTimeout(2500)
   console.log('   estatísticas em B:', (await b.page.locator('.stats').innerText()).replace(/\n/g, ' | '))
+  // Muda qualidade e codec com a transmissão rolando, pelo painel de quem transmite.
+  await a.page.getByTitle('Transmissão: qualidade, codec, parar').click({ force: true })
+  const viewers = await a.page.locator('.share-panel .viewers').textContent()
+  check(viewers?.includes('1 pessoa'), 'quem transmite vê quantas pessoas assistem', viewers ?? '')
+  await a.page.locator('.share-panel .segmented button', { hasText: 'H264' }).click({ force: true })
+  await a.page.locator('.share-panel .segmented button', { hasText: '1080p' }).click({ force: true })
+  await a.page.keyboard.press('Escape')
+  await b.page.waitForFunction(() => document.querySelector('.stats')?.textContent?.includes('H264'), null, { timeout: 20_000 })
+    .then(() => check(true, 'codec trocou pra H264 ao vivo'))
+    .catch(() => check(false, 'codec trocou pra H264 ao vivo', 'continuou o mesmo'))
+  await b.page.waitForFunction(() => document.querySelector('.stream video')?.videoWidth > 1280, null, { timeout: 30_000 })
+    .then(() => check(true, 'resolução subiu de 720p pra 1080p ao vivo'))
+    .catch(() => check(false, 'resolução subiu de 720p pra 1080p ao vivo'))
+  console.log('   estatísticas em B depois da troca:', (await b.page.locator('.stats').innerText()).replace(/\n/g, ' | '))
+
   await b.page.locator('.stream').hover({ force: true })
   await shot(b, '4-assistindo')
-  await b.page.getByTitle('Voltar pro chat (miniatura)').click({ force: true })
+  await b.page.getByTitle('Miniatura (volta pro chat)').click({ force: true })
   await b.page.waitForTimeout(500)
   await shot(b, '5-miniatura')
 
-  await a.page.getByTitle('Ver minha transmissão').click({ force: true })
+  await a.page.getByTitle('Transmissão: qualidade, codec, parar').click({ force: true })
+  await a.page.getByRole('button', { name: 'Ver minha tela' }).click({ force: true })
   await a.page.getByTitle('Estatísticas').click({ force: true })
   await a.page.waitForTimeout(2500)
   console.log('   estatísticas em A:', (await a.page.locator('.stats').innerText()).replace(/\n/g, ' | '))
@@ -341,7 +383,8 @@ try {
   await a.page.keyboard.press('Escape')
 
   // Parar de compartilhar some com o player de B.
-  await a.page.getByTitle('Parar de compartilhar').click({ force: true })
+  await a.page.getByTitle('Transmissão: qualidade, codec, parar').click({ force: true })
+  await a.page.locator('.share-panel .btn.danger').click({ force: true })
   await b.page.locator('.stream').waitFor({ state: 'detached', timeout: 5000 })
   check(true, 'parar de compartilhar fecha o player de B')
   if (withAudio) {

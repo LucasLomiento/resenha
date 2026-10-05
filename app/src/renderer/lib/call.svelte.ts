@@ -4,6 +4,7 @@ import type { Api } from './api'
 import { captureScreen, getMicTrack, LevelMeter, stopCapture } from './media'
 import { Peer, type LinkStats, type VideoStats } from './peer'
 import { PRESETS, settings } from './settings.svelte'
+import { playSound } from './sounds'
 
 interface CallDeps {
   send(msg: ClientMessage): boolean
@@ -42,6 +43,8 @@ export class Call {
   private ticker: ReturnType<typeof setInterval> | null = null
   private statsTicker: ReturnType<typeof setInterval> | null = null
   private mutedBeforeDeafen = false
+  /** Quem estava na call no último voice.state (connId -> transmitindo), pros sons. */
+  private known: Map<string, boolean> | null = null
 
   constructor(private deps: CallDeps) {}
 
@@ -65,6 +68,7 @@ export class Call {
       this.channelId = channelId
       this.deps.send({ t: 'voice.join', channelId, muted: this.muted, deafened: this.deafened })
       this.startTickers()
+      playSound('self-join')
     } catch (err) {
       console.error(err)
       this.deps.toast(
@@ -80,6 +84,7 @@ export class Call {
   /** Depois de reconectar o WebSocket a conexão é outra: refaz tudo na mesma call. */
   rejoin() {
     if (!this.channelId) return
+    this.known = null
     for (const connId of [...this.peers.keys()]) this.removePeer(connId)
     this.deps.send({ t: 'voice.join', channelId: this.channelId, muted: this.muted, deafened: this.deafened })
     if (this.sharing) this.sendState()
@@ -87,6 +92,7 @@ export class Call {
 
   leave() {
     if (!this.channelId) return
+    playSound('self-leave')
     this.deps.send({ t: 'voice.leave' })
     for (const connId of [...this.peers.keys()]) this.removePeer(connId)
     this.stopShare(false)
@@ -99,6 +105,7 @@ export class Call {
     this.micTrack = null
     this.speaking = {}
     this.links = {}
+    this.known = null
     if (this.ticker) clearInterval(this.ticker)
     if (this.statsTicker) clearInterval(this.statsTicker)
     this.ticker = this.statsTicker = null
@@ -143,8 +150,10 @@ export class Call {
       // Igual no Discord: desmutar também tira o ensurdecer.
       this.deafened = false
       this.muted = false
+      playSound('undeafen')
     } else {
       this.muted = !this.muted
+      playSound(this.muted ? 'mute' : 'unmute')
     }
     this.applyMuteState()
   }
@@ -153,10 +162,12 @@ export class Call {
     if (this.deafened) {
       this.deafened = false
       this.muted = this.mutedBeforeDeafen
+      playSound('undeafen')
     } else {
       this.mutedBeforeDeafen = this.muted
       this.deafened = true
       this.muted = true
+      playSound('deafen')
     }
     this.applyMuteState()
   }
@@ -179,6 +190,15 @@ export class Call {
     const me = this.deps.connId()
     if (!this.channelId || !me) return
     const others = members.filter((m) => m.channelId === this.channelId && m.connId !== me)
+    // Sons: alguém entrou, saiu ou começou a transmitir (o primeiro estado só registra).
+    if (this.known) {
+      const before = this.known
+      if (others.some((m) => !before.has(m.connId))) playSound('join')
+      else if ([...before.keys()].some((id) => !others.some((m) => m.connId === id))) playSound('leave')
+      if (others.some((m) => m.sharing && before.get(m.connId) === false)) playSound('live')
+    }
+    this.known = new Map(others.map((m) => [m.connId, m.sharing]))
+
     for (const member of others) if (!this.peers.has(member.connId)) this.createPeer(member)
     for (const connId of [...this.peers.keys()]) {
       if (!others.some((m) => m.connId === connId)) this.removePeer(connId)
@@ -234,7 +254,11 @@ export class Call {
   // ---------- Compartilhar a tela ----------
 
   /** connId -> está assistindo a minha tela */
-  private watchers: Record<string, boolean> = {}
+  watchers = $state<Record<string, boolean>>({})
+
+  get viewerCount(): number {
+    return Object.values(this.watchers).filter(Boolean).length
+  }
 
   private videoOptions() {
     return { bitrate: PRESETS[settings.screenPreset].bitrate, codec: settings.codec, mode: settings.screenMode }
@@ -271,6 +295,22 @@ export class Call {
     await Promise.all(
       this.peerList.filter((p) => this.watchers[p.connId]).map((p) => p.sendScreen(stream, options)),
     )
+  }
+
+  /** Qualidade, prioridade ou codec mudaram no meio da transmissão: aplica sem reiniciar. */
+  async updateShare() {
+    const stream = this.localScreen
+    if (!stream) return
+    const [video] = stream.getVideoTracks()
+    const { width, height } = PRESETS[settings.screenPreset]
+    video.contentHint = settings.screenMode === 'motion' ? 'motion' : 'detail'
+    try {
+      await video.applyConstraints({ width: { max: width }, height: { max: height }, frameRate: { ideal: 60, max: 60 } })
+    } catch {
+      // a fonte não aceita: fica no tamanho atual
+    }
+    const options = this.videoOptions()
+    await Promise.all(this.peerList.filter((p) => this.watchers[p.connId]).map((p) => p.updateVideo(options)))
   }
 
   stopShare(notify = true) {
