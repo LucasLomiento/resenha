@@ -100,6 +100,19 @@
           "to": "venmic-x64.node"
         }
       ]
+    },
+    "pacman": {
+      "depends": [
+        "gtk3",
+        "nss",
+        "alsa-lib",
+        "libnotify",
+        "libsecret",
+        "libxss",
+        "libxtst",
+        "xdg-utils",
+        "pipewire"
+      ]
     }
   }
 }
