@@ -1,5 +1,7 @@
 # Resenha
 
+> **Só quer instalar e usar?** Baixe em [Releases](https://github.com/LucasLomiento/resenha/releases/latest) e siga o [INSTALAR.md](INSTALAR.md).
+
 Um "Discord" pequeno pro grupo: chat de texto com imagens e arquivos, call de voz e compartilhamento de tela até 1440p a 60 fps com áudio. O áudio da tela **não leva junto a voz da call**. Voz e tela vão direto entre os PCs (P2P), e o Cloudflare só cuida do login, do chat e de apresentar as pessoas umas às outras.
 
 ## Como funciona
