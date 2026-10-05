@@ -1,0 +1,105 @@
+{
+  "name": "resenha",
+  "productName": "Resenha",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Voz, chat e compartilhamento de tela pro grupo",
+  "author": "Lucas Reis",
+  "homepage": "https://github.com/LucasLomiento",
+  "main": "out/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "start": "electron-vite preview",
+    "typecheck": "tsc --noEmit -p tsconfig.node.json && svelte-check --tsconfig tsconfig.web.json --threshold error",
+    "dist:arch": "electron-vite build && electron-builder --linux pacman",
+    "dist:appimage": "electron-vite build && electron-builder --linux AppImage",
+    "dist:win": "electron-vite build && electron-builder --win nsis",
+    "e2e": "electron-vite build && node test/e2e.mjs",
+    "dist:win:zip": "electron-vite build && electron-builder --win zip"
+  },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "6.2.4",
+    "@tsconfig/svelte": "5.0.8",
+    "@types/node": "^24.19.1",
+    "@vencord/venmic": "7.2.3",
+    "electron": "44.5.1",
+    "electron-builder": "26.15.3",
+    "electron-vite": "5.0.0",
+    "playwright-core": "1.63.0",
+    "svelte": "5.57.1",
+    "svelte-check": "4.7.6",
+    "typescript": "6.0.3",
+    "vite": "7.3.6"
+  },
+  "build": {
+    "appId": "com.lucasreis.resenha",
+    "productName": "Resenha",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "out/**/*",
+      "build/icon.png",
+      "package.json"
+    ],
+    "npmRebuild": false,
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.ico",
+      "artifactName": "Resenha-${version}-win-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Resenha",
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "installerHeaderIcon": "build/icon.ico",
+      "artifactName": "Resenha-Setup-${version}.${ext}"
+    },
+    "linux": {
+      "target": [
+        {
+          "target": "pacman",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.png",
+      "category": "Network",
+      "synopsis": "Voz, chat e tela pro grupo",
+      "maintainer": "Lucas Reis <lucasreistuff@gmail.com>",
+      "artifactName": "Resenha-${version}-${arch}.${ext}",
+      "desktop": {
+        "entry": {
+          "StartupWMClass": "Resenha"
+        }
+      },
+      "extraResources": [
+        {
+          "from": "../node_modules/@vencord/venmic/prebuilds/venmic-addon-linux-x64/node-napi-v7.node",
+          "to": "venmic-x64.node"
+        }
+      ]
+    }
+  }
+}

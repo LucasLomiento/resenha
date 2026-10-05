@@ -1,0 +1,358 @@
+import type { ClientMessage, SignalData, VoiceMember } from '../../../../shared/protocol'
+import type { PlatformInfo } from '../../preload/api'
+import type { Api } from './api'
+import { captureScreen, getMicTrack, LevelMeter, stopCapture } from './media'
+import { Peer, type LinkStats, type VideoStats } from './peer'
+import { PRESETS, settings } from './settings.svelte'
+
+interface CallDeps {
+  send(msg: ClientMessage): boolean
+  connId(): string | null
+  members(): VoiceMember[]
+  api(): Api | null
+  platform(): PlatformInfo | null
+  toast(text: string, kind?: 'error' | 'info'): void
+}
+
+const SPEAKING_LOCAL = 0.02
+const SPEAKING_REMOTE = 0.03
+const ICE_TTL = 6 * 60 * 60 * 1000
+
+/** A call em que esta instância está: microfone, conexões P2P e telas. */
+export class Call {
+  channelId = $state<string | null>(null)
+  muted = $state(false)
+  deafened = $state(false)
+  sharing = $state(false)
+  /** connId de quem estou assistindo (pode ser eu mesmo = prévia local). */
+  watching = $state<string | null>(null)
+  /** connId -> falando agora */
+  speaking = $state<Record<string, boolean>>({})
+  links = $state<Record<string, LinkStats>>({})
+  screens = $state.raw<Record<string, MediaStream>>({})
+  localScreen = $state.raw<MediaStream | null>(null)
+  joining = $state(false)
+
+  private peers = new Map<string, Peer>()
+  /** Container estável do microfone: o id dele é o que os outros usam pra reconhecer a faixa. */
+  private micStream = new MediaStream()
+  private micTrack: MediaStreamTrack | null = null
+  private meter: LevelMeter | null = null
+  private ice: { servers: RTCIceServer[]; at: number } | null = null
+  private ticker: ReturnType<typeof setInterval> | null = null
+  private statsTicker: ReturnType<typeof setInterval> | null = null
+  private mutedBeforeDeafen = false
+
+  constructor(private deps: CallDeps) {}
+
+  get peerList(): Peer[] {
+    return [...this.peers.values()]
+  }
+
+  // ---------- Entrar e sair ----------
+
+  async join(channelId: string) {
+    if (this.channelId === channelId || this.joining) return
+    if (this.channelId) this.leave()
+    this.joining = true
+    try {
+      const api = this.deps.api()
+      if (!api) return
+      if (!this.ice || Date.now() - this.ice.at > ICE_TTL) {
+        this.ice = { servers: await api.iceServers(), at: Date.now() }
+      }
+      if (!this.micTrack) await this.openMic()
+      this.channelId = channelId
+      this.deps.send({ t: 'voice.join', channelId, muted: this.muted, deafened: this.deafened })
+      this.startTickers()
+    } catch (err) {
+      console.error(err)
+      this.deps.toast(
+        (err as Error).name === 'NotAllowedError' || (err as Error).name === 'NotFoundError'
+          ? 'Sem acesso ao microfone.'
+          : `Não deu pra entrar na call: ${(err as Error).message}`,
+      )
+    } finally {
+      this.joining = false
+    }
+  }
+
+  /** Depois de reconectar o WebSocket a conexão é outra: refaz tudo na mesma call. */
+  rejoin() {
+    if (!this.channelId) return
+    for (const connId of [...this.peers.keys()]) this.removePeer(connId)
+    this.deps.send({ t: 'voice.join', channelId: this.channelId, muted: this.muted, deafened: this.deafened })
+    if (this.sharing) this.sendState()
+  }
+
+  leave() {
+    if (!this.channelId) return
+    this.deps.send({ t: 'voice.leave' })
+    for (const connId of [...this.peers.keys()]) this.removePeer(connId)
+    this.stopShare(false)
+    this.watching = null
+    this.channelId = null
+    this.meter?.close()
+    this.meter = null
+    this.micTrack?.stop()
+    if (this.micTrack) this.micStream.removeTrack(this.micTrack)
+    this.micTrack = null
+    this.speaking = {}
+    this.links = {}
+    if (this.ticker) clearInterval(this.ticker)
+    if (this.statsTicker) clearInterval(this.statsTicker)
+    this.ticker = this.statsTicker = null
+  }
+
+  private async openMic() {
+    const track = await getMicTrack()
+    track.enabled = !this.muted
+    if (this.micTrack) {
+      this.micStream.removeTrack(this.micTrack)
+      this.micTrack.stop()
+    }
+    this.micStream.addTrack(track)
+    this.micTrack = track
+    this.meter?.close()
+    this.meter = new LevelMeter(track)
+    await Promise.all(this.peerList.map((p) => p.replaceMic(track)))
+  }
+
+  /** Reabre o microfone com o dispositivo/processamento atual das configurações. */
+  async reloadMic() {
+    if (!this.channelId) return
+    try {
+      await this.openMic()
+    } catch (err) {
+      this.deps.toast(`Não deu pra trocar o microfone: ${(err as Error).message}`)
+    }
+  }
+
+  applyOutput() {
+    for (const peer of this.peers.values()) peer.setOutput(settings.outputDevice)
+  }
+
+  applyVolumes() {
+    for (const peer of this.peers.values()) peer.setVolume(settings.userVolumes[peer.userId] ?? 1)
+  }
+
+  // ---------- Mutar / ensurdecer ----------
+
+  toggleMute() {
+    if (this.deafened) {
+      // Igual no Discord: desmutar também tira o ensurdecer.
+      this.deafened = false
+      this.muted = false
+    } else {
+      this.muted = !this.muted
+    }
+    this.applyMuteState()
+  }
+
+  toggleDeafen() {
+    if (this.deafened) {
+      this.deafened = false
+      this.muted = this.mutedBeforeDeafen
+    } else {
+      this.mutedBeforeDeafen = this.muted
+      this.deafened = true
+      this.muted = true
+    }
+    this.applyMuteState()
+  }
+
+  private applyMuteState() {
+    if (this.micTrack) this.micTrack.enabled = !this.muted
+    for (const peer of this.peers.values()) peer.setDeafened(this.deafened)
+    this.sendState()
+  }
+
+  private sendState() {
+    if (!this.channelId) return
+    this.deps.send({ t: 'voice.update', muted: this.muted, deafened: this.deafened, sharing: this.sharing })
+  }
+
+  // ---------- Membros e sinalização ----------
+
+  /** Chamado a cada voice.state: abre conexão com quem entrou, fecha com quem saiu. */
+  sync(members: VoiceMember[]) {
+    const me = this.deps.connId()
+    if (!this.channelId || !me) return
+    const others = members.filter((m) => m.channelId === this.channelId && m.connId !== me)
+    for (const member of others) if (!this.peers.has(member.connId)) this.createPeer(member)
+    for (const connId of [...this.peers.keys()]) {
+      if (!others.some((m) => m.connId === connId)) this.removePeer(connId)
+    }
+    // Quem eu assistia parou de compartilhar (ele mesmo já parou de mandar).
+    const watched = this.watching
+    if (watched && watched !== me && !others.find((m) => m.connId === watched)?.sharing) {
+      this.watching = null
+      this.dropScreen(watched)
+    }
+  }
+
+  signal(from: string, data: SignalData) {
+    let peer = this.peers.get(from)
+    if (!peer) {
+      const member = this.deps.members().find((m) => m.connId === from && m.channelId === this.channelId)
+      if (!member) return
+      peer = this.createPeer(member)
+    }
+    peer?.handle(data)
+  }
+
+  private createPeer(member: VoiceMember): Peer | undefined {
+    const me = this.deps.connId()
+    if (!me || !this.ice || !this.micTrack) return
+    const peer = new Peer(member.connId, member.userId, me > member.connId, this.ice.servers, this.micStream, settings.codec, {
+      signal: (data) => this.deps.send({ t: 'rtc.signal', to: member.connId, data }),
+      screen: (stream) => {
+        this.screens = { ...this.screens, [member.connId]: stream! }
+      },
+      watchRequest: (watching) => {
+        if (peer.closed) return
+        this.watchers[member.connId] = watching
+        peer.sendScreen(watching && this.localScreen ? this.localScreen : null, watching ? this.videoOptions() : null)
+      },
+    })
+    peer.setVolume(settings.userVolumes[member.userId] ?? 1)
+    peer.setDeafened(this.deafened)
+    peer.setOutput(settings.outputDevice)
+    this.peers.set(member.connId, peer)
+    return peer
+  }
+
+  private removePeer(connId: string) {
+    this.peers.get(connId)?.close()
+    this.peers.delete(connId)
+    delete this.watchers[connId]
+    this.dropScreen(connId)
+    if (connId in this.links) delete this.links[connId]
+    if (connId in this.speaking) delete this.speaking[connId]
+  }
+
+  // ---------- Compartilhar a tela ----------
+
+  /** connId -> está assistindo a minha tela */
+  private watchers: Record<string, boolean> = {}
+
+  private videoOptions() {
+    return { bitrate: PRESETS[settings.screenPreset].bitrate, codec: settings.codec, mode: settings.screenMode }
+  }
+
+  async startShare(sourceId: string | null) {
+    const platform = this.deps.platform()
+    if (!this.channelId || !platform) return
+    if (this.sharing) this.stopShare(false)
+    let capture
+    try {
+      capture = await captureScreen({
+        platform,
+        sourceId,
+        preset: settings.screenPreset,
+        mode: settings.screenMode,
+        audio: settings.screenAudio,
+      })
+    } catch (err) {
+      if ((err as Error).name !== 'NotAllowedError') this.deps.toast(`Não deu pra compartilhar: ${(err as Error).message}`)
+      return
+    }
+    if (capture.warning) this.deps.toast(capture.warning, 'info')
+
+    const { stream } = capture
+    // Parar pelo portal/sistema ou fechar a janela compartilhada encerra aqui também.
+    stream.getVideoTracks()[0].addEventListener('ended', () => {
+      if (this.localScreen === stream) this.stopShare()
+    })
+    this.localScreen = stream
+    this.sharing = true
+    this.sendState()
+    const options = this.videoOptions()
+    await Promise.all(
+      this.peerList.filter((p) => this.watchers[p.connId]).map((p) => p.sendScreen(stream, options)),
+    )
+  }
+
+  stopShare(notify = true) {
+    if (!this.localScreen) return
+    const stream = this.localScreen
+    this.localScreen = null
+    this.sharing = false
+    stopCapture(stream)
+    // Quem assistia precisa clicar de novo numa próxima transmissão.
+    this.watchers = {}
+    for (const peer of this.peers.values()) peer.sendScreen(null, null)
+    if (this.watching === this.deps.connId()) this.watching = null
+    if (notify) this.sendState()
+  }
+
+  // ---------- Assistir ----------
+
+  watch(connId: string) {
+    if (this.watching === connId) return
+    this.unwatch()
+    this.watching = connId
+    if (connId !== this.deps.connId()) this.deps.send({ t: 'rtc.signal', to: connId, data: { kind: 'watch' } })
+  }
+
+  unwatch() {
+    const current = this.watching
+    if (!current) return
+    this.watching = null
+    if (current !== this.deps.connId()) {
+      this.deps.send({ t: 'rtc.signal', to: current, data: { kind: 'unwatch' } })
+      this.dropScreen(current)
+    }
+  }
+
+  private dropScreen(connId: string) {
+    if (!(connId in this.screens)) return
+    const { [connId]: _, ...rest } = this.screens
+    this.screens = rest
+  }
+
+  /** Stream que está sendo assistido agora (remoto ou a prévia da minha tela). */
+  get watchedStream(): MediaStream | null {
+    if (!this.watching) return null
+    if (this.watching === this.deps.connId()) return this.localScreen
+    return this.screens[this.watching] ?? null
+  }
+
+  /** Estatísticas do vídeo assistido (recepção) ou de quem assiste a minha tela (envio). */
+  async videoStats(): Promise<{ inbound: VideoStats | null; outbound: { userId: string; stats: VideoStats }[] }> {
+    const me = this.deps.connId()
+    let inbound: VideoStats | null = null
+    if (this.watching && this.watching !== me) inbound = (await this.peers.get(this.watching)?.videoStats('inbound')) ?? null
+    const outbound: { userId: string; stats: VideoStats }[] = []
+    if (this.sharing) {
+      for (const peer of this.peers.values()) {
+        if (!this.watchers[peer.connId]) continue
+        const stats = await peer.videoStats('outbound')
+        if (stats) outbound.push({ userId: peer.userId, stats })
+      }
+    }
+    return { inbound, outbound }
+  }
+
+  // ---------- Indicadores ----------
+
+  private startTickers() {
+    if (this.ticker) return
+    this.ticker = setInterval(() => {
+      const me = this.deps.connId()
+      const next: Record<string, boolean> = {}
+      if (me) next[me] = !this.muted && (this.meter?.level() ?? 0) > SPEAKING_LOCAL
+      for (const peer of this.peers.values()) next[peer.connId] = !this.deafened && peer.audioLevel() > SPEAKING_REMOTE
+      for (const [key, value] of Object.entries(next)) {
+        if (this.speaking[key] !== value) this.speaking[key] = value
+      }
+    }, 100)
+    this.statsTicker = setInterval(async () => {
+      for (const peer of this.peers.values()) {
+        const stats = await peer.linkStats()
+        const prev = this.links[peer.connId]
+        if (!prev || prev.rtt !== stats.rtt || prev.route !== stats.route) this.links[peer.connId] = stats
+      }
+    }, 2000)
+  }
+}

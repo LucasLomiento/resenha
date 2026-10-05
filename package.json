@@ -1,0 +1,23 @@
+{
+  "name": "resenha",
+  "private": true,
+  "workspaces": [
+    "server",
+    "app"
+  ],
+  "scripts": {
+    "dev:server": "npm -w server run dev",
+    "dev:app": "npm -w app run dev",
+    "test": "npm -w server test",
+    "typecheck": "npm -w server run typecheck && npm -w app run typecheck",
+    "postinstall": "node node_modules/electron/install.js"
+  },
+  "allowScripts": {
+    "@vencord/venmic@7.2.3": true,
+    "esbuild@0.28.1": true,
+    "esbuild@0.25.12": true,
+    "workerd@1.20261001.1": true,
+    "electron@44.5.1": true,
+    "electron-winstaller@5.4.0": true
+  }
+}

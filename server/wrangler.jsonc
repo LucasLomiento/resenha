@@ -1,0 +1,16 @@
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "resenha",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-25",
+  "durable_objects": {
+    "bindings": [{ "name": "SPACE", "class_name": "Space" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Space"] }],
+  "r2_buckets": [{ "binding": "FILES", "bucket_name": "resenha-files" }],
+  "observability": { "enabled": true }
+  // Secrets (wrangler secret put):
+  //   FILE_SECRET         chave HMAC das URLs de arquivo
+  //   TURN_KEY_ID         chave TURN do Cloudflare Realtime (opcional)
+  //   TURN_KEY_API_TOKEN  token dessa chave (opcional)
+}
