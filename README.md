@@ -7,12 +7,13 @@ Um "Discord" pequeno pro grupo: chat de texto com imagens e arquivos, call de vo
 ```
  app (Electron, Linux/Windows)              Cloudflare
  ├─ chat, presença, sinalização ── WSS ──▶  Worker + 1 Durable Object (SQLite)
- ├─ anexos ─────────────────────── HTTPS ─▶  R2 (URLs assinadas)
+ ├─ anexos ─────────────────────── HTTPS ─▶  o mesmo Durable Object (URLs assinadas)
  └─ voz e tela ── WebRTC P2P direto ──▶ outros PCs
                   (TURN do Cloudflare só se a rede bloquear o direto)
 ```
 
-- **server/**: Worker com um único Durable Object (`Space`) criado na América do Sul. Ele guarda contas, sessões, convites, canais e mensagens no SQLite embutido, e segura os WebSockets com hibernação, então fica parado sem gastar nada quando ninguém está usando.
+- **server/**: Worker com um único Durable Object (`Space`) criado na América do Sul. Ele guarda contas, sessões, convites, canais, mensagens e anexos no SQLite embutido, e segura os WebSockets com hibernação, então fica parado sem gastar nada quando ninguém está usando.
+- **Anexos** (`server/src/files.ts`): ficam no SQLite do próprio Durable Object, em pedaços de 1 MB. São até 25 MB por arquivo e 4 GB no total, sem precisar ativar o R2 (que pede cartão). Pra trocar por Supabase Storage ou R2, basta outra classe com os mesmos métodos `put`, `read` e `delete`.
 - **app/**: Electron + Svelte. Cada pessoa da call tem uma `RTCPeerConnection` própria (`src/renderer/lib/peer.ts`, usando "perfect negotiation"). A tela só é enviada pra quem clica em **Assistir**.
 - **shared/protocol.ts**: os tipos das mensagens trocadas entre o app e o servidor.
 
@@ -49,15 +50,16 @@ No login, use `http://127.0.0.1:8787` como servidor. A primeira conta criada vir
 
 ## Colocar no ar (Cloudflare)
 
+Já está no ar em **https://resenha.lucaslomiento.workers.dev**. Pra refazer do zero em outra conta:
+
 ```bash
 cd server
 npx wrangler login                                   # abre o navegador
-npx wrangler r2 bucket create resenha-files
-openssl rand -base64 32 | npx wrangler secret put FILE_SECRET
 npx wrangler deploy                                  # mostra a URL *.workers.dev
+openssl rand -base64 32 | tr -d '\n' | npx wrangler secret put FILE_SECRET
 ```
 
-**TURN (recomendado).** É o relay de reserva pra quando a rede de alguém bloqueia a conexão direta, o que é comum com CGNAT. Pra ativar:
+**TURN (opcional).** É o relay de reserva pra quando a rede de alguém bloqueia a conexão direta, o que é comum com CGNAT. Pra ativar:
 
 1. No painel do Cloudflare, vá em **Realtime → TURN Server** e crie uma chave.
 2. Rode:
@@ -67,13 +69,13 @@ npx wrangler deploy                                  # mostra a URL *.workers.de
    npx wrangler secret put TURN_KEY_API_TOKEN
    ```
 
-Sem essas duas variáveis o app usa só STUN e tenta sempre a conexão direta. O TURN e o SFU dividem 1000 GB grátis por mês. Como aqui o TURN só entra quando o direto falha, na prática fica de graça.
+Sem essas duas variáveis o app usa só STUN e tenta sempre a conexão direta. O TURN tem 1000 GB grátis por mês, e como aqui ele só entra quando o direto falha, na prática fica de graça.
 
 ## Gerar o app
 
 ```bash
 cd app
-VITE_DEFAULT_SERVER=https://resenha.SEU-SUBDOMINIO.workers.dev npm run dist:arch     # .pacman (Arch/Omarchy)
+VITE_DEFAULT_SERVER=https://resenha.lucaslomiento.workers.dev npm run dist:arch      # .pacman (Arch/Omarchy)
 VITE_DEFAULT_SERVER=... npm run dist:appimage                                        # AppImage (outras distros)
 VITE_DEFAULT_SERVER=... npm run dist:win:zip                                         # Windows: zip, extrair e abrir Resenha.exe
 VITE_DEFAULT_SERVER=... npm run dist:win                                             # Windows: instalador NSIS (no Linux precisa do wine)

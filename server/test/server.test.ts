@@ -224,6 +224,71 @@ describe('chat', () => {
   })
 })
 
+describe('anexos no próprio servidor', () => {
+  async function upload(token: string, body: Uint8Array | string, name: string, type = 'application/octet-stream') {
+    return api('/api/files', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': type, 'X-File-Name': encodeURIComponent(name) },
+      body,
+    })
+  }
+
+  it('arquivo de vários pedaços volta igual, com Range, e some ao apagar a mensagem', async () => {
+    const { admin, a, b, text } = await setup()
+    const data = new Uint8Array(2.5 * 1024 * 1024)
+    for (let i = 0; i < data.length; i++) data[i] = (i * 31 + 7) % 251
+    const up = await upload(admin.token, data, 'clipe.bin')
+    expect(up.status).toBe(200)
+    expect(up.body.size).toBe(data.length)
+
+    const whole = await SELF.fetch(BASE + up.body.url)
+    expect(whole.status).toBe(200)
+    expect(new Uint8Array(await whole.arrayBuffer())).toEqual(data)
+
+    // Um pedaço que atravessa a fronteira de 1 MB entre dois blocos.
+    const start = 1024 * 1024 - 10
+    const part = await SELF.fetch(BASE + up.body.url, { headers: { Range: `bytes=${start}-${start + 19}` } })
+    expect(part.status).toBe(206)
+    expect(part.headers.get('Content-Range')).toBe(`bytes ${start}-${start + 19}/${data.length}`)
+    expect(new Uint8Array(await part.arrayBuffer())).toEqual(data.slice(start, start + 20))
+
+    a.send({ t: 'chat.send', channelId: text.id, content: 'clipe', attachmentIds: [up.body.id], nonce: 'c' })
+    const { message } = await b.next('chat.message')
+    a.send({ t: 'chat.delete', id: message.id })
+    await b.next('chat.deleted')
+    expect((await SELF.fetch(BASE + up.body.url)).status).toBe(404)
+    const stub = env.SPACE.get(env.SPACE.idFromName('main'))
+    const left = await runInDurableObject(stub, (_, state) => state.storage.sql.exec('SELECT COUNT(*) AS n FROM file_chunks').one().n)
+    expect(left).toBe(0)
+  })
+
+  it('recusa arquivo acima do limite e envio sem login', async () => {
+    const { admin } = await setup()
+    const big = await api('/api/files', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${admin.token}`, 'Content-Length': String(30 * 1024 * 1024) },
+      body: 'x',
+    })
+    expect(big.status).toBe(413)
+    expect((await upload('token-falso', 'oi', 'a.txt')).status).toBe(401)
+  })
+
+  it('não aceita alguém se passar por outro usuário pelo cabeçalho interno', async () => {
+    const { friend } = await setup()
+    const res = await api('/api/files', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${friend.token}`, 'X-Resenha-User': 'outro-id', 'X-File-Name': 'a.txt' },
+      body: 'oi',
+    })
+    expect(res.status).toBe(200)
+    const stub = env.SPACE.get(env.SPACE.idFromName('main'))
+    const uploader = await runInDurableObject(stub, (_, state) =>
+      state.storage.sql.exec('SELECT uploader_id FROM attachments WHERE id = ?', res.body.id).one().uploader_id,
+    )
+    expect(uploader).toBe(friend.user.id)
+  })
+})
+
 describe('voz e sinalização', () => {
   it('entrar na call avisa todo mundo e a sinalização só vai pro destino', async () => {
     const { admin, a, b, connA, connB, voice } = await setup()

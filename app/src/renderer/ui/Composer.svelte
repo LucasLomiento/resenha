@@ -42,7 +42,7 @@
     if (!api) return
     for (const file of files) {
       if (file.size > MAX_UPLOAD_BYTES) {
-        store.toast(`${file.name} passa de 100 MB.`)
+        store.toast(`${file.name} passa de ${formatSize(MAX_UPLOAD_BYTES)}.`)
         continue
       }
       const key = ++uploadKey

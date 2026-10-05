@@ -7,7 +7,6 @@
     "bindings": [{ "name": "SPACE", "class_name": "Space" }]
   },
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Space"] }],
-  "r2_buckets": [{ "binding": "FILES", "bucket_name": "resenha-files" }],
   "observability": { "enabled": true }
   // Secrets (wrangler secret put):
   //   FILE_SECRET         chave HMAC das URLs de arquivo

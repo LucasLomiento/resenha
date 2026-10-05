@@ -2,6 +2,7 @@ import { DurableObject } from 'cloudflare:workers'
 import {
   HISTORY_PAGE,
   MAX_MESSAGE_LENGTH,
+  MAX_UPLOAD_BYTES,
   type Attachment,
   type AuthResponse,
   type Channel,
@@ -14,6 +15,7 @@ import {
   type VoiceMember,
 } from '../../shared/protocol'
 import { hashPassword, hashToken, randomToken, signFileUrl, verifyPassword } from './auth'
+import { FileTooLarge, SqlFileStore } from './files'
 
 /** Estado de cada WebSocket, guardado no próprio socket pra sobreviver à hibernação. */
 interface ConnState {
@@ -33,6 +35,11 @@ const ORPHAN_TTL = 24 * 60 * 60 * 1000
 /** O app manda "ping" a cada 20 s; sem resposta por mais que isso, a conexão morreu. */
 const DEAD_AFTER = 75_000
 const SWEEP_EVERY = 60_000
+/** Teto do espaço de anexos, com folga dentro do armazenamento do plano grátis. */
+const FILES_LIMIT = 4 * 1024 ** 3
+
+/** Cabeçalho que só o Worker põe, depois de conferir o login. */
+export const USER_HEADER = 'X-Resenha-User'
 
 interface UserRow {
   id: string
@@ -77,12 +84,14 @@ const toUser = (row: UserRow): User => ({ id: row.id, name: row.name, admin: row
  */
 export class Space extends DurableObject<Env> {
   private sql: SqlStorage
+  private files: SqlFileStore
   private lastIdTime = 0
   private loginFailures = new Map<string, { count: number; until: number }>()
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env)
     this.sql = ctx.storage.sql
+    this.files = new SqlFileStore(this.sql)
     ctx.blockConcurrencyWhile(async () => this.migrate())
     ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair('ping', 'pong'))
   }
@@ -246,30 +255,96 @@ export class Space extends DurableObject<Env> {
 
   // ---------- Anexos ----------
 
-  async addAttachment(
-    uploaderId: string,
-    meta: { id: string; name: string; size: number; type: string },
-  ): Promise<Attachment> {
+  private async uploadFile(request: Request): Promise<Response> {
+    const uploaderId = request.headers.get(USER_HEADER)
+    if (!uploaderId) return Response.json({ error: 'Sessão inválida.' }, { status: 401 })
+    const declared = Number(request.headers.get('Content-Length'))
+    if (!declared || !request.body) return Response.json({ error: 'Faltou o tamanho do arquivo.' }, { status: 411 })
+    if (declared > MAX_UPLOAD_BYTES) return Response.json({ error: 'Arquivo maior que 25 MB.' }, { status: 413 })
+    const used = this.sql.exec<{ n: number }>('SELECT COALESCE(SUM(size), 0) AS n FROM attachments').one().n
+    if (used + declared > FILES_LIMIT) {
+      return Response.json({ error: 'O espaço de anexos do servidor está cheio.' }, { status: 507 })
+    }
+
+    let name = 'arquivo'
+    try {
+      name = decodeURIComponent(request.headers.get('X-File-Name') ?? '') || name
+    } catch {
+      // nome mal codificado, fica o padrão
+    }
+    name = name.replace(/[\u0000-\u001f\u007f/\\]/g, '_').slice(0, 200)
+    const type = (request.headers.get('Content-Type') || 'application/octet-stream').slice(0, 100)
+    const id = randomToken(12)
+
+    let size: number
+    try {
+      size = await this.files.put(id, request.body, MAX_UPLOAD_BYTES)
+    } catch (err) {
+      if (err instanceof FileTooLarge) return Response.json({ error: 'Arquivo maior que 25 MB.' }, { status: 413 })
+      throw err
+    }
     this.sql.exec(
       'INSERT INTO attachments (id, message_id, uploader_id, name, size, type, created_at) VALUES (?, NULL, ?, ?, ?, ?, ?)',
-      meta.id,
+      id,
       uploaderId,
-      meta.name,
-      meta.size,
-      meta.type,
+      name,
+      size,
+      type,
       Date.now(),
     )
-    return { ...meta, url: await signFileUrl(this.env.FILE_SECRET, meta.id, meta.name) }
+    const attachment: Attachment = { id, name, size, type, url: await signFileUrl(this.env.FILE_SECRET, id, name) }
+    return Response.json(attachment)
   }
 
-  private async deleteFiles(ids: string[]) {
-    if (ids.length === 0) return
-    await this.env.FILES.delete(ids.map((id) => `files/${id}`))
+  /** Serve um anexo (a assinatura da URL já foi conferida no Worker), com suporte a Range pra vídeo. */
+  private serveFile(request: Request, id: string): Response {
+    const row = this.sql.exec<AttachmentRow>('SELECT * FROM attachments WHERE id = ?', id).toArray()[0]
+    if (!row) return Response.json({ error: 'Arquivo não existe mais.' }, { status: 404 })
+
+    const headers = new Headers({
+      'Content-Type': row.type,
+      'Content-Disposition': `inline; filename*=UTF-8''${encodeURIComponent(row.name)}`,
+      'Cache-Control': 'private, max-age=604800, immutable',
+      'Accept-Ranges': 'bytes',
+      ETag: `"${row.id}"`,
+      // Arquivo enviado por usuário nunca roda como página do nosso domínio.
+      'Content-Security-Policy': 'sandbox',
+      'X-Content-Type-Options': 'nosniff',
+    })
+    if (request.headers.get('If-None-Match') === `"${row.id}"`) return new Response(null, { status: 304, headers })
+
+    let start = 0
+    let end = row.size - 1
+    const range = request.headers.get('Range')?.match(/^bytes=(\d*)-(\d*)$/)
+    if (range && row.size > 0) {
+      if (range[1]) {
+        start = Number(range[1])
+        if (range[2]) end = Math.min(Number(range[2]), row.size - 1)
+      } else if (range[2]) {
+        start = Math.max(0, row.size - Number(range[2]))
+      }
+      if (start > end || start >= row.size) {
+        headers.set('Content-Range', `bytes */${row.size}`)
+        return new Response(null, { status: 416, headers })
+      }
+      headers.set('Content-Range', `bytes ${start}-${end}/${row.size}`)
+    }
+    headers.set('Content-Length', String(end - start + 1))
+    if (row.size === 0) return new Response(null, { headers })
+    return new Response(this.files.read(row.id, start, end), { status: range ? 206 : 200, headers })
+  }
+
+  private deleteFiles(ids: string[]) {
+    this.files.delete(ids)
   }
 
   // ---------- WebSocket ----------
 
   async fetch(request: Request): Promise<Response> {
+    const { pathname } = new URL(request.url)
+    if (pathname === '/api/files' && request.method === 'POST') return this.uploadFile(request)
+    const file = pathname.match(/^\/api\/files\/([\w-]+)\//)
+    if (file && request.method === 'GET') return this.serveFile(request, file[1])
     if (request.headers.get('Upgrade') !== 'websocket') return new Response('Esperava WebSocket', { status: 426 })
 
     const [client, server] = Object.values(new WebSocketPair())
@@ -359,7 +434,7 @@ export class Space extends DurableObject<Env> {
       .map((row) => row.id)
     if (orphans.length > 0) {
       this.sql.exec(`DELETE FROM attachments WHERE id IN (${orphans.map(() => '?').join(',')})`, ...orphans)
-      await this.deleteFiles(orphans)
+      this.deleteFiles(orphans)
     }
 
     if (this.sockets().length > 0) await this.ctx.storage.setAlarm(now + SWEEP_EVERY)
