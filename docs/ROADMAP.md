@@ -12,37 +12,47 @@ Decisões (05/10/2026):
 - [x] Opção de esconder o texto das mensagens nas notificações
 - [x] CSP restrita ao servidor do app; IPC só aceita a própria janela
 
-## 0.6 — Contas de verdade (D1)
-- [ ] Banco global (D1) pra contas, sessões, servidores, convites, amizades
-- [ ] Nome de usuário (único) + nome de exibição + foto de perfil + "sobre mim"
-- [ ] Aparelhos conectados, sair de um ou de todos, expiração por inatividade
-- [ ] Trocar senha (derruba os outros aparelhos), excluir conta
-- [ ] Limite de tentativas de login persistente (por IP e por usuário), sem revelar se o usuário existe
-- [ ] Cadastro: só convite (padrão) ou aberto com Turnstile; painel do dono da plataforma
+## 1.0 — Tudo junto numa versão só
 
-## 0.7 — Vários servidores
-- [ ] Um Durable Object por servidor; o servidor atual vira o primeiro, sem perder nada
-- [ ] Criar servidor, ícone, convites com validade e limite de usos, sair, excluir, transferir
-- [ ] Barra de servidores, início com amigos e mensagens privadas
-- [ ] Amizades (pedido, aceitar, remover) e bloqueio
-- [ ] Status: online, ausente (automático), não perturbe, invisível, status personalizado
+As etapas 0.6 a 0.9 saíram juntas na 1.0 (uma atualização em vez de quatro).
 
-## 0.8 — Cargos e moderação
-- [ ] Cargos com cor, posição e permissões; canais privados por cargo
-- [ ] Categorias e ordem dos canais
-- [ ] Lista de membros agrupada por cargo
-- [ ] Expulsar, banir, desbanir; mutar, ensurdecer, desconectar e mover na call
-- [ ] Apelido por servidor; registro de auditoria
+### Contas
+- [x] Cadastro central (um Durable Object, não D1: o hash da senha estoura os 10 ms de CPU de um Worker no plano grátis) pra contas, sessões, servidores, convites, amizades
+- [x] Nome de usuário (único) + nome de exibição + foto de perfil + "sobre mim" + cor do perfil
+- [x] Aparelhos conectados, sair de um ou de todos, expiração por inatividade
+- [x] Trocar senha (derruba os outros aparelhos), excluir conta
+- [x] Limite de tentativas persistente (por IP e por conta), sem revelar se o usuário existe
+- [x] Cadastro: só convite (padrão) ou aberto com Turnstile; painel do dono da plataforma
 
-## 0.9 — Mensagens completas
-- [ ] Markdown completo, @menções (usuário, cargo, @everyone) com notificação, #canais
-- [ ] Responder, reações com emoji, fixar, buscar
-- [ ] Prévia de links feita pelo servidor (o IP de quem vê não vaza pros sites)
-- [ ] Não lidas persistentes, contadores de menção, configuração de notificação por servidor/canal
-- [ ] Ctrl+K pra trocar de canal, ↑ pra editar a última mensagem
+### Vários servidores
+- [x] Um Durable Object por servidor; o grupo atual vira o primeiro, sem perder nada (nem a sessão de ninguém)
+- [x] Criar servidor, ícone, convites com validade e limite de usos, sair, excluir, transferir
+- [x] Trilho de servidores, início com amigos e mensagens privadas
+- [x] Amizades (pedido, aceitar, remover) e bloqueio
+- [x] Status: online, ausente (automático), não perturbe, invisível, status personalizado
 
-## 1.0 — Produção
-- [ ] Modo privado (tudo via TURN, esconde o IP até dos amigos) — precisa da chave TURN
-- [ ] Ligação de voz/vídeo direto na mensagem privada
-- [ ] Exportar meus dados (LGPD), política de privacidade e termos de uso
-- [ ] Revisão de segurança independente, documentação de operação (backup, logs, limites)
+### Cargos e moderação
+- [x] Cargos com cor, posição e permissões; canais privados por cargo (permissões próprias de cada canal, sincronizadas com a categoria)
+- [x] Categorias e ordem dos canais
+- [x] Lista de membros agrupada por cargo
+- [x] Expulsar, banir, desbanir, castigar; mutar, ensurdecer, desconectar e mover na call
+- [x] Apelido por servidor; registro de auditoria
+
+### Mensagens completas
+- [x] Formatação no estilo do Discord, @menções (pessoa, cargo, @everyone) com notificação, #canais
+- [x] Responder, reações com emoji, fixar, buscar (sem acento)
+- [x] Prévia de links feita pelo servidor (o IP de quem vê não vaza pros sites)
+- [x] Não lidas persistentes, contadores de menção, notificação por servidor/canal
+- [x] Ctrl+K pra trocar de canal, ↑ pra editar a última mensagem
+
+### Produção
+- [x] Ligação de voz/vídeo direto na mensagem privada
+- [x] Exportar meus dados (LGPD), política de privacidade e termos de uso
+- [x] Revisão de segurança independente (15 problemas achados e corrigidos, com teste pra cada um)
+- [x] Convite por link (`/i/<código>` abre o app pelo `resenha://`)
+
+## Depois da 1.0
+- [ ] Modo privado (tudo via TURN, esconde o IP até dos amigos): precisa da chave TURN
+- [ ] Arrastar canais e servidores pra reordenar
+- [ ] Emojis próprios de cada servidor
+- [ ] Documentação de operação (backup, logs, limites do plano grátis)
