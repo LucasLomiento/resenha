@@ -11,6 +11,7 @@ import {
 import type { DesktopPrefs, PlatformInfo, SavedSession, ShortcutAction, UpdateState } from '../../preload/api'
 import { Api } from './api'
 import { Call } from './call.svelte'
+import { settings } from './settings.svelte'
 import { playSound } from './sounds'
 import { ui } from './ui.svelte'
 import { Connection, type ConnectionStatus } from './ws'
@@ -95,7 +96,7 @@ class Store {
   async start(session: SavedSession) {
     await window.resenha.session.set(session)
     this.api = new Api(session.server, session.token)
-    this.conn = new Connection(() => this.api!.wsUrl(), {
+    this.conn = new Connection(() => this.api!.wsUrl(), () => ({ t: 'auth', token: this.api!.token ?? '' }), {
       message: (msg) => this.handle(msg),
       status: (status) => (this.status = status),
       unauthorized: () => {
@@ -287,8 +288,9 @@ class Store {
     const isDm = !!dmMembers(message.channelId)
     const channel = this.channels.find((c) => c.id === message.channelId)?.name ?? ''
     const body = message.content || (message.attachments.length ? `📎 ${message.attachments[0].name}` : '')
+    // Com "esconder o texto", a notificação só diz que chegou mensagem (bom pra tela compartilhada ou PC dos outros).
     const notification = new Notification(isDm ? `${author} (mensagem privada)` : `${author} em #${channel}`, {
-      body: body.slice(0, 200),
+      body: settings.notifyContent ? body.slice(0, 200) : 'Nova mensagem',
       silent: true,
     })
     notification.onclick = () => this.openChannel(message.channelId)

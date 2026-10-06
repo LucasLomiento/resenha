@@ -107,6 +107,8 @@ export type SignalData =
 // ---------- WebSocket: app -> servidor ----------
 
 export type ClientMessage =
+  /** Primeira mensagem da conexão: o token vai aqui, nunca na URL (URL vai parar em log). */
+  | { t: 'auth'; token: string }
   | { t: 'chat.send'; channelId: string; content: string; attachmentIds: string[]; nonce: string }
   | { t: 'chat.edit'; id: string; content: string }
   | { t: 'chat.delete'; id: string }

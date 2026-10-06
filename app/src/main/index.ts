@@ -3,6 +3,8 @@ import {
   BrowserWindow,
   desktopCapturer,
   ipcMain,
+  type IpcMainEvent,
+  type IpcMainInvokeEvent,
   Menu,
   safeStorage,
   session,
@@ -15,7 +17,14 @@ import { dirname, join } from 'node:path'
 import type { CallState, CaptureSource, DesktopPrefs, PlatformInfo, SavedSession, ShortcutAction } from '../preload/api'
 import { appIcon, hasTray, registerShortcuts, setAutostart, setTray, showCallState } from './desktop'
 import { isHyprland, loadPrefs, savePrefs } from './prefs'
-import { screenAudioAvailable, startScreenAudio, stopScreenAudio, unmuteScreenAudio } from './screen-audio-linux'
+import {
+  listPlayingApps,
+  screenAudioAvailable,
+  startScreenAudio,
+  stopScreenAudio,
+  unmuteScreenAudio,
+  type ScreenAudioOptions,
+} from './screen-audio-linux'
 import { checkForUpdates, downloadUpdate, installUpdate, setupUpdater, updateState } from './updater'
 
 // RESENHA_PROFILE=b roda uma segunda instância com outra conta no mesmo PC.
@@ -46,6 +55,12 @@ app.commandLine.appendSwitch(
 // No Wayland os atalhos globais passam pelo portal do desktop (KDE, GNOME, Hyprland).
 if (isLinux) app.commandLine.appendSwitch('enable-features', 'WebRTCPipeWireCapturer,GlobalShortcutsPortal')
 if (isWindows) app.setAppUserModelId('com.lucasreis.resenha')
+// Login salvo criptografado pelo chaveiro do sistema. KDE e GNOME o Chromium acha
+// sozinho; nos outros (Hyprland, Sway...) ele cairia em texto puro, então aponta
+// pro Secret Service (gnome-keyring, KeePassXC...).
+if (isLinux && !/kde|gnome|unity|xfce|cinnamon|mate|deepin/i.test(process.env.XDG_CURRENT_DESKTOP ?? '')) {
+  app.commandLine.appendSwitch('password-store', 'gnome-libsecret')
+}
 
 const ACTIONS: ShortcutAction[] = ['toggle-mute', 'toggle-deafen', 'toggle-share', 'leave-call', 'show-window']
 
@@ -100,6 +115,7 @@ function createWindow() {
     },
   })
 
+  win.webContents.on('will-attach-webview', (event) => event.preventDefault())
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https?:\/\//.test(url)) shell.openExternal(url)
     return { action: 'deny' }
@@ -140,6 +156,29 @@ function createWindow() {
   else win.loadFile(join(__dirname, '../renderer/index.html'))
 }
 
+// ---------- IPC: só a janela do próprio app fala com o processo principal ----------
+
+function trusted(event: IpcMainEvent | IpcMainInvokeEvent): boolean {
+  const url = event.senderFrame?.url ?? ''
+  const dev = process.env.ELECTRON_RENDERER_URL
+  return !!win && event.sender === win.webContents && (url.startsWith('file://') || (!!dev && url.startsWith(dev)))
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function handle(channel: string, fn: (event: IpcMainInvokeEvent, ...args: any[]) => unknown) {
+  ipcMain.handle(channel, (event, ...args) => {
+    if (!trusted(event)) throw new Error('Origem não autorizada')
+    return fn(event, ...args)
+  })
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function listen(channel: string, fn: (event: IpcMainEvent, ...args: any[]) => void) {
+  ipcMain.on(channel, (event, ...args) => {
+    if (trusted(event)) fn(event, ...args)
+  })
+}
+
 // ---------- Compartilhamento de tela ----------
 
 let pendingShare: { sourceId: string | null; audio: boolean } | null = null
@@ -167,7 +206,7 @@ function setupDisplayMedia() {
   })
 }
 
-ipcMain.handle('share:sources', async (): Promise<CaptureSource[]> => {
+handle('share:sources', async (): Promise<CaptureSource[]> => {
   const sources = await desktopCapturer.getSources({
     types: ['screen', 'window'],
     thumbnailSize: { width: 384, height: 216 },
@@ -180,26 +219,27 @@ ipcMain.handle('share:sources', async (): Promise<CaptureSource[]> => {
   }))
 })
 
-ipcMain.handle('share:select', (_event, choice: { sourceId: string | null; audio: boolean }) => {
+handle('share:select', (_event, choice: { sourceId: string | null; audio: boolean }) => {
   pendingShare = choice
 })
 
-ipcMain.handle('screen-audio:start', () => startScreenAudio())
-ipcMain.handle('screen-audio:unmute', () => unmuteScreenAudio())
-ipcMain.handle('screen-audio:stop', () => stopScreenAudio())
+handle('screen-audio:apps', () => listPlayingApps())
+handle('screen-audio:start', (_event, options: ScreenAudioOptions) => startScreenAudio(options))
+handle('screen-audio:unmute', () => unmuteScreenAudio())
+handle('screen-audio:stop', () => stopScreenAudio())
 
-ipcMain.handle('platform:info', (): PlatformInfo => {
+handle('platform:info', (): PlatformInfo => {
   let screenAudio: PlatformInfo['screenAudio'] = 'none'
   if (isLinux && screenAudioAvailable()) screenAudio = 'venmic'
   else if (isWindows) screenAudio = windowsExcludesSelf ? 'exclude-self' : 'loopback-all'
   return { platform: process.platform, portalPicker, screenAudio, version: app.getVersion(), hyprland: isHyprland }
 })
 
-ipcMain.on('attention', () => {
+listen('attention', () => {
   if (win && !win.isFocused()) win.flashFrame(true)
 })
 
-ipcMain.on('download', (_event, url: string) => {
+listen('download', (_event, url: string) => {
   if (/^https?:\/\//.test(url)) win?.webContents.downloadURL(url)
 })
 
@@ -212,9 +252,9 @@ function applyPrefs(previous: DesktopPrefs | null): ShortcutAction[] {
   return registerShortcuts(prefs.shortcuts, dispatch)
 }
 
-ipcMain.handle('desktop:get', () => prefs)
+handle('desktop:get', () => prefs)
 
-ipcMain.handle('desktop:set', (_event, patch: Partial<DesktopPrefs>) => {
+handle('desktop:set', (_event, patch: Partial<DesktopPrefs>) => {
   const previous = prefs
   prefs = { ...prefs, ...patch, shortcuts: { ...prefs.shortcuts, ...patch.shortcuts } }
   prefs.zoom = Math.min(2, Math.max(0.5, Number(prefs.zoom) || 1))
@@ -222,35 +262,42 @@ ipcMain.handle('desktop:set', (_event, patch: Partial<DesktopPrefs>) => {
   return { prefs, failed: applyPrefs(previous) }
 })
 
-ipcMain.on('call-state', (_event, state: CallState) => showCallState(state, win, showWindow, dispatch))
+listen('call-state', (_event, state: CallState) => showCallState(state, win, showWindow, dispatch))
 
-ipcMain.handle('update:state', () => updateState())
-ipcMain.handle('update:check', () => checkForUpdates())
-ipcMain.handle('update:download', () => downloadUpdate())
-ipcMain.handle('update:install', () => installUpdate())
+handle('update:state', () => updateState())
+handle('update:check', () => checkForUpdates())
+handle('update:download', () => downloadUpdate())
+handle('update:install', () => installUpdate())
 
 // ---------- Sessão salva (criptografada com o chaveiro do sistema quando dá) ----------
 
 const sessionFile = () => join(app.getPath('userData'), 'session.json')
 
-ipcMain.handle('session:get', (): SavedSession | null => {
+handle('session:get', (): SavedSession | null => {
   try {
     const saved = JSON.parse(readFileSync(sessionFile(), 'utf8')) as { encrypted: boolean; data: string }
     const raw = Buffer.from(saved.data, 'base64')
-    return JSON.parse(saved.encrypted ? safeStorage.decryptString(raw) : raw.toString('utf8'))
+    const session = JSON.parse(saved.encrypted ? safeStorage.decryptString(raw) : raw.toString('utf8')) as SavedSession
+    // Salvo em texto puro numa versão antiga e agora tem chaveiro: regrava criptografado.
+    if (!saved.encrypted && safeStorage.isEncryptionAvailable()) writeSession(session)
+    return session
   } catch {
     return null
   }
 })
 
-ipcMain.handle('session:set', (_event, value: SavedSession | null) => {
+handle('session:set', (_event, value: SavedSession | null) => {
+  if (!value) return rmSync(sessionFile(), { force: true })
+  writeSession(value)
+})
+
+function writeSession(value: SavedSession) {
   const file = sessionFile()
-  if (!value) return rmSync(file, { force: true })
   const encrypted = safeStorage.isEncryptionAvailable()
   const raw = encrypted ? safeStorage.encryptString(JSON.stringify(value)) : Buffer.from(JSON.stringify(value))
   mkdirSync(dirname(file), { recursive: true })
   writeFileSync(file, JSON.stringify({ encrypted, data: raw.toString('base64') }), { mode: 0o600 })
-})
+}
 
 // ---------- App ----------
 
@@ -258,8 +305,12 @@ app.whenReady().then(() => {
   Menu.setApplicationMenu(null)
   prefs = loadPrefs()
   const allowed = new Set(['media', 'display-capture', 'notifications', 'clipboard-sanitized-write', 'fullscreen'])
-  session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => callback(allowed.has(permission)))
-  session.defaultSession.setPermissionCheckHandler((_wc, permission) => allowed.has(permission))
+  // Permissões (microfone, câmera, tela, notificação) só pra janela do app.
+  session.defaultSession.setPermissionRequestHandler((wc, permission, callback) =>
+    callback(wc === win?.webContents && allowed.has(permission)),
+  )
+  session.defaultSession.setPermissionCheckHandler((wc, permission) => wc === win?.webContents && allowed.has(permission))
+  session.defaultSession.setSpellCheckerLanguages(['pt-BR', 'en-US'])
   setupDisplayMedia()
   createWindow()
   applyPrefs(null)

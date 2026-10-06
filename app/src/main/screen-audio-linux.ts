@@ -14,6 +14,32 @@ import { join } from 'node:path'
 let patchBay: PatchBay | null | undefined
 let linkedPid: string | null = null
 let watchdog: NodeJS.Timeout | null = null
+let current: ScreenAudioOptions = { mode: 'all', apps: [] }
+
+export interface ScreenAudioOptions {
+  /** all: tudo menos apps de voz; apps: só os escolhidos (pelo binário). */
+  mode: 'all' | 'apps'
+  apps: string[]
+}
+
+/**
+ * Apps de voz/chamada: o som deles nunca entra no áudio da tela por padrão,
+ * senão quem assiste ouve a sua call do Discord, por exemplo.
+ */
+const VOICE_APPS = [
+  'vesktop', 'discord', 'discordcanary', 'discordptb', 'discord-canary', 'discord-ptb', 'legcord', 'armcord',
+  'webcord', 'equibop', 'dorion', 'teamspeak', 'teamspeak3', 'ts3client', 'ts3client_linux_amd64', 'mumble',
+  'zoom', 'zoom.real', 'teams', 'teams-for-linux', 'skypeforlinux', 'slack', 'element', 'element-desktop',
+  'signal', 'signal-desktop', 'telegram-desktop', 'whatsapp', 'whatsapp-for-linux', 'zapzap', 'ferdium', 'jitsi',
+]
+
+const isVoiceApp = (value: string | undefined) => !!value && VOICE_APPS.includes(value.toLowerCase())
+
+export interface PlayingApp {
+  binary: string
+  name: string
+  voice: boolean
+}
 
 function obtain(): PatchBay | null {
   if (patchBay !== undefined) return patchBay
@@ -41,23 +67,53 @@ function audioServicePid(): string | null {
   return app.getAppMetrics().find((p) => p.name === 'Audio Service')?.pid?.toString() ?? null
 }
 
+/** Apps tocando som agora (pro seletor), sem o próprio Resenha. Só leitura: não mexe em nada. */
+export function listPlayingApps(): PlayingApp[] {
+  const pb = obtain()
+  if (!pb) return []
+  const pid = audioServicePid()
+  const apps = new Map<string, PlayingApp>()
+  for (const node of pb.list(['application.name'])) {
+    if (node['media.class'] !== 'Stream/Output/Audio' || node['application.process.id'] === pid) continue
+    const binary = node['application.process.binary'] || node['application.name']
+    if (!binary || apps.has(binary)) continue
+    apps.set(binary, { binary, name: node['application.name'] || binary, voice: isVoiceApp(binary) || isVoiceApp(node['application.name']) })
+  }
+  return [...apps.values()].sort((a, b) => a.name.localeCompare(b.name))
+}
+
 function link(pb: PatchBay, mute: boolean): boolean {
   const pid = audioServicePid()
   const exclude: Node[] = [{ 'media.class': 'Stream/Input/Audio' }]
   if (pid) exclude.push({ 'application.process.id': pid })
   linkedPid = pid
-  return pb.link({
-    exclude,
-    mute,
-    ignore_devices: true,
-    only_speakers: true,
-    only_default_speakers: true,
-  })
+
+  if (current.mode === 'apps') {
+    const include: Node[] = current.apps.flatMap((app): Node[] => [{ 'application.process.binary': app }, { 'application.name': app }])
+    return pb.link({ include, exclude, mute, ignore_devices: true, only_speakers: true, only_default_speakers: true })
+  }
+
+  // O venmic compara propriedades por igualdade exata: entra a lista fixa (minúscula e com
+  // inicial maiúscula) e os nomes exatos de quem está tocando agora.
+  for (const app of VOICE_APPS) {
+    const capitalized = app[0].toUpperCase() + app.slice(1)
+    for (const variant of new Set([app, capitalized])) {
+      exclude.push({ 'application.process.binary': variant }, { 'application.name': variant })
+    }
+  }
+  for (const node of pb.list(['application.name'])) {
+    if (isVoiceApp(node['application.process.binary']) || isVoiceApp(node['application.name'])) {
+      if (node['application.process.binary']) exclude.push({ 'application.process.binary': node['application.process.binary'] })
+      exclude.push({ 'application.name': node['application.name'] })
+    }
+  }
+  return pb.link({ exclude, mute, ignore_devices: true, only_speakers: true, only_default_speakers: true })
 }
 
-export function startScreenAudio(): { ok: boolean; error?: string } {
+export function startScreenAudio(options: ScreenAudioOptions = { mode: 'all', apps: [] }): { ok: boolean; error?: string } {
   const pb = obtain()
   if (!pb) return { ok: false, error: 'PipeWire/venmic indisponível' }
+  current = options.mode === 'apps' && options.apps.length > 0 ? options : { mode: 'all', apps: [] }
   // Começa mudo e o renderer desmuta depois de pegar o microfone virtual,
   // igual o Vesktop faz, pra não vazar um estalo antes da captura começar.
   if (!link(pb, true)) return { ok: false, error: 'venmic não conseguiu ligar o áudio' }

@@ -17,6 +17,8 @@ export class Connection {
 
   constructor(
     private url: () => string,
+    /** Primeira mensagem de cada conexão (o `auth` com o token). */
+    private hello: () => ClientMessage,
     private handlers: {
       message: (msg: ServerMessage) => void
       status: (status: ConnectionStatus) => void
@@ -36,6 +38,7 @@ export class Connection {
     this.ws = ws
 
     ws.onopen = () => {
+      ws.send(JSON.stringify(this.hello()))
       this.retry = 0
       this.lastPong = Date.now()
       this.handlers.status('open')

@@ -71,7 +71,9 @@ export interface ResenhaApi {
     select(choice: { sourceId: string | null; audio: boolean }): Promise<void>
   }
   screenAudio: {
-    start(): Promise<{ ok: boolean; error?: string }>
+    /** Apps tocando som agora (Linux), pro seletor do áudio da tela. */
+    apps(): Promise<{ binary: string; name: string; voice: boolean }[]>
+    start(options: { mode: 'all' | 'apps'; apps: string[] }): Promise<{ ok: boolean; error?: string }>
     unmute(): Promise<void>
     stop(): Promise<void>
   }

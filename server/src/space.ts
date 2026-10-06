@@ -25,7 +25,12 @@ interface ConnState {
   session: string
   connectedAt: number
   voice: { channelId: string; muted: boolean; deafened: boolean; sharing: boolean; camera: boolean } | null
+  /** Conectou mas ainda não mandou o `auth`: não recebe nada nem conta como online. */
+  pending?: boolean
 }
+
+/** Quem não se autentica nesse tempo é desconectado. */
+const AUTH_TIMEOUT = 15_000
 
 export type Result<T> = { ok: true; value: T } | { ok: false; status: number; error: string }
 
@@ -349,27 +354,29 @@ export class Space extends DurableObject<Env> {
     if (request.headers.get('Upgrade') !== 'websocket') return new Response('Esperava WebSocket', { status: 426 })
 
     const [client, server] = Object.values(new WebSocketPair())
-    const token = new URL(request.url).searchParams.get('token') ?? ''
-    const user = await this.authenticate(token)
+    this.ctx.acceptWebSocket(server)
+    // O token chega na primeira mensagem (`auth`). Versões antigas (até a 0.4) ainda mandam na
+    // URL; aceita por enquanto pra elas não caírem, mas isso sai na próxima versão grande.
+    const legacyToken = new URL(request.url).searchParams.get('token')
+    const pending: ConnState = { userId: '', connId: randomToken(9), session: '', connectedAt: Date.now(), voice: null, pending: true }
+    server.serializeAttachment(pending)
+    if (legacyToken !== null) await this.completeAuth(server, pending, legacyToken)
+
+    if ((await this.ctx.storage.getAlarm()) === null) await this.ctx.storage.setAlarm(Date.now() + SWEEP_EVERY)
+    return new Response(null, { status: 101, webSocket: client })
+  }
+
+  /** Valida o token da conexão e só então manda o estado inicial (`ready`). */
+  private async completeAuth(ws: WebSocket, pending: ConnState, token: string) {
+    const user = typeof token === 'string' ? await this.authenticate(token) : null
     if (!user) {
-      // Fechar com código próprio deixa o app distinguir "sessão inválida" de "sem rede".
-      server.accept()
-      server.close(4001, 'Sessão inválida')
-      return new Response(null, { status: 101, webSocket: client })
+      // Código próprio: o app distingue "sessão inválida" de "sem rede".
+      return ws.close(4001, 'Sessão inválida')
     }
-
     const wasOnline = this.onlineUsers().includes(user.id)
-    const state: ConnState = {
-      userId: user.id,
-      connId: randomToken(9),
-      session: await hashToken(token),
-      connectedAt: Date.now(),
-      voice: null,
-    }
-    this.ctx.acceptWebSocket(server, [user.id])
-    server.serializeAttachment(state)
-
-    this.send(server, {
+    const state: ConnState = { ...pending, userId: user.id, session: await hashToken(token), pending: false }
+    this.saveState(ws, state)
+    this.send(ws, {
       t: 'ready',
       me: user,
       connId: state.connId,
@@ -379,9 +386,6 @@ export class Space extends DurableObject<Env> {
       online: this.onlineUsers(),
     })
     if (!wasOnline) this.broadcast({ t: 'presence', userId: user.id, online: true }, state.connId)
-
-    if ((await this.ctx.storage.getAlarm()) === null) await this.ctx.storage.setAlarm(Date.now() + SWEEP_EVERY)
-    return new Response(null, { status: 101, webSocket: client })
   }
 
   async webSocketMessage(ws: WebSocket, raw: string | ArrayBuffer) {
@@ -393,6 +397,10 @@ export class Space extends DurableObject<Env> {
       return
     }
     const state = this.state(ws)
+    if (state.pending) {
+      if (msg.t !== 'auth') return ws.close(4001, 'Faltou autenticar')
+      return this.completeAuth(ws, state, msg.token)
+    }
     const user = this.sql.exec<UserRow>('SELECT * FROM users WHERE id = ?', state.userId).toArray()[0]
     if (!user) return ws.close(4001, 'Conta não existe mais')
 
@@ -420,6 +428,10 @@ export class Space extends DurableObject<Env> {
   /** Varre conexões mortas (sem ping) e anexos que nunca foram enviados. */
   async alarm() {
     const now = Date.now()
+    for (const ws of this.ctx.getWebSockets()) {
+      const state = this.state(ws)
+      if (state.pending && state.connectedAt < now - AUTH_TIMEOUT) ws.close(4001, 'Faltou autenticar')
+    }
     for (const ws of this.sockets()) {
       const state = this.state(ws)
       const lastPing = this.ctx.getWebSocketAutoResponseTimestamp(ws)?.getTime() ?? 0
@@ -442,6 +454,7 @@ export class Space extends DurableObject<Env> {
   }
 
   private dropConnection(state: ConnState) {
+    if (state.pending) return
     if (state.voice) this.broadcastVoice(state.connId)
     if (!this.onlineUsers(state.connId).includes(state.userId)) {
       this.broadcast({ t: 'presence', userId: state.userId, online: false }, state.connId)
@@ -635,14 +648,12 @@ export class Space extends DurableObject<Env> {
     const dm = dmMembers(channelId)
     if (!dm) return this.broadcast(msg, exceptConnId)
     const text = JSON.stringify(msg)
-    for (const userId of new Set(dm)) {
-      for (const ws of this.ctx.getWebSockets(userId)) {
-        if (ws.readyState !== WebSocket.OPEN || this.state(ws).connId === exceptConnId) continue
-        try {
-          ws.send(text)
-        } catch {
-          // conexão caindo
-        }
+    for (const ws of this.sockets(exceptConnId)) {
+      if (!dm.includes(this.state(ws).userId)) continue
+      try {
+        ws.send(text)
+      } catch {
+        // conexão caindo
       }
     }
   }
@@ -706,7 +717,11 @@ export class Space extends DurableObject<Env> {
   private sockets(exceptConnId?: string): WebSocket[] {
     return this.ctx
       .getWebSockets()
-      .filter((ws) => ws.readyState === WebSocket.OPEN && (!exceptConnId || this.state(ws).connId !== exceptConnId))
+      .filter((ws) => {
+        if (ws.readyState !== WebSocket.OPEN) return false
+        const state = this.state(ws)
+        return !state.pending && (!exceptConnId || state.connId !== exceptConnId)
+      })
   }
 
   private onlineUsers(exceptConnId?: string): string[] {

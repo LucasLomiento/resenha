@@ -1,12 +1,13 @@
-## O que tem de novo
+## 0.5 — Segurança
 
-- **Webcam na call.** Ligue no botão de câmera do painel da call. A tela da call (clique em "Voz conectada" ou no canal de voz) mostra um bloco por pessoa: o vídeo de quem está com a câmera ligada, o avatar de quem não está, contorno verde em quem está falando e o botão **Assistir** pra quem está transmitindo a tela. A câmera vai em 720p a 30 fps. Dá pra escolher qual câmera e ver uma prévia em Configurações → Voz.
-- **O ícone da bandeja acende em verde enquanto você fala**, e continua mudando pra mutado e ensurdecido. No Windows, o selo do ícone na barra de tarefas faz o mesmo.
+Primeira etapa do caminho até a 1.0 ([roteiro](https://github.com/LucasLomiento/resenha/blob/main/docs/ROADMAP.md)).
 
-Quem está numa versão anterior: atualize os dois lados pra webcam aparecer certinho.
+- **O áudio da tela não leva mais a sua call do Discord.** Por padrão entra o som de todos os apps, menos os de voz (Discord, Vesktop, TeamSpeak, Mumble, Zoom, Teams…). Também dá pra escolher só os apps que quiser, na hora de compartilhar (Linux).
+- **O login não aparece mais em log nenhum.** O código da sessão ia no endereço da conexão, que fica registrado nos logs do servidor; agora vai dentro da conexão já aberta.
+- **Login salvo criptografado no chaveiro do sistema** também no Hyprland e em outros ambientes sem KDE/GNOME (antes ficava em texto puro).
+- **Notificações podem esconder o texto da mensagem** (Configurações → App), útil quando a tela está sendo compartilhada.
+- **Janela mais blindada:** a página do app só consegue falar com o servidor do Resenha, e o processo principal só atende a própria janela.
 
 ## Como atualizar
 
-Clique em **Atualizar** no topo da barra lateral (ou em Configurações → App → Procurar atualização). No Arch/CachyOS ele pede a senha.
-
-Instalação do zero: [INSTALAR.md](https://github.com/LucasLomiento/resenha/blob/main/INSTALAR.md)
+Clique em **Atualizar** no topo da barra lateral (ou Configurações → App → Procurar atualização).

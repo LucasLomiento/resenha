@@ -51,11 +51,15 @@ class Client {
     })
   }
 
-  static async open(token: string): Promise<Client> {
-    const res = await SELF.fetch(`${BASE}/ws?token=${encodeURIComponent(token)}`, { headers: { Upgrade: 'websocket' } })
+  /** Conecta e se autentica pela primeira mensagem (como o app faz desde a 0.5). */
+  static async open(token: string, opts: { legacy?: boolean; skipAuth?: boolean } = {}): Promise<Client> {
+    const url = opts.legacy ? `${BASE}/ws?token=${encodeURIComponent(token)}` : `${BASE}/ws`
+    const res = await SELF.fetch(url, { headers: { Upgrade: 'websocket' } })
     const ws = res.webSocket!
     ws.accept()
-    return new Client(ws)
+    const client = new Client(ws)
+    if (!opts.legacy && !opts.skipAuth) client.send({ t: 'auth', token })
+    return client
   }
 
   next<T extends ServerMessage['t']>(t: T, where: (m: Of<T>) => boolean = () => true): Promise<Of<T>> {
@@ -86,6 +90,16 @@ class Client {
 
   close() {
     this.ws.close(1000)
+  }
+}
+
+async function channelIds(token: string) {
+  const c = await Client.open(token)
+  const ready = await c.next('ready')
+  c.close()
+  return {
+    text: ready.channels.find((ch) => ch.kind === 'text')!.id,
+    voice: ready.channels.find((ch) => ch.kind === 'voice')!.id,
   }
 }
 
@@ -145,6 +159,25 @@ describe('contas', () => {
     const c = await Client.open('token-que-nao-existe')
     await new Promise((r) => setTimeout(r, 100))
     expect(c.closeCode).toBe(4001)
+  })
+
+  it('sem autenticar, a conexão não recebe nada e é derrubada ao tentar falar', async () => {
+    const admin = await register('Lucas')
+    const a = await Client.open(admin.token)
+    await a.next('ready')
+    const intruso = await Client.open('', { skipAuth: true })
+    a.send({ t: 'chat.send', channelId: (await channelIds(admin.token)).text, content: 'segredo', attachmentIds: [], nonce: 's' })
+    await a.next('chat.message')
+    await intruso.nothing('chat.message')
+    intruso.send({ t: 'typing', channelId: 'x' })
+    await new Promise((r) => setTimeout(r, 100))
+    expect(intruso.closeCode).toBe(4001)
+  })
+
+  it('versões antigas (token na URL) ainda conectam', async () => {
+    const admin = await register('Lucas')
+    const c = await Client.open(admin.token, { legacy: true })
+    expect((await c.next('ready')).me.name).toBe('Lucas')
   })
 })
 

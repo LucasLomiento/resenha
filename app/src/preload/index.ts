@@ -12,7 +12,8 @@ const api: ResenhaApi = {
     select: (choice) => ipcRenderer.invoke('share:select', choice),
   },
   screenAudio: {
-    start: () => ipcRenderer.invoke('screen-audio:start'),
+    apps: () => ipcRenderer.invoke('screen-audio:apps'),
+    start: (options) => ipcRenderer.invoke('screen-audio:start', options),
     unmute: () => ipcRenderer.invoke('screen-audio:unmute'),
     stop: () => ipcRenderer.invoke('screen-audio:stop'),
   },

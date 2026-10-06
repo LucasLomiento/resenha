@@ -465,6 +465,10 @@
         <span>Som de mensagem nova</span>
       </label>
       <label class="check">
+        <input type="checkbox" bind:checked={settings.notifyContent} />
+        <span>Mostrar o texto nas notificações <small>Desligado, a notificação só avisa que chegou mensagem.</small></span>
+      </label>
+      <label class="check">
         <input type="checkbox" bind:checked={settings.compressImages} />
         <span>Comprimir imagens ao enviar <small>No máximo 2560 px, em WebP. Economiza espaço no servidor.</small></span>
       </label>

@@ -18,6 +18,11 @@ export interface Settings {
   screenPreset: ScreenPreset
   screenMode: ScreenMode
   screenAudio: boolean
+  /** Linux: all = todos os apps menos os de voz; apps = só os escolhidos (binários). */
+  screenAudioMode: 'all' | 'apps'
+  screenAudioApps: string[]
+  /** Mostrar o texto da mensagem nas notificações do sistema. */
+  notifyContent: boolean
   codec: VideoCodec
   /** userId -> 0..1 */
   userVolumes: Record<string, number>
@@ -46,6 +51,9 @@ const defaults: Settings = {
   screenPreset: '1440p',
   screenMode: 'motion',
   screenAudio: true,
+  screenAudioMode: 'all',
+  screenAudioApps: [],
+  notifyContent: true,
   codec: 'VP9',
   userVolumes: {},
   streamVolume: 1,

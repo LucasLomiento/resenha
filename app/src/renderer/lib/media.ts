@@ -148,7 +148,10 @@ export async function captureScreen(options: {
   let warning: string | null = null
   if (options.audio && viaVenmic) {
     try {
-      const started = await window.resenha.screenAudio.start()
+      const started = await window.resenha.screenAudio.start({
+        mode: settings.screenAudioMode,
+        apps: [...settings.screenAudioApps],
+      })
       if (!started.ok) throw new Error(started.error)
       const deviceId = await findDevice('vencord-screen-share')
       if (!deviceId) throw new Error('microfone virtual não apareceu')

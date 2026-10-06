@@ -26,8 +26,9 @@ export class Api {
     return this.server + path
   }
 
+  /** Endereço do WebSocket, sem o token: ele vai na primeira mensagem (URL acaba em log). */
   wsUrl(): string {
-    return `${this.server.replace(/^http/, 'ws')}/ws?token=${encodeURIComponent(this.token ?? '')}`
+    return `${this.server.replace(/^http/, 'ws')}/ws`
   }
 
   private async request<T>(path: string, init: RequestInit = {}): Promise<T> {
