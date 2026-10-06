@@ -7,14 +7,15 @@ Guia da interface: o que o app parece, por quê, e como fazer tela nova sem dest
 1. **Um lugar pra cada coisa.** Se um controle aparece em dois lugares, um deles sai. A câmera e a tela ficam só no dock; a qualidade da transmissão fica no diálogo e no painel ao vivo, não nas configurações.
 2. **Nada muda de lugar.** O botão troca de ícone, de cor ou de texto, mas não de posição, em nenhum estado e em nenhum tamanho de janela. O e2e confere isso no dock.
 3. **Texto só quando ajuda a decidir.** Rótulo curto, descrição de uma linha, e só se mudar a escolha de alguém. Jargão técnico (codec, RNNoise, bitrate) fica em "Avançado" ou some.
-4. **Escuro de verdade, com uma pitada de marca.** Superfícies em tinta fria levemente violeta; o degradê do ícone aparece só em momentos de marca (logo, tela de entrada, boas-vindas do canal, criar servidor).
+4. **Escuro de verdade, com uma pitada de marca.** Superfícies em tinta fria levemente violeta; o violeta do ícone aparece só em momentos de marca (logo, tela de entrada, boas-vindas do canal, criar servidor).
 5. **Calmo por padrão, vivo quando importa.** Cinza na maior parte do tempo; verde quando alguém fala, vermelho quando é ao vivo, menção ou perigo, violeta quando é seu (seleção, sua reação, seu link).
 6. **Teclado e leitor de tela contam.** Todo botão de ícone tem nome; o status tem forma além da cor; o Esc fecha só a camada de cima.
 
 ## Identidade
 
-- **Ícone:** balão rindo com headset, sobre squircle violeta → roxo → coral (`app/build/icon.svg`).
-- **Degradê da marca:** `--brand-gradient` (#6f7dff → #9150ff → #ff5a7a). Usar pouco: logo, brilho da tela de entrada, borda do ícone de boas-vindas do canal, botão de criar servidor.
+- **Ícone:** balão rindo com headset violeta, sobre squircle escuro com o brilho do acento (`app/build/icon.svg`; os tamanhos pequenos são desenhados à parte, na grade de pixels). Os PNG e o `.ico` saem do `app/build/render-icons.sh`.
+- **Bandeja:** normal é o ícone; falando, ele fica verde inteiro; mutado ou ensurdecido, vira um quadrado vermelho com o microfone ou o fone cortado (o tray do Omarchy desenha a 12 px, então nada de selo no canto). No Linux a janela troca de ícone junto; no Windows o aviso vai como selo na barra de tarefas.
+- **Degradê da marca:** `--brand-gradient` (#8f84ff → #6a5cf6 → #5244e0), só no violeta do acento. Usar pouco: borda do ícone de boas-vindas do canal, botão de criar servidor.
 - **Fundo da janela:** um brilho violeta bem fraco no canto superior esquerdo (7%), que some atrás do painel.
 - **Forma:** cantos arredondados em todo lugar (10 px em controles, 14 px em cartões e no painel, 18 px em modais), squircle nos ícones de servidor.
 

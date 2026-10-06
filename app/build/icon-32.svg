@@ -1,21 +1,27 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
   <defs>
-    <linearGradient id="bg" gradientUnits="userSpaceOnUse" x1="3.75" y1="2.50" x2="28.25" y2="29.50">
-      <stop offset="0" stop-color="#6f7dff"/>
-      <stop offset="0.5" stop-color="#9150ff"/>
-      <stop offset="1" stop-color="#ff5a7a"/>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="32" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#1e1e2a"/>
+      <stop offset="1" stop-color="#0b0b10"/>
     </linearGradient>
+    <radialGradient id="glow" cx="16.0" cy="17.92" r="12.8" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#6a5cf6" stop-opacity=".32"/>
+      <stop offset="1" stop-color="#6a5cf6" stop-opacity="0"/>
+    </radialGradient>
+    <clipPath id="forma"><path d="M31.5 16C31.5 31.42 31.42 31.5 16 31.5C0.58 31.5 0.5 31.42 0.5 16C0.5 0.58 0.58 0.5 16 0.5C31.42 0.5 31.5 0.58 31.5 16Z"/></clipPath>
   </defs>
-  <path d="M31 16C31 30.93 30.93 31 16 31C1.07 31 1 30.93 1 16C1 1.07 1.07 1 16 1C30.93 1 31 1.07 31 16Z" fill="url(#bg)"/>
-  <path d="M5 16 A11 11 0 0 1 27 16" fill="none" stroke="#1c1640" stroke-width="2.2"/>
-  <circle cx="16" cy="16.8" r="10" fill="#fff"/>
-  <path d="M8.6 22.2 L4.2 28.4 L14.6 26.2 Z" fill="#fff"/>
-  <rect x="3" y="12" width="5" height="10" rx="2.2" fill="#1c1640"/>
-  <rect x="24" y="12" width="5" height="10" rx="2.2" fill="#1c1640"/>
-  <g fill="none" stroke="#1c1640" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M31.5 16C31.5 31.42 31.42 31.5 16 31.5C0.58 31.5 0.5 31.42 0.5 16C0.5 0.58 0.58 0.5 16 0.5C31.42 0.5 31.5 0.58 31.5 16Z" fill="url(#bg)"/>
+  <path d="M31.5 16C31.5 31.42 31.42 31.5 16 31.5C0.58 31.5 0.5 31.42 0.5 16C0.5 0.58 0.58 0.5 16 0.5C31.42 0.5 31.5 0.58 31.5 16Z" fill="url(#glow)"/>
+  <path d="M31.5 16C31.5 31.42 31.42 31.5 16 31.5C0.58 31.5 0.5 31.42 0.5 16C0.5 0.58 0.58 0.5 16 0.5C31.42 0.5 31.5 0.58 31.5 16Z" fill="none" stroke="#fff" stroke-opacity=".14" stroke-width="2" clip-path="url(#forma)"/>
+  <path d="M5 16 A11 11 0 0 1 27 16" fill="none" stroke="#8f84ff" stroke-width="2.2"/>
+  <circle cx="16" cy="16.8" r="10" fill="#ffffff"/>
+  <path d="M8.6 22.2 L4.2 28.4 L14.6 26.2 Z" fill="#ffffff"/>
+  <rect x="3" y="12" width="5" height="10" rx="2.2" fill="#8f84ff"/>
+  <rect x="24" y="12" width="5" height="10" rx="2.2" fill="#8f84ff"/>
+  <g fill="none" stroke="#14121c" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
     <path d="M10.8 10.9 L14 13.3 L10.8 15.7"/>
     <path d="M21.2 10.9 L18 13.3 L21.2 15.7"/>
   </g>
-  <path d="M10.5 17.5 H21.5 A5.5 5.5 0 0 1 10.5 17.5 Z" fill="#1c1640"/>
-  <path d="M12.9 22.2 A3.4 2.2 0 0 1 19.1 22.2 A5.5 5.5 0 0 1 12.9 22.2 Z" fill="#ff6b8f"/>
+  <path d="M10.5 17.5 H21.5 A5.5 5.5 0 0 1 10.5 17.5 Z" fill="#14121c"/>
+  <path d="M12.9 22.2 A3.4 2.2 0 0 1 19.1 22.2 A5.5 5.5 0 0 1 12.9 22.2 Z" fill="#ff7a93"/>
 </svg>

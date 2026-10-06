@@ -32,11 +32,16 @@ export function appIcon(): NativeImage {
 let tray: Tray | null = null
 let lastState: CallState = { inCall: false, muted: false, deafened: false, sharing: false, speaking: false }
 
-/** Ensurdecido > mutado > falando (acende em verde) > normal. */
-function iconName(state: CallState) {
+/** Mutado ou ensurdecido: o ícone inteiro vira o aviso (vermelho), que lê até nos 12 px do tray do Omarchy. */
+function alertName(state: CallState) {
   if (state.deafened) return 'tray-deafened'
   if (state.muted) return 'tray-muted'
-  return state.inCall && state.speaking ? 'tray-speaking' : 'tray'
+  return null
+}
+
+/** Ensurdecido > mutado > falando (verde inteiro) > normal. */
+function iconName(state: CallState) {
+  return alertName(state) ?? (state.inCall && state.speaking ? 'tray-speaking' : 'tray')
 }
 
 function stateIcon(state: CallState) {
@@ -87,7 +92,16 @@ export function showCallState(state: CallState, win: BrowserWindow | null, show:
       tray.setContextMenu(trayMenu(state, show, dispatch))
     }
   }
-  if (process.platform !== 'win32' || !win) return
+  if (!win) return
+
+  // Linux: a janela também troca de ícone (barra de tarefas do KDE e afins). Falando não troca,
+  // porque acende e apaga várias vezes por segundo.
+  if (process.platform === 'linux') {
+    const alert = alertName(state)
+    if (alert !== alertName(previous)) win.setIcon(alert ? image(alert, 64) : appIcon())
+    return
+  }
+  if (process.platform !== 'win32') return
 
   // Windows: selo no ícone da barra de tarefas (verde falando, vermelho mutado) e botões na miniatura.
   if (iconChanged) {

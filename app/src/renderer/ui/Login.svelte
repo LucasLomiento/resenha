@@ -195,15 +195,14 @@
     background: var(--bg-canvas);
   }
 
-  /* Brilho da marca atrás do cartão: violeta em cima, coral embaixo. */
+  /* Brilho da marca atrás do cartão: o violeta do app, como no ícone. */
   .glow {
     position: absolute;
     inset: 0;
     pointer-events: none;
     background:
-      radial-gradient(520px 340px at calc(50% - 160px) calc(50% - 170px), rgb(111 125 255 / 0.2), transparent 70%),
-      radial-gradient(460px 320px at calc(50% + 190px) calc(50% + 190px), rgb(255 90 122 / 0.12), transparent 70%),
-      radial-gradient(400px 300px at calc(50% + 120px) calc(50% - 60px), rgb(145 80 255 / 0.1), transparent 70%);
+      radial-gradient(520px 340px at calc(50% - 160px) calc(50% - 170px), rgb(122 108 255 / 0.18), transparent 70%),
+      radial-gradient(460px 320px at calc(50% + 190px) calc(50% + 190px), rgb(106 92 246 / 0.1), transparent 70%);
   }
 
   .card {
@@ -226,7 +225,7 @@
     width: 56px;
     height: 56px;
     margin-bottom: var(--s-5);
-    filter: drop-shadow(0 8px 20px rgb(145 80 255 / 0.35));
+    filter: drop-shadow(0 8px 20px rgb(106 92 246 / 0.35));
   }
 
   h1 {

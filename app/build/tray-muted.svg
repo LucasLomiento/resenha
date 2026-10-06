@@ -1,32 +1,15 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
   <defs>
-    <linearGradient id="bg" gradientUnits="userSpaceOnUse" x1="3.75" y1="2.50" x2="28.25" y2="29.50">
-      <stop offset="0" stop-color="#6f7dff"/>
-      <stop offset="0.5" stop-color="#9150ff"/>
-      <stop offset="1" stop-color="#ff5a7a"/>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="32" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ff6a7e"/>
+      <stop offset="1" stop-color="#e2324d"/>
     </linearGradient>
-    <mask id="corte" maskUnits="userSpaceOnUse" x="0" y="0" width="32" height="32">
-      <rect width="32" height="32" fill="#fff"/>
-      <circle cx="23.6" cy="23.6" r="10" fill="#000"/>
-    </mask>
+    <clipPath id="forma"><path d="M31.5 16C31.5 31.42 31.42 31.5 16 31.5C0.58 31.5 0.5 31.42 0.5 16C0.5 0.58 0.58 0.5 16 0.5C31.42 0.5 31.5 0.58 31.5 16Z"/></clipPath>
   </defs>
-  <g mask="url(#corte)">
-    <path d="M31.5 16C31.5 31.42 31.42 31.5 16 31.5C0.58 31.5 0.5 31.42 0.5 16C0.5 0.58 0.58 0.5 16 0.5C31.42 0.5 31.5 0.58 31.5 16Z" fill="url(#bg)"/>
-    <path d="M5 16 A11 11 0 0 1 27 16" fill="none" stroke="#1c1640" stroke-width="2.2"/>
-    <circle cx="16" cy="16.8" r="10" fill="#fff"/>
-    <path d="M8.6 22.2 L4.2 28.4 L14.6 26.2 Z" fill="#fff"/>
-    <rect x="3" y="12" width="5" height="10" rx="2.2" fill="#1c1640"/>
-    <rect x="24" y="12" width="5" height="10" rx="2.2" fill="#1c1640"/>
-    <g fill="none" stroke="#1c1640" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-      <path d="M10.8 10.9 L14 13.3 L10.8 15.7"/>
-      <path d="M21.2 10.9 L18 13.3 L21.2 15.7"/>
-    </g>
-    <path d="M10.5 17.5 H21.5 A5.5 5.5 0 0 1 10.5 17.5 Z" fill="#1c1640"/>
-    <path d="M12.9 22.2 A3.4 2.2 0 0 1 19.1 22.2 A5.5 5.5 0 0 1 12.9 22.2 Z" fill="#ff6b8f"/>
-  </g>
-  <circle cx="23.6" cy="23.6" r="8.2" fill="#f0525f"/>
-  <rect x="21.6" y="18.2" width="4" height="7" rx="2" fill="#fff"/>
-  <path d="M19.7 23A3.9 3.9 0 0 0 27.5 23M23.6 26.9V28.6" fill="none" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/>
-  <path d="M18.7 18.7L28.5 28.5" stroke="#f0525f" stroke-width="2.6" stroke-linecap="round"/>
-  <path d="M18.7 18.7L28.5 28.5" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/>
+  <path d="M31.5 16C31.5 31.42 31.42 31.5 16 31.5C0.58 31.5 0.5 31.42 0.5 16C0.5 0.58 0.58 0.5 16 0.5C31.42 0.5 31.5 0.58 31.5 16Z" fill="url(#bg)"/>
+  <path d="M31.5 16C31.5 31.42 31.42 31.5 16 31.5C0.58 31.5 0.5 31.42 0.5 16C0.5 0.58 0.58 0.5 16 0.5C31.42 0.5 31.5 0.58 31.5 16Z" fill="none" stroke="#fff" stroke-opacity=".22" stroke-width="2" clip-path="url(#forma)"/>
+  <rect x="10.75" y="3.5" width="10.5" height="16" rx="5.25" fill="#fff"/>
+  <path d="M6.5 14.5a9.5 9.5 0 0 0 19 0M16 24.5v3.5" fill="none" stroke="#fff" stroke-width="3.4" stroke-linecap="round"/>
+  <path d="M5.5 5L26.5 27" stroke="#e2324d" stroke-width="7.5" stroke-linecap="round"/>
+  <path d="M5.5 5L26.5 27" stroke="#fff" stroke-width="3.4" stroke-linecap="round"/>
 </svg>

@@ -543,10 +543,10 @@
     border-radius: 20px;
     background:
       linear-gradient(var(--bg-raised), var(--bg-raised)) padding-box,
-      linear-gradient(135deg, rgb(111 125 255 / 0.65), rgb(145 80 255 / 0.4), rgb(255 90 122 / 0.55)) border-box;
+      linear-gradient(135deg, rgb(143 132 255 / 0.7), rgb(106 92 246 / 0.25), rgb(143 132 255 / 0.45)) border-box;
     border: 1px solid transparent;
     color: var(--fg);
-    box-shadow: 0 12px 32px -12px rgb(111 125 255 / 0.4);
+    box-shadow: 0 12px 32px -12px rgb(106 92 246 / 0.45);
   }
 
   .start :global(.avatar) {

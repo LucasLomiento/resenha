@@ -29,10 +29,10 @@
   --fg-4: #4d4d5c;
   --fg-on-accent: #ffffff;
 
-  /* ---------- Cor: marca (do ícone: violeta → roxo → coral) ---------- */
-  --brand-1: #6f7dff;
-  --brand-2: #9150ff;
-  --brand-3: #ff5a7a;
+  /* ---------- Cor: marca (do ícone: o violeta do acento, em degradê) ---------- */
+  --brand-1: #8f84ff;
+  --brand-2: #6a5cf6;
+  --brand-3: #5244e0;
   --brand-gradient: linear-gradient(135deg, var(--brand-1) 0%, var(--brand-2) 52%, var(--brand-3) 100%);
 
   --accent: #6a5cf6; /* preenchimento com texto branco (contraste 4.7:1) */

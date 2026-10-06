@@ -1,21 +1,27 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">
   <defs>
-    <linearGradient id="bg" gradientUnits="userSpaceOnUse" x1="2.81" y1="1.88" x2="21.19" y2="22.12">
-      <stop offset="0" stop-color="#6f7dff"/>
-      <stop offset="0.5" stop-color="#9150ff"/>
-      <stop offset="1" stop-color="#ff5a7a"/>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="24" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#1e1e2a"/>
+      <stop offset="1" stop-color="#0b0b10"/>
     </linearGradient>
+    <radialGradient id="glow" cx="12.0" cy="13.440000000000001" r="9.600000000000001" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#6a5cf6" stop-opacity=".32"/>
+      <stop offset="1" stop-color="#6a5cf6" stop-opacity="0"/>
+    </radialGradient>
+    <clipPath id="forma"><path d="M23 12C23 22.95 22.95 23 12 23C1.05 23 1 22.95 1 12C1 1.05 1.05 1 12 1C22.95 1 23 1.05 23 12Z"/></clipPath>
   </defs>
   <path d="M23 12C23 22.95 22.95 23 12 23C1.05 23 1 22.95 1 12C1 1.05 1.05 1 12 1C22.95 1 23 1.05 23 12Z" fill="url(#bg)"/>
-  <path d="M4 12 A8 8 0 0 1 20 12" fill="none" stroke="#1c1640" stroke-width="2"/>
-  <circle cx="12" cy="12.5" r="7.5" fill="#fff"/>
-  <path d="M6.6 16.8 L3.4 21.4 L11 19.6 Z" fill="#fff"/>
-  <rect x="2" y="9" width="4" height="7.5" rx="1.6" fill="#1c1640"/>
-  <rect x="18" y="9" width="4" height="7.5" rx="1.6" fill="#1c1640"/>
-  <g fill="none" stroke="#1c1640" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M23 12C23 22.95 22.95 23 12 23C1.05 23 1 22.95 1 12C1 1.05 1.05 1 12 1C22.95 1 23 1.05 23 12Z" fill="url(#glow)"/>
+  <path d="M23 12C23 22.95 22.95 23 12 23C1.05 23 1 22.95 1 12C1 1.05 1.05 1 12 1C22.95 1 23 1.05 23 12Z" fill="none" stroke="#fff" stroke-opacity=".14" stroke-width="2" clip-path="url(#forma)"/>
+  <path d="M4 12 A8 8 0 0 1 20 12" fill="none" stroke="#8f84ff" stroke-width="2"/>
+  <circle cx="12" cy="12.5" r="7.5" fill="#ffffff"/>
+  <path d="M6.6 16.8 L3.4 21.4 L11 19.6 Z" fill="#ffffff"/>
+  <rect x="2" y="9" width="4" height="7.5" rx="1.6" fill="#8f84ff"/>
+  <rect x="18" y="9" width="4" height="7.5" rx="1.6" fill="#8f84ff"/>
+  <g fill="none" stroke="#14121c" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
     <path d="M8.2 8 L10.6 10 L8.2 12"/>
     <path d="M15.8 8 L13.4 10 L15.8 12"/>
   </g>
-  <path d="M8 13 H16 A4 4 0 0 1 8 13 Z" fill="#1c1640"/>
-  <path d="M10 16.4 A2.4 1.6 0 0 1 14 16.4 A4 4 0 0 1 10 16.4 Z" fill="#ff6b8f"/>
+  <path d="M8 13 H16 A4 4 0 0 1 8 13 Z" fill="#14121c"/>
+  <path d="M10 16.4 A2.4 1.6 0 0 1 14 16.4 A4 4 0 0 1 10 16.4 Z" fill="#ff7a93"/>
 </svg>
