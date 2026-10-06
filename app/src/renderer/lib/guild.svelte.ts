@@ -98,7 +98,7 @@ export class GuildState {
   private conn: Connection<ServerMessage, ClientMessage>
   private sends = new Map<string, { resolve: () => void; reject: (err: Error) => void; timer: ReturnType<typeof setTimeout> }>()
   private requests = new Map<string, (msg: WithReq) => void>()
-  private inviteWaiters: ((invite: Invite | null) => void)[] = []
+  private inviteWaiters = new Map<string, { resolve: (invite: Invite | null) => void; reject: (err: Error) => void; timer: ReturnType<typeof setTimeout> }>()
   private typingSent: Record<string, number> = {}
   private everConnected = false
 
@@ -513,9 +513,15 @@ export class GuildState {
         this.host.signal(this, msg.from, msg.data)
         return
 
-      case 'invite.created':
-        this.inviteWaiters.shift()?.(msg.invite ?? null)
+      case 'invite.created': {
+        const waiting = msg.nonce ? this.inviteWaiters.get(msg.nonce) : undefined
+        if (msg.nonce && waiting) {
+          clearTimeout(waiting.timer)
+          this.inviteWaiters.delete(msg.nonce)
+          waiting.resolve(msg.invite ?? null)
+        }
         return
+      }
 
       case 'notify.settings':
         this.notify = msg.settings
@@ -523,10 +529,11 @@ export class GuildState {
 
       case 'error': {
         // Erro de uma mensagem enviada: devolve pro campo de texto em vez de só avisar.
-        const waiting = msg.nonce ? this.sends.get(msg.nonce) : undefined
+        const waiting = msg.nonce ? (this.sends.get(msg.nonce) ?? this.inviteWaiters.get(msg.nonce)) : undefined
         if (msg.nonce && waiting) {
           clearTimeout(waiting.timer)
           this.sends.delete(msg.nonce)
+          this.inviteWaiters.delete(msg.nonce)
           return waiting.reject(new Error(msg.message))
         }
         this.host.toast(msg.message)
@@ -642,17 +649,15 @@ export class GuildState {
 
   // ---------- Administração ----------
 
+  /** Gera um convite; dá erro na hora se o servidor recusar (sem permissão, convites demais). */
   createInvite(options: { maxAge?: number | null; maxUses?: number | null } = {}): Promise<Invite | null> {
+    const nonce = nextId()
     return new Promise((resolve, reject) => {
-      if (!this.send({ t: 'invite.create', ...options })) return reject(new Error('Sem conexão.'))
-      this.inviteWaiters.push(resolve)
-      setTimeout(() => {
-        const i = this.inviteWaiters.indexOf(resolve)
-        if (i >= 0) {
-          this.inviteWaiters.splice(i, 1)
-          reject(new Error('O servidor não respondeu.'))
-        }
+      if (!this.send({ t: 'invite.create', ...options, nonce })) return reject(new Error('Sem conexão.'))
+      const timer = setTimeout(() => {
+        if (this.inviteWaiters.delete(nonce)) reject(new Error('O servidor não respondeu.'))
       }, 10_000)
+      this.inviteWaiters.set(nonce, { resolve, reject, timer })
     })
   }
 

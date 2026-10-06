@@ -64,23 +64,21 @@
     if (cleanTitle.length < 2 || creating || !client.api) return
     creating = true
     createError = null
-    const before = new Set(Object.keys(client.guilds))
     try {
       // O ícone sobe antes; entra no servidor assim que a conexão dele abrir.
       const iconId = icon ? (await client.api.uploadGuildIcon(icon.blob)).id : null
-      await client.createGuild(cleanTitle)
+      const created = await client.createGuild(cleanTitle)
       close()
-      if (iconId) applyIcon(before, iconId)
+      if (iconId && created) applyIcon(created.id, iconId)
     } catch (err) {
       createError = (err as Error).message
       creating = false
     }
   }
 
-  async function applyIcon(before: Set<string>, iconId: string) {
-    const fresh = () => Object.values(client.guilds).find((g) => !before.has(g.id) && g.isOwner) ?? null
-    if (!(await settled(() => !!fresh()?.loaded, 20_000))) return
-    fresh()?.updateGuild({ icon: iconId })
+  async function applyIcon(guildId: string, iconId: string) {
+    if (!(await settled(() => !!client.guilds[guildId]?.loaded, 20_000))) return
+    client.guilds[guildId]?.updateGuild({ icon: iconId })
   }
 
   // ---------- Entrar com convite ----------

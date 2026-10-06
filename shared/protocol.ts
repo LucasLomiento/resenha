@@ -443,7 +443,8 @@ export type ClientMessage =
     }
   | { t: 'bans.list'; reqId: string }
   | { t: 'audit.list'; reqId: string; before?: string }
-  | { t: 'invite.create'; maxAge?: number | null; maxUses?: number | null }
+  /** `nonce`: volta no `invite.created` (ou no `error`) pra saber de qual pedido é. */
+  | { t: 'invite.create'; maxAge?: number | null; maxUses?: number | null; nonce?: string }
   | { t: 'invites.list'; reqId: string }
   | { t: 'invite.delete'; code: string }
   | { t: 'notify.update'; settings: NotifySettings }
@@ -507,7 +508,7 @@ export type ServerMessage =
   /** Um moderador me tirou da call ou me moveu de canal. */
   | { t: 'voice.forced'; channelId: string | null }
   | { t: 'rtc.signal'; from: string; data: SignalData }
-  | { t: 'invite.created'; code: string; invite?: Invite }
+  | { t: 'invite.created'; code: string; invite?: Invite; nonce?: string }
   | { t: 'invites.list'; reqId: string; invites: Invite[] }
   | { t: 'bans.list'; reqId: string; bans: Ban[] }
   | { t: 'audit.list'; reqId: string; entries: AuditEntry[]; hasMore: boolean }

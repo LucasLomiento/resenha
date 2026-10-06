@@ -1327,14 +1327,15 @@ export class Guild extends DurableObject<Env> {
       }
 
       case 'invite.create': {
-        if (!has(this.guildPerms(userId), P.CREATE_INVITE)) return this.error(ws, 'Você não pode criar convites aqui.')
-        if (!this.allow(`invite:${userId}`, 10, MINUTE)) return this.error(ws, 'Calma! Convites demais de uma vez.')
+        const nonce = typeof msg.nonce === 'string' ? msg.nonce.slice(0, 64) : undefined
+        if (!has(this.guildPerms(userId), P.CREATE_INVITE)) return this.error(ws, 'Você não pode criar convites aqui.', nonce)
+        if (!this.allow(`invite:${userId}`, 10, MINUTE)) return this.error(ws, 'Calma! Convites demais de uma vez.', nonce)
         // A 0.5 não manda validade: o convite dela vale 7 dias e uma pessoa, como antes.
         const options = state.legacy ? { maxAge: 7 * 86400, maxUses: 1 } : { maxAge: msg.maxAge, maxUses: msg.maxUses }
         const result = await directory(this.env).createInvite(this.id, userId, options)
-        if (!result.ok) return this.error(ws, result.error)
+        if (!result.ok) return this.error(ws, result.error, nonce)
         this.audit(userId, 'invite.create', null, result.value.code)
-        return this.send(ws, { t: 'invite.created', code: result.value.code, invite: result.value })
+        return this.send(ws, { t: 'invite.created', code: result.value.code, invite: result.value, nonce })
       }
 
       case 'invites.list': {

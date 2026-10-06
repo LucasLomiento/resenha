@@ -382,9 +382,13 @@ class Client implements GuildHost, HomeHost {
     return guild
   }
 
+  /** Nome dos servidores que saíram da lista (pro aviso que chega depois dizer qual foi). */
+  private droppedNames: Record<string, string> = {}
+
   private dropGuild(id: string) {
     const guild = this.guilds[id]
     if (!guild) return
+    this.droppedNames[id] = guild.info.name
     guild.close()
     delete this.guilds[id]
     if (this.call.guildId === id) this.call.leave(false)
@@ -405,11 +409,11 @@ class Client implements GuildHost, HomeHost {
   }
 
   guildLeft(guildId: string, reason: 'left' | 'kicked' | 'banned' | 'deleted') {
-    const name = this.guilds[guildId]?.info.name ?? 'servidor'
+    const name = this.guilds[guildId]?.info.name ?? this.droppedNames[guildId]
     this.dropGuild(guildId)
-    if (reason === 'kicked') this.toast(`Você foi expulso de ${name}.`)
-    if (reason === 'banned') this.toast(`Você foi banido de ${name}.`)
-    if (reason === 'deleted') this.toast(`${name} foi excluído.`, 'info')
+    if (reason === 'kicked') this.toast(name ? `Você foi expulso de ${name}.` : 'Você foi expulso de um servidor.')
+    if (reason === 'banned') this.toast(name ? `Você foi banido de ${name}.` : 'Você foi banido de um servidor.')
+    if (reason === 'deleted') this.toast(name ? `${name} foi excluído.` : 'Um servidor foi excluído.', 'info')
   }
 
   closed(target: GuildState | CloseReason, reason?: CloseReason) {
@@ -707,11 +711,13 @@ class Client implements GuildHost, HomeHost {
 
   // ---------- Servidores ----------
 
-  async createGuild(name: string) {
-    if (!this.api) return
+  /** Cria um servidor e abre ele assim que a conexão pessoal confirmar. */
+  async createGuild(name: string): Promise<GuildInfo | null> {
+    if (!this.api) return null
     const info = await this.api.createGuild(name)
     this.openWhenJoined = info.id
     if (this.guilds[info.id]) this.guildJoined(info)
+    return info
   }
 
   async joinInvite(code: string) {
