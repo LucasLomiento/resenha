@@ -70,9 +70,15 @@ export function boxOf(el: Element): Box {
   return { left: r.left, top: r.top, width: r.width, height: r.height }
 }
 
-/** Move o elemento pro fim do <body>: fica por cima de tudo, sem herdar overflow nem transform. */
+/**
+ * Move o elemento pro fim do <body>: fica por cima de tudo, sem herdar overflow nem transform.
+ * Com uma tela cheia aberta (configurações, marcada com data-portal-root), entra nela: o modal
+ * ou menu aberto lá dentro aparece por cima dela, e não atrás.
+ */
 export function portal(node: HTMLElement) {
-  document.body.appendChild(node)
+  const roots = document.querySelectorAll<HTMLElement>('[data-portal-root]')
+  const target = roots[roots.length - 1] ?? document.body
+  target.appendChild(node)
   return {
     destroy() {
       node.remove()
