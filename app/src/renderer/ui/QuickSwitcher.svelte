@@ -1,6 +1,370 @@
 <script lang="ts">
+  import { client } from '../lib/client.svelte'
+  import { ui } from '../lib/ui.svelte'
+  import { Avatar, Icon, Kbd, layer, portal, type IconName } from './kit'
 
+  interface Item {
+    key: string
+    group: 'Conversas' | 'Canais' | 'Pessoas' | 'Servidores'
+    name: string
+    hint: string
+    unread?: boolean
+    icon?: IconName
+    avatar?: { id: string; name: string; src: string | null; square?: boolean; status?: 'online' | 'idle' | 'dnd' | 'offline' | null }
+    score: number
+    open: () => void
+  }
+
+  let query = $state('')
+  let index = $state(0)
+  let input = $state<HTMLInputElement>()
+  let list = $state<HTMLDivElement>()
+
+  const fold = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
+
+  function close() {
+    ui.switcher = false
+  }
+
+  /** Começar com o nome vale mais que ter no meio; sem busca, tudo vale igual. */
+  function score(name: string, q: string): number {
+    if (!q) return 1
+    const f = fold(name)
+    if (f.startsWith(q)) return 3
+    if (f.split(/[\s_.-]+/).some((w) => w.startsWith(q))) return 2
+    return f.includes(q) ? 1 : 0
+  }
+
+  const items = $derived.by((): Item[] => {
+    const raw = query.trim()
+    const only = raw.startsWith('@') ? 'people' : raw.startsWith('#') ? 'channels' : null
+    const q = fold(only ? raw.slice(1) : raw)
+    const out: Item[] = []
+
+    if (!q && !only) {
+      // Sem busca: as conversas mais recentes e os servidores.
+      for (const dm of (client.home?.sortedDms ?? []).slice(0, 5)) {
+        out.push({
+          key: `dm:${dm.id}`,
+          group: 'Conversas',
+          name: dm.user.name,
+          hint: `@${dm.user.username}`,
+          unread: dm.unread > 0,
+          avatar: { id: dm.user.id, name: dm.user.name, src: client.api?.media(dm.user.avatar) ?? null, status: client.presenceOf(dm.user.id).status },
+          score: 1,
+          open: () => client.navigate({ kind: 'dm', channelId: dm.id }),
+        })
+      }
+    }
+
+    if (only !== 'people') {
+      for (const guild of client.guildList) {
+        for (const channel of guild.orderedChannels) {
+          const s = score(channel.name, q)
+          if (!s || (!q && !only)) continue
+          const inCall = channel.kind === 'voice' ? guild.voiceIn(channel.id).length : 0
+          out.push({
+            key: `c:${channel.id}`,
+            group: 'Canais',
+            name: channel.name,
+            hint: inCall ? `${guild.info.name} · ${inCall} na call` : guild.info.name,
+            unread: channel.kind === 'text' && guild.unread(channel.id) && !guild.channelMuted(channel.id),
+            icon: channel.kind === 'voice' ? 'volume' : 'hash',
+            score: s + (client.route.kind === 'guild' && client.route.guildId === guild.id ? 0.5 : 0),
+            open: () => client.openChannel(guild.id, channel.id),
+          })
+        }
+      }
+    }
+
+    if (only !== 'channels' && q) {
+      // Pessoas: amigos, conversas e quem está nos meus servidores (sem repetir).
+      const seen = new Set<string>([client.me?.id ?? ''])
+      const people: { id: string; name: string; username: string; avatar: string | null }[] = []
+      for (const f of client.home?.friends ?? []) if (f.state === 'friends') people.push(f.user)
+      for (const d of client.home?.dms ?? []) people.push(d.user)
+      for (const g of client.guildList) for (const id of Object.keys(g.members)) if (g.users[id]) people.push(g.users[id])
+      for (const person of people) {
+        if (seen.has(person.id)) continue
+        seen.add(person.id)
+        const s = Math.max(score(person.name, q), score(person.username, q))
+        if (!s) continue
+        out.push({
+          key: `u:${person.id}`,
+          group: 'Pessoas',
+          name: person.name,
+          hint: `@${person.username}`,
+          avatar: { id: person.id, name: person.name, src: client.api?.media(person.avatar) ?? null, status: client.presenceOf(person.id).status },
+          score: s,
+          open: () => client.openDm(person.id),
+        })
+      }
+    }
+
+    if (!only) {
+      for (const guild of client.guildList) {
+        const s = score(guild.info.name, q)
+        if (!s) continue
+        const count = Object.keys(guild.members).length
+        out.push({
+          key: `g:${guild.id}`,
+          group: 'Servidores',
+          name: guild.info.name,
+          hint: count === 1 ? '1 membro' : `${count} membros`,
+          unread: guild.hasUnread,
+          avatar: { id: guild.id, name: guild.info.name, src: client.api?.media(guild.info.icon) ?? null, square: true },
+          score: s,
+          open: () => client.openGuild(guild.id),
+        })
+      }
+    }
+
+    const order = { Conversas: 0, Canais: 1, Pessoas: 2, Servidores: 3 }
+    return out
+      .sort((a, b) => order[a.group] - order[b.group] || b.score - a.score || Number(!!b.unread) - Number(!!a.unread))
+      .slice(0, 40)
+  })
+
+  // Os grupos ficam na ordem, mas o "escolhido" anda por todos.
+  $effect(() => {
+    void query
+    index = 0
+  })
+
+  function pick(item: Item | undefined) {
+    if (!item) return
+    close()
+    item.open()
+  }
+
+  function onKeydown(event: KeyboardEvent) {
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault()
+      const step = event.key === 'ArrowDown' ? 1 : -1
+      index = (index + step + items.length) % Math.max(items.length, 1)
+      requestAnimationFrame(() => list?.querySelector('.item.on')?.scrollIntoView({ block: 'nearest' }))
+    } else if (event.key === 'Enter') {
+      event.preventDefault()
+      pick(items[index])
+    }
+  }
+
+  /** Destaca as letras que bateram com a busca. */
+  function marked(text: string): { t: string; on: boolean }[] {
+    const raw = query.trim().replace(/^[@#]/, '')
+    const q = fold(raw)
+    if (!q) return [{ t: text, on: false }]
+    const f = fold(text)
+    const i = f.indexOf(q)
+    if (i < 0 || f.length !== text.length) return [{ t: text, on: false }]
+    return [
+      { t: text.slice(0, i), on: false },
+      { t: text.slice(i, i + q.length), on: true },
+      { t: text.slice(i + q.length), on: false },
+    ].filter((p) => p.t)
+  }
+
+  function autofocus(node: HTMLInputElement) {
+    requestAnimationFrame(() => node.focus())
+  }
 </script>
 
-<!-- Provisório: a tela de verdade vem a seguir. -->
-<div class="todo">QuickSwitcher</div>
+<!-- Ctrl+K: vai pra qualquer canal, conversa ou servidor digitando um pedaço do nome. -->
+<div class="backdrop" use:portal use:layer={close} onmousedown={(e) => e.target === e.currentTarget && close()} role="presentation">
+  <div class="switcher" role="dialog" aria-label="Ir para">
+    <div class="input">
+      <Icon name="search" size={18} />
+      <input
+        bind:this={input}
+        bind:value={query}
+        placeholder="Pra onde você quer ir?"
+        aria-label="Pra onde você quer ir?"
+        onkeydown={onKeydown}
+        use:autofocus
+      />
+      <Kbd keys="Esc" />
+    </div>
+
+    <div class="results" role="listbox" bind:this={list}>
+      {#each items as item, i (item.key)}
+        {#if i === 0 || items[i - 1].group !== item.group}
+          <div class="group">{item.group}</div>
+        {/if}
+        <button class="item" class:on={i === index} role="option" aria-selected={i === index} onmouseenter={() => (index = i)} onclick={() => pick(item)}>
+          {#if item.avatar}
+            <Avatar id={item.avatar.id} name={item.avatar.name} size={24} src={item.avatar.src} square={item.avatar.square} status={item.avatar.status ?? null} cutout={i === index ? '#25252f' : 'var(--bg-raised)'} />
+          {:else if item.icon}
+            <span class="lead"><Icon name={item.icon} size={18} /></span>
+          {/if}
+          <span class="name" class:unread={item.unread}>
+            {#each marked(item.name) as part, j (j)}{#if part.on}<mark>{part.t}</mark>{:else}{part.t}{/if}{/each}
+          </span>
+          <span class="hint">{item.hint}</span>
+          {#if i === index}<Kbd keys="Enter" />{/if}
+        </button>
+      {:else}
+        <p class="empty">{query.trim() ? 'Nada com esse nome.' : 'Digite o nome de um canal, pessoa ou servidor.'}</p>
+      {/each}
+    </div>
+
+    <div class="foot">
+      <span><Kbd keys="↑" /><Kbd keys="↓" /> escolher</span>
+      <span><Kbd keys="Enter" /> abrir</span>
+      <span class="tip">Dica: comece com <b>@</b> pra pessoas, <b>#</b> pra canais</span>
+    </div>
+  </div>
+</div>
+
+<style>
+  .backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: var(--z-modal);
+    display: flex;
+    justify-content: center;
+    padding-top: 14vh;
+    background: rgb(4 4 8 / 0.66);
+    backdrop-filter: blur(3px);
+    animation: rs-fade-in var(--t) var(--ease);
+  }
+
+  .switcher {
+    display: flex;
+    flex-direction: column;
+    width: 580px;
+    max-width: calc(100% - 48px);
+    max-height: 70vh;
+    height: fit-content;
+    border-radius: var(--r-2xl);
+    background: var(--bg-raised);
+    box-shadow:
+      0 0 0 1px var(--line-strong),
+      var(--highlight),
+      var(--shadow-lg);
+    overflow: hidden;
+    animation: rs-pop-in var(--t) var(--ease);
+  }
+
+  .input {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex: none;
+    height: 56px;
+    padding: 0 16px 0 18px;
+    border-bottom: 1px solid var(--line);
+    color: var(--fg-3);
+  }
+
+  .input input {
+    flex: 1;
+    min-width: 0;
+    border: 0;
+    outline: none;
+    background: transparent;
+    color: var(--fg);
+    font-size: 17px;
+  }
+
+  .input input::placeholder {
+    color: var(--fg-3);
+  }
+
+  .results {
+    flex: 1;
+    min-height: 0;
+    padding: 6px 8px 8px;
+    overflow-y: auto;
+  }
+
+  .group {
+    padding: 10px 10px 4px;
+    color: var(--fg-3);
+    font-size: var(--text-xs);
+    font-weight: 500;
+  }
+
+  .item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    height: 40px;
+    padding: 0 10px;
+    border-radius: var(--r-lg);
+    color: var(--fg-2);
+    text-align: left;
+  }
+
+  .item.on {
+    background: #25252f;
+    color: var(--fg);
+  }
+
+  .lead {
+    display: grid;
+    width: 24px;
+    place-items: center;
+    color: var(--fg-3);
+  }
+
+  .name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-weight: 500;
+  }
+
+  .name.unread {
+    color: var(--fg);
+    font-weight: 650;
+  }
+
+  mark {
+    background: none;
+    color: var(--accent-fg);
+    font-weight: 650;
+  }
+
+  .hint {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--fg-3);
+    font-size: var(--text-sm);
+  }
+
+  .empty {
+    padding: 20px 10px;
+    color: var(--fg-3);
+    font-size: var(--text-sm);
+    text-align: center;
+  }
+
+  .foot {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex: none;
+    padding: 10px 16px;
+    border-top: 1px solid var(--line);
+    color: var(--fg-3);
+    font-size: var(--text-xs);
+  }
+
+  .foot span {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .tip {
+    margin-left: auto;
+  }
+
+  .tip b {
+    color: var(--fg-2);
+    font-family: var(--mono);
+  }
+</style>

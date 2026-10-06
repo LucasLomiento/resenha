@@ -282,7 +282,7 @@ export class Home extends DurableObject<Env> {
     }
     // Limite por conexão: sinalização da chamada tem folga maior (muitos candidatos ICE de uma vez).
     const signal = msg.t === 'call.signal'
-    if (!this.allow(`${signal ? 'sig' : 'ws'}:${state.connId}`, signal ? 400 : 60, 10_000)) {
+    if (!this.allow(`${signal ? 'sig' : 'ws'}:${state.connId}`, signal ? 400 : 120, 10_000)) {
       if (this.allow(`warn:${state.connId}`, 1, 10_000)) this.send(ws, { t: 'error', message: 'Calma! Muitas ações de uma vez.' })
       return
     }

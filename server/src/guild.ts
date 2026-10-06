@@ -1058,7 +1058,7 @@ export class Guild extends DurableObject<Env> {
     if (!this.member(state.userId)) return ws.close(4003, 'Você não está nesse servidor')
     // Limite por conexão: sinalização da call tem folga maior (muitos candidatos ICE de uma vez).
     const signal = msg.t === 'rtc.signal'
-    if (!this.allow(`${signal ? 'sig' : 'ws'}:${state.connId}`, signal ? 400 : 60, 10_000)) {
+    if (!this.allow(`${signal ? 'sig' : 'ws'}:${state.connId}`, signal ? 400 : 120, 10_000)) {
       if (this.allow(`warn:${state.connId}`, 1, 10_000)) this.error(ws, 'Calma! Muitas ações de uma vez.')
       return
     }

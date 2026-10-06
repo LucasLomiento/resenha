@@ -1,8 +1,9 @@
 <script lang="ts">
   import { client } from '../lib/client.svelte'
   import { ui } from '../lib/ui.svelte'
-  import { Avatar, Icon, IconButton, SignalBars, Spinner, tooltip } from './kit'
+  import { Avatar, Icon, IconButton, SignalBars, Spinner, STATUS_LABEL, tooltip } from './kit'
   import SharePanel from './SharePanel.svelte'
+  import StatusMenu from './StatusMenu.svelte'
 
   const call = client.call
   const place = $derived(client.callPlace)
@@ -16,6 +17,8 @@
   })
 
   let dock = $state<HTMLDivElement>()
+  let meButton = $state<HTMLButtonElement>()
+  let statusOpen = $state(false)
 
   async function toggleCamera() {
     const turningOn = !call.camera
@@ -92,15 +95,27 @@
 
   <div class="me">
     {#if client.me}
-      <Avatar
-        id={client.me.id}
-        name={client.me.name}
-        size={32}
-        cutout="var(--bg-raised)"
-        status={client.presenceOf(client.me.id).status}
-        speaking={!!client.callConnId && call.speaking[client.callConnId]}
-      />
-      <span class="me-name">{client.me.name}</span>
+      <button
+        bind:this={meButton}
+        class="me-button"
+        aria-label="Status: {STATUS_LABEL[client.presenceOf(client.me.id).status]}"
+        aria-expanded={statusOpen}
+        onclick={() => (statusOpen = !statusOpen)}
+      >
+        <Avatar
+          id={client.me.id}
+          name={client.me.name}
+          size={32}
+          src={client.avatarOf(client.me.id)}
+          cutout="var(--bg-raised)"
+          status={client.presenceOf(client.me.id).status}
+          speaking={!!client.callConnId && call.speaking[client.callConnId]}
+        />
+        <span class="me-text">
+          <span class="me-name">{client.me.name}</span>
+          <span class="me-status">{client.statusText ?? (client.status === 'invisible' ? 'Invisível' : `@${client.me.username}`)}</span>
+        </span>
+      </button>
     {/if}
     <IconButton
       icon={call.muted ? 'mic-off' : 'mic'}
@@ -118,9 +133,13 @@
       aria-pressed={call.deafened}
       onclick={() => call.toggleDeafen()}
     />
-    <IconButton icon="settings" label="Configurações" onclick={() => (ui.settings = 'voice')} />
+    <IconButton icon="settings" label="Configurações" onclick={() => (ui.settings = 'profile')} />
   </div>
 </div>
+
+{#if statusOpen && meButton}
+  <StatusMenu anchor={meButton} onclose={() => (statusOpen = false)} />
+{/if}
 
 {#if ui.sharePanel && call.sharing}
   <SharePanel anchor={dock} />
@@ -255,14 +274,45 @@
     padding: 0 8px;
   }
 
-  .me-name {
+  .me-button {
+    display: flex;
+    align-items: center;
+    gap: 10px;
     flex: 1;
     min-width: 0;
-    margin-left: 10px;
+    height: 42px;
+    margin-left: -4px;
+    padding: 0 6px 0 4px;
+    border-radius: var(--r-lg);
+    text-align: left;
+    transition: background-color var(--t-fast) var(--ease);
+  }
+
+  .me-button:hover,
+  .me-button[aria-expanded='true'] {
+    background: var(--hover);
+  }
+
+  .me-text {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    line-height: 1.25;
+  }
+
+  .me-name {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
     font-size: var(--text-sm);
     font-weight: 600;
+  }
+
+  .me-status {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--fg-3);
+    font-size: var(--text-xs);
   }
 </style>

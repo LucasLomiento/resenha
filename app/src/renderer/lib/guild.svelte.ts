@@ -335,13 +335,22 @@ export class GuildState {
     return message.mentionRoles.some((r) => mine.includes(r))
   }
 
-  /** Marca o canal como lido até a última mensagem. */
+  /** Marca o canal como lido até a última mensagem (na tela na hora; pro servidor, agrupado). */
   ack(channelId: string) {
     const last = this.lastMessageIds[channelId]
     if (!last || (!this.unread(channelId) && !this.mentions(channelId))) return
     this.readStates[channelId] = { channelId, lastReadId: last, mentions: 0 }
-    this.conn.send({ t: 'chat.ack', channelId, messageId: last })
+    // Canal movimentado: um aviso a cada meio segundo basta (com a última mensagem).
+    this.pendingAcks[channelId] = last
+    this.ackTimer ??= setTimeout(() => {
+      this.ackTimer = null
+      for (const [id, messageId] of Object.entries(this.pendingAcks)) this.conn.send({ t: 'chat.ack', channelId: id, messageId })
+      this.pendingAcks = {}
+    }, 500)
   }
+
+  private pendingAcks: Record<string, string> = {}
+  private ackTimer: ReturnType<typeof setTimeout> | null = null
 
   ackAll() {
     for (const c of this.channels) if (c.kind === 'text') this.ack(c.id)

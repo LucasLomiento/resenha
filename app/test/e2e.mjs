@@ -177,21 +177,81 @@ function median(values) {
   return sorted[Math.floor(sorted.length / 2)]
 }
 
-async function login(side, name, invite) {
+/** Entra pela tela de login (a conta já foi criada pela API). */
+async function login(side, username) {
   const { page } = side
-  // O servidor vem do build (VITE_DEFAULT_SERVER); espera a tela descobrir se é servidor novo.
-  await page.waitForTimeout(700)
-  if (invite) {
-    // Na tela de entrar, o link "Criar conta" embaixo do cartão troca pro cadastro com convite.
-    const toRegister = page.locator('.switch button', { hasText: 'Criar conta' })
-    if (await toRegister.isVisible()) await toRegister.click({ force: true })
-    await page.getByLabel('Convite').fill(invite)
+  await page.getByLabel('Nome de usuário').waitFor({ timeout: 10_000 })
+  // Servidor sem a conta ainda abre em "criar conta": volta pro "entrar".
+  const toLogin = page.locator('.switch button', { hasText: 'Entrar' })
+  if (await toLogin.isVisible()) await toLogin.click({ force: true })
+  await page.getByLabel('Nome de usuário').fill(username)
+  await page.getByLabel('Senha').fill(PASSWORD)
+  await shot(side, '0-entrar')
+  await page.getByRole('button', { name: 'Entrar', exact: true }).click({ force: true })
+  await page.locator('.shell[data-status=open]').waitFor({ timeout: 15_000 })
+}
+
+/** Botão da barra lateral pelo nome exato (canal de texto "geral" ≠ voz "Geral"). */
+function channel(page, name) {
+  return page.locator('nav button.channel').filter({ hasText: new RegExp(`^\\s*${name}\\s*\\d*\\s*$`) }).first()
+}
+
+// ---------- Servidor local só do teste (porta própria, dados num diretório temporário) ----------
+
+const PORT = Number(process.env.RESENHA_E2E_PORT ?? 8797)
+const SERVER = `http://127.0.0.1:${PORT}`
+const PASSWORD = 'senha-de-teste-1'
+
+async function startServer() {
+  const state = mkdtempSync(join(tmpdir(), 'resenha-e2e-server-'))
+  const proc = spawn('npx', ['wrangler', 'dev', '--port', String(PORT), '--ip', '127.0.0.1', '--persist-to', state], {
+    cwd: new URL('../../server', import.meta.url).pathname,
+    stdio: ['ignore', 'pipe', 'pipe'],
+    detached: true,
+  })
+  let log = ''
+  proc.stdout.on('data', (d) => (log += d))
+  proc.stderr.on('data', (d) => (log += d))
+  for (let i = 0; i < 120; i++) {
+    try {
+      const res = await fetch(`${SERVER}/api/status`)
+      if (res.ok) return { stop: () => (process.kill(-proc.pid, 'SIGTERM'), rmSync(state, { recursive: true, force: true })) }
+    } catch {
+      // ainda subindo
+    }
+    await new Promise((r) => setTimeout(r, 500))
   }
-  await page.getByLabel('Apelido').fill(name)
-  await page.getByLabel('Senha').fill('senha-de-teste')
-  await shot(side, invite ? '0b-cadastro-convite' : '0-cadastro')
-  await page.getByRole('button', { name: 'Criar conta', exact: true }).click({ force: true })
-  await page.locator('.shell[data-status=open]').waitFor({ timeout: 10_000 })
+  process.kill(-proc.pid, 'SIGTERM')
+  throw new Error(`servidor de teste não subiu:\n${log.slice(-2000)}`)
+}
+
+async function api(path, body, token) {
+  const res = await fetch(SERVER + path, {
+    method: body === undefined ? 'GET' : 'POST',
+    headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  })
+  const data = await res.json()
+  if (!res.ok) throw new Error(`${path}: ${data.error}`)
+  return data
+}
+
+/** Gera um convite pelo WebSocket do servidor (como o app faz). */
+async function inviteFor(guildId, token) {
+  const ws = new WebSocket(`${SERVER.replace('http', 'ws')}/api/g/${guildId}/ws`)
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('convite não chegou')), 10_000)
+    ws.onopen = () => ws.send(JSON.stringify({ t: 'auth', token }))
+    ws.onmessage = (event) => {
+      const msg = JSON.parse(event.data)
+      if (msg.t === 'ready') ws.send(JSON.stringify({ t: 'invite.create', maxAge: 0, maxUses: null }))
+      if (msg.t === 'invite.created') {
+        clearTimeout(timer)
+        ws.close()
+        resolve(msg.code)
+      }
+    }
+  })
 }
 
 /** Tom silencioso tocando no alto-falante padrão: um "outro app" pro venmic capturar. */
@@ -249,53 +309,95 @@ function venmicSources() {
 
 // ---------------------------------------------------------------------------
 
+const server = await startServer()
+const owner = await api('/api/register', { username: 'lucas', name: 'Lucas', password: PASSWORD })
+const guild = await api('/api/guilds', { name: 'Turma' }, owner.token)
+const code = await inviteFor(guild.id, owner.token)
+await api('/api/register', { username: 'duarte', name: 'Duarte', password: PASSWORD, invite: code })
+check(true, 'contas, servidor e convite criados pela API', code)
+
 const a = await launch('e2e-a')
 const b = await launch('e2e-b')
 
 try {
-  // Contas: A cria o servidor (admin) e gera o convite; B entra com ele.
-  await login(a, 'Lucas')
-  check(true, 'A criou a primeira conta (admin)')
-  await a.page.getByRole('button', { name: 'Configurações', exact: true }).click({ force: true })
-  await a.page.getByRole('button', { name: 'Grupo', exact: true }).click({ force: true })
-  await a.page.getByRole('button', { name: 'Gerar convite' }).click({ force: true })
-  await a.page.locator('.invite code').waitFor({ timeout: 5000 })
-  const invite = (await a.page.locator('.invite code').textContent())?.trim()
-  check(!!invite, 'convite gerado', invite)
-  await shot(a, '0c-grupo-convite')
-  await a.page.keyboard.press('Escape')
+  await login(a, 'lucas')
+  await login(b, 'duarte')
+  check(true, 'A e B entraram pela tela de login')
 
-  await login(b, 'Amigo', invite)
-  check(true, 'B entrou com o convite')
+  // Trilho: o servidor aparece e abre na barra do servidor.
+  for (const side of [a, b]) {
+    await side.page.getByRole('button', { name: 'Turma', exact: true }).click({ force: true })
+    await channel(side.page, 'geral').waitFor({ timeout: 10_000 })
+  }
+  check(true, 'servidor aparece no trilho e abre com os canais')
+  await shot(a, '1-servidor')
 
-  // Chat e anexo.
-  await b.page.getByPlaceholder('Mensagem em #geral').fill('salve, tá me ouvindo?')
+  // Chat, menção e resposta.
+  const composerA = a.page.getByPlaceholder('Mensagem em #geral')
+  const composerB = b.page.getByPlaceholder('Mensagem em #geral')
+  await composerB.fill('salve, tá me ouvindo?')
   await b.page.keyboard.press('Enter')
   await a.page.getByText('salve, tá me ouvindo?').waitFor({ timeout: 5000 })
   check(true, 'mensagem de B chegou em A')
 
+  await composerA.fill('ei @dua')
+  await composerA.press('End')
+  await a.page.locator('.picker .option').first().waitFor({ timeout: 5000 })
+  await shot(a, '1b-sugestao-mencao')
+  await composerA.press('Tab')
+  await composerA.type('olha isso')
+  await composerA.press('Enter')
+  await b.page.locator('article.mentioned').filter({ hasText: 'olha isso' }).waitFor({ timeout: 5000 })
+  check(true, 'menção pela sugestão chega destacada pra quem foi mencionado')
+
+  const target = b.page.locator('article', { hasText: 'olha isso' })
+  await target.hover({ force: true })
+  await target.getByRole('button', { name: 'Responder', exact: true }).click({ force: true })
+  await composerB.fill('respondendo aqui')
+  await composerB.press('Enter')
+  await a.page.locator('article.has-reply', { hasText: 'respondendo aqui' }).waitFor({ timeout: 5000 })
+  check(true, 'resposta aparece com a mensagem original')
+
+  // Reação pelo seletor de emoji.
+  const reply = a.page.locator('article', { hasText: 'respondendo aqui' })
+  await reply.hover({ force: true })
+  await reply.getByRole('button', { name: 'Reagir', exact: true }).first().click({ force: true })
+  await a.page.getByLabel('Procurar emoji').fill('joinha')
+  await a.page.getByLabel('Procurar emoji').press('Enter')
+  await b.page.locator('article', { hasText: 'respondendo aqui' }).locator('.reaction', { hasText: '👍' }).waitFor({ timeout: 5000 })
+  check(true, 'reação chega pro outro')
+
+  // Formatação: negrito e código viram elementos, script não roda.
+  await composerB.fill('**forte** e `codigo` e <img src=x onerror=alert(1)>')
+  await composerB.press('Enter')
+  await a.page.locator('article strong', { hasText: 'forte' }).waitFor({ timeout: 5000 })
+  const injected = await a.page.locator('article img[src="x"]').count()
+  check(injected === 0, 'formatação funciona e HTML na mensagem não vira elemento')
+
+  // Anexo.
   const png = Buffer.from(
     'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
     'base64',
   )
   await b.page.locator('input[type=file]').setInputFiles({ name: 'print.png', mimeType: 'image/png', buffer: png })
   await b.page.locator('.upload .upload-meta', { hasText: /\d+ B$/ }).waitFor({ timeout: 10_000 })
-  await b.page.getByPlaceholder('Mensagem em #geral').press('Enter')
+  await composerB.press('Enter')
   const img = a.page.locator('article img[alt="print.png"]')
   await img.waitFor({ timeout: 5000 })
   const loaded = await img.evaluate((el) => (el.complete ? el.naturalWidth : new Promise((r) => (el.onload = () => r(el.naturalWidth)))))
   check(loaded === 1, 'imagem enviada por B aparece em A (URL assinada)')
-  await b.page.getByPlaceholder('Mensagem em #geral').fill('olha esse código: `npm run dev` e o link https://example.com')
-  await b.page.keyboard.press('Enter')
-  await a.page.getByText('olha esse código').waitFor()
-  await shot(a, '1-chat')
+  await shot(a, '2-chat')
 
-  // Rolagem do chat: com mensagem suficiente, a lista tem que rolar (era o bug da 0.1.0).
-  for (let i = 0; i < 30; i++) {
-    await b.page.getByPlaceholder('Mensagem em #geral').fill(`mensagem ${i}`)
-    await b.page.keyboard.press('Enter')
+  // Rolagem do chat: com mensagem suficiente, a lista tem que rolar. Mensagens altas e com
+  // calma (o servidor segura mais de 5 a cada 5 s).
+  for (let i = 0; i < 6; i++) {
+    await composerB.fill(`mensagem ${i}`)
+    for (let line = 0; line < 8; line++) await composerB.press('Shift+Enter')
+    await composerB.type('fim')
+    await composerB.press('Enter')
+    await b.page.waitForTimeout(1100)
   }
-  await a.page.getByText('mensagem 29').waitFor()
+  await a.page.getByText('mensagem 5').waitFor({ timeout: 15_000 })
   const scroll = await a.page.locator('.scroller').evaluate((el) => {
     const before = el.scrollTop
     el.scrollTop = 0
@@ -303,42 +405,54 @@ try {
   })
   check(scroll.scrollable && scroll.moved, 'chat rola quando tem mensagem que não cabe')
 
-  if (SHOTS) {
-    // Confirmação de apagar (cancelada com Esc) e o visualizador de imagem.
-    await a.page.locator('.scroller').evaluate((el) => (el.scrollTop = el.scrollHeight))
-    const last = a.page.locator('article', { hasText: 'mensagem 29' })
-    await last.hover({ force: true })
-    await last.getByRole('button', { name: 'Apagar' }).click({ force: true })
-    await a.page.locator('.modal').waitFor()
-    await shot(a, '1e-confirmar')
-    await a.page.keyboard.press('Escape')
-    await a.page.locator('.modal').waitFor({ state: 'detached' })
-    await a.page.locator('article img[alt="print.png"]').click({ force: true })
-    await a.page.locator('.lightbox').waitFor()
-    await shot(a, '1f-imagem')
-    await a.page.keyboard.press('Escape')
-    await a.page.locator('.lightbox').waitFor({ state: 'detached' })
-  }
+  // Não lidas: A vai pro início; B manda; o servidor ganha a marquinha no trilho de A.
+  await a.page.getByRole('button', { name: 'Início', exact: true }).click({ force: true })
+  await composerB.fill('tem novidade')
+  await composerB.press('Enter')
+  await a.page.locator('.slot.unread').first().waitFor({ timeout: 5000 })
+  check(true, 'servidor com mensagem nova ganha a marquinha no trilho')
+  await a.page.getByRole('button', { name: 'Turma', exact: true }).click({ force: true })
 
-  // Mensagem privada: B manda pra A; A vê o aviso e abre.
-  await b.page.locator('button.person', { hasText: 'Lucas' }).click({ force: true })
-  await b.page.getByPlaceholder('Mensagem para Lucas').fill('oi no privado')
-  await b.page.keyboard.press('Enter')
-  await a.page.locator('button.person.unread', { hasText: 'Amigo' }).waitFor({ timeout: 5000 })
-  await shot(a, '1b-nao-lida')
-  await a.page.locator('button.person', { hasText: 'Amigo' }).click({ force: true })
-  await a.page.locator('.scroller').getByText('oi no privado').waitFor({ timeout: 5000 })
-  check(true, 'mensagem privada chega e aparece como não lida')
-  await shot(a, '1c-privado')
-  await a.page.locator('nav button.channel', { hasText: 'geral' }).click({ force: true })
-  await b.page.locator('nav button.channel', { hasText: 'geral' }).click({ force: true })
+  // Mensagem privada: A abre o perfil de B pela lista de membros e manda mensagem.
+  await a.page.locator('.members button.member', { hasText: 'Duarte' }).click({ force: true })
+  await a.page.getByRole('button', { name: 'Mensagem', exact: true }).waitFor({ timeout: 5000 })
+  await shot(a, '2b-perfil')
+  await a.page.getByRole('button', { name: 'Mensagem', exact: true }).click({ force: true })
+  await a.page.getByPlaceholder('Mensagem pra Duarte').fill('oi no privado')
+  await a.page.keyboard.press('Enter')
+  await b.page.getByRole('button', { name: 'Mensagem de Lucas', exact: true }).waitFor({ timeout: 5000 })
+  await shot(b, '3-dm-nao-lida')
+  await b.page.getByRole('button', { name: 'Mensagem de Lucas', exact: true }).click({ force: true })
+  await b.page.locator('.scroller').getByText('oi no privado').waitFor({ timeout: 5000 })
+  check(true, 'mensagem privada chega, aparece no trilho e abre')
+  await shot(b, '3b-dm')
 
-  // Call P2P.
+  // Ligação privada: A liga, B atende, os dois ficam na call; A desliga.
   await fakeMic(a.page)
   await fakeMic(b.page)
+  await a.page.getByRole('button', { name: 'Ligar', exact: true }).first().click({ force: true })
+  await b.page.getByRole('button', { name: 'Atender', exact: true }).waitFor({ timeout: 10_000 })
+  await shot(b, '4-ligacao')
+  await b.page.getByRole('button', { name: 'Atender', exact: true }).click({ force: true })
+  await a.page.locator('.dock .status', { hasText: 'Na call' }).waitFor({ timeout: 10_000 })
+  await b.page.locator('.dock .status', { hasText: 'Na call' }).waitFor({ timeout: 10_000 })
+  check(true, 'ligação privada: B atende e os dois entram na call')
+  // Como no Discord: quem fica sozinho continua na chamada até desligar também.
+  await a.page.getByRole('button', { name: 'Sair da call', exact: true }).click({ force: true })
+  await a.page.locator('.dock .status').waitFor({ state: 'detached', timeout: 10_000 })
+  await b.page.getByRole('button', { name: 'Sair da call', exact: true }).click({ force: true })
+  await b.page.locator('.dock .status').waitFor({ state: 'detached', timeout: 10_000 })
+  check(true, 'cada um desliga e sai da ligação')
+
+  for (const side of [a, b]) {
+    await side.page.getByRole('button', { name: 'Turma', exact: true }).click({ force: true })
+    await channel(side.page, 'geral').click({ force: true })
+  }
+
+  // Call P2P no canal de voz.
   const micBefore = await rectOf(a.page, 'Mutar')
-  await a.page.locator('nav button.channel', { hasText: 'Resenha' }).click({ force: true })
-  await b.page.locator('nav button.channel', { hasText: 'Resenha' }).click({ force: true })
+  await a.page.getByRole('button', { name: 'Geral: entrar na call', exact: true }).click({ force: true })
+  await b.page.getByRole('button', { name: 'Geral: entrar na call', exact: true }).click({ force: true })
   await a.page.locator('.dock .status', { hasText: 'Na call' }).waitFor({ timeout: 10_000 })
   const micAfter = await rectOf(a.page, 'Mutar')
   check(micBefore === micAfter, 'mutar/ensurdecer/configurações não mudam de lugar ao entrar na call', `${micBefore} → ${micAfter}`)
@@ -351,7 +465,7 @@ try {
 
   // Volume de cada um pro outro em 0 (nada sai na caixa de som) e o tom liga.
   for (const [page, other] of [
-    [a.page, 'Amigo'],
+    [a.page, 'Duarte'],
     [b.page, 'Lucas'],
   ]) {
     await page.locator('.member-main', { hasText: other }).click({ force: true })
@@ -359,14 +473,14 @@ try {
     await page.evaluate(() => (window.__micGain.gain.value = 0.3))
   }
   await a.page.waitForTimeout(800)
-  const speaking = await a.page.locator('.member', { hasText: 'Amigo' }).locator('.avatar.speaking').count()
+  const speaking = await a.page.locator('.member', { hasText: 'Duarte' }).locator('.avatar.speaking').count()
   check(speaking === 1, 'A vê o indicador de fala de B')
   check(micFallbacks.length === 0, 'microfone passa pelo processador (RNNoise/limiar) carregado no AudioWorklet')
 
   // Webcam: B liga, A abre a tela da call e vê o vídeo; B desliga e volta o avatar.
   const camBefore = await rectOf(b.page, 'Ligar câmera')
   await b.page.getByRole('button', { name: 'Ligar câmera', exact: true }).click({ force: true })
-  await a.page.locator('.member', { hasText: 'Amigo' }).locator('.cam').waitFor({ timeout: 10_000 })
+  await a.page.locator('li.member', { hasText: 'Duarte' }).locator('.soft').waitFor({ timeout: 10_000 })
   const camAfter = await rectOf(b.page, 'Desligar câmera')
   check(camBefore === camAfter, 'botão da câmera fica no mesmo lugar ligado e desligado', `${camBefore} → ${camAfter}`)
   await a.page.getByRole('button', { name: 'Abrir a call', exact: true }).click({ force: true })
@@ -380,8 +494,8 @@ try {
     .waitForFunction(() => document.querySelectorAll('.tile video').length === 0, null, { timeout: 10_000 })
     .then(() => check(true, 'desligar a câmera volta o avatar'))
     .catch(() => check(false, 'desligar a câmera volta o avatar'))
-  await a.page.locator('nav button.channel', { hasText: 'geral' }).click({ force: true })
-  await shot(a, '2-call')
+  await channel(a.page, 'geral').click({ force: true })
+  await shot(a, '5-call')
 
   // Tela: A compartilha (áudio pelo venmic no Linux) e B assiste.
   const player = withAudio ? silentPlayer() : null
@@ -478,14 +592,13 @@ try {
       return `${Math.round(nav?.top ?? -1)}/${Math.round(title?.top ?? -1)}`
     })
   const tops = []
-  for (const page of ['Minha conta', 'Voz e vídeo', 'Notificações', 'Atalhos', 'Aplicativo', 'Grupo']) {
-    await a.page.locator('.settings-nav button', { hasText: page }).click({ force: true })
+  const pages = await a.page.locator('.settings-nav button').allInnerTexts()
+  for (const page of pages.filter((p) => !/Sair/.test(p))) {
+    await a.page.locator('.settings-nav button', { hasText: page.trim() }).first().click({ force: true })
     tops.push(await positions())
-    await shot(a, `6-configuracoes-${page.toLowerCase().replace(/\s+/g, '-').normalize('NFD').replace(/[̀-ͯ]/g, '')}`)
+    await shot(a, `6-configuracoes-${page.trim().toLowerCase().replace(/\s+/g, '-').normalize('NFD').replace(/[\u0300-\u036f]/g, '')}`)
   }
   check(new Set(tops).size === 1, 'navegação e título das configurações ficam no mesmo lugar em todas as páginas', tops.join(','))
-  await a.page.locator('.settings-nav button', { hasText: 'Aplicativo' }).click({ force: true })
-  await shot(a, '7-configuracoes-app')
   await a.page.keyboard.press('Escape')
 
   // Parar de compartilhar some com o player de B.
@@ -518,6 +631,7 @@ try {
 } finally {
   await a.app.close()
   await b.app.close()
+  server.stop()
 }
 
 console.log(failures ? `\n${failures} falha(s)` : '\nTudo certo.')

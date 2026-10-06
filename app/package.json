@@ -15,7 +15,7 @@
     "dist:arch": "electron-vite build && electron-builder --linux pacman",
     "dist:appimage": "electron-vite build && electron-builder --linux AppImage",
     "dist:win": "electron-vite build && electron-builder --win nsis",
-    "e2e": "VITE_DEFAULT_SERVER=http://127.0.0.1:8787 electron-vite build && node test/e2e.mjs",
+    "e2e": "VITE_DEFAULT_SERVER=http://127.0.0.1:8797 electron-vite build && node test/e2e.mjs",
     "dist:win:zip": "electron-vite build && electron-builder --win zip",
     "test:mic": "node --test test/mic-worklet.test.mjs",
     "test:ui": "node --test test/markdown.test.mts",
