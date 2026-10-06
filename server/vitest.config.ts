@@ -10,4 +10,8 @@ export default defineConfig({
       },
     }),
   ],
+  test: {
+    // Os testes compartilham os mesmos Durable Objects (e zeram tudo entre um e outro).
+    fileParallelism: false,
+  },
 })

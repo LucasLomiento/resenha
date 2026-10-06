@@ -4,12 +4,30 @@
   "main": "src/index.ts",
   "compatibility_date": "2026-09-25",
   "durable_objects": {
-    "bindings": [{ "name": "SPACE", "class_name": "Space" }]
+    "bindings": [
+      { "name": "DIRECTORY", "class_name": "Directory" },
+      { "name": "GUILD", "class_name": "Guild" },
+      { "name": "HOME", "class_name": "Home" },
+      { "name": "CONVERSATION", "class_name": "Conversation" }
+    ]
   },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Space"] }],
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["Space"] },
+    // 0.6: o Space "main" vira o primeiro servidor (Guild), com os mesmos dados.
+    {
+      "tag": "v2",
+      "renamed_classes": [{ "from": "Space", "to": "Guild" }],
+      "new_sqlite_classes": ["Directory", "Home", "Conversation"]
+    }
+  ],
+  "vars": {
+    // Chave pública do Turnstile (anti-robô do cadastro aberto). Vazia = cadastro aberto desligado.
+    "TURNSTILE_SITE_KEY": ""
+  },
   "observability": { "enabled": true }
   // Secrets (wrangler secret put):
-  //   FILE_SECRET         chave HMAC das URLs de arquivo
+  //   FILE_SECRET         chave HMAC das URLs assinadas e do embaralhamento de IP
+  //   TURNSTILE_SECRET    chave secreta do Turnstile (opcional)
   //   TURN_KEY_ID         chave TURN do Cloudflare Realtime (opcional)
   //   TURN_KEY_API_TOKEN  token dessa chave (opcional)
 }

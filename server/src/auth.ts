@@ -45,7 +45,7 @@ export async function hashToken(token: string): Promise<string> {
   return toBase64Url(new Uint8Array(await crypto.subtle.digest('SHA-256', encoder.encode(token))))
 }
 
-// ---------- URLs assinadas dos anexos ----------
+// ---------- URLs assinadas ----------
 
 async function hmacKey(secret: string): Promise<CryptoKey> {
   return crypto.subtle.importKey('raw', encoder.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, [
@@ -54,31 +54,87 @@ async function hmacKey(secret: string): Promise<CryptoKey> {
   ])
 }
 
-const WEEK = 7 * 24 * 60 * 60
-
-/**
- * A validade é arredondada pra semana seguinte inteira, então a mesma URL se
- * repete por dias e o cache do Chromium aproveita as imagens já baixadas.
- */
-export async function signFileUrl(secret: string, id: string, name: string, now = Date.now()): Promise<string> {
-  const exp = (Math.floor(now / 1000 / WEEK) + 2) * WEEK
-  const sig = await crypto.subtle.sign('HMAC', await hmacKey(secret), encoder.encode(`${id}:${exp}`))
-  return `/api/files/${id}/${encodeURIComponent(name)}?exp=${exp}&sig=${toBase64Url(new Uint8Array(sig))}`
+async function sign(secret: string, message: string): Promise<string> {
+  return toBase64Url(new Uint8Array(await crypto.subtle.sign('HMAC', await hmacKey(secret), encoder.encode(message))))
 }
 
-export async function verifyFileSignature(
-  secret: string,
-  id: string,
-  exp: string | null,
-  sig: string | null,
-  now = Date.now(),
-): Promise<boolean> {
-  if (!exp || !sig || !/^\d+$/.test(exp) || Number(exp) * 1000 < now) return false
+async function verify(secret: string, message: string, sig: string | null): Promise<boolean> {
+  if (!sig) return false
   let raw: Uint8Array
   try {
     raw = fromBase64Url(sig)
   } catch {
     return false
   }
-  return crypto.subtle.verify('HMAC', await hmacKey(secret), raw, encoder.encode(`${id}:${exp}`))
+  return crypto.subtle.verify('HMAC', await hmacKey(secret), raw, encoder.encode(message))
+}
+
+const WEEK = 7 * 24 * 60 * 60
+
+/** Validade arredondada pra semana seguinte inteira: a URL se repete por dias e o cache aproveita. */
+function weekExpiry(now: number): number {
+  return (Math.floor(now / 1000 / WEEK) + 2) * WEEK
+}
+
+function fresh(exp: string | null, now: number): boolean {
+  return !!exp && /^\d+$/.test(exp) && Number(exp) * 1000 >= now
+}
+
+/**
+ * Onde o arquivo mora: `g:<servidor>` ou `c:<conversa>`. Entra na assinatura,
+ * então um link de um lugar nunca abre arquivo de outro.
+ */
+export type FileScope = { kind: 'g' | 'c'; id: string }
+
+export function filePath(scope: FileScope, id: string, name: string): string {
+  return `/api/${scope.kind}/${encodeURIComponent(scope.id)}/files/${id}/${encodeURIComponent(name)}`
+}
+
+export async function signFileUrl(secret: string, scope: FileScope, id: string, name: string, now = Date.now()): Promise<string> {
+  const exp = weekExpiry(now)
+  const sig = await sign(secret, `${scope.kind}:${scope.id}:${id}:${exp}`)
+  return `${filePath(scope, id, name)}?exp=${exp}&sig=${sig}`
+}
+
+export async function verifyFileSignature(
+  secret: string,
+  scope: FileScope,
+  id: string,
+  exp: string | null,
+  sig: string | null,
+  now = Date.now(),
+): Promise<boolean> {
+  return fresh(exp, now) && verify(secret, `${scope.kind}:${scope.id}:${id}:${exp}`, sig)
+}
+
+/** Links do formato antigo (0.5): /api/files/<id>/<nome>, só do servidor "main". */
+export async function verifyLegacyFileSignature(
+  secret: string,
+  id: string,
+  exp: string | null,
+  sig: string | null,
+  now = Date.now(),
+): Promise<boolean> {
+  return fresh(exp, now) && verify(secret, `${id}:${exp}`, sig)
+}
+
+/** Imagem de prévia de link: o app só busca pelo nosso proxy, nunca no site (não vaza o IP de quem vê). */
+export async function signProxyUrl(secret: string, url: string, now = Date.now()): Promise<string> {
+  const exp = weekExpiry(now)
+  const u = toBase64Url(encoder.encode(url))
+  return `/api/proxy?u=${u}&exp=${exp}&sig=${await sign(secret, `proxy:${u}:${exp}`)}`
+}
+
+export async function verifyProxyUrl(secret: string, u: string | null, exp: string | null, sig: string | null, now = Date.now()) {
+  if (!u || !fresh(exp, now) || !(await verify(secret, `proxy:${u}:${exp}`, sig))) return null
+  try {
+    return new TextDecoder().decode(fromBase64Url(u))
+  } catch {
+    return null
+  }
+}
+
+/** Esconde o IP antes de guardar (limite de tentativas): o servidor nunca grava IP puro. */
+export async function hashIp(secret: string, ip: string): Promise<string> {
+  return (await sign(secret, `ip:${ip}`)).slice(0, 22)
 }

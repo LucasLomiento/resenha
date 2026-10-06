@@ -77,6 +77,7 @@ export class SqlFileStore {
 
   delete(ids: string[]) {
     if (ids.length === 0) return
-    this.sql.exec(`DELETE FROM file_chunks WHERE file_id IN (${ids.map(() => '?').join(',')})`, ...ids)
+    // Um parâmetro só (JSON): o SQLite do DO aceita poucos parâmetros por consulta.
+    this.sql.exec('DELETE FROM file_chunks WHERE file_id IN (SELECT value FROM json_each(?))', JSON.stringify(ids))
   }
 }
