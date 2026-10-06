@@ -1,9 +1,9 @@
-## 1.0.1 — Ícone escuro e bandeja que avisa de longe
+## 1.0.2 — A call aguenta queda de conexão
 
-- **Ícone novo, escuro como o app.** Sai o degradê colorido; fica o balão rindo de headset, em violeta sobre fundo escuro.
-- **Mutado ou ensurdecido, o ícone da bandeja muda inteiro:** vira um quadrado vermelho com o microfone ou o fone cortado, fácil de ver mesmo no tamanho pequeno da barra. Falando, continua ficando verde. No KDE, o ícone da barra de tarefas troca junto.
-
-Veio na 1.0: vários servidores, amigos e mensagens privadas, cargos e moderação, visual novo ([notas da 1.0](https://github.com/LucasLomiento/resenha/releases/tag/v1.0.0)).
+- **Caiu a conexão por uns segundos? A call continua.** Ninguém sai da sala pros outros, e quem estava assistindo a sua tela continua assistindo, sem precisar clicar de novo. Voz e tela vão direto entre os PCs, então seguem enquanto o app reconecta.
+- **Nem o servidor reiniciando derruba a transmissão:** a tela não para e a call volta sozinha.
+- **Ligação privada também:** cair e voltar não desliga mais.
+- **O app percebe a queda bem mais rápido** (uns 10 s, antes até 70 s) e reconecta na hora.
 
 ## Como atualizar
 
