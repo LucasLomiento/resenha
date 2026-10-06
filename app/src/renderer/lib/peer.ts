@@ -6,6 +6,8 @@ export interface PeerEvents {
   signal(data: SignalData): void
   /** Tela remota chegando (quando estou assistindo essa pessoa). */
   screen(stream: MediaStream | null): void
+  /** Câmera da pessoa chegando. */
+  camera(stream: MediaStream): void
   /** A outra pessoa pediu (true) ou largou (false) a minha tela. */
   watchRequest(watching: boolean): void
 }
@@ -61,12 +63,13 @@ export class Peer {
   private queue: Promise<void> = Promise.resolve()
   /** Candidatos que chegaram antes da descrição remota (comum quando as ofertas cruzam). */
   private pendingCandidates: RTCIceCandidateInit[] = []
-  private localStreams: Record<string, 'mic' | 'screen'> = {}
-  private remoteStreams: Record<string, 'mic' | 'screen'> = {}
+  private localStreams: Record<string, 'mic' | 'screen' | 'camera'> = {}
+  private remoteStreams: Record<string, 'mic' | 'screen' | 'camera'> = {}
   private micSender: RTCRtpSender
   private micReceiver: RTCRtpReceiver | null = null
   private screenVideo: RTCRtpTransceiver | null = null
   private screenAudio: RTCRtpTransceiver | null = null
+  private cameraVideo: RTCRtpTransceiver | null = null
   private videoOptions: VideoSendOptions | null = null
   private lastIn = { bytes: 0, at: 0, jbDelay: 0, jbCount: 0 }
   private lastOut = { bytes: 0, at: 0, jbDelay: 0, jbCount: 0 }
@@ -124,6 +127,10 @@ export class Peer {
         } catch {
           // sem suporte: fica a ordem padrão
         }
+      }
+      if (kind === 'camera') {
+        this.events.camera(stream ?? new MediaStream([track]))
+        return
       }
       this.remoteScreen = stream ?? new MediaStream([track])
       this.events.screen(this.remoteScreen)
@@ -232,18 +239,46 @@ export class Peer {
     if (stream) this.localStreams[stream.id] = 'screen'
     const video = stream?.getVideoTracks()[0] ?? null
     const audio = stream?.getAudioTracks()[0] ?? null
-    this.screenVideo = await this.setSending(this.screenVideo, video, stream, options)
-    this.screenAudio = await this.setSending(this.screenAudio, audio, stream, options)
+    const live = options && stream
+    this.screenVideo = await this.setSending(
+      this.screenVideo,
+      live ? video : null,
+      stream,
+      options ? { maxBitrate: options.bitrate, maxFramerate: 60, priority: 'high', networkPriority: 'high' } : {},
+      options?.codec ?? null,
+    )
+    this.screenAudio = await this.setSending(
+      this.screenAudio,
+      live ? audio : null,
+      stream,
+      { maxBitrate: 160_000, priority: 'high', networkPriority: 'high' },
+      null,
+    )
     await this.applyVideoParameters()
+  }
+
+  // ---------- Câmera ----------
+
+  /** A câmera vai pra todo mundo da call (como no Discord), em 720p30 e até 1,5 Mbps. */
+  async sendCamera(stream: MediaStream | null) {
+    if (stream) this.localStreams[stream.id] = 'camera'
+    this.cameraVideo = await this.setSending(
+      this.cameraVideo,
+      stream?.getVideoTracks()[0] ?? null,
+      stream,
+      { maxBitrate: 1_500_000, maxFramerate: 30, priority: 'medium', networkPriority: 'medium' },
+      this.codec,
+    )
   }
 
   private async setSending(
     transceiver: RTCRtpTransceiver | null,
     track: MediaStreamTrack | null,
     stream: MediaStream | null,
-    options: VideoSendOptions | null,
+    encoding: RTCRtpEncodingParameters,
+    codec: VideoCodec | null,
   ): Promise<RTCRtpTransceiver | null> {
-    if (!track || !stream || !options) {
+    if (!track || !stream) {
       if (transceiver && transceiver.direction !== 'inactive') {
         await transceiver.sender.replaceTrack(null)
         transceiver.direction = 'inactive'
@@ -257,19 +292,10 @@ export class Peer {
       transceiver.direction = 'sendonly'
       return transceiver
     }
-    const isVideo = track.kind === 'video'
-    const created = this.pc.addTransceiver(track, {
-      direction: 'sendonly',
-      streams: [stream],
-      sendEncodings: [
-        isVideo
-          ? { maxBitrate: options.bitrate, maxFramerate: 60, priority: 'high', networkPriority: 'high' }
-          : { maxBitrate: 160_000, priority: 'high', networkPriority: 'high' },
-      ],
-    })
-    if (isVideo) {
+    const created = this.pc.addTransceiver(track, { direction: 'sendonly', streams: [stream], sendEncodings: [encoding] })
+    if (track.kind === 'video' && codec) {
       try {
-        created.setCodecPreferences(codecOrder(options.codec))
+        created.setCodecPreferences(codecOrder(codec))
       } catch {
         // sem suporte
       }

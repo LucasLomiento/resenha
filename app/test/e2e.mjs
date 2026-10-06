@@ -79,7 +79,19 @@ async function fakeMic(page) {
     osc.start()
     window.__micGain = gain
     const real = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices)
+    // Câmera falsa: um canvas pequeno animado.
+    const cam = document.createElement('canvas')
+    cam.width = 640
+    cam.height = 360
+    const g = cam.getContext('2d')
+    let t = 0
+    setInterval(() => {
+      g.fillStyle = `hsl(${(t += 4) % 360} 60% 45%)`
+      g.fillRect(0, 0, 640, 360)
+    }, 33)
+    const camStream = cam.captureStream(30)
     navigator.mediaDevices.getUserMedia = async (constraints) => {
+      if (constraints?.video) return new MediaStream([camStream.getVideoTracks()[0].clone()])
       if (constraints?.audio?.deviceId?.exact) return real(constraints)
       return new MediaStream([dest.stream.getAudioTracks()[0].clone()])
     }
@@ -310,6 +322,22 @@ try {
   const speaking = await a.page.locator('.member', { hasText: 'Amigo' }).locator('.avatar.speaking').count()
   check(speaking === 1, 'A vê o indicador de fala de B')
   check(micFallbacks.length === 0, 'microfone passa pelo processador (RNNoise/limiar) carregado no AudioWorklet')
+
+  // Webcam: B liga, A abre a tela da call e vê o vídeo; B desliga e volta o avatar.
+  await b.page.getByTitle('Ligar câmera').click({ force: true })
+  await a.page.locator('.member', { hasText: 'Amigo' }).locator('.cam').waitFor({ timeout: 10_000 })
+  await a.page.getByTitle('Abrir a call (câmeras)').click({ force: true })
+  await a.page
+    .waitForFunction(() => [...document.querySelectorAll('.tile video')].some((v) => v.videoWidth > 0), null, { timeout: 15_000 })
+    .then(() => check(true, 'A vê a câmera de B na tela da call'))
+    .catch(() => check(false, 'A vê a câmera de B na tela da call'))
+  await shot(a, '2b-camera')
+  await b.page.getByTitle('Desligar câmera').first().click({ force: true })
+  await a.page
+    .waitForFunction(() => document.querySelectorAll('.tile video').length === 0, null, { timeout: 10_000 })
+    .then(() => check(true, 'desligar a câmera volta o avatar'))
+    .catch(() => check(false, 'desligar a câmera volta o avatar'))
+  await a.page.locator('nav button.channel', { hasText: 'geral' }).click({ force: true })
   await shot(a, '2-call')
 
   // Tela: A compartilha (áudio pelo venmic no Linux) e B assiste.
@@ -388,6 +416,16 @@ try {
   console.log('   estatísticas em A:', (await a.page.locator('.stats').innerText()).replace(/\n/g, ' | '))
   await a.page.getByTitle('Configurações').click({ force: true })
   await shot(a, '6-configuracoes')
+  // A janela de configurações não pode mudar de tamanho (e mover as abas) de uma aba pra outra.
+  const tabsTop = () => a.page.locator('.tabs').evaluate((el) => Math.round(el.getBoundingClientRect().top))
+  const tops = []
+  for (const tab of ['Voz', 'Tela', 'Atalhos', 'App', 'Grupo', 'Conta']) {
+    await a.page.locator('.tabs button', { hasText: tab }).click({ force: true })
+    tops.push(await tabsTop())
+  }
+  check(new Set(tops).size === 1, 'abas das configurações ficam no mesmo lugar em todas as abas', tops.join(','))
+  await a.page.locator('.tabs button', { hasText: 'App' }).click({ force: true })
+  await shot(a, '7-configuracoes-app')
   await a.page.keyboard.press('Escape')
 
   // Parar de compartilhar some com o player de B.

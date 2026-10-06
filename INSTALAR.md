@@ -59,6 +59,7 @@ Pra atualizar pelo app no pacote `.pacman`, ele pede a sua senha: numa janelinha
 
 - **Entrar na call:** clique no canal de voz (o com ícone de alto-falante). Pra sair, use o botão do telefone riscado no painel de baixo.
 - **Mutar e ensurdecer:** são os botões de microfone e de fone no canto de baixo.
+- **Webcam:** com a call aberta, clique no botão de câmera no painel de baixo. Pra ver a câmera de todo mundo, clique em "Voz conectada" ou no canal de voz: abre a tela da call, com um bloco por pessoa.
 - **Volume de cada pessoa:** clique no nome dela dentro do canal de voz.
 - **Compartilhar a tela:** com a call aberta, clique no ícone de monitor no painel de baixo, escolha a qualidade (até 1440p a 60 fps) e se quer mandar o áudio. Do outro lado aparece **AO VIVO** do lado do seu nome, e é só clicar pra assistir.
 - **Mandar imagens e arquivos:** use o clipe do lado do campo de mensagem, cole um print com `Ctrl+V` ou arraste o arquivo pra dentro do chat. O limite é 25 MB por arquivo. Imagens são comprimidas antes de enviar.
@@ -66,7 +67,7 @@ Pra atualizar pelo app no pacote `.pacman`, ele pede a sua senha: numa janelinha
 - **Mensagem privada:** clique na pessoa em **Mensagens diretas**, na barra lateral.
 - **Miniatura:** enquanto assiste, você pode voltar pro chat e a transmissão vira uma miniatura que dá pra arrastar e redimensionar. Também tem a **janela flutuante**, que fica por cima de tudo, até de outros apps.
 - **Atalhos:** em Configurações → Atalhos você escolhe teclas pra mutar, ensurdecer, compartilhar a tela, sair da call e mostrar o Resenha. O padrão é `Ctrl+Shift+M` pra mutar e `Ctrl+Shift+D` pra ensurdecer.
-- **Bandeja, abrir com o computador, sons e zoom:** em Configurações → App. O zoom também funciona com `Ctrl +`, `Ctrl −` e `Ctrl 0`.
+- **Bandeja, abrir com o computador, sons e zoom:** em Configurações → App. O ícone da bandeja fica verde enquanto você fala e muda quando você muta ou ensurdece. O zoom também funciona com `Ctrl +`, `Ctrl −` e `Ctrl 0`.
 - **Configurações:** no botão de ajustes, no canto de baixo. Lá dá pra escolher microfone, saída de áudio e codec de vídeo. O **Testar microfone** toca a sua voz de volta (use fone).
 - **Ruído e limiar:** em Configurações → Voz. A **redução de ruído** com RNNoise tira teclado, ventilador e barulho de fundo. O **limiar do microfone** só transmite quando você fala: no automático ele reconhece a voz, no manual você arrasta a marca no medidor.
 

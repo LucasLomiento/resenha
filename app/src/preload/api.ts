@@ -35,6 +35,8 @@ export interface CallState {
   muted: boolean
   deafened: boolean
   sharing: boolean
+  /** Falando agora: o ícone da bandeja "acende". */
+  speaking: boolean
 }
 
 export type UpdateState =

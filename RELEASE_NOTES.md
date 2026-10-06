@@ -1,11 +1,12 @@
 ## O que tem de novo
 
-- **Redução de ruído com RNNoise**, o mesmo filtro do noise-suppression-for-voice. Funciona igual no Linux e no Windows, sem configurar nada no sistema. Tira teclado, ventilador e barulho de fundo. Fica em Configurações → Voz, onde dá pra escolher entre RNNoise, o filtro do Chromium ou nenhum. Se o seu microfone já passa por um filtro no sistema, deixe desligado aqui.
-- **Limiar do microfone** (opcional): só transmite quando você fala. Tem o modo **automático**, em que o RNNoise reconhece a voz, e o **manual**, em que você arrasta o limiar com o medidor ao vivo. Abre na hora e segura um pouco depois que você para de falar, pra não cortar o fim das palavras.
-- O **Testar microfone** agora passa pelo mesmo filtro e limiar da call, então você ouve exatamente o que os outros vão ouvir.
+- **Webcam na call.** Ligue no botão de câmera do painel da call. A tela da call (clique em "Voz conectada" ou no canal de voz) mostra um bloco por pessoa: o vídeo de quem está com a câmera ligada, o avatar de quem não está, contorno verde em quem está falando e o botão **Assistir** pra quem está transmitindo a tela. A câmera vai em 720p a 30 fps. Dá pra escolher qual câmera e ver uma prévia em Configurações → Voz.
+- **O ícone da bandeja acende em verde enquanto você fala**, e continua mudando pra mutado e ensurdecido. No Windows, o selo do ícone na barra de tarefas faz o mesmo.
+
+Quem está numa versão anterior: atualize os dois lados pra webcam aparecer certinho.
 
 ## Como atualizar
 
-Quem está na 0.2.0: clique em **Atualizar** no topo da barra lateral. No Arch/CachyOS ele pede a senha.
+Clique em **Atualizar** no topo da barra lateral (ou em Configurações → App → Procurar atualização). No Arch/CachyOS ele pede a senha.
 
 Instalação do zero: [INSTALAR.md](https://github.com/LucasLomiento/resenha/blob/main/INSTALAR.md)

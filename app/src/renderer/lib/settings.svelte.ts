@@ -7,6 +7,7 @@ export type VideoCodec = 'VP9' | 'VP8' | 'H264' | 'AV1'
 export interface Settings {
   inputDevice: string
   outputDevice: string
+  cameraDevice: string
   echoCancellation: boolean
   /** rnnoise: dentro do app (igual ao noise-suppression-for-voice); browser: o do Chromium. */
   noiseReduction: 'rnnoise' | 'browser' | 'off'
@@ -37,6 +38,7 @@ const KEY = 'resenha.settings'
 const defaults: Settings = {
   inputDevice: 'default',
   outputDevice: 'default',
+  cameraDevice: 'default',
   echoCancellation: true,
   noiseReduction: 'rnnoise',
   gate: { enabled: false, auto: true, thresholdDb: -50 },

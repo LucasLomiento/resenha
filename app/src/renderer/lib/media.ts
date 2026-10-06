@@ -20,6 +20,21 @@ export async function getMicTrack(): Promise<MediaStreamTrack> {
   }
 }
 
+/** Câmera em 720p a 30 fps (pra call em grupo, mais que isso só pesa no upload). */
+export async function getCameraStream(): Promise<MediaStream> {
+  const base: MediaTrackConstraints = { width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30, max: 30 } }
+  const device = settings.cameraDevice !== 'default' ? { deviceId: { exact: settings.cameraDevice } } : {}
+  let stream: MediaStream
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ video: { ...base, ...device } })
+  } catch (err) {
+    if (!device.deviceId || (err as Error).name !== 'OverconstrainedError') throw err
+    stream = await navigator.mediaDevices.getUserMedia({ video: base })
+  }
+  for (const track of stream.getVideoTracks()) track.contentHint = 'motion'
+  return stream
+}
+
 let audioContext: AudioContext | null = null
 
 /** Nível (RMS 0..1) de uma faixa local, pro indicador de quem está falando. */

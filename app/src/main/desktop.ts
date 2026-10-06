@@ -30,10 +30,17 @@ export function appIcon(): NativeImage {
 // ---------- Bandeja ----------
 
 let tray: Tray | null = null
-let lastState: CallState = { inCall: false, muted: false, deafened: false, sharing: false }
+let lastState: CallState = { inCall: false, muted: false, deafened: false, sharing: false, speaking: false }
+
+/** Ensurdecido > mutado > falando (acende em verde) > normal. */
+function iconName(state: CallState) {
+  if (state.deafened) return 'tray-deafened'
+  if (state.muted) return 'tray-muted'
+  return state.inCall && state.speaking ? 'tray-speaking' : 'tray'
+}
 
 function stateIcon(state: CallState) {
-  return image(state.deafened ? 'tray-deafened' : state.muted ? 'tray-muted' : 'tray', 32)
+  return image(iconName(state), 32)
 }
 
 function trayMenu(state: CallState, show: () => void, dispatch: Dispatch) {
@@ -65,19 +72,30 @@ export function hasTray() {
   return tray !== null
 }
 
-/** Atualiza bandeja e barra de tarefas quando muta, ensurdece, entra ou sai da call. */
+/** Atualiza bandeja e barra de tarefas quando muta, ensurdece, fala, entra ou sai da call. */
 export function showCallState(state: CallState, win: BrowserWindow | null, show: () => void, dispatch: Dispatch) {
+  const previous = lastState
   lastState = state
+  const iconChanged = iconName(state) !== iconName(previous)
+  // Falar liga e desliga várias vezes por segundo: o menu só é refeito quando o resto muda.
+  const menuChanged = state.inCall !== previous.inCall || state.muted !== previous.muted || state.deafened !== previous.deafened
+
   if (tray) {
-    tray.setImage(stateIcon(state))
-    tray.setToolTip(state.deafened ? 'Resenha · ensurdecido' : state.muted ? 'Resenha · mutado' : 'Resenha')
-    tray.setContextMenu(trayMenu(state, show, dispatch))
+    if (iconChanged) tray.setImage(stateIcon(state))
+    if (menuChanged) {
+      tray.setToolTip(state.deafened ? 'Resenha · ensurdecido' : state.muted ? 'Resenha · mutado' : 'Resenha')
+      tray.setContextMenu(trayMenu(state, show, dispatch))
+    }
   }
   if (process.platform !== 'win32' || !win) return
 
-  // Windows: selo no ícone da barra de tarefas e botões na miniatura da janela.
-  const overlay = state.deafened || state.muted ? image(state.deafened ? 'tray-deafened' : 'tray-muted', 16) : null
-  win.setOverlayIcon(overlay, state.deafened ? 'Ensurdecido' : state.muted ? 'Mutado' : '')
+  // Windows: selo no ícone da barra de tarefas (verde falando, vermelho mutado) e botões na miniatura.
+  if (iconChanged) {
+    const name = iconName(state)
+    const label = state.deafened ? 'Ensurdecido' : state.muted ? 'Mutado' : name === 'tray-speaking' ? 'Falando' : ''
+    win.setOverlayIcon(name === 'tray' ? null : image(name, 16), label)
+  }
+  if (!menuChanged) return
   win.setThumbarButtons(
     state.inCall
       ? [

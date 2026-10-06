@@ -24,7 +24,7 @@ interface ConnState {
   connId: string
   session: string
   connectedAt: number
-  voice: { channelId: string; muted: boolean; deafened: boolean; sharing: boolean } | null
+  voice: { channelId: string; muted: boolean; deafened: boolean; sharing: boolean; camera: boolean } | null
 }
 
 export type Result<T> = { ok: true; value: T } | { ok: false; status: number; error: string }
@@ -584,7 +584,7 @@ export class Space extends DurableObject<Env> {
         if (!this.channel(msg.channelId, 'voice')) return
         this.saveState(ws, {
           ...state,
-          voice: { channelId: msg.channelId, muted: !!msg.muted, deafened: !!msg.deafened, sharing: false },
+          voice: { channelId: msg.channelId, muted: !!msg.muted, deafened: !!msg.deafened, sharing: false, camera: false },
         })
         return this.broadcastVoice()
       }
@@ -598,7 +598,13 @@ export class Space extends DurableObject<Env> {
         if (!state.voice) return
         this.saveState(ws, {
           ...state,
-          voice: { ...state.voice, muted: !!msg.muted, deafened: !!msg.deafened, sharing: !!msg.sharing },
+          voice: {
+            ...state.voice,
+            muted: !!msg.muted,
+            deafened: !!msg.deafened,
+            sharing: !!msg.sharing,
+            camera: !!msg.camera,
+          },
         })
         return this.broadcastVoice()
 
@@ -711,7 +717,8 @@ export class Space extends DurableObject<Env> {
     const members: VoiceMember[] = []
     for (const ws of this.sockets(exceptConnId)) {
       const { connId, userId, voice } = this.state(ws)
-      if (voice) members.push({ connId, userId, ...voice })
+      // `camera` pode faltar em conexões abertas antes da versão com webcam.
+      if (voice) members.push({ connId, userId, ...voice, camera: !!voice.camera })
     }
     return members
   }

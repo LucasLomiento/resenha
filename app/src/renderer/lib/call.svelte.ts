@@ -1,7 +1,7 @@
 import type { ClientMessage, SignalData, VoiceMember } from '../../../../shared/protocol'
 import type { PlatformInfo } from '../../preload/api'
 import type { Api } from './api'
-import { captureScreen, getMicTrack, stopCapture } from './media'
+import { captureScreen, getCameraStream, getMicTrack, stopCapture } from './media'
 import { MicPipeline } from './mic'
 import { Peer, type LinkStats, type VideoStats } from './peer'
 import { PRESETS, settings } from './settings.svelte'
@@ -32,7 +32,13 @@ export class Call {
   links = $state<Record<string, LinkStats>>({})
   screens = $state.raw<Record<string, MediaStream>>({})
   localScreen = $state.raw<MediaStream | null>(null)
+  /** Minha câmera (null = desligada) e as câmeras que chegam (connId -> stream). */
+  camera = $state.raw<MediaStream | null>(null)
+  cameras = $state.raw<Record<string, MediaStream>>({})
   joining = $state(false)
+  /** Estou falando (com uma folga pra não piscar), pro ícone da bandeja. */
+  selfSpeaking = $state(false)
+  private lastSpoke = 0
 
   private peers = new Map<string, Peer>()
   /** Container estável do microfone: o id dele é o que os outros usam pra reconhecer a faixa. */
@@ -88,7 +94,7 @@ export class Call {
     this.known = null
     for (const connId of [...this.peers.keys()]) this.removePeer(connId)
     this.deps.send({ t: 'voice.join', channelId: this.channelId, muted: this.muted, deafened: this.deafened })
-    if (this.sharing) this.sendState()
+    if (this.sharing || this.camera) this.sendState()
   }
 
   leave() {
@@ -97,8 +103,11 @@ export class Call {
     this.deps.send({ t: 'voice.leave' })
     for (const connId of [...this.peers.keys()]) this.removePeer(connId)
     this.stopShare(false)
+    this.stopCamera(false)
+    this.cameras = {}
     this.watching = null
     this.channelId = null
+    this.selfSpeaking = false
     if (this.micTrack) this.micStream.removeTrack(this.micTrack)
     this.mic?.close()
     this.mic = null
@@ -184,7 +193,13 @@ export class Call {
 
   private sendState() {
     if (!this.channelId) return
-    this.deps.send({ t: 'voice.update', muted: this.muted, deafened: this.deafened, sharing: this.sharing })
+    this.deps.send({
+      t: 'voice.update',
+      muted: this.muted,
+      deafened: this.deafened,
+      sharing: this.sharing,
+      camera: !!this.camera,
+    })
   }
 
   // ---------- Membros e sinalização ----------
@@ -207,6 +222,9 @@ export class Call {
     for (const connId of [...this.peers.keys()]) {
       if (!others.some((m) => m.connId === connId)) this.removePeer(connId)
     }
+    // Câmera desligada do outro lado: o bloco volta pro avatar.
+    for (const member of others) if (!member.camera) this.dropCamera(member.connId)
+
     // Quem eu assistia parou de compartilhar (ele mesmo já parou de mandar).
     const watched = this.watching
     if (watched && watched !== me && !others.find((m) => m.connId === watched)?.sharing) {
@@ -233,6 +251,9 @@ export class Call {
       screen: (stream) => {
         this.screens = { ...this.screens, [member.connId]: stream! }
       },
+      camera: (stream) => {
+        this.cameras = { ...this.cameras, [member.connId]: stream }
+      },
       watchRequest: (watching) => {
         if (peer.closed) return
         this.watchers[member.connId] = watching
@@ -243,6 +264,7 @@ export class Call {
     peer.setDeafened(this.deafened)
     peer.setOutput(settings.outputDevice)
     this.peers.set(member.connId, peer)
+    if (this.camera) peer.sendCamera(this.camera)
     return peer
   }
 
@@ -251,6 +273,7 @@ export class Call {
     this.peers.delete(connId)
     delete this.watchers[connId]
     this.dropScreen(connId)
+    this.dropCamera(connId)
     if (connId in this.links) delete this.links[connId]
     if (connId in this.speaking) delete this.speaking[connId]
   }
@@ -330,6 +353,62 @@ export class Call {
     if (notify) this.sendState()
   }
 
+  // ---------- Câmera ----------
+
+  async toggleCamera() {
+    if (this.camera) return this.stopCamera()
+    if (!this.channelId) return
+    let stream: MediaStream
+    try {
+      stream = await getCameraStream()
+    } catch (err) {
+      const name = (err as Error).name
+      return this.deps.toast(
+        name === 'NotFoundError' ? 'Nenhuma câmera encontrada.' : name === 'NotAllowedError' ? 'Sem acesso à câmera.' : `Não deu pra ligar a câmera: ${(err as Error).message}`,
+      )
+    }
+    // Câmera desconectada (USB) no meio da call: desliga sozinho.
+    stream.getVideoTracks()[0].addEventListener('ended', () => {
+      if (this.camera === stream) this.stopCamera()
+    })
+    this.camera = stream
+    this.sendState()
+    playSound('unmute')
+    await Promise.all(this.peerList.map((p) => p.sendCamera(stream)))
+  }
+
+  stopCamera(notify = true) {
+    const stream = this.camera
+    if (!stream) return
+    this.camera = null
+    for (const track of stream.getTracks()) track.stop()
+    for (const peer of this.peers.values()) peer.sendCamera(null)
+    if (notify) {
+      this.sendState()
+      playSound('mute')
+    }
+  }
+
+  /** Trocou a câmera nas configurações: troca a imagem sem desligar. */
+  async reloadCamera() {
+    if (!this.camera) return
+    try {
+      const stream = await getCameraStream()
+      const old = this.camera
+      this.camera = stream
+      await Promise.all(this.peerList.map((p) => p.sendCamera(stream)))
+      for (const track of old.getTracks()) track.stop()
+    } catch (err) {
+      this.deps.toast(`Não deu pra trocar a câmera: ${(err as Error).message}`)
+    }
+  }
+
+  private dropCamera(connId: string) {
+    if (!(connId in this.cameras)) return
+    const { [connId]: _, ...rest } = this.cameras
+    this.cameras = rest
+  }
+
   // ---------- Assistir ----------
 
   watch(connId: string) {
@@ -385,7 +464,11 @@ export class Call {
     this.ticker = setInterval(() => {
       const me = this.deps.connId()
       const next: Record<string, boolean> = {}
-      if (me) next[me] = !this.muted && !!this.mic?.speaking
+      const talking = !this.muted && !!this.mic?.speaking
+      if (me) next[me] = talking
+      if (talking) this.lastSpoke = Date.now()
+      const selfSpeaking = talking || Date.now() - this.lastSpoke < 400
+      if (selfSpeaking !== this.selfSpeaking) this.selfSpeaking = selfSpeaking
       for (const peer of this.peers.values()) next[peer.connId] = !this.deafened && peer.audioLevel() > SPEAKING_REMOTE
       for (const [key, value] of Object.entries(next)) {
         if (this.speaking[key] !== value) this.speaking[key] = value

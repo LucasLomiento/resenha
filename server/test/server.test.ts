@@ -358,9 +358,10 @@ describe('voz e sinalização', () => {
 
     a.send({ t: 'rtc.signal', to: connB, data: { kind: 'unwatch' } })
     expect((await b.next('rtc.signal')).from).toBe(connA)
-    b.send({ t: 'voice.update', muted: true, deafened: false, sharing: true })
+    b.send({ t: 'voice.update', muted: true, deafened: false, sharing: true, camera: true })
     const state = await a.next('voice.state', (m) => m.members.some((x) => x.sharing))
     expect(state.members).toHaveLength(2)
+    expect(state.members.find((x) => x.connId === connB)?.camera).toBe(true)
   })
 
   it('cair da conexão tira da call', async () => {

@@ -113,6 +113,7 @@
             <button class="member-main" onclick={() => memberClick(member)} title={self ? 'Você' : 'Volume'}>
               <Avatar id={member.userId} name={user?.name ?? '?'} size={24} speaking={call.channelId === channel.id && call.speaking[member.connId]} />
               <span class="member-name" class:dim={!self && call.channelId !== channel.id}>{user?.name ?? '?'}</span>
+              {#if member.camera}<span class="cam"><Icon name="camera" size={14} /></span>{/if}
               {#if member.deafened}<span class="state"><Icon name="headphones-off" size={14} /></span>
               {:else if member.muted}<span class="state"><Icon name="mic-off" size={14} /></span>{/if}
               {#if !self && call.channelId === channel.id && link?.rtt != null}
@@ -170,15 +171,28 @@
 
   {#if call.channelId || call.joining}
     <div class="voice-panel">
-      <div class="voice-info">
+      <button class="voice-info" title="Abrir a call (câmeras)" disabled={!call.channelId} onclick={() => (store.view = 'call')}>
         <span class="connected">{call.joining ? 'Entrando na call…' : call.sharing ? 'Ao vivo' : 'Voz conectada'}</span>
         <span class="where">
           {callChannel?.name ?? ''}
           {#if call.sharing}· {call.viewerCount} assistindo
           {:else if worstLink}<span class="ping {pingClass(worstLink.rtt)}">· {worstLink.rtt}ms</span>{/if}
         </span>
-      </div>
-      <!-- Sempre os mesmos dois botões, no mesmo lugar: muda só o que eles fazem. -->
+      </button>
+      <!-- Sempre os mesmos três botões, no mesmo lugar: muda só o que eles fazem. -->
+      <button
+        class="icon-btn"
+        class:cam-on={!!call.camera}
+        disabled={!call.channelId}
+        title={call.camera ? 'Desligar câmera' : 'Ligar câmera'}
+        onclick={async () => {
+          const turningOn = !call.camera
+          await call.toggleCamera()
+          if (turningOn && call.camera) store.view = 'call'
+        }}
+      >
+        <Icon name={call.camera ? 'camera' : 'camera-off'} />
+      </button>
       <button
         class="icon-btn"
         class:live-on={call.sharing}
@@ -411,6 +425,25 @@
     min-width: 0;
     display: flex;
     flex-direction: column;
+    align-items: flex-start;
+    text-align: left;
+    border-radius: 6px;
+    padding: 2px 4px;
+    margin-left: -4px;
+  }
+
+  .voice-info:hover:not(:disabled) {
+    background: var(--bg-hover);
+  }
+
+  .cam {
+    display: grid;
+    color: var(--text-faint);
+  }
+
+  .cam-on {
+    color: var(--green) !important;
+    background: rgb(63 191 127 / 0.14);
   }
 
   .connected {

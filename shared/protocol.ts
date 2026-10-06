@@ -59,6 +59,7 @@ export interface VoiceMember {
   muted: boolean
   deafened: boolean
   sharing: boolean
+  camera: boolean
 }
 
 // ---------- HTTP ----------
@@ -96,8 +97,8 @@ export type SignalData =
   | {
       kind: 'description'
       description: SessionDescription
-      /** streamId -> o que é, pra quem recebe saber qual faixa é mic e qual é tela. */
-      streams: Record<string, 'mic' | 'screen'>
+      /** streamId -> o que é, pra quem recebe saber qual faixa é mic, tela ou câmera. */
+      streams: Record<string, 'mic' | 'screen' | 'camera'>
     }
   | { kind: 'candidate'; candidate: IceCandidate | null }
   | { kind: 'watch' }
@@ -117,7 +118,7 @@ export type ClientMessage =
   | { t: 'invite.create' }
   | { t: 'voice.join'; channelId: string; muted: boolean; deafened: boolean }
   | { t: 'voice.leave' }
-  | { t: 'voice.update'; muted: boolean; deafened: boolean; sharing: boolean }
+  | { t: 'voice.update'; muted: boolean; deafened: boolean; sharing: boolean; camera?: boolean }
   | { t: 'rtc.signal'; to: string; data: SignalData }
 
 // ---------- WebSocket: servidor -> app ----------

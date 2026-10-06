@@ -3,6 +3,7 @@
   import { acceleratorFrom } from '../lib/shortcuts'
   import { store } from '../lib/store.svelte'
   import { ui } from '../lib/ui.svelte'
+  import CallView from './CallView.svelte'
   import ChatView from './ChatView.svelte'
   import Lightbox from './Lightbox.svelte'
   import Settings from './Settings.svelte'
@@ -11,10 +12,12 @@
   import StreamView from './StreamView.svelte'
 
   const streamFull = $derived(store.view === 'stream' && !!store.call.watching)
+  const callOpen = $derived(store.view === 'call' && !!store.call.channelId)
 
-  // Parou de assistir: volta pro chat.
+  // Parou de assistir, ou saiu da call: volta pro chat.
   $effect(() => {
     if (!store.call.watching && store.view === 'stream') store.view = 'chat'
+    if (!store.call.channelId && store.view === 'call') store.view = 'chat'
   })
 
   // Bandeja e barra de tarefas acompanham o estado da call.
@@ -24,6 +27,7 @@
       muted: store.call.muted,
       deafened: store.call.deafened,
       sharing: store.call.sharing,
+      speaking: store.call.selfSpeaking,
     })
   })
 
@@ -56,9 +60,12 @@
 <div class="shell">
   <Sidebar />
   <main>
-    <div class="chat" class:hidden={streamFull}>
+    <div class="chat" class:hidden={streamFull || callOpen}>
       <ChatView />
     </div>
+    {#if callOpen}
+      <CallView />
+    {/if}
     {#if store.call.watching}
       <StreamView full={streamFull} />
     {/if}

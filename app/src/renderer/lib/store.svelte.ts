@@ -56,7 +56,8 @@ class Store {
   now = $state(Date.now())
 
   currentChannel = $state<string | null>(null)
-  view = $state<'chat' | 'stream'>('chat')
+  /** chat | stream (assistindo uma tela) | call (os blocos de vídeo/avatar de quem está na call) */
+  view = $state<'chat' | 'stream' | 'call'>('chat')
   invite = $state<string | null>(null)
   toasts = $state<Toast[]>([])
 
@@ -319,7 +320,9 @@ class Store {
     const channel = this.channels.find((c) => c.id === id)
     if (!channel) return
     if (channel.kind === 'voice') {
-      this.call.join(id)
+      // Já está nessa call: abre a tela da call (câmeras e avatares).
+      if (this.call.channelId === id) this.view = 'call'
+      else this.call.join(id)
       return
     }
     this.currentChannel = id

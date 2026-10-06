@@ -2,7 +2,7 @@
   import { onDestroy, onMount } from 'svelte'
   import type { ChannelKind } from '../../../../shared/protocol'
   import type { ShortcutAction } from '../../preload/api'
-  import { getMicTrack } from '../lib/media'
+  import { getCameraStream, getMicTrack } from '../lib/media'
   import { MicPipeline } from '../lib/mic'
   import { PRESETS, settings, type ScreenPreset, type VideoCodec } from '../lib/settings.svelte'
   import { ACTIONS, acceleratorFrom, describeAccelerator } from '../lib/shortcuts'
@@ -11,6 +11,7 @@
   import { ui, type SettingsTab } from '../lib/ui.svelte'
   import Icon from './Icon.svelte'
   import Modal from './Modal.svelte'
+  import VideoTile from './VideoTile.svelte'
 
   const call = store.call
   const tabs: { id: SettingsTab; label: string }[] = [
@@ -24,6 +25,7 @@
 
   let inputs = $state<MediaDeviceInfo[]>([])
   let outputs = $state<MediaDeviceInfo[]>([])
+  let cameras = $state<MediaDeviceInfo[]>([])
 
   async function loadDevices() {
     let devices = await navigator.mediaDevices.enumerateDevices()
@@ -40,6 +42,7 @@
     // O microfone virtual do áudio da tela não serve como microfone de voz.
     inputs = devices.filter((d) => d.kind === 'audioinput' && d.deviceId !== 'communications' && !d.label.includes('vencord-screen-share'))
     outputs = devices.filter((d) => d.kind === 'audiooutput' && d.deviceId !== 'communications')
+    cameras = devices.filter((d) => d.kind === 'videoinput')
   }
 
   onMount(() => {
@@ -96,6 +99,34 @@
   }
 
   onDestroy(stopTest)
+
+  // --- prévia da câmera ---
+  let preview = $state.raw<MediaStream | null>(null)
+
+  async function togglePreview() {
+    if (preview) return stopPreview()
+    try {
+      preview = await getCameraStream()
+      loadDevices()
+    } catch (err) {
+      store.toast(`Não deu pra abrir a câmera: ${(err as Error).message}`)
+    }
+  }
+
+  function stopPreview() {
+    for (const track of preview?.getTracks() ?? []) track.stop()
+    preview = null
+  }
+
+  onDestroy(stopPreview)
+
+  function cameraChanged() {
+    call.reloadCamera()
+    if (preview) {
+      stopPreview()
+      togglePreview()
+    }
+  }
 
   function micChanged() {
     call.reloadMic()
@@ -182,7 +213,7 @@
 
 <svelte:window onkeydowncapture={onRecordKey} />
 
-<Modal title="Configurações" width={680} onclose={() => (recording ? stopRecording() : (ui.settings = null))}>
+<Modal title="Configurações" width={680} height={680} onclose={() => (recording ? stopRecording() : (ui.settings = null))}>
   <div class="tabs">
     {#each tabs as tab (tab.id)}
       <button class:on={ui.settings === tab.id} onclick={() => (ui.settings = tab.id)}>{tab.label}</button>
@@ -210,6 +241,24 @@
         </select>
       </label>
     </div>
+
+    <div class="camera-row">
+      <label>
+        <span class="label">Câmera</span>
+        <select class="field" bind:value={settings.cameraDevice} onchange={cameraChanged}>
+          <option value="default">Padrão do sistema</option>
+          {#each cameras.filter((d) => d.deviceId && d.deviceId !== 'default') as d (d.deviceId)}
+            <option value={d.deviceId}>{d.label || 'Câmera'}</option>
+          {/each}
+        </select>
+      </label>
+      <button class="btn secondary" onclick={togglePreview}>
+        <Icon name={preview ? 'camera-off' : 'camera'} size={16} />{preview ? 'Fechar prévia' : 'Ver câmera'}
+      </button>
+    </div>
+    {#if preview}
+      <div class="preview"><VideoTile stream={preview} mirror /></div>
+    {/if}
 
     <div class="meter-row">
       <button class="btn secondary" onclick={() => (testing ? stopTest() : startTest())}>
@@ -421,7 +470,7 @@
       </label>
     </div>
 
-    <span class="label">Atualizações</span>
+    <span class="label section-gap">Atualizações</span>
     <div class="updates">
       <span>
         Versão {store.platform?.version}
@@ -506,10 +555,16 @@
 </Modal>
 
 <style>
+  /* As abas ficam presas no topo enquanto o conteúdo rola. */
   .tabs {
+    position: sticky;
+    top: -8px;
+    z-index: 2;
     display: flex;
     gap: 4px;
-    margin-bottom: 18px;
+    margin: -8px 0 18px;
+    padding-top: 8px;
+    background: var(--bg-sidebar);
     border-bottom: 1px solid var(--border);
   }
 
@@ -543,6 +598,27 @@
     align-items: center;
     gap: 12px;
     margin: 16px 0 6px;
+  }
+
+  .section-gap {
+    display: block;
+    margin-top: 22px;
+  }
+
+  .camera-row {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: end;
+    gap: 14px;
+    margin-top: 14px;
+  }
+
+  .preview {
+    width: 320px;
+    aspect-ratio: 16 / 9;
+    margin-top: 10px;
+    border-radius: 10px;
+    overflow: hidden;
   }
 
   .hint.inline {

@@ -5,16 +5,25 @@
   let {
     title,
     width = 520,
+    height,
     onclose,
     children,
     footer,
-  }: { title: string; width?: number; onclose: () => void; children: Snippet; footer?: Snippet } = $props()
+  }: {
+    title: string
+    width?: number
+    /** Altura fixa: o conteúdo rola por dentro e a janela não muda de tamanho (nem de lugar) entre abas. */
+    height?: number
+    onclose: () => void
+    children: Snippet
+    footer?: Snippet
+  } = $props()
 </script>
 
 <svelte:window onkeydown={(e) => e.key === 'Escape' && onclose()} />
 
 <div class="backdrop" role="presentation" onmousedown={(e) => e.target === e.currentTarget && onclose()}>
-  <div class="modal" role="dialog" aria-modal="true" aria-label={title} style:width="{width}px">
+  <div class="modal" role="dialog" aria-modal="true" aria-label={title} style:width="{width}px" style:height={height ? `${height}px` : null}>
     <header>
       <h2>{title}</h2>
       <button class="icon-btn" title="Fechar" onclick={onclose}><Icon name="x" /></button>
@@ -62,8 +71,11 @@
   }
 
   .content {
+    flex: 1;
+    min-height: 0;
     padding: 8px 22px 20px;
     overflow-y: auto;
+    scrollbar-gutter: stable;
   }
 
   footer {
