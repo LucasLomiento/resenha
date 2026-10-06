@@ -135,6 +135,16 @@ describe('migração da 0.5', () => {
     expect((await post('/api/register', { name: 'Outro', password: 'senha-forte-1', invite: 'velho123' })).status).toBe(200)
   })
 
+  it('o app 0.5 reconectando primeiro, logo depois do deploy, também entra', async () => {
+    const { lucas, duarte, general } = await seedLegacy()
+    // Nada antes: quem acorda primeiro é o "main", e a autenticação acorda o cadastro central no meio.
+    const [a, b] = await Promise.all([legacySocket(lucas.token), legacySocket(duarte.token)])
+    expect((await a.next('ready')).me.id).toBe(lucas.id)
+    expect((await b.next('ready')).me.id).toBe(duarte.id)
+    a.send({ t: 'chat.history', reqId: 'h', channelId: general })
+    expect((await a.next('chat.history')).messages.map((m) => m.content)).toEqual(['Bora tomar um café?', 'bora', ''])
+  })
+
   it('entra com o apelido antigo ou com o nome de usuário novo', async () => {
     await seedLegacy()
     expect((await post('/api/login', { name: 'Duarte Zé', password: 'senha123' })).status).toBe(200)
