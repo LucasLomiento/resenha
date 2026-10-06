@@ -28,9 +28,18 @@ export function userGradient(id: string): string {
   return `linear-gradient(135deg, ${a}, ${b})`
 }
 
+/** Palavras que não entram nas iniciais ("Mesa de RPG" vira MR). */
+const CONNECTORS = new Set(['de', 'da', 'do', 'das', 'dos', 'e', 'a', 'o', 'the', 'of'])
+
 export function initials(name: string): string {
-  const parts = name.trim().split(/\s+/)
-  return ((parts[0]?.[0] ?? '?') + (parts[1]?.[0] ?? '')).toUpperCase()
+  const words = name
+    .split(/\s+/)
+    .map((w) => w.replace(/[^\p{L}\p{N}]/gu, ''))
+    .filter((w) => w && !CONNECTORS.has(w.toLowerCase()))
+  // Só a primeira palavra quando a segunda veio entre parênteses ou é um apelido solto.
+  const first = words[0]?.[0] ?? name.trim()[0] ?? '?'
+  const second = /\(/.test(name) ? '' : (words[1]?.[0] ?? '')
+  return (first + second).toUpperCase()
 }
 
 const timeFmt = new Intl.DateTimeFormat('pt-BR', { hour: '2-digit', minute: '2-digit' })

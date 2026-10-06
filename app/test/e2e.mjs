@@ -303,6 +303,23 @@ try {
   })
   check(scroll.scrollable && scroll.moved, 'chat rola quando tem mensagem que não cabe')
 
+  if (SHOTS) {
+    // Confirmação de apagar (cancelada com Esc) e o visualizador de imagem.
+    await a.page.locator('.scroller').evaluate((el) => (el.scrollTop = el.scrollHeight))
+    const last = a.page.locator('article', { hasText: 'mensagem 29' })
+    await last.hover({ force: true })
+    await last.getByRole('button', { name: 'Apagar' }).click({ force: true })
+    await a.page.locator('.modal').waitFor()
+    await shot(a, '1e-confirmar')
+    await a.page.keyboard.press('Escape')
+    await a.page.locator('.modal').waitFor({ state: 'detached' })
+    await a.page.locator('article img[alt="print.png"]').click({ force: true })
+    await a.page.locator('.lightbox').waitFor()
+    await shot(a, '1f-imagem')
+    await a.page.keyboard.press('Escape')
+    await a.page.locator('.lightbox').waitFor({ state: 'detached' })
+  }
+
   // Mensagem privada: B manda pra A; A vê o aviso e abre.
   await b.page.locator('button.person', { hasText: 'Lucas' }).click({ force: true })
   await b.page.getByPlaceholder('Mensagem para Lucas').fill('oi no privado')

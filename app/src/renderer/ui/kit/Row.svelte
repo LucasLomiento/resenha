@@ -107,8 +107,9 @@
     padding-bottom: 14px;
   }
 
+  /* Empilhado: o controle (campo, medidor, lista) ocupa a largura do cartão. */
   .stack .control {
-    justify-content: flex-start;
+    display: block;
   }
 
   .indent {

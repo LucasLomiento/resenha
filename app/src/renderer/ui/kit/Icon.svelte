@@ -66,6 +66,7 @@
   import Paperclip from '@lucide/svelte/icons/paperclip'
   import Pencil from '@lucide/svelte/icons/pencil'
   import PhoneOff from '@lucide/svelte/icons/phone-off'
+  import Phone from '@lucide/svelte/icons/phone'
   import PictureInPicture from '@lucide/svelte/icons/picture-in-picture-2'
   import Pin from '@lucide/svelte/icons/pin'
   import PinOff from '@lucide/svelte/icons/pin-off'
@@ -175,6 +176,7 @@
     sparkles: Sparkles,
     compose: SquarePen,
     'phone-off': PhoneOff,
+    phone: Phone,
     trash: Trash,
     'triangle-alert': TriangleAlert,
     upload: Upload,

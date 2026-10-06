@@ -1,23 +1,19 @@
 <script lang="ts">
   import { userGradient } from '../../lib/format'
   import { store } from '../../lib/store.svelte'
-  import { confirmAction } from '../../lib/ui.svelte'
-  import { Avatar, Badge, Button, PageHeader, Row, Section } from '../kit'
+  import { Avatar, Badge, PageHeader } from '../kit'
 
   const me = $derived(store.me)
-
-  function logout() {
-    confirmAction({ title: 'Sair da conta?', confirm: 'Sair', onconfirm: () => store.logout() })
-  }
 </script>
 
+<!-- Foto, nome de usuário, bio e aparelhos chegam com as contas novas (ver ui/proto, "Conta"). -->
 <PageHeader title="Minha conta" />
 
 {#if me}
   <div class="profile">
     <div class="banner" style:background={userGradient(me.id)}></div>
     <div class="identity">
-      <Avatar id={me.id} name={me.name} size={72} cutout="var(--bg-raised)" />
+      <Avatar id={me.id} name={me.name} size={72} status={store.status === 'open' ? 'online' : 'offline'} cutout="var(--bg-raised)" />
       <div class="names">
         <span class="name">{me.name}</span>
         {#if me.admin}<Badge tone="accent">Admin</Badge>{/if}
@@ -26,15 +22,8 @@
   </div>
 {/if}
 
-<Section>
-  <Row label="Sair da conta">
-    <Button variant="danger-soft" icon="log-out" onclick={logout}>Sair</Button>
-  </Row>
-</Section>
-
 <style>
   .profile {
-    margin-bottom: var(--s-8);
     border-radius: var(--r-xl);
     background: var(--bg-raised);
     box-shadow:
