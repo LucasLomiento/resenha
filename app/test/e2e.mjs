@@ -381,6 +381,7 @@ check(true, 'contas, servidor e convite criados pela API', code)
 
 const a = await launch('e2e-a')
 const b = await launch('e2e-b')
+let closedA = false
 
 try {
   await login(a, 'lucas')
@@ -730,6 +731,14 @@ try {
     await shot(a, '9b-janela-minima-configuracoes')
     await a.page.keyboard.press('Escape')
   }
+
+  // Fechar o app sai da call na hora (não fica "esperando voltar" como numa queda de rede).
+  closedA = true
+  await a.app.close()
+  await b.page
+    .waitForFunction(() => document.querySelectorAll('nav .members .member').length === 1, null, { timeout: 8000 })
+    .then(() => check(true, 'fechar o app tira da call na hora'))
+    .catch(() => check(false, 'fechar o app tira da call na hora', 'continuou na call'))
 } catch (err) {
   failures++
   console.error('✘ falhou:', err)
@@ -737,7 +746,7 @@ try {
     console.error(`   tela de ${name}:`, (await side.page.locator('body').innerText().catch(() => '')).replace(/\n+/g, ' | ').slice(0, 600))
   }
 } finally {
-  await a.app.close()
+  if (!closedA) await a.app.close()
   await b.app.close()
   server.stop()
 }

@@ -98,6 +98,12 @@ class Client implements GuildHost, HomeHost {
     }
     window.addEventListener('focus', () => this.activity())
     window.addEventListener('online', () => this.nudge())
+    // Fechando (ou recarregando) o app: fecha as conexões de propósito, pro servidor tirar da
+    // call na hora em vez de esperar o app voltar (como faria numa queda de rede).
+    window.addEventListener('pagehide', () => {
+      this.home?.close()
+      for (const guild of Object.values(this.guilds)) guild.close()
+    })
   }
 
   // ---------- Sessão ----------

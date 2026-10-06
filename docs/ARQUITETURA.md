@@ -28,6 +28,13 @@ Tudo no Cloudflare Workers + Durable Objects (DO), sem banco externo. Cada DO é
 - **O app abre 1 WebSocket por servidor + 1 pessoal (Home).** Com hibernação, conexão parada não custa nada. É mais simples (e mais barato em requisições) do que um gateway central repassando tudo.
 - **DMs num Conversation por conversa, passando pelo Home.** O app manda e recebe DMs só pelo socket pessoal: o Home repassa pro Conversation, que guarda e entrega pros Homes dos dois.
 
+## Queda de conexão sem derrubar a call
+Voz, câmera e tela vão direto entre os PCs (P2P); o servidor só apresenta as pessoas e repassa a sinalização. Então uma queda do WebSocket não precisa derrubar nada:
+- **Mesmo connId em toda reconexão.** Cada conexão do app manda no `auth` uma chave aleatória dela (a mesma até fechar o app). O servidor tira o connId de `SHA-256(conta + chave)` (`server/src/resume.ts`): quem reconecta volta com o mesmo connId, e ninguém de outra conta chega nele.
+- **Quem cai sem avisar vira "fantasma" por 30 s.** Continua na call e online pros outros, e a sinalização que chega pra ele fica guardada. Voltando a tempo, o `ready` vem com `resumed: true` e tudo segue. Se a conexão antiga ainda parecia aberta (caiu sem fechar), a nova toma o lugar dela (código 4005). Fechar de propósito (1000, 1001, sessão encerrada, expulso…) sai na hora; o app fecha as conexões assim ao sair.
+- **No app, reconectar não desfaz as conexões P2P.** Se o servidor esqueceu a call (reiniciou, ou passou dos 30 s), o app entra de novo numa mensagem só, já com tela e câmera como estavam. Cada RTCPeerConnection tem um id que vai na sinalização (`pc` e `ack`): se um lado precisou recomeçar a dele, o outro percebe e recomeça junto, e quem assistia uma tela volta a assistir sozinho. Quem some da call ainda tem 15 s pra voltar antes de a conexão P2P fechar.
+- **Conexão morta é percebida em ~10 s.** O app manda `ping` a cada 20 s (o DO responde `pong` sozinho, sem acordar) e larga a conexão se a resposta não vier em 10 s. Ofertas sem resposta são reenviadas, e a sinalização espera o WebSocket voltar.
+
 ## Segurança (regras do servidor)
 - Token de sessão: 32 bytes aleatórios, guardado só como SHA-256. Vai no header `Authorization` (HTTP) ou na primeira mensagem do WebSocket (`auth`), nunca na URL.
 - Sessões expiram após 30 dias sem uso; lista de aparelhos; derrubar um ou todos; trocar a senha derruba os outros.
