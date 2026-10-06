@@ -15,7 +15,7 @@ import {
 } from '../../../../shared/protocol'
 import type { Api } from './api'
 import { mergeMessages } from './guild.svelte'
-import { Connection, type CloseReason, type ConnectionStatus } from './ws'
+import { Connection, connectionKey, type CloseReason, type ConnectionStatus } from './ws'
 
 /** O que a conexão pessoal precisa do resto do app (o Client implementa). */
 export interface HomeHost {
@@ -24,7 +24,10 @@ export interface HomeHost {
   userId(): string
   presence(): { status: Status; text: string | null }
   toast(text: string, kind?: 'error' | 'info'): void
-  ready(home: HomeState, reconnected: boolean): void
+  /** `resumed`: reconectou e o servidor manteve esta conexão na chamada privada. */
+  ready(home: HomeState, reconnected: boolean, resumed: boolean): void
+  /** Conversa da chamada privada em que o app está (vai no `auth` pra saber como ela ficou). */
+  dmCallId(): string | null
   closed(reason: CloseReason): void
   guildJoined(guild: GuildInfo): void
   guildUpdated(guild: GuildInfo): void
@@ -72,11 +75,13 @@ export class HomeState {
   private requests = new Map<string, (msg: HomeServerMessage) => void>()
   private typingSent: Record<string, number> = {}
   private everConnected = false
+  /** Igual em toda reconexão desta instância: o servidor devolve o mesmo connId e a chamada continua. */
+  private key = connectionKey()
 
   constructor(private host: HomeHost) {
     this.conn = new Connection<HomeServerMessage, HomeClientMessage>(
       () => host.http().wsUrl(`/api/home/${encodeURIComponent(host.userId())}/ws`),
-      () => ({ t: 'auth', token: host.token(), ...host.presence() }),
+      () => ({ t: 'auth', token: host.token(), ...host.presence(), key: this.key, call: host.dmCallId() ?? undefined }),
       {
         message: (msg) => this.handle(msg),
         status: (status) => (this.status = status),
@@ -164,8 +169,14 @@ export class HomeState {
         this.loadingHistory = {}
         this.typing = {}
         this.loaded = true
+        // A chamada privada em que o app estava: como ficou enquanto a conexão caiu.
+        if (msg.call) this.calls[msg.call.channelId] = { members: msg.call.members, ringing: msg.call.ringing }
+        else if (msg.call === null) {
+          const asked = this.host.dmCallId()
+          if (asked) delete this.calls[asked]
+        }
         this.host.presenceSelf(msg.presence.status, msg.presence.text)
-        this.host.ready(this, reconnected)
+        this.host.ready(this, reconnected, !!msg.resumed)
         return
       }
 

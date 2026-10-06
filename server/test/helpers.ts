@@ -135,6 +135,11 @@ export class Socket<In extends Message, Out extends Message> {
   close() {
     this.ws.close(1000)
   }
+
+  /** Cai sem avisar (como uma queda de rede): o servidor espera o app voltar. */
+  drop() {
+    this.ws.close(4000)
+  }
 }
 
 export type GuildSocket = Socket<ServerMessage, ClientMessage>

@@ -6,7 +6,7 @@ export default defineConfig({
     cloudflareTest({
       wrangler: { configPath: './wrangler.jsonc' },
       miniflare: {
-        bindings: { FILE_SECRET: 'segredo-de-teste' },
+        bindings: { FILE_SECRET: 'segredo-de-teste', RESUME_GRACE_MS: '400' },
       },
     }),
   ],

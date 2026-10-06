@@ -323,7 +323,7 @@ export interface IceCandidate {
   usernameFragment?: string | null
 }
 
-export type SignalData =
+export type SignalData = (
   | {
       kind: 'description'
       description: SessionDescription
@@ -333,6 +333,15 @@ export type SignalData =
   | { kind: 'candidate'; candidate: IceCandidate | null }
   | { kind: 'watch' }
   | { kind: 'unwatch' }
+) & {
+  /**
+   * Id da RTCPeerConnection de quem manda e o da de quem recebe, até onde quem
+   * manda sabe (null = ainda não conhece). Se um dos lados recriou a conexão
+   * (reconectou sem conseguir retomar), o outro percebe e recria a dele também.
+   */
+  pc?: string
+  ack?: string | null
+}
 
 // ---------- HTTP ----------
 
@@ -369,7 +378,14 @@ export type ClientMessage =
    * Primeira mensagem da conexão: o token vai aqui, nunca na URL (URL vai parar em log).
    * O status já vai junto, pra quem está invisível não aparecer online nem por um instante.
    */
-  | { t: 'auth'; token: string; status?: Status; text?: string | null }
+  | {
+      t: 'auth'
+      token: string
+      status?: Status
+      text?: string | null
+      /** Chave desta instância do app, a mesma em toda reconexão: o connId sai dela e a call continua. */
+      key?: string
+    }
   /** `auto`: ausente automático (sem mexer no PC) — não muda o status escolhido. */
   | { t: 'presence'; status: Status; text: string | null; auto?: boolean }
   | {
@@ -448,7 +464,8 @@ export type ClientMessage =
   | { t: 'invites.list'; reqId: string }
   | { t: 'invite.delete'; code: string }
   | { t: 'notify.update'; settings: NotifySettings }
-  | { t: 'voice.join'; channelId: string; muted: boolean; deafened: boolean }
+  /** `sharing`/`camera`: voltando depois de o servidor perder a call (tudo numa mensagem só, sem piscar). */
+  | { t: 'voice.join'; channelId: string; muted: boolean; deafened: boolean; sharing?: boolean; camera?: boolean }
   | { t: 'voice.leave' }
   | { t: 'voice.update'; muted: boolean; deafened: boolean; sharing: boolean; camera?: boolean }
   | { t: 'rtc.signal'; to: string; data: SignalData }
@@ -477,6 +494,8 @@ export type ServerMessage =
       /** Último id de mensagem de cada canal de texto (pra saber o que tem de novo). */
       lastMessageIds?: Record<string, string>
       notify?: NotifySettings
+      /** A conexão anterior (mesma chave) ainda estava na call: voltou nela sem ninguém perceber. */
+      resumed?: boolean
     }
   | { t: 'chat.message'; message: Message; nonce?: string }
   | { t: 'chat.edited'; message: Message }
@@ -536,7 +555,16 @@ export interface DmChannel {
 }
 
 export type HomeClientMessage =
-  | { t: 'auth'; token: string; status?: Status; text?: string | null }
+  | {
+      t: 'auth'
+      token: string
+      status?: Status
+      text?: string | null
+      /** Chave desta instância do app (igual à do servidor): o connId sai dela. */
+      key?: string
+      /** Conversa da chamada privada em que o app estava: o `ready` traz como ela está agora. */
+      call?: string
+    }
   | { t: 'presence'; status: Status; text: string | null; auto?: boolean }
   | { t: 'dm.open'; userId: string; reqId: string }
   | {
@@ -555,7 +583,13 @@ export type HomeClientMessage =
   | { t: 'dm.typing'; channelId: string }
   | { t: 'dm.close'; channelId: string }
   | { t: 'call.ring'; channelId: string; video: boolean }
-  | { t: 'call.answer'; channelId: string; accept: boolean }
+  /** `state`: voltando depois de a conexão cair (mutado, tela e câmera como estavam). */
+  | {
+      t: 'call.answer'
+      channelId: string
+      accept: boolean
+      state?: { muted: boolean; deafened: boolean; sharing: boolean; camera: boolean }
+    }
   | { t: 'call.hangup'; channelId: string }
   | { t: 'call.update'; channelId: string; muted: boolean; deafened: boolean; sharing: boolean; camera: boolean }
   | { t: 'call.signal'; channelId: string; to: string; data: SignalData }
@@ -572,6 +606,10 @@ export type HomeServerMessage =
       presence: { status: Status; text: string | null }
       /** Presença dos amigos. */
       presences: Record<string, Presence>
+      /** Voltou na chamada privada em que estava (a conexão anterior ainda estava nela). */
+      resumed?: boolean
+      /** Como está a chamada do `auth.call` (null: acabou). */
+      call?: { channelId: string; members: VoiceMember[]; ringing: string[] } | null
     }
   | { t: 'me.updated'; me: Me }
   | { t: 'user.updated'; user: User }

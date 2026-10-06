@@ -2,6 +2,9 @@ import type { SignalData } from '../../../../shared/protocol'
 import { tuneScreenOpus } from './sdp'
 import type { ScreenMode, VideoCodec } from './settings.svelte'
 
+/** Sinalização sem os ids das conexões (o Peer põe na hora de mandar). */
+type Signal = SignalData extends infer T ? (T extends unknown ? Omit<T, 'pc' | 'ack'> : never) : never
+
 export interface PeerEvents {
   signal(data: SignalData): void
   /** Tela remota chegando (quando estou assistindo essa pessoa). */
@@ -54,8 +57,14 @@ export function codecOrder(preferred: VideoCodec): RTCRtpCodec[] {
 export class Peer {
   readonly pc: RTCPeerConnection
   readonly audio = new Audio()
+  /** Id desta RTCPeerConnection: vai em toda sinalização, pra cada lado saber se o outro recomeçou. */
+  readonly id = crypto.randomUUID().slice(0, 13)
+  /** Id da conexão do outro lado (null até a primeira mensagem dele). */
+  remoteId: string | null = null
   remoteScreen: MediaStream | null = null
   closed = false
+  /** Quando mandei a última oferta (pra reenviar se a resposta se perder). */
+  private offerSentAt = 0
 
   private makingOffer = false
   private ignoreOffer = false
@@ -102,7 +111,7 @@ export class Peer {
     }
 
     this.pc.onicecandidate = ({ candidate }) => {
-      if (candidate) this.events.signal({ kind: 'candidate', candidate: candidate.toJSON() })
+      if (candidate) this.emit({ kind: 'candidate', candidate: candidate.toJSON() })
     }
 
     this.pc.onconnectionstatechange = () => {
@@ -137,14 +146,35 @@ export class Peer {
     }
   }
 
+  private emit(data: Signal) {
+    this.events.signal({ ...data, pc: this.id, ack: this.remoteId } as SignalData)
+  }
+
   private sendDescription() {
     const description = this.pc.localDescription
     if (!description) return
-    this.events.signal({ kind: 'description', description: description.toJSON(), streams: { ...this.localStreams } })
+    if (description.type === 'offer') this.offerSentAt = Date.now()
+    this.emit({ kind: 'description', description: description.toJSON(), streams: { ...this.localStreams } })
+  }
+
+  /**
+   * Oferta sem resposta há um tempo (a sinalização caiu no caminho): manda de
+   * novo. Quem recebe a mesma oferta duas vezes só responde de novo.
+   */
+  resendOffer(force = false) {
+    if (this.closed || this.pc.signalingState !== 'have-local-offer') return
+    if (!force && Date.now() - this.offerSentAt < 5000) return
+    this.sendDescription()
+  }
+
+  /** Pede (ou larga) a tela dessa pessoa. */
+  requestScreen(watching: boolean) {
+    if (!this.closed) this.emit({ kind: watching ? 'watch' : 'unwatch' })
   }
 
   /** Sinalização chega em ordem e é processada uma de cada vez. */
   handle(data: SignalData) {
+    if (data.pc && !this.remoteId) this.remoteId = data.pc
     this.queue = this.queue
       .then(() => this.process(data))
       .catch((err) => console.error('[rtc] sinalização falhou', this.connId, data.kind, err))

@@ -53,6 +53,11 @@ async function launch(profile) {
     env: { ...process.env, RESENHA_PROFILE: profile, RESENHA_HIDDEN: '1' },
   })
   const page = await app.firstWindow()
+  // As conexões com os servidores passam pelo teste, pra dar pra derrubar uma no meio (queda de rede).
+  const guildSockets = []
+  await page.routeWebSocket(/\/api\/g\/[^/]+\/ws$/, (ws) => {
+    guildSockets.push({ ws, server: ws.connectToServer() })
+  })
   // Sem sons do app durante o teste (nada toca na caixa de som de quem roda). Sem RNNoise
   // também: o microfone falso é um tom puro, e pro RNNoise apito não é voz.
   await page.evaluate(() => localStorage.setItem('resenha.settings', JSON.stringify({ sounds: false, noiseReduction: 'off' })))
@@ -65,7 +70,16 @@ async function launch(profile) {
     }
   })
   page.on('pageerror', (err) => console.log(`   [${profile}] pageerror: ${err.message}`))
-  return { app, page }
+  /** Derruba a conexão com o servidor como uma queda de rede (sem aviso dos dois lados) e espera o app voltar. */
+  async function dropGuild() {
+    const before = guildSockets.length
+    const { ws, server } = guildSockets[before - 1]
+    server.close({ code: 4000, reason: 'queda' })
+    ws.close({ code: 4000, reason: 'queda' })
+    for (let i = 0; i < 100 && guildSockets.length === before; i++) await page.waitForTimeout(100)
+    return guildSockets.length > before
+  }
+  return { app, page, dropGuild, guildSockets }
 }
 
 /** Microfone falso (oscilador) no lugar do real; o microfone virtual do venmic passa direto. */
@@ -204,25 +218,74 @@ const PASSWORD = 'senha-de-teste-1'
 
 async function startServer() {
   const state = mkdtempSync(join(tmpdir(), 'resenha-e2e-server-'))
-  const proc = spawn('npx', ['wrangler', 'dev', '--port', String(PORT), '--ip', '127.0.0.1', '--persist-to', state], {
-    cwd: new URL('../../server', import.meta.url).pathname,
-    stdio: ['ignore', 'pipe', 'pipe'],
-    detached: true,
-  })
+  let proc = null
   let log = ''
-  proc.stdout.on('data', (d) => (log += d))
-  proc.stderr.on('data', (d) => (log += d))
-  for (let i = 0; i < 120; i++) {
-    try {
-      const res = await fetch(`${SERVER}/api/status`)
-      if (res.ok) return { stop: () => (process.kill(-proc.pid, 'SIGTERM'), rmSync(state, { recursive: true, force: true })) }
-    } catch {
-      // ainda subindo
+  const up = async () => {
+    proc = spawn('npx', ['wrangler', 'dev', '--port', String(PORT), '--ip', '127.0.0.1', '--persist-to', state], {
+      cwd: new URL('../../server', import.meta.url).pathname,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      detached: true,
+    })
+    proc.stdout.on('data', (d) => (log += d))
+    proc.stderr.on('data', (d) => (log += d))
+    for (let i = 0; i < 120; i++) {
+      try {
+        if ((await fetch(`${SERVER}/api/status`)).ok) return
+      } catch {
+        // ainda subindo
+      }
+      await new Promise((r) => setTimeout(r, 500))
     }
-    await new Promise((r) => setTimeout(r, 500))
+    process.kill(-proc.pid, 'SIGTERM')
+    throw new Error(`servidor de teste não subiu:\n${log.slice(-2000)}`)
   }
-  process.kill(-proc.pid, 'SIGTERM')
-  throw new Error(`servidor de teste não subiu:\n${log.slice(-2000)}`)
+  const down = async () => {
+    const exited = new Promise((r) => proc.once('exit', r))
+    process.kill(-proc.pid, 'SIGTERM')
+    await exited
+    // Espera a porta soltar (o workerd sai logo depois do wrangler).
+    for (let i = 0; i < 50; i++) {
+      try {
+        await fetch(`${SERVER}/api/status`)
+      } catch {
+        return
+      }
+      await new Promise((r) => setTimeout(r, 200))
+    }
+  }
+  await up()
+  return {
+    /** Reinicia com os mesmos dados (como um deploy ou o Cloudflare reiniciando o Durable Object). */
+    restart: async () => {
+      await down()
+      await up()
+    },
+    stop: () => (process.kill(-proc.pid, 'SIGTERM'), rmSync(state, { recursive: true, force: true })),
+  }
+}
+
+/** Quadros que chegam no player de quem assiste durante `ms` (e o menor número de gente na call nesse tempo). */
+async function watchFor(page, ms) {
+  return page.evaluate(async (ms) => {
+    let frames = 0
+    let fewest = Infinity
+    const deadline = Date.now() + ms
+    while (Date.now() < deadline) {
+      const video = document.querySelector('.stream video')
+      fewest = Math.min(fewest, document.querySelectorAll('nav .members .member').length)
+      if (video && 'requestVideoFrameCallback' in video) {
+        await new Promise((resolve) => {
+          const timer = setTimeout(resolve, 100)
+          video.requestVideoFrameCallback(() => {
+            clearTimeout(timer)
+            frames++
+            resolve()
+          })
+        })
+      } else await new Promise((r) => setTimeout(r, 100))
+    }
+    return { frames, fewest }
+  }, ms)
 }
 
 async function api(path, body, token) {
@@ -591,6 +654,29 @@ try {
     .then(() => check(true, 'resolução subiu de 720p pra 1080p ao vivo'))
     .catch(() => check(false, 'resolução subiu de 720p pra 1080p ao vivo'))
   console.log('   estatísticas em B depois da troca:', (await b.page.locator('.stats').innerText()).replace(/\n/g, ' | '))
+
+  // Quedas de conexão no meio da transmissão: voz e tela são P2P e não podem cair junto, e
+  // ninguém sai da call pros outros. Quem assiste continua assistindo, sem clicar em nada.
+  for (const [who, side] of [['quem transmite', a], ['quem assiste', b]]) {
+    const watching = watchFor(b.page, 4000)
+    const back = await side.dropGuild()
+    const { frames, fewest } = await watching
+    check(back && frames > 100 && fewest === 2, `conexão de ${who} cai e volta: B continua assistindo e ninguém sai da call`, `${frames} quadros em 4 s`)
+  }
+  // O servidor reinicia (todo mundo cai junto e ele esquece a call): a tela segue e tudo volta sozinho.
+  const before = { a: a.guildSockets.length, b: b.guildSockets.length }
+  const duringRestart = watchFor(b.page, 3000)
+  await server.restart()
+  const { frames: framesDuring } = await duringRestart
+  for (let i = 0; i < 300 && (a.guildSockets.length === before.a || b.guildSockets.length === before.b); i++) await a.page.waitForTimeout(100)
+  await b.page.waitForTimeout(1500)
+  const after = await watchFor(b.page, 3000)
+  const liveBadges = await b.page.locator('nav button.live').count()
+  check(
+    framesDuring > 60 && after.frames > 90 && after.fewest === 2 && liveBadges === 1,
+    'servidor reinicia no meio da transmissão: a tela não para e a call volta sozinha',
+    `${framesDuring} quadros durante, ${after.frames} depois`,
+  )
 
   await b.page.locator('.stream').hover({ force: true })
   await shot(b, '4-assistindo')

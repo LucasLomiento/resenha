@@ -340,6 +340,13 @@ export class Conversation extends DurableObject<Env> {
     await this.deliver({ t: 'call.state', channelId: this.channelId, members, ringing: call.ringing }, pair)
   }
 
+  /** Como a chamada está agora (pra quem reconectou saber se ainda está nela). */
+  callSnapshot(channelId: string, userId: string): { members: VoiceMember[]; ringing: string[] } | null {
+    const call = this.member(channelId, userId) ? this.call() : null
+    if (!call || (call.members.length === 0 && call.ringing.length === 0)) return null
+    return { members: call.members.map((m) => ({ ...m, channelId: this.channelId })), ringing: call.ringing }
+  }
+
   /** Liga (ou entra na chamada que já está rolando). */
   async callRing(channelId: string, userId: string, connId: string, video: boolean): Promise<Result<null>> {
     const m = this.member(channelId, userId)
@@ -358,14 +365,29 @@ export class Conversation extends DurableObject<Env> {
     return ok(null)
   }
 
-  async callAnswer(channelId: string, userId: string, connId: string, accept: boolean): Promise<Result<null>> {
+  async callAnswer(
+    channelId: string,
+    userId: string,
+    connId: string,
+    accept: boolean,
+    state?: { muted?: unknown; deafened?: unknown; sharing?: unknown; camera?: unknown },
+  ): Promise<Result<null>> {
     const m = this.member(channelId, userId)
     const call = this.call()
     if (!m || !call) return fail(404, 'Essa chamada já acabou.')
     call.ringing = call.ringing.filter((id) => id !== userId)
     if (accept) {
       call.members = call.members.filter((x) => x.userId !== userId)
-      call.members.push({ connId, userId, muted: false, deafened: false, sharing: false, camera: false })
+      // Voltando depois de a conexão cair: entra como estava (tela e câmera inclusive).
+      const flags = state && typeof state === 'object' ? state : {}
+      call.members.push({
+        connId,
+        userId,
+        muted: flags.muted === true,
+        deafened: flags.deafened === true,
+        sharing: flags.sharing === true,
+        camera: flags.camera === true,
+      })
     }
     await this.broadcastCall(call, m.pair)
     return ok(null)

@@ -13,6 +13,7 @@ import {
   type User,
 } from '../../shared/protocol'
 import { aggregate, samePresence } from './presence'
+import { CONN_KEY, GHOST_QUEUE, connIdFor, graceFor, unexpectedClose } from './resume'
 import { conversation, directory, home } from './stubs'
 import { cleanLine } from './validate'
 
@@ -30,6 +31,18 @@ interface HomeConn {
   text?: string | null
   /** Conversa privada em cuja chamada esta conexão está. */
   call?: string | null
+  /** Mandou chave no `auth`: se cair, dá pra voltar na chamada (ver resume.ts). */
+  resumable?: boolean
+  /** Outra conexão com a mesma chave tomou o lugar desta: ao fechar, não mexe em nada. */
+  replaced?: boolean
+}
+
+/** Conexão que caiu sem avisar, esperando o app voltar. */
+interface Ghost {
+  state: HomeConn
+  timer: ReturnType<typeof setTimeout>
+  /** Sinalização da chamada que chegou enquanto isso, entregue na volta. */
+  queue: string[]
 }
 
 interface DmRow {
@@ -58,6 +71,10 @@ export class Home extends DurableObject<Env> {
   private sql: SqlStorage
   private userId = ''
   private flood = new Map<string, number[]>()
+  /** connId -> conexão que caiu e ainda pode voltar (continua na chamada e online até lá). */
+  private ghosts = new Map<string, Ghost>()
+  /** Sockets que já saíram (o fechamento e o erro podem chegar os dois). */
+  private retired = new WeakSet<WebSocket>()
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env)
@@ -138,6 +155,14 @@ export class Home extends DurableObject<Env> {
     }
   }
 
+  private raw(ws: WebSocket, text: string) {
+    try {
+      ws.send(text)
+    } catch {
+      // conexão caindo
+    }
+  }
+
   private broadcast(msg: HomeServerMessage, opts: { except?: string; connId?: string } = {}) {
     const text = JSON.stringify(msg)
     for (const ws of this.sockets(opts.except)) {
@@ -159,7 +184,79 @@ export class Home extends DurableObject<Env> {
 
   /** O que os amigos veem: invisível aparece offline; vários aparelhos, vale o "mais online". */
   presence(exceptConnId?: string): Presence {
-    return aggregate(this.sockets(exceptConnId).map((ws) => this.state(ws)))
+    return aggregate([...this.sockets(exceptConnId).map((ws) => this.state(ws)), ...this.ghostStates(exceptConnId)])
+  }
+
+  private ghostStates(exceptConnId?: string): HomeConn[] {
+    return [...this.ghosts.values()].map((g) => g.state).filter((s) => s.connId !== exceptConnId)
+  }
+
+  // ---------- Reconexão (ver resume.ts) ----------
+
+  /** Caiu sem avisar: continua na chamada e online por um tempo, esperando o app voltar. */
+  private holdGhost(state: HomeConn, queue: string[] = []) {
+    const existing = this.ghosts.get(state.connId)
+    if (existing) clearTimeout(existing.timer)
+    this.ghosts.set(state.connId, {
+      state,
+      queue: existing?.queue ?? queue,
+      timer: setTimeout(() => {
+        this.releaseGhost(state.connId).catch((err) => console.error('não deu pra encerrar a conexão que caiu', err))
+      }, graceFor(this.env)),
+    })
+  }
+
+  /** O app não voltou a tempo: sai da chamada e fica offline de vez. */
+  private async releaseGhost(connId: string) {
+    const ghost = this.ghosts.get(connId)
+    if (!ghost) return
+    const before = this.presence()
+    this.ghosts.delete(connId)
+    const { call } = ghost.state
+    if (call) await conversation(this.env, call).callHangup(call, this.userId, connId)
+    await this.announce(before)
+  }
+
+  /** Tira os fantasmas que batem (sessão encerrada, conta excluída), desligando as chamadas deles. */
+  private async dropGhosts(match: (state: HomeConn) => boolean) {
+    for (const [connId, ghost] of [...this.ghosts]) {
+      if (!match(ghost.state)) continue
+      clearTimeout(ghost.timer)
+      this.ghosts.delete(connId)
+      const { call } = ghost.state
+      if (call) await conversation(this.env, call).callHangup(call, this.userId, connId)
+    }
+  }
+
+  /**
+   * A mesma instância do app voltou (mesmo connId): pega a chamada da conexão
+   * anterior, que caiu (fantasma) ou ainda parece aberta mas morreu, e o que
+   * ficou guardado pra ela. A anterior fecha sem mexer em nada.
+   */
+  private takeOver(ws: WebSocket, connId: string): { call: string | null; queue: string[] } {
+    let call: string | null = null
+    let queue: string[] = []
+    const ghost = this.ghosts.get(connId)
+    if (ghost) {
+      clearTimeout(ghost.timer)
+      this.ghosts.delete(connId)
+      call = ghost.state.call ?? null
+      queue = ghost.queue
+    }
+    for (const old of this.ctx.getWebSockets()) {
+      if (old === ws) continue
+      const state = this.state(old)
+      if (state.pending || state.connId !== connId) continue
+      call = state.call ?? call
+      this.retired.add(old)
+      try {
+        this.save(old, { ...state, call: null, replaced: true })
+        old.close(4005, 'Outra conexão tomou o lugar')
+      } catch {
+        // já estava fechando
+      }
+    }
+    return { call, queue }
   }
 
   private friendIds(): string[] {
@@ -223,16 +320,33 @@ export class Home extends DurableObject<Env> {
     const auth = typeof msg.token === 'string' ? await directory(this.env).authenticate(msg.token) : null
     if (ws.readyState !== WebSocket.OPEN) return
     if (!auth || auth.me.id !== this.userId) return ws.close(4001, 'Sessão inválida')
+    const key = typeof msg.key === 'string' && CONN_KEY.test(msg.key) ? msg.key : null
+    const connId = key ? await connIdFor(auth.me.id, key) : pending.connId
+    if (ws.readyState !== WebSocket.OPEN) return
 
     const manual = this.manual()
     const before = this.presence()
+    const resumed = key ? this.takeOver(ws, connId) : { call: null, queue: [] }
+    // A chamada em que o app estava (a retomada, ou a que ele diz): como está agora.
+    const asked = resumed.call ?? (typeof msg.call === 'string' && this.known(msg.call) ? msg.call : null)
+    const callNow = asked ? await conversation(this.env, asked).callSnapshot(asked, this.userId) : null
+    // Só volta na chamada se ela ainda conta com esta conexão.
+    const call = resumed.call && callNow?.members.some((m) => m.connId === connId) ? resumed.call : null
     const state: HomeConn = {
       ...pending,
+      connId,
+      resumable: !!key,
       userId: auth.me.id,
       session: auth.tokenHash,
       pending: false,
       status: STATUSES.includes(msg.status as Status) ? (msg.status as Status) : manual.status,
       text: msg.text === undefined ? manual.text : cleanLine(msg.text, 1, 128),
+      call,
+    }
+    // Caiu de novo enquanto voltava: continua esperando (com a chamada e o que estava guardado).
+    if (ws.readyState !== WebSocket.OPEN) {
+      if (call) this.holdGhost(state, resumed.queue)
+      return
     }
     this.save(ws, state)
 
@@ -262,7 +376,10 @@ export class Home extends DurableObject<Env> {
       }),
       presence: manual,
       presences,
+      resumed: !!call,
+      ...(asked ? { call: callNow ? { channelId: asked, ...callNow } : null } : {}),
     })
+    if (call) for (const queued of resumed.queue) this.raw(ws, queued)
     await this.announce(before)
   }
 
@@ -300,19 +417,29 @@ export class Home extends DurableObject<Env> {
     } catch {
       // já fechado
     }
-    await this.dropConnection(this.state(ws))
+    await this.dropConnection(ws, this.state(ws), unexpectedClose(code))
   }
 
   async webSocketError(ws: WebSocket) {
-    await this.dropConnection(this.state(ws))
+    await this.dropConnection(ws, this.state(ws), true)
   }
 
-  private async dropConnection(state: HomeConn) {
-    if (state.pending || !state.userId) return
+  /** `unexpected`: caiu sem o app pedir (rede, servidor reiniciando). */
+  private async dropConnection(ws: WebSocket, state: HomeConn, unexpected: boolean) {
+    if (state.pending || !state.userId || state.replaced || this.retired.has(ws)) return
+    this.retired.add(ws)
+    // A mesma instância do app já voltou por outra conexão: ela ficou com tudo.
+    if (this.sockets().some((s) => s !== ws && this.state(s).connId === state.connId)) return
+    if (unexpected && state.resumable) return this.holdGhost(state)
     // O socket que caiu já não está aberto: o "antes" inclui ele à mão.
-    const before = aggregate([...this.sockets(state.connId).map((ws) => this.state(ws)), state])
+    const before = aggregate([...this.sockets(state.connId).map((s) => this.state(s)), ...this.ghostStates(state.connId), state])
     if (state.call) await conversation(this.env, state.call).callHangup(state.call, this.userId, state.connId)
     await this.announce(before, state.connId)
+  }
+
+  /** Ainda tem quem responda por esse connId (a conexão, ou ela esperando voltar)? */
+  private reachable(connId: string): boolean {
+    return this.ghosts.has(connId) || this.sockets().some((s) => this.state(s).connId === connId)
   }
 
   async alarm() {
@@ -326,7 +453,7 @@ export class Home extends DurableObject<Env> {
       const lastPing = this.ctx.getWebSocketAutoResponseTimestamp(ws)?.getTime() ?? 0
       if (Math.max(lastPing, state.connectedAt) < now - DEAD_AFTER) {
         ws.close(4000, 'Sem resposta')
-        await this.dropConnection(state)
+        await this.dropConnection(ws, state, true)
       }
     }
     if (this.ctx.getWebSockets().length > 0) await this.ctx.storage.setAlarm(now + SWEEP_EVERY)
@@ -453,13 +580,16 @@ export class Home extends DurableObject<Env> {
         const r =
           msg.t === 'call.ring'
             ? await room.callRing(msg.channelId, me, state.connId, !!msg.video)
-            : await room.callAnswer(msg.channelId, me, state.connId, !!msg.accept)
+            : await room.callAnswer(msg.channelId, me, state.connId, !!msg.accept, msg.state)
         if (!r.ok) {
           if (joining && ws.readyState === WebSocket.OPEN) this.save(ws, { ...this.state(ws), call: null })
           return error(r.error)
         }
-        // Caiu enquanto entrava: sai de novo.
-        if (joining && ws.readyState !== WebSocket.OPEN) await room.callHangup(msg.channelId, me, state.connId)
+        // Caiu enquanto entrava e a queda já foi tratada sem esperar volta (antes de a chamada
+        // contar com ela): sai de novo. Se a queda ainda vai ser tratada, ela cuida disso.
+        if (joining && ws.readyState !== WebSocket.OPEN && this.retired.has(ws) && !this.reachable(state.connId)) {
+          await room.callHangup(msg.channelId, me, state.connId)
+        }
         return
       }
 
@@ -536,6 +666,12 @@ export class Home extends DurableObject<Env> {
 
   /** Evento de chamada privada; com `connId`, só pra aquela conexão. */
   callEvent(event: HomeServerMessage, connId?: string) {
+    // Pra uma conexão que caiu e ainda pode voltar: entrega quando voltar.
+    const ghost = connId ? this.ghosts.get(connId) : undefined
+    if (ghost) {
+      if (ghost.queue.length < GHOST_QUEUE) ghost.queue.push(JSON.stringify(event))
+      return
+    }
     this.broadcast(event, connId ? { connId } : {})
   }
 
@@ -546,8 +682,9 @@ export class Home extends DurableObject<Env> {
       if (state.pending || !set.has(state.session)) continue
       this.send(ws, { t: 'session.revoked' })
       ws.close(4001, 'Sessão encerrada')
-      await this.dropConnection(state)
+      await this.dropConnection(ws, state, false)
     }
+    await this.dropGhosts((s) => set.has(s.session))
   }
 
   meUpdated(me: Me) {
@@ -591,6 +728,7 @@ export class Home extends DurableObject<Env> {
 
   /** Conta excluída. */
   async wipe() {
+    await this.dropGhosts(() => true)
     for (const ws of this.ctx.getWebSockets()) {
       this.send(ws, { t: 'session.revoked' })
       ws.close(4001, 'Conta excluída')

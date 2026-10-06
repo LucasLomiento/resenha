@@ -26,7 +26,8 @@ export interface CallTransport {
   connId(): string | null
   /** Quem está nesta call (todas as conexões, inclusive a minha). */
   members(): VoiceMember[]
-  join(muted: boolean, deafened: boolean): boolean
+  /** `back`: voltando depois de o servidor perder a call (tela e câmera como estavam). */
+  join(muted: boolean, deafened: boolean, back?: { sharing: boolean; camera: boolean }): boolean
   leave(): void
   update(state: { muted: boolean; deafened: boolean; sharing: boolean; camera: boolean }): void
   signal(to: string, data: SignalData): boolean
@@ -34,6 +35,13 @@ export interface CallTransport {
 
 const SPEAKING_REMOTE = 0.03
 const ICE_TTL = 6 * 60 * 60 * 1000
+/**
+ * Quem some da call ainda tem um tempo pra voltar antes de a conexão P2P com
+ * ele fechar (o servidor reiniciando derruba todo mundo por um instante).
+ */
+const PEER_GRACE = 15_000
+/** Sinalização guardada enquanto o WebSocket está caído (vai quando voltar). */
+const OUTBOX_MAX = 500
 
 /** A call em que esta instância está: microfone, conexões P2P e telas. */
 export class Call {
@@ -67,6 +75,10 @@ export class Call {
   private lastSpoke = 0
 
   private peers = new Map<string, Peer>()
+  /** connId -> sumiu da call: a conexão P2P fecha se não voltar a tempo. */
+  private leaving = new Map<string, ReturnType<typeof setTimeout>>()
+  /** Sinalização que não saiu (WebSocket caído), na ordem. */
+  private outbox: { to: string; data: SignalData }[] = []
   /** Container estável do microfone: o id dele é o que os outros usam pra reconhecer a faixa. */
   private micStream = new MediaStream()
   private micTrack: MediaStreamTrack | null = null
@@ -138,13 +150,36 @@ export class Call {
     }
   }
 
-  /** Depois de reconectar o WebSocket a conexão é outra: refaz tudo na mesma call. */
-  rejoin() {
+  /**
+   * O WebSocket voltou, com o mesmo connId. `resumed`: o servidor manteve a
+   * conexão na call e pros outros nada mudou. Senão (o servidor reiniciou, ou
+   * demorou demais), entra de novo. Em nenhum caso as conexões P2P são
+   * desfeitas: voz e tela não passam pelo servidor. Se o outro lado tiver
+   * recomeçado a dele, os ids na sinalização avisam e a gente recomeça junto.
+   */
+  reconnected(resumed: boolean) {
     if (!this.transport) return
-    this.known = null
-    for (const connId of [...this.peers.keys()]) this.removePeer(connId)
-    this.transport.join(this.muted, this.deafened)
-    if (this.sharing || this.camera) this.sendState()
+    if (resumed) this.sendState()
+    else this.transport.join(this.muted, this.deafened, { sharing: this.sharing, camera: !!this.camera })
+    this.flushOutbox()
+    for (const peer of this.peers.values()) peer.resendOffer(true)
+    // Quem compartilha pode ter parado de mandar pra mim enquanto eu estava fora.
+    if (!resumed && this.watching && this.watching !== this.connId()) this.peers.get(this.watching)?.requestScreen(true)
+    this.sync()
+  }
+
+  private sendSignal(to: string, data: SignalData) {
+    if (this.outbox.length === 0 && this.transport?.signal(to, data)) return
+    this.outbox.push({ to, data })
+    if (this.outbox.length > OUTBOX_MAX) this.outbox.shift()
+  }
+
+  private flushOutbox() {
+    while (this.outbox.length > 0 && this.transport) {
+      const next = this.outbox[0]
+      if (this.peers.has(next.to) && !this.transport.signal(next.to, next.data)) return
+      this.outbox.shift()
+    }
   }
 
   /** Sai da call. `notify = false`: o servidor já tirou (moderador, canal apagado). */
@@ -154,6 +189,7 @@ export class Call {
     if (notify) this.transport.leave()
     this.transport = null
     for (const connId of [...this.peers.keys()]) this.removePeer(connId)
+    this.outbox = []
     this.stopShare(false)
     this.stopCamera(false)
     this.cameras = {}
@@ -283,24 +319,62 @@ export class Call {
     }
     this.known = new Map(others.map((m) => [m.connId, m.sharing]))
 
-    for (const member of others) if (!this.peers.has(member.connId)) this.createPeer(member)
+    for (const member of others) {
+      if (!this.peers.has(member.connId)) this.createPeer(member)
+      else if (this.leaving.has(member.connId)) this.returned(member.connId)
+    }
     for (const connId of [...this.peers.keys()]) {
-      if (!others.some((m) => m.connId === connId)) this.removePeer(connId)
+      if (!others.some((m) => m.connId === connId)) this.goneFromCall(connId)
     }
     if (changed) this.applyVolumes()
     // Câmera desligada do outro lado: o bloco volta pro avatar.
     for (const member of others) if (!member.camera) this.dropCamera(member.connId)
 
-    // Quem eu assistia parou de compartilhar (ele mesmo já parou de mandar).
+    // Quem eu assistia parou de compartilhar (ele mesmo já parou de mandar). Se só sumiu, espera ele voltar.
     const watched = this.watching
-    if (watched && watched !== me && !others.find((m) => m.connId === watched)?.sharing) {
+    if (watched && watched !== me && others.some((m) => m.connId === watched && !m.sharing)) {
       this.watching = null
       this.dropScreen(watched)
     }
   }
 
+  /**
+   * Sumiu da call: espera um pouco antes de fechar a conexão P2P (o servidor
+   * reiniciando derruba todo mundo por um instante, e voz e tela seguem direto).
+   */
+  private goneFromCall(connId: string) {
+    if (this.leaving.has(connId)) return
+    this.away[connId] = true
+    this.leaving.set(
+      connId,
+      setTimeout(() => {
+        this.leaving.delete(connId)
+        this.removePeer(connId)
+        if (this.watching === connId) this.watching = null
+      }, PEER_GRACE),
+    )
+  }
+
+  /** Voltou a tempo: a conexão P2P continua; se eu assistia a tela dele, peço de novo (por garantia). */
+  private returned(connId: string) {
+    clearTimeout(this.leaving.get(connId))
+    this.leaving.delete(connId)
+    delete this.away[connId]
+    if (this.watching === connId) this.peers.get(connId)?.requestScreen(true)
+  }
+
   signal(from: string, data: SignalData) {
     let peer = this.peers.get(from)
+    if (peer && data.pc) {
+      // Pra uma conexão minha que já não existe (o outro lado ainda não sabe da nova): ignora.
+      if (data.ack && data.ack !== peer.id) return
+      // O outro lado recomeçou a conexão dele e ainda não conhece a minha: recomeço a minha também.
+      if (peer.remoteId && peer.remoteId !== data.pc) {
+        if (data.ack) return
+        this.removePeer(from)
+        peer = undefined
+      }
+    }
     if (!peer) {
       const member = this.members().find((m) => m.connId === from && m.channelId === this.channelId)
       if (!member) return
@@ -313,7 +387,7 @@ export class Call {
     const me = this.connId()
     if (!me || !this.ice || !this.micTrack) return
     const peer = new Peer(member.connId, member.userId, me > member.connId, this.ice.servers, this.micStream, settings.codec, {
-      signal: (data) => this.transport?.signal(member.connId, data),
+      signal: (data) => this.sendSignal(member.connId, data),
       screen: (stream) => {
         this.screens = { ...this.screens, [member.connId]: stream! }
       },
@@ -331,10 +405,15 @@ export class Call {
     peer.setOutput(settings.outputDevice)
     this.peers.set(member.connId, peer)
     if (this.camera) peer.sendCamera(this.camera)
+    // Eu assistia a tela dele (a conexão foi refeita): pede de novo, sem precisar clicar.
+    if (this.watching === member.connId) peer.requestScreen(true)
     return peer
   }
 
   private removePeer(connId: string) {
+    clearTimeout(this.leaving.get(connId))
+    this.leaving.delete(connId)
+    delete this.away[connId]
     this.peers.get(connId)?.close()
     this.peers.delete(connId)
     delete this.watchers[connId]
@@ -348,9 +427,11 @@ export class Call {
 
   /** connId -> está assistindo a minha tela */
   watchers = $state<Record<string, boolean>>({})
+  /** Quem sumiu da call e ainda pode voltar (não conta como assistindo). */
+  private away = $state<Record<string, true>>({})
 
   get viewerCount(): number {
-    return Object.values(this.watchers).filter(Boolean).length
+    return Object.entries(this.watchers).filter(([connId, on]) => on && !this.away[connId]).length
   }
 
   private videoOptions() {
@@ -481,7 +562,7 @@ export class Call {
     if (this.watching === connId) return
     this.unwatch()
     this.watching = connId
-    if (connId !== this.connId()) this.transport?.signal(connId, { kind: 'watch' })
+    if (connId !== this.connId()) this.peers.get(connId)?.requestScreen(true)
   }
 
   unwatch() {
@@ -489,7 +570,7 @@ export class Call {
     if (!current) return
     this.watching = null
     if (current !== this.connId()) {
-      this.transport?.signal(current, { kind: 'unwatch' })
+      this.peers.get(current)?.requestScreen(false)
       this.dropScreen(current)
     }
   }
@@ -542,6 +623,8 @@ export class Call {
     }, 100)
     this.statsTicker = setInterval(async () => {
       for (const peer of this.peers.values()) {
+        // Oferta que ficou sem resposta (sinalização perdida no caminho): manda de novo.
+        peer.resendOffer()
         const stats = await peer.linkStats()
         const prev = this.links[peer.connId]
         if (!prev || prev.rtt !== stats.rtt || prev.route !== stats.route) this.links[peer.connId] = stats

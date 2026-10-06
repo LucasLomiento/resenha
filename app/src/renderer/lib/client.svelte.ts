@@ -347,18 +347,22 @@ class Client implements GuildHost, HomeHost {
     this.pushPresence()
   }
 
-  ready(target: HomeState | GuildState, reconnected: boolean) {
-    if (target instanceof HomeState) return this.homeReady()
+  ready(target: HomeState | GuildState, reconnected: boolean, resumed: boolean) {
+    if (target instanceof HomeState) return this.homeReady(reconnected, resumed)
     const guild = target
     if (this.call.guildId === guild.id) {
-      if (reconnected) this.call.rejoin()
+      if (reconnected) this.call.reconnected(resumed)
       else this.call.sync()
     }
     if (this.route.kind === 'guild' && this.route.guildId === guild.id) this.ensureChannel(guild)
   }
 
+  dmCallId(): string | null {
+    return this.call.dmId
+  }
+
   /** A conexão pessoal (re)abriu: abre uma conexão pra cada servidor da lista. */
-  private homeReady() {
+  private homeReady(reconnected: boolean, resumed: boolean) {
     const home = this.home!
     const wanted = new Set(home.guilds.map((g) => g.id))
     for (const id of Object.keys(this.guilds)) {
@@ -367,7 +371,15 @@ class Client implements GuildHost, HomeHost {
     for (const info of home.guilds) this.addGuild(info)
     if (this.route.kind === 'guild' && !wanted.has(this.route.guildId)) this.route = { kind: 'home' }
     if (this.route.kind === 'dm') this.openDmChannel(this.route.channelId)
-    if (this.call.dmId) this.call.rejoin()
+    const dm = this.call.dmId
+    if (!dm || !reconnected) return
+    // A chamada acabou (ou a outra pessoa saiu) enquanto a conexão estava caída: sai sem ligar de novo.
+    if (!resumed && !home.calls[dm]?.members.some((m) => m.userId !== this.meId())) {
+      this.call.leave(false)
+      this.toast('A ligação caiu.', 'info')
+      return
+    }
+    this.call.reconnected(resumed)
   }
 
   private addGuild(info: GuildInfo) {
@@ -642,7 +654,7 @@ class Client implements GuildHost, HomeHost {
       channelId,
       connId: () => guild.connId,
       members: () => guild.voiceIn(channelId),
-      join: (muted, deafened) => guild.send({ t: 'voice.join', channelId, muted, deafened }),
+      join: (muted, deafened, back) => guild.send({ t: 'voice.join', channelId, muted, deafened, ...back }),
       leave: () => void guild.send({ t: 'voice.leave' }),
       update: (state) => void guild.send({ t: 'voice.update', ...state }),
       signal: (to, data) => guild.send({ t: 'rtc.signal', to, data }),
@@ -656,7 +668,9 @@ class Client implements GuildHost, HomeHost {
       channelId,
       connId: () => home.connId,
       members: () => home.calls[channelId]?.members ?? [],
-      join: (muted, deafened) => {
+      join: (muted, deafened, back) => {
+        // Voltando (a conexão caiu e a chamada continuou): entra como estava, nunca liga de novo.
+        if (back) return home.send({ t: 'call.answer', channelId, accept: true, state: { muted, deafened, ...back } })
         const live = home.calls[channelId]?.members.length
         const ok = live ? home.send({ t: 'call.answer', channelId, accept: true }) : home.send({ t: 'call.ring', channelId, video })
         if (ok && (muted || deafened)) home.send({ t: 'call.update', channelId, muted, deafened, sharing: false, camera: false })

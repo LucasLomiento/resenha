@@ -28,6 +28,7 @@ import {
 } from '../../shared/protocol'
 import type { LegacyExport } from './directory'
 import { newId } from './ids'
+import { CONN_KEY, GHOST_QUEUE, connIdFor, graceFor, unexpectedClose } from './resume'
 import {
   IN_LIST,
   MessageStore,
@@ -79,6 +80,18 @@ interface ConnState {
   legacy?: boolean
   status?: Status
   text?: string | null
+  /** Mandou chave no `auth`: se cair, dá pra voltar na call (ver resume.ts). */
+  resumable?: boolean
+  /** Outra conexão com a mesma chave tomou o lugar desta: ao fechar, não mexe em nada. */
+  replaced?: boolean
+}
+
+/** Conexão que caiu sem avisar, esperando o app voltar. */
+interface Ghost {
+  state: ConnState
+  timer: ReturnType<typeof setTimeout>
+  /** O que chegou pra ela enquanto isso (sinalização da call, avisos), entregue na volta. */
+  queue: string[]
 }
 
 interface ChannelRow {
@@ -225,6 +238,10 @@ export class Guild extends DurableObject<Env> {
   } = { roles: null, channels: null, perms: new Map() }
   private flood = new Map<string, number[]>()
   private typingAt = new Map<string, number>()
+  /** connId -> conexão que caiu e ainda pode voltar (continua na call e online até lá). */
+  private ghosts = new Map<string, Ghost>()
+  /** Sockets que já saíram (o fechamento e o erro podem chegar os dois). */
+  private retired = new WeakSet<WebSocket>()
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env)
@@ -619,9 +636,11 @@ export class Guild extends DurableObject<Env> {
   // ---------- Presença ----------
 
   private statesOf(userId: string, exceptConnId?: string): ConnState[] {
-    return this.sockets(exceptConnId)
-      .map((ws) => this.state(ws))
-      .filter((s) => s.userId === userId)
+    return [...this.sockets(exceptConnId).map((ws) => this.state(ws)), ...this.ghostStates(exceptConnId)].filter((s) => s.userId === userId)
+  }
+
+  private ghostStates(exceptConnId?: string): ConnState[] {
+    return [...this.ghosts.values()].map((g) => g.state).filter((s) => s.connId !== exceptConnId)
   }
 
   private presenceOf(userId: string, exceptConnId?: string): Presence {
@@ -630,7 +649,8 @@ export class Guild extends DurableObject<Env> {
 
   private presences(): Record<string, Presence> {
     const out: Record<string, Presence> = {}
-    for (const userId of new Set(this.sockets().map((ws) => this.state(ws).userId))) {
+    const users = new Set([...this.sockets().map((ws) => this.state(ws).userId), ...this.ghostStates().map((g) => g.userId)])
+    for (const userId of users) {
       const presence = this.presenceOf(userId)
       if (presence.status !== 'offline') out[userId] = presence
     }
@@ -648,8 +668,7 @@ export class Guild extends DurableObject<Env> {
   private voiceMembers(exceptConnId?: string): VoiceMember[] {
     const out: VoiceMember[] = []
     const moderation = new Map<string, MemberRow | null>()
-    for (const ws of this.sockets(exceptConnId)) {
-      const { connId, userId, voice } = this.state(ws)
+    for (const { connId, userId, voice } of [...this.sockets(exceptConnId).map((ws) => this.state(ws)), ...this.ghostStates(exceptConnId)]) {
       if (!voice) continue
       if (!moderation.has(userId)) moderation.set(userId, this.member(userId))
       const row = moderation.get(userId)
@@ -691,7 +710,90 @@ export class Guild extends DurableObject<Env> {
       this.send(ws, { t: 'voice.forced', channelId })
       changed = true
     }
+    for (const [connId, ghost] of this.ghosts) {
+      const state = ghost.state
+      if (state.userId !== userId || !state.voice || connId === exceptConnId) continue
+      ghost.state = { ...state, voice: channelId ? { ...state.voice, channelId, sharing: false, camera: false } : null }
+      this.enqueue(ghost, { t: 'voice.forced', channelId })
+      changed = true
+    }
     return changed
+  }
+
+  // ---------- Reconexão (ver resume.ts) ----------
+
+  private enqueue(ghost: Ghost, msg: ServerMessage | string) {
+    if (ghost.queue.length < GHOST_QUEUE) ghost.queue.push(typeof msg === 'string' ? msg : JSON.stringify(msg))
+  }
+
+  /** Caiu sem avisar: continua na call e online por um tempo, esperando o app voltar. */
+  private holdGhost(state: ConnState) {
+    const existing = this.ghosts.get(state.connId)
+    if (existing) clearTimeout(existing.timer)
+    this.ghosts.set(state.connId, {
+      state,
+      queue: existing?.queue ?? [],
+      timer: setTimeout(() => this.releaseGhost(state.connId), graceFor(this.env)),
+    })
+  }
+
+  /** O app não voltou a tempo: sai da call e fica offline de vez. */
+  private releaseGhost(connId: string) {
+    const ghost = this.ghosts.get(connId)
+    if (!ghost) return
+    const before = this.presenceOf(ghost.state.userId)
+    this.ghosts.delete(connId)
+    if (ghost.state.voice) this.broadcastVoice()
+    this.announcePresence(ghost.state.userId, before)
+  }
+
+  private dropGhosts(match: (state: ConnState) => boolean): boolean {
+    let hadVoice = false
+    for (const [connId, ghost] of this.ghosts) {
+      if (!match(ghost.state)) continue
+      clearTimeout(ghost.timer)
+      this.ghosts.delete(connId)
+      hadVoice ||= !!ghost.state.voice
+    }
+    return hadVoice
+  }
+
+  /**
+   * A mesma instância do app voltou (mesmo connId): pega a call da conexão
+   * anterior, que caiu (fantasma) ou ainda parece aberta mas morreu, e o que
+   * ficou guardado pra ela. A anterior fecha sem mexer em nada.
+   */
+  private takeOver(ws: WebSocket, userId: string, connId: string): { voice: VoiceState | null; queue: string[] } {
+    let voice: VoiceState | null = null
+    let queue: string[] = []
+    const ghost = this.ghosts.get(connId)
+    if (ghost && ghost.state.userId === userId) {
+      clearTimeout(ghost.timer)
+      this.ghosts.delete(connId)
+      voice = ghost.state.voice
+      queue = ghost.queue
+    }
+    for (const old of this.ctx.getWebSockets()) {
+      if (old === ws) continue
+      const state = this.state(old)
+      if (state.pending || state.connId !== connId || state.userId !== userId) continue
+      voice = state.voice ?? voice
+      this.retired.add(old)
+      try {
+        this.save(old, { ...state, voice: null, replaced: true })
+        old.close(4005, 'Outra conexão tomou o lugar')
+      } catch {
+        // já estava fechando
+      }
+    }
+    return { voice, queue }
+  }
+
+  /** A call que voltou ainda vale? (canal existe, pode entrar, não está de castigo) */
+  private validVoice(userId: string, voice: VoiceState | null): VoiceState | null {
+    if (!voice || !this.channel(voice.channelId, 'voice')) return null
+    if (!this.can(userId, voice.channelId, P.CONNECT) || this.timedOut(this.member(userId))) return null
+    return voice
   }
 
   // ---------- Mudanças de acesso ----------
@@ -1004,16 +1106,24 @@ export class Guild extends DurableObject<Env> {
     if (!this.id) return ws.close(4004, 'Servidor não existe')
     const row = this.member(auth.me.id)
     if (!row) return ws.close(4003, 'Você não está nesse servidor')
+    const key = !pending.legacy && typeof msg.key === 'string' && CONN_KEY.test(msg.key) ? msg.key : null
+    const connId = key ? await connIdFor(auth.me.id, key) : pending.connId
+    if (ws.readyState !== WebSocket.OPEN) return
 
     if (this.saveProfile({ ...auth.me, admin: false })) this.broadcastMember(auth.me.id)
     const before = this.presenceOf(auth.me.id)
+    const resumed = key ? this.takeOver(ws, auth.me.id, connId) : { voice: null, queue: [] }
+    const voice = this.validVoice(auth.me.id, resumed.voice)
     const state: ConnState = {
       ...pending,
+      connId,
+      resumable: !!key,
       userId: auth.me.id,
       session: auth.tokenHash,
       pending: false,
       status: STATUSES.includes(msg.status as Status) ? (msg.status as Status) : 'online',
       text: cleanLine(msg.text, 1, 128),
+      voice,
     }
     this.save(ws, state)
 
@@ -1037,7 +1147,11 @@ export class Guild extends DurableObject<Env> {
       readStates: this.readStates(state.userId, text),
       lastMessageIds: this.store.lastIds(text),
       notify: this.notifySettings(state.userId),
+      resumed: !!voice,
     })
+    for (const queued of resumed.queue) this.raw(ws, queued)
+    if (resumed.voice && !voice) this.send(ws, { t: 'voice.forced', channelId: null })
+    if (resumed.voice) this.broadcastVoice()
     this.announcePresence(state.userId, before)
   }
 
@@ -1077,15 +1191,20 @@ export class Guild extends DurableObject<Env> {
     } catch {
       // já fechado
     }
-    this.dropConnection(this.state(ws))
+    this.dropConnection(ws, this.state(ws), unexpectedClose(code))
   }
 
   async webSocketError(ws: WebSocket) {
-    this.dropConnection(this.state(ws))
+    this.dropConnection(ws, this.state(ws), true)
   }
 
-  private dropConnection(state: ConnState) {
-    if (state.pending || !state.userId) return
+  /** `unexpected`: caiu sem o app pedir (rede, servidor reiniciando). */
+  private dropConnection(ws: WebSocket, state: ConnState, unexpected: boolean) {
+    if (state.pending || !state.userId || state.replaced || this.retired.has(ws)) return
+    this.retired.add(ws)
+    // A mesma instância do app já voltou por outra conexão: ela ficou com tudo.
+    if (this.sockets().some((s) => s !== ws && this.state(s).connId === state.connId)) return
+    if (unexpected && state.resumable && this.member(state.userId)) return this.holdGhost(state)
     // O socket que caiu já não está aberto: o "antes" inclui ele à mão.
     const before = aggregate([...this.statesOf(state.userId, state.connId), state])
     if (state.voice) this.broadcastVoice(state.connId)
@@ -1104,7 +1223,7 @@ export class Guild extends DurableObject<Env> {
       const lastPing = this.ctx.getWebSocketAutoResponseTimestamp(ws)?.getTime() ?? 0
       if (Math.max(lastPing, state.connectedAt) < now - DEAD_AFTER) {
         ws.close(4000, 'Sem resposta')
-        this.dropConnection(state)
+        this.dropConnection(ws, state, true)
       }
     }
 
@@ -1376,14 +1495,18 @@ export class Guild extends DurableObject<Env> {
         }
         // Uma call por pessoa: o outro aparelho dela sai (como no Discord).
         this.forceVoice(userId, null, state.connId)
+        // Já estava nessa call (o app reconectou e confirma): tela e câmera continuam. Voltando
+        // depois de o servidor perder a call, o app diz como estava.
+        const same = state.voice?.channelId === channel.id ? state.voice : null
+        const video = this.can(userId, channel.id, P.VIDEO)
         this.save(ws, {
           ...this.state(ws),
           voice: {
             channelId: channel.id,
             muted: !!msg.muted || !this.can(userId, channel.id, P.SPEAK),
             deafened: !!msg.deafened,
-            sharing: false,
-            camera: false,
+            sharing: (msg.sharing ?? same?.sharing ?? false) === true && video,
+            camera: (msg.camera ?? same?.camera ?? false) === true && video,
           },
         })
         return this.broadcastVoice()
@@ -1414,9 +1537,16 @@ export class Guild extends DurableObject<Env> {
       case 'rtc.signal': {
         // Só repassa entre duas conexões que estão no mesmo canal de voz.
         if (!state.voice || !msg.data || typeof msg.data !== 'object') return
+        const signal: ServerMessage = { t: 'rtc.signal', from: state.connId, data: msg.data }
         const target = this.sockets().find((s) => this.state(s).connId === msg.to)
-        if (!target || this.state(target).voice?.channelId !== state.voice.channelId) return
-        return this.send(target, { t: 'rtc.signal', from: state.connId, data: msg.data })
+        if (target) {
+          if (this.state(target).voice?.channelId !== state.voice.channelId) return
+          return this.send(target, signal)
+        }
+        // Caiu e ainda pode voltar: entrega quando voltar.
+        const ghost = typeof msg.to === 'string' ? this.ghosts.get(msg.to) : undefined
+        if (ghost?.state.voice?.channelId === state.voice.channelId) this.enqueue(ghost, signal)
+        return
       }
     }
   }
@@ -1680,6 +1810,11 @@ export class Guild extends DurableObject<Env> {
         this.save(socket, { ...s, voice: null })
         voiceChanged = true
       }
+    }
+    for (const ghost of this.ghosts.values()) {
+      if (ghost.state.voice?.channelId !== channel.id) continue
+      ghost.state = { ...ghost.state, voice: null }
+      voiceChanged = true
     }
     this.pushAccess(before, channel.kind === 'category' ? { reordered: true } : {})
     if (voiceChanged) this.broadcastVoice()
@@ -2010,7 +2145,7 @@ export class Guild extends DurableObject<Env> {
   private removeMember(userId: string, reason: string) {
     if (!this.member(userId)) return
     const sockets = this.socketsOf(userId)
-    const hadVoice = sockets.some((ws) => this.state(ws).voice)
+    const hadVoice = this.dropGhosts((s) => s.userId === userId) || sockets.some((ws) => this.state(ws).voice)
     for (const ws of sockets) ws.close(4003, reason)
     this.sql.exec('DELETE FROM members WHERE user_id = ?', userId)
     this.sql.exec('DELETE FROM read_states WHERE user_id = ?', userId)
@@ -2165,11 +2300,13 @@ export class Guild extends DurableObject<Env> {
       const state = this.state(ws)
       if (state.pending || !set.has(state.session)) continue
       ws.close(4001, 'Sessão encerrada')
-      this.dropConnection(state)
+      this.dropConnection(ws, state, false)
     }
+    if (this.dropGhosts((s) => set.has(s.session))) this.broadcastVoice()
   }
 
   async destroy() {
+    this.dropGhosts(() => true)
     for (const ws of this.ctx.getWebSockets()) ws.close(4004, 'Servidor excluído')
     await this.ctx.storage.deleteAlarm()
     await this.ctx.storage.deleteAll()

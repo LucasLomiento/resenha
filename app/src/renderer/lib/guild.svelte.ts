@@ -24,7 +24,7 @@ import {
   type VoiceMember,
 } from '../../../../shared/protocol'
 import type { Api } from './api'
-import { Connection, type CloseReason, type ConnectionStatus } from './ws'
+import { Connection, connectionKey, type CloseReason, type ConnectionStatus } from './ws'
 
 /** O que o servidor precisa do resto do app (o Client implementa). */
 export interface GuildHost {
@@ -37,7 +37,8 @@ export interface GuildHost {
   /** Mensagem nova de outra pessoa (som, notificação, contagem). */
   incoming(guild: GuildState, message: Message): void
   closed(guild: GuildState, reason: CloseReason): void
-  ready(guild: GuildState, reconnected: boolean): void
+  /** `resumed`: reconectou e o servidor manteve esta conexão na call (nada mudou pros outros). */
+  ready(guild: GuildState, reconnected: boolean, resumed: boolean): void
   voice(guild: GuildState): void
   voiceForced(guild: GuildState, channelId: string | null): void
   signal(guild: GuildState, from: string, data: SignalData): void
@@ -101,6 +102,8 @@ export class GuildState {
   private inviteWaiters = new Map<string, { resolve: (invite: Invite | null) => void; reject: (err: Error) => void; timer: ReturnType<typeof setTimeout> }>()
   private typingSent: Record<string, number> = {}
   private everConnected = false
+  /** Igual em toda reconexão desta instância: o servidor devolve o mesmo connId e a call continua. */
+  private key = connectionKey()
 
   constructor(
     private host: GuildHost,
@@ -110,7 +113,7 @@ export class GuildState {
     this.info = info
     this.conn = new Connection<ServerMessage, ClientMessage>(
       () => host.http().wsUrl(`/api/g/${encodeURIComponent(this.id)}/ws`),
-      () => ({ t: 'auth', token: host.token(), ...host.presence() }),
+      () => ({ t: 'auth', token: host.token(), ...host.presence(), key: this.key }),
       {
         message: (msg) => this.handle(msg),
         status: (status) => (this.status = status),
@@ -394,7 +397,7 @@ export class GuildState {
         this.loadingHistory = {}
         this.typing = {}
         this.loaded = true
-        this.host.ready(this, reconnected)
+        this.host.ready(this, reconnected, !!msg.resumed)
         return
       }
 
