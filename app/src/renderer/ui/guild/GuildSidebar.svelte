@@ -157,6 +157,103 @@
     settings.userVolumes[userId] = value
     call.applyVolumes()
   }
+
+  // ---------- Arrastar pra organizar ----------
+
+  /**
+   * Onde o arrastado cai: antes ou depois de um canal do mesmo tipo, dentro de uma
+   * categoria (no topo dela) ou, pra categoria, antes de outra (`id` nulo: no fim).
+   */
+  type Drop = { id: string | null; place: 'before' | 'after' | 'into' }
+
+  let dragging = $state<Channel | null>(null)
+  let drop = $state<Drop | null>(null)
+  const categories = $derived(guild.groups.flatMap((g) => (g.category ? [g.category] : [])))
+
+  function canDrag(channel: Channel): boolean {
+    return manageChannels && guild.can(channel.id, P.MANAGE_CHANNELS)
+  }
+
+  function dragStart(event: DragEvent, channel: Channel) {
+    if (!canDrag(channel)) return event.preventDefault()
+    dragging = channel
+    menu = null
+    if (event.dataTransfer) {
+      event.dataTransfer.effectAllowed = 'move'
+      event.dataTransfer.setData('text/plain', channel.name)
+    }
+  }
+
+  function dropFor(event: DragEvent, over: Channel): Drop | null {
+    const moving = dragging
+    if (!moving) return null
+    const box = (event.currentTarget as HTMLElement).getBoundingClientRect()
+    const upper = event.clientY < box.top + box.height / 2
+    if (moving.kind === 'category') {
+      if (over.kind !== 'category') return null
+      if (upper) return { id: over.id, place: 'before' }
+      const next = categories[categories.findIndex((c) => c.id === over.id) + 1]
+      return { id: next?.id ?? null, place: 'before' }
+    }
+    if (over.id === moving.id) return null
+    if (over.kind === 'category') return guild.can(over.id, P.MANAGE_CHANNELS) ? { id: over.id, place: 'into' } : null
+    if (over.kind !== moving.kind) return null
+    return { id: over.id, place: upper ? 'before' : 'after' }
+  }
+
+  function dragOver(event: DragEvent, over: Channel | null) {
+    const next = over ? dropFor(event, over) : dragging?.kind === 'category' ? { id: null, place: 'before' as const } : null
+    if (!next) return
+    event.preventDefault()
+    if (event.dataTransfer) event.dataTransfer.dropEffect = 'move'
+    if (drop?.id !== next.id || drop.place !== next.place) drop = next
+  }
+
+  /** Fora de qualquer alvo: some a marca (soltar ali não faz nada). */
+  function dragOverNav(event: DragEvent) {
+    if (!event.defaultPrevented) drop = null
+  }
+
+  function dragEnd() {
+    dragging = null
+    drop = null
+  }
+
+  function dropHere(event: DragEvent) {
+    event.preventDefault()
+    const moving = dragging
+    const where = drop
+    dragEnd()
+    if (moving && where) move(moving, where)
+  }
+
+  /** Renumera o grupo de destino e manda só o que mudou (cada linha é uma escrita no servidor). */
+  function move(moving: Channel, where: Drop) {
+    let list: Channel[]
+    let parentId: string | null = null
+    if (moving.kind === 'category') {
+      list = categories.filter((c) => c.id !== moving.id)
+      const at = where.id === null ? list.length : list.findIndex((c) => c.id === where.id)
+      if (at < 0) return
+      list.splice(at, 0, moving)
+    } else {
+      const group = guild.groups.find((g) =>
+        where.place === 'into' ? g.category?.id === where.id : g.channels.some((c) => c.id === where.id),
+      )
+      if (!group) return
+      parentId = group.category?.id ?? null
+      list = group.channels.filter((c) => c.kind === moving.kind && c.id !== moving.id)
+      const at = where.place === 'into' ? 0 : list.findIndex((c) => c.id === where.id) + (where.place === 'after' ? 1 : 0)
+      list.splice(at, 0, moving)
+    }
+    const order = list
+      .map((c, position) => ({ id: c.id, position, parentId }))
+      .filter(({ id, position }) => {
+        const now = guild.channel(id)
+        return !!now && (now.position !== position || (now.parentId ?? null) !== parentId)
+      })
+    if (order.length) guild.reorderChannels(order)
+  }
 </script>
 
 <header>
@@ -172,14 +269,25 @@
   </button>
 </header>
 
-<nav aria-label="Canais">
+<nav aria-label="Canais" ondragover={dragOverNav} ondrop={dropHere}>
   {#if !guild.loaded}
     <div class="loading"><Spinner size={16} /></div>
   {/if}
   {#each guild.groups as group (group.category?.id ?? 'loose')}
     {#if group.category}
       {@const category = group.category}
-      <div class="category" oncontextmenu={(e) => openMenu(e, channelMenu(category))} role="presentation">
+      <div
+        class="category"
+        class:dragging={dragging?.id === category.id}
+        class:drop-before={drop?.id === category.id && drop.place === 'before'}
+        class:drop-into={drop?.id === category.id && drop.place === 'into'}
+        draggable={canDrag(category)}
+        ondragstart={(e) => dragStart(e, category)}
+        ondragover={(e) => dragOver(e, category)}
+        ondragend={dragEnd}
+        oncontextmenu={(e) => openMenu(e, channelMenu(category))}
+        role="presentation"
+      >
         <button class="category-toggle" aria-expanded={!collapsed[category.id]} onclick={() => toggleCategory(category.id)}>
           <Icon name={collapsed[category.id] ? 'chevron-right' : 'chevron-down'} size={12} />
           {category.name}
@@ -203,7 +311,18 @@
         {@const active = currentChannel === channel.id && client.view === 'chat'}
         {@const unread = guild.unread(channel.id)}
         {#if !hidden || active || guild.mentions(channel.id)}
-          <div class="channel-row" oncontextmenu={(e) => openMenu(e, channelMenu(channel))} role="presentation">
+          <div
+            class="channel-row"
+            class:dragging={dragging?.id === channel.id}
+            class:drop-before={drop?.id === channel.id && drop.place === 'before'}
+            class:drop-after={drop?.id === channel.id && drop.place === 'after'}
+            draggable={canDrag(channel)}
+            ondragstart={(e) => dragStart(e, channel)}
+            ondragover={(e) => dragOver(e, channel)}
+            ondragend={dragEnd}
+            oncontextmenu={(e) => openMenu(e, channelMenu(channel))}
+            role="presentation"
+          >
             <NavItem
               class="channel"
               icon={isPrivate(channel) ? 'lock' : 'hash'}
@@ -230,7 +349,18 @@
         {@const here = call.guildId === guild.id && call.channelId === channel.id}
         {@const members = guild.voiceIn(channel.id)}
         {#if !hidden || here || members.length}
-          <div class="channel-row" oncontextmenu={(e) => openMenu(e, channelMenu(channel))} role="presentation">
+          <div
+            class="channel-row"
+            class:dragging={dragging?.id === channel.id}
+            class:drop-before={drop?.id === channel.id && drop.place === 'before'}
+            class:drop-after={drop?.id === channel.id && drop.place === 'after'}
+            draggable={canDrag(channel)}
+            ondragstart={(e) => dragStart(e, channel)}
+            ondragover={(e) => dragOver(e, channel)}
+            ondragend={dragEnd}
+            oncontextmenu={(e) => openMenu(e, channelMenu(channel))}
+            role="presentation"
+          >
             <NavItem
               class="channel"
               icon={isPrivate(channel) ? 'lock' : 'volume'}
@@ -313,6 +443,9 @@
       {/if}
     {/each}
   {/each}
+  {#if dragging?.kind === 'category'}
+    <div class="drop-end" class:drop-before={!!drop && drop.id === null} ondragover={(e) => dragOver(e, null)} role="presentation"></div>
+  {/if}
 </nav>
 
 {#if menu}
@@ -383,14 +516,17 @@
   }
 
   .category {
+    position: relative;
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 14px 0 4px 2px;
+    margin-top: 10px;
+    padding: 4px 0 4px 2px;
+    border-radius: var(--r-md);
   }
 
   .category:first-child {
-    padding-top: 4px;
+    margin-top: 0;
   }
 
   .category-toggle {
@@ -438,6 +574,58 @@
   /* Com a engrenagem à mostra, o contador de menções sai do caminho. */
   .channel-row:hover :global(.badge) {
     visibility: hidden;
+  }
+
+  /* ---------- Arrastar ---------- */
+
+  .dragging {
+    opacity: 0.45;
+  }
+
+  /* A marca de onde vai cair: uma linha fina na cor de destaque. */
+  .drop-before::before,
+  .drop-after::after {
+    content: '';
+    position: absolute;
+    left: 6px;
+    right: 6px;
+    height: 2px;
+    border-radius: 2px;
+    background: var(--accent-fg);
+    pointer-events: none;
+  }
+
+  .channel-row.drop-before::before {
+    top: -1px;
+  }
+
+  .channel-row.drop-after::after {
+    bottom: -1px;
+  }
+
+  .category.drop-before::before {
+    top: -6px;
+  }
+
+  .category:first-child.drop-before::before {
+    top: -1px;
+  }
+
+  .category.drop-into .category-toggle {
+    color: var(--accent-fg);
+  }
+
+  .category.drop-into {
+    background: var(--accent-soft);
+  }
+
+  .drop-end {
+    position: relative;
+    height: 32px;
+  }
+
+  .drop-end.drop-before::before {
+    top: 4px;
   }
 
   .limit {

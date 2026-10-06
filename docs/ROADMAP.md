@@ -33,7 +33,7 @@ As etapas 0.6 a 0.9 saíram juntas na 1.0 (uma atualização em vez de quatro).
 
 ### Cargos e moderação
 - [x] Cargos com cor, posição e permissões; canais privados por cargo (permissões próprias de cada canal, sincronizadas com a categoria)
-- [x] Categorias e ordem dos canais
+- [x] Categorias e ordem dos canais (arrastando na lista, ou mudando a categoria nas configurações do canal)
 - [x] Lista de membros agrupada por cargo
 - [x] Expulsar, banir, desbanir, castigar; mutar, ensurdecer, desconectar e mover na call
 - [x] Apelido por servidor; registro de auditoria
@@ -50,9 +50,9 @@ As etapas 0.6 a 0.9 saíram juntas na 1.0 (uma atualização em vez de quatro).
 - [x] Exportar meus dados (LGPD), política de privacidade e termos de uso
 - [x] Revisão de segurança independente (15 problemas achados e corrigidos, com teste pra cada um)
 - [x] Convite por link (`/i/<código>` abre o app pelo `resenha://`)
+- [x] Documentação de operação: deploy, backup, logs e limites do plano grátis ([OPERACAO.md](OPERACAO.md))
 
 ## Depois da 1.0
 - [ ] Modo privado (tudo via TURN, esconde o IP até dos amigos): precisa da chave TURN
-- [ ] Arrastar canais e servidores pra reordenar
+- [ ] Arrastar servidores no trilho pra reordenar
 - [ ] Emojis próprios de cada servidor
-- [ ] Documentação de operação (backup, logs, limites do plano grátis)

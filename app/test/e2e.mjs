@@ -332,6 +332,28 @@ try {
   check(true, 'servidor aparece no trilho e abre com os canais')
   await shot(a, '1-servidor')
 
+  // Organizar arrastando (A é o dono): a categoria de voz sobe e o #geral entra nela; B vê na hora.
+  const header = (page, name) => page.locator('nav .category', { hasText: name })
+  const row = (page, name) =>
+    page.locator('nav .channel-row').filter({ has: page.locator('button.channel', { hasText: new RegExp(`^\\s*${name}\\s*\\d*\\s*$`) }) })
+  const navOrder = (page) => page.locator('nav .category-toggle, nav button.channel').allInnerTexts()
+  const settles = async (page, expected) => {
+    for (let i = 0; i < 50; i++) {
+      const now = (await navOrder(page)).map((t) => t.trim().split('\n')[0])
+      if (now.join('|') === expected.join('|')) return true
+      await page.waitForTimeout(100)
+    }
+    return false
+  }
+  await header(a.page, 'Canais de voz').dragTo(header(a.page, 'Canais de texto'), { targetPosition: { x: 24, y: 4 } })
+  await row(a.page, 'geral').dragTo(header(a.page, 'Canais de voz'))
+  const arranged = await settles(b.page, ['Canais de voz', 'geral', 'Geral'])
+  // E volta como estava (o resto do teste usa a ordem padrão).
+  await row(a.page, 'geral').dragTo(header(a.page, 'Canais de texto'))
+  await header(a.page, 'Canais de texto').dragTo(header(a.page, 'Canais de voz'), { targetPosition: { x: 24, y: 4 } })
+  const restored = await settles(b.page, ['Canais de texto', 'geral', 'Canais de voz', 'Geral'])
+  check(arranged && restored, 'dono organiza canais e categorias arrastando, e todo mundo vê na hora')
+
   // Chat, menção e resposta.
   const composerA = a.page.getByPlaceholder('Mensagem em #geral')
   const composerB = b.page.getByPlaceholder('Mensagem em #geral')

@@ -131,8 +131,16 @@ describe('canais', () => {
     const reordered = await b.next('channels.reordered')
     expect(reordered.channels.find((c) => c.id === child.id)).toMatchObject({ position: 5, parentId: null })
 
+    a.send({ t: 'channel.create', name: 'cs', kind: 'text', parentId: category.id })
+    const cs = (await b.next('channel.upsert', (m) => m.channel.name === 'cs')).channel
+    // Voltar pra categoria pelas configurações do canal: entra no fim dela.
     a.send({ t: 'channel.update', id: child.id, parentId: category.id, topic: 'só FPS', slowmode: 10 })
-    expect((await b.next('channel.upsert', (m) => m.channel.id === child.id)).channel).toMatchObject({ topic: 'só FPS', slowmode: 10 })
+    expect((await b.next('channel.upsert', (m) => m.channel.id === child.id)).channel).toMatchObject({
+      topic: 'só FPS',
+      slowmode: 10,
+      parentId: category.id,
+      position: cs.position + 1,
+    })
 
     a.send({ t: 'channel.delete', id: category.id })
     await b.next('channel.removed', (m) => m.id === category.id)

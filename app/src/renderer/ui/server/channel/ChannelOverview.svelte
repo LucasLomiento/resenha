@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onDestroy } from 'svelte'
-  import type { Channel } from '../../../../../../shared/protocol'
+  import { P, type Channel } from '../../../../../../shared/protocol'
   import type { GuildState } from '../../../lib/guild.svelte'
   import { PageHeader, Row, Section, Select, Slider, TextField } from '../../kit'
   import SaveBar from '../SaveBar.svelte'
@@ -13,6 +13,8 @@
   interface Draft {
     name: string
     topic: string
+    /** Categoria ('' = sem categoria). */
+    parentId: string
     slowmode: number
     userLimit: number
   }
@@ -26,12 +28,28 @@
   const parent = $derived(channel.parentId ? guild.channel(channel.parentId) : null)
   const subtitle = $derived(parent ? `${KIND[channel.kind]} em ${parent.name}` : KIND[channel.kind])
 
+  /** Só as categorias em que a pessoa pode pôr canal (e a atual, mesmo que não possa). */
+  const categories = $derived([
+    { value: '', label: 'Sem categoria' },
+    ...guild.channels
+      .filter((c) => c.kind === 'category' && (c.id === parent?.id || guild.can(c.id, P.MANAGE_CHANNELS)))
+      .sort((a, b) => a.position - b.position || (a.id < b.id ? -1 : 1))
+      .map((c) => ({ value: c.id, label: c.name })),
+  ])
+
   let draft = $state<Draft | null>(null)
-  const base = $derived<Draft>({ name: channel.name, topic: channel.topic, slowmode: channel.slowmode, userLimit: channel.userLimit })
+  const base = $derived<Draft>({
+    name: channel.name,
+    topic: channel.topic,
+    parentId: parent?.id ?? '',
+    slowmode: channel.slowmode,
+    userLimit: channel.userLimit,
+  })
   const view = $derived(draft ?? base)
   const changed = $derived(
     !!draft &&
       (cleanName(draft.name) !== base.name ||
+        (channel.kind !== 'category' && draft.parentId !== base.parentId) ||
         (channel.kind === 'text' && (cleanTopic(draft.topic) !== base.topic || draft.slowmode !== base.slowmode)) ||
         (channel.kind === 'voice' && draft.userLimit !== base.userLimit)),
   )
@@ -50,9 +68,10 @@
   async function save() {
     if (!draft || nameError || saving) return
     const id = channel.id
-    const patch: { name?: string; topic?: string; slowmode?: number; userLimit?: number } = {}
+    const patch: { name?: string; topic?: string; parentId?: string | null; slowmode?: number; userLimit?: number } = {}
     const name = cleanName(draft.name)
     if (name !== base.name) patch.name = name
+    if (channel.kind !== 'category' && draft.parentId !== base.parentId) patch.parentId = draft.parentId || null
     if (channel.kind === 'text') {
       const topic = cleanTopic(draft.topic)
       if (topic !== base.topic) patch.topic = topic
@@ -104,22 +123,27 @@
   {/if}
 </Section>
 
-{#if channel.kind === 'text'}
+{#if channel.kind !== 'category'}
   <Section>
-    <Row label="Modo lento" description="Cada pessoa espera esse tempo entre uma mensagem e outra.">
-      <div class="w160">
-        <Select label="Modo lento" bind:value={() => String(view.slowmode), (v) => edit({ slowmode: Number(v) })} options={SLOWMODES} />
+    <Row label="Categoria">
+      <div class="w200">
+        <Select label="Categoria" bind:value={() => view.parentId, (v) => edit({ parentId: v })} options={categories} />
       </div>
     </Row>
-  </Section>
-{:else if channel.kind === 'voice'}
-  <Section>
-    <Row label="Limite de pessoas">
-      <div class="limit">
-        <Slider label="Limite de pessoas" min={0} max={99} step={1} bind:value={() => view.userLimit, (v) => edit({ userLimit: Number(v) })} />
-        <span class="limit-value tabular">{view.userLimit === 0 ? 'Sem limite' : plural(view.userLimit, 'pessoa', 'pessoas')}</span>
-      </div>
-    </Row>
+    {#if channel.kind === 'text'}
+      <Row label="Modo lento" description="Cada pessoa espera esse tempo entre uma mensagem e outra.">
+        <div class="w200">
+          <Select label="Modo lento" bind:value={() => String(view.slowmode), (v) => edit({ slowmode: Number(v) })} options={SLOWMODES} />
+        </div>
+      </Row>
+    {:else}
+      <Row label="Limite de pessoas">
+        <div class="limit">
+          <Slider label="Limite de pessoas" min={0} max={99} step={1} bind:value={() => view.userLimit, (v) => edit({ userLimit: Number(v) })} />
+          <span class="limit-value tabular">{view.userLimit === 0 ? 'Sem limite' : plural(view.userLimit, 'pessoa', 'pessoas')}</span>
+        </div>
+      </Row>
+    {/if}
   </Section>
 {/if}
 
@@ -178,8 +202,8 @@
     font-size: var(--text-2xs);
   }
 
-  .w160 {
-    width: 160px;
+  .w200 {
+    width: 200px;
   }
 
   .limit {

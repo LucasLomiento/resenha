@@ -1580,8 +1580,12 @@ export class Guild extends DurableObject<Env> {
         if (!this.channel(msg.parentId, 'category')) return this.error(ws, 'Categoria não existe.')
         if (!this.can(userId, msg.parentId, P.MANAGE_CHANNELS)) return this.error(ws, 'Você não pode mexer nessa categoria.')
       }
-      sets.push('parent_id = ?')
-      args.push(msg.parentId)
+      // Entra no fim da categoria nova.
+      const position = this.sql
+        .exec<{ p: number }>('SELECT COALESCE(MAX(position), -1) + 1 AS p FROM channels WHERE parent_id IS ?', msg.parentId)
+        .one().p
+      sets.push('parent_id = ?', 'position = ?')
+      args.push(msg.parentId, position)
       changes.push('categoria')
     }
     let overwrites: Overwrite[] | null = null
