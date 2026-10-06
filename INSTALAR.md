@@ -3,11 +3,11 @@
 Você vai precisar de duas coisas:
 
 1. **O app**, na página de [Releases](https://github.com/LucasLomiento/resenha/releases/latest).
-2. **Um convite** que quem administra o servidor te manda: um código curto, tipo `aB3x_9Kq`.
+2. **Um convite**: o link que alguém de um servidor te manda, tipo `https://resenha.lucaslomiento.workers.dev/i/aB3x9Kq`. Com o app instalado, o link abre direto nele.
 
 O servidor é automático: não precisa configurar nada.
 
-Depois de instalado, o app **se atualiza sozinho**. Quando sai versão nova aparece **Atualizar** no topo da barra lateral.
+Depois de instalado, o app **se atualiza sozinho**. Quando sai versão nova, aparece um botão de download no pé da coluna de servidores, à esquerda (ou em Configurações → Aplicativo).
 
 ---
 
@@ -51,27 +51,38 @@ Pra atualizar pelo app no pacote `.pacman`, ele pede a sua senha: numa janelinha
 
 ## Primeiro acesso
 
-1. Abra o app e clique em **"Tenho um convite, quero criar conta"**.
-2. Escolha um apelido e uma senha, cole o **convite** e clique em **Criar conta**. Cada convite vale pra uma conta só e vence em 7 dias.
-3. Pronto. Da próxima vez o app já abre logado.
+1. Abra o link do convite (ele abre o app) ou abra o app e clique em **Criar conta**.
+2. Escolha um **nome de usuário** (único, é com ele que você entra), um **nome de exibição** (como aparece pros outros) e uma senha de pelo menos 8 caracteres. Se o convite não veio preenchido, cole o código ou o link.
+3. Pronto: você já entra no servidor do convite. Da próxima vez o app abre logado.
+
+**Já usava antes da 1.0?** Nada muda: o app atualiza e continua logado, com todas as mensagens. Se precisar entrar de novo, vale o apelido antigo ou o nome de usuário novo (aparece embaixo do seu nome, no canto de baixo).
 
 ## Usando
 
-- **Entrar na call:** clique no canal de voz (o com ícone de alto-falante). Pra sair, use o botão do telefone riscado no painel de baixo.
-- **Mutar e ensurdecer:** são os botões de microfone e de fone no canto de baixo.
-- **Webcam:** com a call aberta, clique no botão de câmera no painel de baixo. Pra ver a câmera de todo mundo, clique em "Voz conectada" ou no canal de voz: abre a tela da call, com um bloco por pessoa.
+- **Servidores:** a coluna da esquerda tem a casinha do **Início** (amigos e mensagens privadas) e os seus servidores. O **+** cria um servidor ou entra em outro com convite.
+- **Convidar alguém:** clique no nome do servidor, no topo, e em **Convidar pessoas**. Dá pra escolher por quanto tempo o link vale e quantas pessoas podem usar.
+- **Amigos e mensagens privadas:** ficam no **Início**. Pra falar com alguém, clique no nome da pessoa (no chat ou na lista de membros) e em **Mensagem**. Na conversa, os botões de telefone e câmera, no topo, fazem uma ligação.
+- **Entrar na call:** clique no canal de voz (o com alto-falante). A call aparece no painel de baixo, à esquerda, e o telefone vermelho sai dela.
+- **Mutar e ensurdecer:** botões de microfone e de fone, no painel de baixo.
+- **Câmera e tela:** com a call aberta, use os botões de câmera e de tela no painel de baixo. Na tela, escolha a qualidade (até 1440p a 60 fps) e se quer mandar o áudio. Do outro lado aparece **AO VIVO**, e é só clicar pra assistir. Clicando de novo no botão da tela dá pra trocar a qualidade e o codec sem parar e ver quantas pessoas estão assistindo.
+- **Ver todo mundo da call:** clique em **Na call**, no painel de baixo, ou no canal de voz: abre a tela da call, com um bloco por pessoa.
 - **Volume de cada pessoa:** clique no nome dela dentro do canal de voz.
-- **Compartilhar a tela:** com a call aberta, clique no ícone de monitor no painel de baixo, escolha a qualidade (até 1440p a 60 fps) e se quer mandar o áudio. Do outro lado aparece **AO VIVO** do lado do seu nome, e é só clicar pra assistir.
-- **Mandar imagens e arquivos:** use o clipe do lado do campo de mensagem, cole um print com `Ctrl+V` ou arraste o arquivo pra dentro do chat. O limite é 25 MB por arquivo. Imagens são comprimidas antes de enviar.
-- **Mudar a qualidade no meio da transmissão:** clique de novo no ícone de monitor. Dá pra trocar a resolução, a prioridade e o codec sem parar, e ver quantas pessoas estão assistindo.
-- **Mensagem privada:** clique na pessoa em **Mensagens diretas**, na barra lateral.
-- **Miniatura:** enquanto assiste, você pode voltar pro chat e a transmissão vira uma miniatura que dá pra arrastar e redimensionar. Também tem a **janela flutuante**, que fica por cima de tudo, até de outros apps.
-- **Atalhos:** em Configurações → Atalhos você escolhe teclas pra mutar, ensurdecer, compartilhar a tela, sair da call e mostrar o Resenha. O padrão é `Ctrl+Shift+M` pra mutar e `Ctrl+Shift+D` pra ensurdecer.
-- **Bandeja, abrir com o computador, sons e zoom:** em Configurações → App. O ícone da bandeja fica verde enquanto você fala e muda quando você muta ou ensurdece. O zoom também funciona com `Ctrl +`, `Ctrl −` e `Ctrl 0`.
-- **Configurações:** no botão de ajustes, no canto de baixo. Lá dá pra escolher microfone, saída de áudio e codec de vídeo. O **Testar microfone** toca a sua voz de volta (use fone).
-- **Ruído e limiar:** em Configurações → Voz. A **redução de ruído** com RNNoise tira teclado, ventilador e barulho de fundo. O **limiar do microfone** só transmite quando você fala: no automático ele reconhece a voz, no manual você arrasta a marca no medidor.
+- **Assistindo:** dá pra voltar pro chat e a transmissão vira uma miniatura que se arrasta e redimensiona. Também tem a **janela flutuante**, que fica por cima de tudo, até de outros apps.
+- **Mensagens:** passe o mouse numa mensagem pra reagir, responder, editar ou fixar; o **⋯** tem o resto. `@` menciona alguém e `#` um canal. Com o campo vazio, **↑** edita a sua última mensagem. A busca fica no topo do chat.
+- **Imagens e arquivos:** clipe ao lado do campo, `Ctrl+V` com um print, ou arraste pro chat. Até 25 MB por arquivo.
+- **Pular pra qualquer canal ou conversa:** `Ctrl+K`. `Alt+↑` e `Alt+↓` vão pro canal de cima e de baixo.
+- **Status:** clique na sua foto, no painel de baixo: online, ausente, não perturbe, invisível ou um texto seu.
+- **Configurações** (engrenagem no painel de baixo):
+  - **Perfil:** foto, nome, "sobre mim" e cor.
+  - **Aparelhos:** onde a sua conta está aberta; dá pra sair de um ou de todos.
+  - **Voz e vídeo:** microfone, saída, redução de ruído, "só transmitir quando eu falar", câmera e codec da transmissão. A **redução de ruído** (RNNoise) tira teclado, ventilador e barulho de fundo.
+  - **Notificações:** sons e avisos do sistema (dá pra esconder o texto da mensagem, bom quando a tela está sendo compartilhada).
+  - **Atalhos:** teclas pra mutar, ensurdecer, compartilhar a tela, sair da call e mostrar o Resenha. O padrão é `Ctrl+Shift+M` pra mutar e `Ctrl+Shift+D` pra ensurdecer.
+  - **Aplicativo:** abrir com o computador, bandeja, tamanho da interface (também com `Ctrl +`, `Ctrl −` e `Ctrl 0`) e atualizações.
+  - **Privacidade:** quem pode te mandar mensagem privada, bloqueados, baixar uma cópia dos seus dados e excluir a conta.
+- **No seu servidor** (ou se o seu cargo deixar): o menu no nome do servidor tem **Configurações do servidor**, com cargos, membros, convites, banimentos e o registro de tudo que a moderação fez. Os canais se organizam arrastando na lista, e a engrenagem de cada canal abre as configurações e as permissões dele.
 
 ## Problemas comuns
 
 - **A call conecta, mas ninguém se ouve, ou o ping não aparece:** a rede de algum dos dois está bloqueando a conexão direta. Confira se o app foi liberado no Firewall do Windows (passo 4) e avise quem administra o servidor.
-- **Transmissão travando:** em Configurações → Tela, baixe a qualidade pra 1080p ou 720p, ou troque o codec pra **H264**. Cada pessoa assistindo consome upload de quem transmite.
+- **Transmissão travando:** clique no botão da tela, no painel de baixo, e baixe a qualidade pra 1080p ou 720p, ou troque o codec pra **H264**. Cada pessoa assistindo consome upload de quem transmite.

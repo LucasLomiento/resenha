@@ -19,7 +19,7 @@ Um app no estilo do Discord: vários servidores com canais, cargos e moderação
 Os detalhes (e as regras de segurança do servidor) estão em [docs/ARQUITETURA.md](docs/ARQUITETURA.md).
 
 - **server/**: Worker e quatro Durable Objects, todos criados na América do Sul. Os WebSockets usam hibernação: parado, não gasta nada.
-- **Permissões** no modelo do Discord: cargos com hierarquia, exceções por canal e por categoria, castigo, expulsão, banimento e registro de auditoria. Tudo é conferido no servidor (`server/src/permissions.ts`).
+- **Permissões** no modelo do Discord: cargos com hierarquia, exceções por canal e por categoria, castigo, expulsão, banimento e registro de auditoria. Tudo é conferido no servidor (o cálculo fica em `shared/permissions.ts`).
 - **Mensagens**: resposta, menções (pessoa, cargo, @everyone), reações, fixadas, busca sem acento (FTS5), contagem de não lidas e menções, e prévia de link buscada pelo servidor (quem lê nunca acessa o site do link).
 - **Anexos** (`server/src/files.ts`): ficam no SQLite do servidor/conversa, em pedaços de 1 MB, até 25 MB por arquivo, com teto de espaço pra plataforma inteira.
 - **app/**: Electron + Svelte 5. Cada pessoa da call tem uma `RTCPeerConnection` própria (`src/renderer/lib/peer.ts`, com "perfect negotiation"); a mesma call serve pro canal de voz e pra chamada privada. A tela só é enviada pra quem clica em **Assistir**.

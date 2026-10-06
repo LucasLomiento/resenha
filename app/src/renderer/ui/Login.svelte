@@ -129,7 +129,7 @@
 
     <div class="fields">
       <TextField
-        label={mode === 'login' ? 'Nome de usuário' : 'Nome de usuário'}
+        label="Nome de usuário"
         size="lg"
         bind:value={username}
         autocomplete="username"
