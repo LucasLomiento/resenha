@@ -106,6 +106,12 @@
     box-shadow: inset 0 0 0 1px rgb(255 92 114 / 0.55);
   }
 
+  /* Só leitura (nome de usuário fixo): sem cara de campo pra digitar. */
+  .control:has(input:read-only):not(:focus-within) {
+    background: transparent;
+    box-shadow: inset 0 0 0 1px var(--line);
+  }
+
   input {
     flex: 1;
     min-width: 0;

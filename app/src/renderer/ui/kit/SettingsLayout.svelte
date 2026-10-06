@@ -86,7 +86,9 @@
   .settings {
     position: fixed;
     inset: 0;
-    z-index: var(--z-settings);
+    /* Abaixo de menus (40) e modais (50): o que abre de dentro das configurações (confirmar,
+       excluir conta, menu de ações) aparece por cima. Com o --z-settings (60) ficava escondido. */
+    z-index: calc(var(--z-popover) - 5);
     background:
       radial-gradient(900px 500px at 0% 0%, rgb(111 125 255 / 0.06), transparent 70%),
       var(--bg-canvas);
