@@ -227,7 +227,9 @@
 
   function onkeydown(event: KeyboardEvent, r: Role, index: number) {
     if (!event.altKey || (event.key !== 'ArrowUp' && event.key !== 'ArrowDown')) return
+    // Sem isso o Alt + ↑/↓ da janela (trocar de canal) também roda.
     event.preventDefault()
+    event.stopPropagation()
     if (editable(r)) move(r.id, event.key === 'ArrowUp' ? index - 1 : index + 2)
   }
 
@@ -533,7 +535,7 @@
   .swatches {
     display: flex;
     flex-wrap: wrap;
-    gap: var(--s-2);
+    gap: 6px;
   }
 
   .swatch {

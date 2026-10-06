@@ -144,7 +144,9 @@
 
   .settings-content {
     min-width: 0;
-    padding: 56px 88px 72px 40px;
+    /* Exposto pra quem gruda embaixo (barra de salvar): o sticky conta a partir do padding. */
+    --settings-pad-bottom: 72px;
+    padding: 56px 88px var(--settings-pad-bottom) 40px;
     overflow-y: auto;
     scrollbar-gutter: stable;
   }

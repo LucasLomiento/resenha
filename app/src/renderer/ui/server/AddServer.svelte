@@ -184,7 +184,7 @@
       </div>
     {:else if step === 'create'}
       <form id="{uid}-create" onsubmit={create}>
-        <div class="create">
+        <div class="create-form">
           <div class="upload-wrap">
             <button type="button" class="upload" class:filled={!!icon} aria-label={icon ? 'Trocar ícone' : 'Escolher ícone'} onclick={chooseIcon}>
               {#if icon}
@@ -317,13 +317,13 @@
     font-size: var(--text-sm);
   }
 
-  .create {
+  .create-form {
     display: flex;
     align-items: flex-end;
     gap: var(--s-4);
   }
 
-  .create :global(.field) {
+  .create-form :global(.field) {
     flex: 1;
   }
 

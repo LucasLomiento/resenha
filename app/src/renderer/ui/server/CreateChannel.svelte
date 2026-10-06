@@ -77,7 +77,11 @@
     const before = new Set(target.channels.map((c) => c.id))
     const created = () => target.channels.find((c) => !before.has(c.id) && c.kind === kind && c.name === clean)
     target.createChannel(clean, kind, parentId, isPrivate && canPrivate ? privateRules(parentId) : undefined)
-    const ok = await settled(() => !!created())
+    // Espera também as permissões dele chegarem: sem elas, abrir o canal cairia no primeiro de texto.
+    const ok = await settled(() => {
+      const channel = created()
+      return !!channel && target.permissions[channel.id] !== undefined
+    })
     busy = false
     if (!ok) return
     const channel = created()
@@ -125,7 +129,7 @@
             <span class="private-icon"><Icon name="lock" size={16} /></span>
             <span class="private-text">
               <span class="private-label">{kind === 'category' ? 'Categoria privada' : 'Canal privado'}</span>
-              <span class="private-hint">Só os cargos escolhidos veem. Quem administra vê tudo.</span>
+              <span class="private-hint">Só os cargos escolhidos veem.</span>
             </span>
             <Switch id="{uid}-private" bind:checked={isPrivate} />
           </label>

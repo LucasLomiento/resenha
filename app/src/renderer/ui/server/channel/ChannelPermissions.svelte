@@ -186,7 +186,10 @@
   }
 </script>
 
-<PageHeader title="Permissões" description="Exceções deste canal, por cima do que os cargos dão." />
+<PageHeader
+  title="Permissões"
+  description={channel.kind === 'category' ? 'Exceções desta categoria, por cima do que os cargos dão.' : 'Exceções deste canal, por cima do que os cargos dão.'}
+/>
 
 {#if parent}
   <div class="sync" class:synced>

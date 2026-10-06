@@ -161,7 +161,7 @@
     </Row>
   </Section>
 {:else}
-  <Section title="Sair">
+  <Section>
     <Row label="Sair do servidor" description="Pra voltar, só com um convite novo.">
       <Button variant="danger-soft" icon="door-open" onclick={leave}>Sair</Button>
     </Row>

@@ -96,7 +96,8 @@
     {#if !canInvite}
       <EmptyState icon="lock" title="Sem permissão pra convidar" description="Peça pra alguém da moderação criar um convite." />
     {:else}
-      <div class="box" class:failed>
+      <!-- Copiou na mão (Ctrl + C) também conta: esse link pode ter saído daqui. -->
+      <div class="box" class:failed oncopy={() => (shared = true)}>
         <span class="link selectable" class:muted={!invite}>
           {#if invite}{link}{:else if failed}Não deu pra gerar o link.{:else}Gerando link…{/if}
         </span>

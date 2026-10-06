@@ -83,6 +83,8 @@
   }
 
   const nameOf = (id: string | null) => (id ? guild.displayName(id) : null)
+  /** Nome de hoje do cargo (o detalhe guarda o de quando aconteceu). */
+  const roleName = (id: string | null) => guild.roles.find((r) => r.id === id)?.name ?? null
 
   function describe(entry: AuditEntry): Line {
     const { action, detail, targetId } = entry
@@ -92,7 +94,7 @@
         return { icon: 'settings', tone: 'accent', verb: 'editou o servidor', target: null, detail: cap(detail) }
       case 'channel.create': {
         const match = /^(Categoria|Voz|Texto): (.*)$/.exec(detail)
-        const name = match?.[2] ?? detail
+        const name = guild.channel(targetId)?.name ?? match?.[2] ?? detail
         if (match?.[1] === 'Categoria') return { icon: 'folder', tone: 'green', verb: 'criou a categoria', target: name, detail: '' }
         if (match?.[1] === 'Voz') return { icon: 'volume', tone: 'green', verb: 'criou o canal de voz', target: name, detail: '' }
         return { icon: 'hash', tone: 'green', verb: 'criou o canal', target: `#${name}`, detail: '' }
@@ -116,11 +118,11 @@
         }
       }
       case 'role.create':
-        return { icon: 'shield', tone: 'green', verb: 'criou o cargo', target: detail, detail: '' }
+        return { icon: 'shield', tone: 'green', verb: 'criou o cargo', target: roleName(targetId) ?? detail, detail: '' }
       case 'role.update': {
         if (!targetId) return { icon: 'shield', tone: 'accent', verb: 'reordenou os cargos', target: null, detail: '' }
         const [name, what] = split(detail)
-        return { icon: 'shield', tone: 'accent', verb: 'editou o cargo', target: name, detail: cap(what) }
+        return { icon: 'shield', tone: 'accent', verb: 'editou o cargo', target: roleName(targetId) ?? name, detail: cap(what) }
       }
       case 'role.delete':
         return { icon: 'shield', tone: 'red', verb: 'apagou o cargo', target: detail, detail: '' }

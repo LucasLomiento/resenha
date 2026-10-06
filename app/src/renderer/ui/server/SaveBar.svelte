@@ -49,7 +49,8 @@
 <style>
   .savebar {
     position: sticky;
-    bottom: var(--s-4);
+    /* Nas configurações, gruda a 16 px da borda da janela (e não acima do padding da página). */
+    bottom: calc(var(--s-4) - var(--settings-pad-bottom, 0px));
     z-index: 2;
     display: flex;
     align-items: center;
