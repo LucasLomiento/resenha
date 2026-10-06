@@ -39,6 +39,8 @@ export interface AttachmentRow {
   size: number
   type: string
   created_at: number
+  width: number | null
+  height: number | null
   [key: string]: SqlStorageValue
 }
 
@@ -154,6 +156,10 @@ export class MessageStore {
       created_at INTEGER NOT NULL
     )`)
     this.sql.exec('CREATE INDEX IF NOT EXISTS attachments_by_message ON attachments (message_id)')
+    const attachmentColumns = columns(this.sql, 'attachments')
+    for (const name of ['width', 'height']) {
+      if (!attachmentColumns.has(name)) this.sql.exec(`ALTER TABLE attachments ADD COLUMN ${name} INTEGER`)
+    }
     this.sql.exec(`CREATE TABLE IF NOT EXISTS reactions (
       message_id TEXT NOT NULL,
       emoji TEXT NOT NULL,
@@ -220,6 +226,8 @@ export class MessageStore {
         size: f.size,
         type: f.type,
         url: await signFileUrl(this.secret, scope, f.id, f.name),
+        width: f.width ?? null,
+        height: f.height ?? null,
       }
       byMessage.set(f.message_id!, [...(byMessage.get(f.message_id!) ?? []), entry])
     }
@@ -431,7 +439,7 @@ export class MessageStore {
 
   importAttachment(a: AttachmentRow) {
     this.sql.exec(
-      `INSERT INTO attachments (id, message_id, uploader_id, name, size, type, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)
+      `INSERT INTO attachments (id, message_id, uploader_id, name, size, type, created_at, width, height) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT (id) DO NOTHING`,
       a.id,
       a.message_id,
@@ -440,6 +448,8 @@ export class MessageStore {
       a.size,
       a.type,
       a.created_at,
+      a.width ?? null,
+      a.height ?? null,
     )
   }
 
@@ -593,6 +603,10 @@ export class MessageStore {
     name = name.replace(/[\u0000-\u001f\u007f/\\]/g, '_').slice(0, 200)
     const type = (request.headers.get('Content-Type') || 'application/octet-stream').slice(0, 100)
     const id = randomToken(12)
+    // Tamanho da imagem/vídeo, que o app mede antes de enviar (só pra reservar espaço na tela).
+    const dims = /^(\d{1,5})x(\d{1,5})$/.exec(request.headers.get('X-Media-Size') ?? '')
+    const width = dims && /^(image|video)\//.test(type) ? Math.min(Number(dims[1]), 20000) || null : null
+    const height = dims && width ? Math.min(Number(dims[2]), 20000) || null : null
 
     let size: number
     try {
@@ -602,15 +616,17 @@ export class MessageStore {
       throw err
     }
     this.sql.exec(
-      'INSERT INTO attachments (id, message_id, uploader_id, name, size, type, created_at) VALUES (?, NULL, ?, ?, ?, ?, ?)',
+      'INSERT INTO attachments (id, message_id, uploader_id, name, size, type, created_at, width, height) VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?)',
       id,
       uploaderId,
       name,
       size,
       type,
       Date.now(),
+      width,
+      height,
     )
-    const attachment: Attachment = { id, name, size, type, url: await signFileUrl(this.secret, this.scope(), id, name) }
+    const attachment: Attachment = { id, name, size, type, url: await signFileUrl(this.secret, this.scope(), id, name), width, height }
     return Response.json(attachment)
   }
 

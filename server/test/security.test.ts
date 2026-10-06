@@ -180,7 +180,7 @@ describe('revisão de segurança', () => {
 
   it('uma conexão mandando coisa demais é segurada', async () => {
     const { a, text } = await world()
-    for (let i = 0; i < 70; i++) a.send({ t: 'typing', channelId: text.id })
+    for (let i = 0; i < 130; i++) a.send({ t: 'typing', channelId: text.id })
     expect((await a.next('error')).message).toMatch(/Muitas ações/)
     for (let i = 0; i < 6; i++) a.send({ t: 'chat.edit', id: 'x', content: 'y' })
   })

@@ -132,6 +132,17 @@
 
   const url = (path: string) => client.api?.url(path) ?? path
 
+  /** Com o tamanho conhecido, o espaço fica reservado antes de a imagem chegar. */
+  function ratio(a: Attachment): string | null {
+    return a.width && a.height ? `${a.width} / ${a.height}` : null
+  }
+
+  function fitWidth(a: Attachment, maxWidth: number, maxHeight: number): string | null {
+    if (!a.width || !a.height) return null
+    const scale = Math.min(1, maxWidth / a.width, maxHeight / a.height)
+    return `${Math.max(1, Math.round(a.width * scale))}px`
+  }
+
   function openImage(a: Attachment) {
     ui.lightbox = { url: url(a.url), name: a.name }
   }
@@ -210,12 +221,12 @@
 
       {#each message.attachments as a (a.id)}
         {#if IMAGE.test(a.type)}
-          <button class="image" aria-label="Abrir {a.name}" onclick={() => openImage(a)}>
+          <button class="image" aria-label="Abrir {a.name}" onclick={() => openImage(a)} style:aspect-ratio={ratio(a)} style:width={fitWidth(a, 420, 320)}>
             <img src={url(a.url)} alt={a.name} loading="lazy" draggable="false" />
           </button>
         {:else if VIDEO.test(a.type)}
           <!-- svelte-ignore a11y_media_has_caption -->
-          <video class="video" src={url(a.url)} controls preload="metadata"></video>
+          <video class="video" src={url(a.url)} controls preload="metadata" style:aspect-ratio={ratio(a)} style:width={fitWidth(a, 480, 320)}></video>
         {:else}
           <div class="file">
             <span class="file-icon"><Icon name="file" size={20} /></span>
@@ -531,7 +542,8 @@
 
   .image img {
     display: block;
-    max-width: 100%;
+    width: 100%;
+    height: 100%;
     max-height: 320px;
     object-fit: contain;
     background: var(--bg-input);

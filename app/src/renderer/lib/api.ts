@@ -233,13 +233,14 @@ export class Api {
    * Envia um anexo pro lugar certo (`/api/g/<servidor>/files` ou
    * `/api/c/<conversa>/files`). XHR em vez de fetch só pra ter progresso.
    */
-  upload(path: string, file: File, onProgress: (fraction: number) => void): Upload {
+  upload(path: string, file: File, onProgress: (fraction: number) => void, size?: { width: number; height: number } | null): Upload {
     const xhr = new XMLHttpRequest()
     const promise = new Promise<Attachment>((resolve, reject) => {
       xhr.open('POST', this.server + path)
       xhr.setRequestHeader('Authorization', `Bearer ${this.token}`)
       xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream')
       xhr.setRequestHeader('X-File-Name', encodeURIComponent(file.name || 'arquivo'))
+      if (size) xhr.setRequestHeader('X-Media-Size', `${Math.round(size.width)}x${Math.round(size.height)}`)
       xhr.upload.onprogress = (e) => e.lengthComputable && onProgress(e.loaded / e.total)
       xhr.onload = () => {
         let body: unknown = {}

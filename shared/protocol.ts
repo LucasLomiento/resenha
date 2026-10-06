@@ -229,6 +229,9 @@ export interface Attachment {
   type: string
   /** Caminho assinado relativo ao servidor. */
   url: string
+  /** Imagem/vídeo: tamanho em pixels (o app reserva o espaço e a rolagem não pula). */
+  width?: number | null
+  height?: number | null
 }
 
 /** Prévia de link, montada pelo servidor (o app nunca acessa o site). */

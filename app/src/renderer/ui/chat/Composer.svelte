@@ -5,7 +5,7 @@
 
 <script lang="ts">
   import { untrack } from 'svelte'
-  import { MAX_MESSAGE_LENGTH, MAX_UPLOAD_BYTES, P, type Attachment, type Message } from '../../../../../shared/protocol'
+  import { MAX_MESSAGE_LENGTH, MAX_UPLOAD_BYTES, type Attachment, type Message } from '../../../../../shared/protocol'
   import { client } from '../../lib/client.svelte'
   import { searchEmoji } from '../../lib/emoji'
   import { formatSize } from '../../lib/format'
@@ -123,9 +123,38 @@
     if (file.size > MAX_UPLOAD_BYTES) {
       return update(key, { preparing: false, error: `Maior que ${formatSize(MAX_UPLOAD_BYTES)}` })
     }
-    const job = client.api.upload(target.uploadPath, file, (fraction) => update(key, { progress: fraction }))
+    const size = await mediaSize(file)
+    const job = client.api.upload(target.uploadPath, file, (fraction) => update(key, { progress: fraction }), size)
     update(key, { file, preparing: false, abort: job.abort })
     job.promise.then((attachment) => update(key, { attachment, progress: 1 })).catch((err: Error) => update(key, { error: err.message }))
+  }
+
+  /** Largura e altura da imagem (ou vídeo), pra o chat reservar o espaço certo. */
+  async function mediaSize(file: File): Promise<{ width: number; height: number } | null> {
+    try {
+      if (file.type.startsWith('image/')) {
+        const bitmap = await createImageBitmap(file)
+        const size = { width: bitmap.width, height: bitmap.height }
+        bitmap.close()
+        return size
+      }
+      if (file.type.startsWith('video/')) {
+        const url = URL.createObjectURL(file)
+        const video = document.createElement('video')
+        video.preload = 'metadata'
+        video.src = url
+        const size = await new Promise<{ width: number; height: number } | null>((resolve) => {
+          video.onloadedmetadata = () => resolve({ width: video.videoWidth, height: video.videoHeight })
+          video.onerror = () => resolve(null)
+          setTimeout(() => resolve(null), 3000)
+        })
+        URL.revokeObjectURL(url)
+        return size && size.width ? size : null
+      }
+    } catch {
+      // formato que o navegador não abre: segue sem
+    }
+    return null
   }
 
   function update(key: number, patch: Partial<Upload>) {

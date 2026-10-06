@@ -15,7 +15,7 @@ export { Home } from './home'
 const CORS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
-  'Access-Control-Allow-Headers': 'Authorization, Content-Type, X-File-Name, X-Resenha-Device',
+  'Access-Control-Allow-Headers': 'Authorization, Content-Type, X-File-Name, X-Media-Size, X-Resenha-Device',
   'Access-Control-Max-Age': '86400',
 }
 
