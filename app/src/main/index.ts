@@ -346,6 +346,12 @@ handle('desktop:set', (_event, patch: Partial<DesktopPrefs>) => {
 
 listen('call-state', (_event, state: CallState) => showCallState(state, win, showWindow, dispatch))
 
+// Não lidas (menções e mensagens privadas) no ícone do app, onde o sistema mostra (KDE, GNOME com dock, macOS).
+listen('unread', (_event, count: number) => {
+  const value = Math.max(0, Math.min(999, Math.floor(Number(count) || 0)))
+  app.setBadgeCount(value)
+})
+
 handle('update:state', () => updateState())
 handle('update:check', () => checkForUpdates())
 handle('update:download', () => downloadUpdate())

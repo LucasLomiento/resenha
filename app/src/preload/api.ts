@@ -95,6 +95,8 @@ export interface ResenhaApi {
   }
   /** Estado da call, pra bandeja e barra de tarefas. */
   callState(state: CallState): void
+  /** Quantas coisas não lidas (menções, mensagens privadas, pedidos), pro ícone do app. */
+  unread(count: number): void
   /** Ações vindas da bandeja, de atalho global ou da linha de comando. */
   onAction(callback: (action: ShortcutAction) => void): void
   update: {

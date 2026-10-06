@@ -29,6 +29,7 @@ const api: ResenhaApi = {
     set: (patch) => ipcRenderer.invoke('desktop:set', patch),
   },
   callState: (state) => ipcRenderer.send('call-state', state),
+  unread: (count) => ipcRenderer.send('unread', count),
   onAction: (callback) => {
     ipcRenderer.on('action', (_event, action: ShortcutAction) => callback(action))
   },

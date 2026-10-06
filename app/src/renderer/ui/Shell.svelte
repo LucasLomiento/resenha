@@ -46,6 +46,11 @@
     })
   })
 
+  // Menções e mensagens privadas não lidas no ícone do app.
+  $effect(() => {
+    window.resenha.unread(client.badge)
+  })
+
   // Convite aberto por link: com o app aberto, já mostra o servidor pra confirmar.
   $effect(() => {
     const code = client.pendingInvite
