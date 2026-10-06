@@ -72,6 +72,30 @@ function actionFromArgs(argv: string[]): ShortcutAction | null {
 
 if (!app.requestSingleInstanceLock()) app.quit()
 
+// ---------- Links resenha:// (convites) ----------
+
+/** `resenha://invite/<código>`: o único link que o app aceita de fora. */
+function inviteFromArgs(argv: string[]): string | null {
+  for (const arg of argv) {
+    const match = /^resenha:\/\/invite\/([\w-]{4,32})\/?$/i.exec(arg.trim())
+    if (match) return match[1]
+  }
+  return null
+}
+
+let pendingInvite: string | null = inviteFromArgs(process.argv)
+
+function deliverInvite(code: string) {
+  pendingInvite = code
+  win?.webContents.send('invite', code)
+}
+
+// Em teste (perfil separado) não registra, pra não tomar o lugar do app instalado.
+if (!profile) {
+  if (process.defaultApp && process.argv[1]) app.setAsDefaultProtocolClient('resenha', process.execPath, [join(process.cwd(), process.argv[1])])
+  else app.setAsDefaultProtocolClient('resenha')
+}
+
 let win: BrowserWindow | null = null
 let quitting = false
 let prefs: DesktopPrefs
@@ -243,6 +267,64 @@ listen('download', (_event, url: string) => {
   if (/^https?:\/\//.test(url)) win?.webContents.downloadURL(url)
 })
 
+handle('invite:pending', () => {
+  const code = pendingInvite
+  pendingInvite = null
+  return code
+})
+
+// ---------- Anti-robô do cadastro aberto (Turnstile) ----------
+
+/**
+ * Abre a página de verificação do servidor numa janelinha isolada (sem o
+ * preload do app, sessão própria em memória) e devolve o token quando o
+ * desafio passa. A página põe o token no título.
+ */
+handle('turnstile:verify', (_event, server: string): Promise<string | null> => {
+  let origin: string
+  try {
+    const url = new URL(server)
+    const local = url.hostname === 'localhost' || url.hostname === '127.0.0.1'
+    if (url.protocol !== 'https:' && !(local && url.protocol === 'http:')) return Promise.resolve(null)
+    origin = url.origin
+  } catch {
+    return Promise.resolve(null)
+  }
+  return new Promise((resolve) => {
+    const popup = new BrowserWindow({
+      parent: win ?? undefined,
+      modal: !!win,
+      width: 420,
+      height: 520,
+      resizable: false,
+      minimizable: false,
+      maximizable: false,
+      title: 'Verificação',
+      backgroundColor: '#0d0e12',
+      autoHideMenuBar: true,
+      webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false, partition: 'turnstile' },
+    })
+    popup.webContents.session.setPermissionRequestHandler((_wc, _permission, callback) => callback(false))
+    popup.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+    popup.webContents.on('will-navigate', (event, url) => {
+      if (!url.startsWith(`${origin}/verify`)) event.preventDefault()
+    })
+    let done = false
+    popup.on('page-title-updated', (event, title) => {
+      event.preventDefault()
+      const match = /^resenha-turnstile:([\w.-]{10,4096})$/.exec(title)
+      if (!match || done) return
+      done = true
+      resolve(match[1])
+      popup.close()
+    })
+    popup.on('closed', () => {
+      if (!done) resolve(null)
+    })
+    popup.loadURL(`${origin}/verify`)
+  })
+})
+
 // ---------- Bandeja, atalhos, início automático, zoom ----------
 
 function applyPrefs(previous: DesktopPrefs | null): ShortcutAction[] {
@@ -319,8 +401,10 @@ app.whenReady().then(() => {
 
 app.on('second-instance', (_event, argv) => {
   const action = actionFromArgs(argv)
-  if (action) dispatch(action)
-  else showWindow()
+  const invite = inviteFromArgs(argv)
+  if (action) return dispatch(action)
+  showWindow()
+  if (invite) deliverInvite(invite)
 })
 
 app.on('before-quit', () => {

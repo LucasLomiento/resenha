@@ -15,6 +15,10 @@ export type SoundName =
   | 'undeafen'
   | 'live'
   | 'message'
+  /** Chamada privada chegando (repete enquanto toca). */
+  | 'ring'
+  /** Chamando a outra pessoa (repete enquanto ninguém atende). */
+  | 'ringback'
 
 interface Note {
   /** frequência (Hz) */
@@ -70,6 +74,18 @@ const SOUNDS: Record<SoundName, Note[]> = {
     { f: 290, at: 0, dur: 0.08, gain: 0.7 },
     { f: 390, at: 0.07, dur: 0.08, gain: 0.7 },
     { f: 520, at: 0.14, dur: 0.16, gain: 0.7 },
+  ],
+  ring: [
+    { f: E5, at: 0, dur: 0.16 },
+    { f: G5, at: 0.18, dur: 0.16 },
+    { f: E6, at: 0.36, dur: 0.34, gain: 0.8 },
+    { f: E5, at: 0.9, dur: 0.16 },
+    { f: G5, at: 1.08, dur: 0.16 },
+    { f: E6, at: 1.26, dur: 0.34, gain: 0.8 },
+  ],
+  ringback: [
+    { f: 440, at: 0, dur: 0.45, gain: 0.35 },
+    { f: 480, at: 0, dur: 0.45, gain: 0.35 },
   ],
   live: [
     { f: G5, at: 0, dur: 0.12 },

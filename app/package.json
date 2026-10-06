@@ -46,6 +46,14 @@
       "package.json"
     ],
     "npmRebuild": false,
+    "protocols": [
+      {
+        "name": "Resenha",
+        "schemes": [
+          "resenha"
+        ]
+      }
+    ],
     "win": {
       "target": [
         {

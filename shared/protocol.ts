@@ -507,7 +507,8 @@ export type ServerMessage =
   | { t: 'bans.list'; reqId: string; bans: Ban[] }
   | { t: 'audit.list'; reqId: string; entries: AuditEntry[]; hasMore: boolean }
   | { t: 'notify.settings'; settings: NotifySettings }
-  | { t: 'error'; message: string }
+  /** `nonce`: o erro é de uma mensagem enviada (o app devolve o texto pro campo). */
+  | { t: 'error'; message: string; nonce?: string }
 
 // ---------- WebSocket pessoal (Home): DMs, amigos, status ----------
 
@@ -590,7 +591,7 @@ export type HomeServerMessage =
   | { t: 'call.ended'; channelId: string }
   | { t: 'call.signal'; channelId: string; from: string; data: SignalData }
   | { t: 'session.revoked' }
-  | { t: 'error'; message: string }
+  | { t: 'error'; message: string; nonce?: string }
 
 // ---------- Ids de conversa privada ----------
 

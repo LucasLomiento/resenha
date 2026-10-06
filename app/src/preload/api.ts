@@ -50,6 +50,8 @@ export type UpdateState =
 export interface SavedSession {
   server: string
   token: string
+  /** Quem é (as sessões salvas pela 0.5 não têm; o app descobre no /api/me). */
+  userId?: string
 }
 
 export interface CaptureSource {
@@ -78,6 +80,12 @@ export interface ResenhaApi {
     stop(): Promise<void>
   }
   attention(): void
+  /** Convite aberto por um link resenha:// antes de o app terminar de abrir. */
+  pendingInvite(): Promise<string | null>
+  /** Convite aberto por um link resenha:// com o app já aberto. */
+  onInvite(callback: (code: string) => void): void
+  /** Abre a verificação anti-robô do servidor; devolve o token (ou null se fechou). */
+  turnstile(server: string): Promise<string | null>
   /** Baixa um anexo com o diálogo de salvar do sistema. */
   download(url: string): void
   desktop: {

@@ -18,6 +18,11 @@ const api: ResenhaApi = {
     stop: () => ipcRenderer.invoke('screen-audio:stop'),
   },
   attention: () => ipcRenderer.send('attention'),
+  pendingInvite: () => ipcRenderer.invoke('invite:pending'),
+  onInvite: (callback) => {
+    ipcRenderer.on('invite', (_event, code: string) => callback(code))
+  },
+  turnstile: (server) => ipcRenderer.invoke('turnstile:verify', server),
   download: (url) => ipcRenderer.send('download', url),
   desktop: {
     get: () => ipcRenderer.invoke('desktop:get'),

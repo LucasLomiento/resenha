@@ -1,4 +1,4 @@
-import type { ClientMessage, SignalData, VoiceMember } from '../../../../shared/protocol'
+import type { SignalData, VoiceMember } from '../../../../shared/protocol'
 import type { PlatformInfo } from '../../preload/api'
 import type { Api } from './api'
 import { captureScreen, getCameraStream, getMicTrack, stopCapture } from './media'
@@ -8,12 +8,28 @@ import { PRESETS, settings } from './settings.svelte'
 import { playSound } from './sounds'
 
 interface CallDeps {
-  send(msg: ClientMessage): boolean
-  connId(): string | null
-  members(): VoiceMember[]
   api(): Api | null
   platform(): PlatformInfo | null
   toast(text: string, kind?: 'error' | 'info'): void
+}
+
+/**
+ * Por onde a call conversa com o servidor: o canal de voz de um servidor
+ * (WebSocket do Guild) ou uma chamada privada (WebSocket pessoal).
+ */
+export interface CallTransport {
+  kind: 'guild' | 'dm'
+  /** Servidor ou conversa privada. */
+  scopeId: string
+  /** Canal de voz (ou a própria conversa, numa chamada privada). */
+  channelId: string
+  connId(): string | null
+  /** Quem está nesta call (todas as conexões, inclusive a minha). */
+  members(): VoiceMember[]
+  join(muted: boolean, deafened: boolean): boolean
+  leave(): void
+  update(state: { muted: boolean; deafened: boolean; sharing: boolean; camera: boolean }): void
+  signal(to: string, data: SignalData): boolean
 }
 
 const SPEAKING_REMOTE = 0.03
@@ -22,6 +38,16 @@ const ICE_TTL = 6 * 60 * 60 * 1000
 /** A call em que esta instância está: microfone, conexões P2P e telas. */
 export class Call {
   channelId = $state<string | null>(null)
+  /** Servidor da call (null numa chamada privada). */
+  guildId = $state<string | null>(null)
+  /** Conversa privada da call (null num canal de voz). */
+  dmId = $state<string | null>(null)
+  /** Um moderador me mutou ou ensurdeceu: vale por cima dos meus botões. */
+  serverMuted = $state(false)
+  serverDeafened = $state(false)
+  private transport: CallTransport | null = null
+  /** Conexões mutadas por moderador: o áudio delas não toca aqui. */
+  private silenced = new Set<string>()
   muted = $state(false)
   deafened = $state(false)
   sharing = $state(false)
@@ -59,11 +85,29 @@ export class Call {
     return [...this.peers.values()]
   }
 
+  private connId(): string | null {
+    return this.transport?.connId() ?? null
+  }
+
+  private members(): VoiceMember[] {
+    return this.transport?.members() ?? []
+  }
+
+  /** Está nessa call (servidor + canal, ou conversa)? */
+  isIn(transport: Pick<CallTransport, 'scopeId' | 'channelId'>): boolean {
+    return !!this.transport && this.transport.scopeId === transport.scopeId && this.transport.channelId === transport.channelId
+  }
+
+  /** O transporte de agora (pra quem precisa mandar algo da call). */
+  get current(): CallTransport | null {
+    return this.transport
+  }
+
   // ---------- Entrar e sair ----------
 
-  async join(channelId: string) {
-    if (this.channelId === channelId || this.joining) return
-    if (this.channelId) this.leave()
+  async join(transport: CallTransport) {
+    if (this.isIn(transport) || this.joining) return
+    if (this.transport) this.leave()
     this.joining = true
     try {
       const api = this.deps.api()
@@ -72,8 +116,14 @@ export class Call {
         this.ice = { servers: await api.iceServers(), at: Date.now() }
       }
       if (!this.micTrack) await this.openMic()
-      this.channelId = channelId
-      this.deps.send({ t: 'voice.join', channelId, muted: this.muted, deafened: this.deafened })
+      this.transport = transport
+      this.channelId = transport.channelId
+      this.guildId = transport.kind === 'guild' ? transport.scopeId : null
+      this.dmId = transport.kind === 'dm' ? transport.scopeId : null
+      if (!transport.join(this.muted, this.deafened)) {
+        this.leave(false)
+        return
+      }
       this.startTickers()
       playSound('self-join')
     } catch (err) {
@@ -90,23 +140,30 @@ export class Call {
 
   /** Depois de reconectar o WebSocket a conexão é outra: refaz tudo na mesma call. */
   rejoin() {
-    if (!this.channelId) return
+    if (!this.transport) return
     this.known = null
     for (const connId of [...this.peers.keys()]) this.removePeer(connId)
-    this.deps.send({ t: 'voice.join', channelId: this.channelId, muted: this.muted, deafened: this.deafened })
+    this.transport.join(this.muted, this.deafened)
     if (this.sharing || this.camera) this.sendState()
   }
 
-  leave() {
-    if (!this.channelId) return
+  /** Sai da call. `notify = false`: o servidor já tirou (moderador, canal apagado). */
+  leave(notify = true) {
+    if (!this.transport) return
     playSound('self-leave')
-    this.deps.send({ t: 'voice.leave' })
+    if (notify) this.transport.leave()
+    this.transport = null
     for (const connId of [...this.peers.keys()]) this.removePeer(connId)
     this.stopShare(false)
     this.stopCamera(false)
     this.cameras = {}
     this.watching = null
     this.channelId = null
+    this.guildId = null
+    this.dmId = null
+    this.serverMuted = false
+    this.serverDeafened = false
+    this.silenced.clear()
     this.selfSpeaking = false
     if (this.micTrack) this.micStream.removeTrack(this.micTrack)
     this.mic?.close()
@@ -123,7 +180,7 @@ export class Call {
   private async openMic() {
     const mic = await MicPipeline.create(await getMicTrack())
     const track = mic.track
-    track.enabled = !this.muted
+    track.enabled = !this.muted && !this.serverMuted
     if (this.micTrack) this.micStream.removeTrack(this.micTrack)
     const previous = this.mic
     this.micStream.addTrack(track)
@@ -153,7 +210,11 @@ export class Call {
   }
 
   applyVolumes() {
-    for (const peer of this.peers.values()) peer.setVolume(settings.userVolumes[peer.userId] ?? 1)
+    for (const peer of this.peers.values()) peer.setVolume(this.volumeOf(peer.connId, peer.userId))
+  }
+
+  private volumeOf(connId: string, userId: string): number {
+    return this.silenced.has(connId) ? 0 : (settings.userVolumes[userId] ?? 1)
   }
 
   // ---------- Mutar / ensurdecer ----------
@@ -185,30 +246,34 @@ export class Call {
     this.applyMuteState()
   }
 
-  private applyMuteState() {
-    if (this.micTrack) this.micTrack.enabled = !this.muted
-    for (const peer of this.peers.values()) peer.setDeafened(this.deafened)
-    this.sendState()
+  private applyMuteState(notify = true) {
+    if (this.micTrack) this.micTrack.enabled = !this.muted && !this.serverMuted
+    for (const peer of this.peers.values()) peer.setDeafened(this.deafened || this.serverDeafened)
+    if (notify) this.sendState()
   }
 
   private sendState() {
-    if (!this.channelId) return
-    this.deps.send({
-      t: 'voice.update',
-      muted: this.muted,
-      deafened: this.deafened,
-      sharing: this.sharing,
-      camera: !!this.camera,
-    })
+    this.transport?.update({ muted: this.muted, deafened: this.deafened, sharing: this.sharing, camera: !!this.camera })
   }
 
   // ---------- Membros e sinalização ----------
 
   /** Chamado a cada voice.state: abre conexão com quem entrou, fecha com quem saiu. */
-  sync(members: VoiceMember[]) {
-    const me = this.deps.connId()
+  sync(members: VoiceMember[] = this.members()) {
+    const me = this.connId()
     if (!this.channelId || !me) return
+    const mine = members.find((m) => m.connId === me && m.channelId === this.channelId)
+    if (mine && (!!mine.serverMuted !== this.serverMuted || !!mine.serverDeafened !== this.serverDeafened)) {
+      this.serverMuted = !!mine.serverMuted
+      this.serverDeafened = !!mine.serverDeafened
+      playSound(this.serverMuted || this.serverDeafened ? 'mute' : 'unmute')
+      this.applyMuteState(false)
+    }
     const others = members.filter((m) => m.channelId === this.channelId && m.connId !== me)
+    // Mutado por moderador: quem recebe não toca o áudio dele.
+    const silenced = new Set(others.filter((m) => m.serverMuted).map((m) => m.connId))
+    const changed = silenced.size !== this.silenced.size || [...silenced].some((id) => !this.silenced.has(id))
+    this.silenced = silenced
     // Sons: alguém entrou, saiu ou começou a transmitir (o primeiro estado só registra).
     if (this.known) {
       const before = this.known
@@ -222,6 +287,7 @@ export class Call {
     for (const connId of [...this.peers.keys()]) {
       if (!others.some((m) => m.connId === connId)) this.removePeer(connId)
     }
+    if (changed) this.applyVolumes()
     // Câmera desligada do outro lado: o bloco volta pro avatar.
     for (const member of others) if (!member.camera) this.dropCamera(member.connId)
 
@@ -236,7 +302,7 @@ export class Call {
   signal(from: string, data: SignalData) {
     let peer = this.peers.get(from)
     if (!peer) {
-      const member = this.deps.members().find((m) => m.connId === from && m.channelId === this.channelId)
+      const member = this.members().find((m) => m.connId === from && m.channelId === this.channelId)
       if (!member) return
       peer = this.createPeer(member)
     }
@@ -244,10 +310,10 @@ export class Call {
   }
 
   private createPeer(member: VoiceMember): Peer | undefined {
-    const me = this.deps.connId()
+    const me = this.connId()
     if (!me || !this.ice || !this.micTrack) return
     const peer = new Peer(member.connId, member.userId, me > member.connId, this.ice.servers, this.micStream, settings.codec, {
-      signal: (data) => this.deps.send({ t: 'rtc.signal', to: member.connId, data }),
+      signal: (data) => this.transport?.signal(member.connId, data),
       screen: (stream) => {
         this.screens = { ...this.screens, [member.connId]: stream! }
       },
@@ -260,8 +326,8 @@ export class Call {
         peer.sendScreen(watching && this.localScreen ? this.localScreen : null, watching ? this.videoOptions() : null)
       },
     })
-    peer.setVolume(settings.userVolumes[member.userId] ?? 1)
-    peer.setDeafened(this.deafened)
+    peer.setVolume(this.volumeOf(member.connId, member.userId))
+    peer.setDeafened(this.deafened || this.serverDeafened)
     peer.setOutput(settings.outputDevice)
     this.peers.set(member.connId, peer)
     if (this.camera) peer.sendCamera(this.camera)
@@ -349,7 +415,7 @@ export class Call {
     // Quem assistia precisa clicar de novo numa próxima transmissão.
     this.watchers = {}
     for (const peer of this.peers.values()) peer.sendScreen(null, null)
-    if (this.watching === this.deps.connId()) this.watching = null
+    if (this.watching === this.connId()) this.watching = null
     if (notify) this.sendState()
   }
 
@@ -415,15 +481,15 @@ export class Call {
     if (this.watching === connId) return
     this.unwatch()
     this.watching = connId
-    if (connId !== this.deps.connId()) this.deps.send({ t: 'rtc.signal', to: connId, data: { kind: 'watch' } })
+    if (connId !== this.connId()) this.transport?.signal(connId, { kind: 'watch' })
   }
 
   unwatch() {
     const current = this.watching
     if (!current) return
     this.watching = null
-    if (current !== this.deps.connId()) {
-      this.deps.send({ t: 'rtc.signal', to: current, data: { kind: 'unwatch' } })
+    if (current !== this.connId()) {
+      this.transport?.signal(current, { kind: 'unwatch' })
       this.dropScreen(current)
     }
   }
@@ -437,13 +503,13 @@ export class Call {
   /** Stream que está sendo assistido agora (remoto ou a prévia da minha tela). */
   get watchedStream(): MediaStream | null {
     if (!this.watching) return null
-    if (this.watching === this.deps.connId()) return this.localScreen
+    if (this.watching === this.connId()) return this.localScreen
     return this.screens[this.watching] ?? null
   }
 
   /** Estatísticas do vídeo assistido (recepção) ou de quem assiste a minha tela (envio). */
   async videoStats(): Promise<{ inbound: VideoStats | null; outbound: { userId: string; stats: VideoStats }[] }> {
-    const me = this.deps.connId()
+    const me = this.connId()
     let inbound: VideoStats | null = null
     if (this.watching && this.watching !== me) inbound = (await this.peers.get(this.watching)?.videoStats('inbound')) ?? null
     const outbound: { userId: string; stats: VideoStats }[] = []
@@ -462,9 +528,9 @@ export class Call {
   private startTickers() {
     if (this.ticker) return
     this.ticker = setInterval(() => {
-      const me = this.deps.connId()
+      const me = this.connId()
       const next: Record<string, boolean> = {}
-      const talking = !this.muted && !!this.mic?.speaking
+      const talking = !this.muted && !this.serverMuted && !!this.mic?.speaking
       if (me) next[me] = talking
       if (talking) this.lastSpoke = Date.now()
       const selfSpeaking = talking || Date.now() - this.lastSpoke < 400
