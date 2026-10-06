@@ -68,7 +68,7 @@ Rótulos de seção em caixa normal (não em CAIXA ALTA), 12 px, peso 500, `--fg
 - **Raios:** `--r-xs` 4 · `--r-sm` 6 · `--r-md` 8 · `--r-lg` 10 · `--r-xl` 14 · `--r-2xl` 18 · `--r-full`.
 - **Sombras:** `--shadow-sm` (dock, painel), `--shadow-md` (dicas, barra de ações), `--shadow-lg` (menus, modais, miniatura). Sempre junto de um fio de 1 px (`0 0 0 1px var(--line-strong)`) e do `--highlight` (brilho de 1 px no topo).
 - **Movimento:** `--t-fast` 100 ms (hover), `--t` 160 ms (troca de estado), `--t-slow` 260 ms (entrada de modal/tela). Curva `--ease`. Entradas com `rs-pop-in` (sobe 6 px e aparece). Tudo respeita `prefers-reduced-motion`.
-- **Camadas:** miniatura 30 · popover 40 · modal 50 · configurações 60 · visualizador de imagem 70 · avisos 90 · dicas 100.
+- **Camadas:** miniatura 30 · configurações 35 · popover 40 · modal 50 · visualizador de imagem 70 · avisos 90 · dicas 100. As configurações (tela cheia) ficam abaixo de menus e modais, porque eles abrem de dentro delas.
 
 ## Layout
 

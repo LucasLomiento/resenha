@@ -90,18 +90,12 @@
 
   async function removeAccount(event: SubmitEvent) {
     event.preventDefault()
-    const api = client.api
-    if (!api || !password || blocker || removing) return
+    if (!client.api || !password || blocker || removing) return
     removing = true
     passwordError = deleteError = null
     try {
-      await api.deleteAccount(password)
+      await client.deleteAccount(password)
       deleting = false
-      client.toast('Sua conta foi excluída.', 'info')
-      // A sessão já não existe: sai sem pedir o logout ao servidor. Esperar por ele dá tempo
-      // de a conexão fechada chegar antes e virar o aviso de "sessão expirou".
-      client.api = null
-      await client.logout()
     } catch (err) {
       const message = (err as Error).message
       // Senha errada fica no campo; o resto (dono de servidor, muitas tentativas) em cima.

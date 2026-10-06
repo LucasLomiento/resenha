@@ -233,8 +233,24 @@ class Client implements GuildHost, HomeHost {
     this.reset()
   }
 
-  private reset(message?: string) {
-    if (message) this.toast(message)
+  /** Saindo de propósito (excluindo a conta): a conexão fechada não vira aviso de "sessão expirou". */
+  private leaving = false
+
+  async deleteAccount(password: string) {
+    if (!this.api) return
+    this.leaving = true
+    try {
+      await this.api.deleteAccount(password)
+    } catch (err) {
+      this.leaving = false
+      throw err
+    }
+    this.reset('Sua conta foi excluída.', 'info')
+    this.leaving = false
+  }
+
+  private reset(message?: string, kind: Toast['kind'] = 'error') {
+    if (message) this.toast(message, kind)
     this.call.leave()
     this.home?.close()
     for (const g of Object.values(this.guilds)) g.close()
@@ -397,12 +413,13 @@ class Client implements GuildHost, HomeHost {
   }
 
   closed(target: GuildState | CloseReason, reason?: CloseReason) {
+    const expired = () => (this.leaving ? undefined : 'Sua sessão expirou. Entre de novo.')
     // Conexão pessoal: sessão inválida.
     if (!(target instanceof GuildState)) {
-      if (target === 'unauthorized') this.reset('Sua sessão expirou. Entre de novo.')
+      if (target === 'unauthorized' && this.phase === 'app') this.reset(expired())
       return
     }
-    if (reason === 'unauthorized') return this.reset('Sua sessão expirou. Entre de novo.')
+    if (reason === 'unauthorized') return this.phase === 'app' ? this.reset(expired()) : undefined
     // Saiu do servidor (ou ele foi excluído): a conexão pessoal confirma e tira da lista.
     this.dropGuild(target.id)
   }

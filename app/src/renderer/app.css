@@ -108,7 +108,7 @@
   --z-float: 30; /* miniatura da transmissão */
   --z-popover: 40;
   --z-modal: 50;
-  --z-settings: 60;
+  --z-settings: 35; /* tela cheia, abaixo de menus e modais que abrem dentro dela */
   --z-lightbox: 70;
   --z-toast: 90;
   --z-tooltip: 100;
