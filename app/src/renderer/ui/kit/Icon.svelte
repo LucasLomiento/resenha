@@ -29,6 +29,7 @@
   import FaceSmile from '@lucide/svelte/icons/face-slightly-smiling'
   import FaceSmilePlus from '@lucide/svelte/icons/face-slightly-smiling-plus'
   import FileIcon from '@lucide/svelte/icons/file'
+  import Folder from '@lucide/svelte/icons/folder'
   import Fullscreen from '@lucide/svelte/icons/fullscreen'
   import Globe from '@lucide/svelte/icons/globe'
   import GripVertical from '@lucide/svelte/icons/grip-vertical'
@@ -79,10 +80,12 @@
   import Shield from '@lucide/svelte/icons/shield'
   import SlidersHorizontal from '@lucide/svelte/icons/sliders-horizontal'
   import Smartphone from '@lucide/svelte/icons/smartphone'
+  import Slash from '@lucide/svelte/icons/slash'
   import Sparkles from '@lucide/svelte/icons/sparkles'
   import SquarePen from '@lucide/svelte/icons/square-pen'
   import Trash from '@lucide/svelte/icons/trash'
   import TriangleAlert from '@lucide/svelte/icons/triangle-alert'
+  import Unlink from '@lucide/svelte/icons/unlink'
   import Upload from '@lucide/svelte/icons/upload'
   import User from '@lucide/svelte/icons/user'
   import UserPlus from '@lucide/svelte/icons/user-plus'
@@ -124,6 +127,7 @@
     'emoji-plus': FaceSmilePlus,
     eye: Eye,
     file: FileIcon,
+    folder: Folder,
     fullscreen: Fullscreen,
     globe: Globe,
     grip: GripVertical,
@@ -171,6 +175,7 @@
     search: Search,
     settings: Settings,
     shield: Shield,
+    slash: Slash,
     sliders: SlidersHorizontal,
     smartphone: Smartphone,
     sparkles: Sparkles,
@@ -179,6 +184,7 @@
     phone: Phone,
     trash: Trash,
     'triangle-alert': TriangleAlert,
+    unlink: Unlink,
     upload: Upload,
     user: User,
     'user-plus': UserPlus,

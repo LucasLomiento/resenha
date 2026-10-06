@@ -48,7 +48,8 @@
 </script>
 
 <!-- Configurações em tela cheia: navegação à esquerda, página à direita, fechar no canto (Esc). -->
-<div class="settings" role="dialog" aria-modal="true" aria-label={title} use:closeLayer>
+<!-- data-portal-root: modais e menus abertos daqui entram nesta camada (senão ficariam atrás dela). -->
+<div class="settings" role="dialog" aria-modal="true" aria-label={title} data-portal-root={inline ? undefined : ''} use:closeLayer>
   <div class="frame">
     <nav class="settings-nav" aria-label={title}>
       {#each nav as entry, i (i)}
