@@ -1,4 +1,4 @@
-# Arquitetura (a partir da 0.6)
+# Arquitetura (a partir da 1.0)
 
 Tudo no Cloudflare Workers + Durable Objects (DO), sem banco externo. Cada DO é um "mini servidor" com SQLite próprio, consistente e de um processo só. Dividimos assim:
 
@@ -38,5 +38,24 @@ Tudo no Cloudflare Workers + Durable Objects (DO), sem banco externo. Cada DO é
 - Arquivos: URL assinada (HMAC) com validade; servidos com `Content-Security-Policy: sandbox` e `nosniff`.
 - Mídia de perfil (avatar, ícone) tem id impossível de adivinhar e cache imutável.
 
-## Migração dos dados atuais (0.5 → 0.6)
-O `Space` "main" de hoje vira o primeiro servidor. Na primeira vez que o Directory sobe, ele puxa as contas, sessões e convites do `Space` (por RPC), mantendo os tokens válidos: ninguém precisa entrar de novo. Se algo der errado, os DOs com SQLite têm recuperação até 30 dias atrás (point-in-time recovery).
+## Rotas
+- `GET /api/g/<servidor>/ws` e `GET /api/home/<pessoa>/ws`: WebSockets (o Worker confere antes se o servidor/a conta existe, pra ninguém criar DO à toa).
+- `/api/...` por HTTP: login, perfil, sessões, amigos, bloqueios, criar/sair/excluir servidor, convites, anexos (`/api/g/<id>/files`, `/api/c/<conversa>/files`), proxy de imagem das prévias e o painel da dona da plataforma.
+- `/media/<id>`: fotos de perfil e ícones (id aleatório, cache imutável).
+- `/verify`: página do Turnstile (cadastro aberto).
+- Rotas da 0.5 (`/ws`, `/api/files`, `/api/register` com `name`): continuam funcionando pro app antigo até ele se atualizar.
+
+## Limites e anti-abuso
+- Até 5 mensagens a cada 5 s por pessoa, modo lento por canal, limite de reações, buscas e envios de arquivo.
+- Anexos: 25 MB por arquivo, 4 GB por servidor, 1 GB por conversa e 4 GB pra plataforma inteira (o Directory soma o que cada um usa).
+- Cadastro: 10 tentativas por hora por IP. Login: 5 erros por conta e 20 por IP a cada 15 min, com espera crescente.
+
+## Migração dos dados da 0.5
+O `Space` "main" vira o primeiro servidor (`renamed_classes` no wrangler: mesmo DO, mesmos dados). Na primeira vez que o Directory sobe, ele:
+1. Puxa as contas, sessões e convites do "main" por RPC, mantendo os tokens válidos: ninguém precisa entrar de novo. O apelido antigo vira nome de usuário (`Duarte Zé` → `duarte_ze`) e continua servindo pra entrar.
+2. Registra o "main" como servidor "Resenha", com a dona antiga e todo mundo dentro, tudo marcado como lido.
+3. Pelo alarme, uma por vez, move cada conversa privada (com os arquivos) pro Conversation dela e tira do "main".
+
+O "main" atualiza as próprias tabelas na hora: canais ganham categoria e permissões, mensagens ganham resposta, menções, reações, fixadas e índice de busca. O app 0.5 continua conectando no `/ws` e recebe só o que entende; as DMs pedem pra atualizar o app.
+
+Se algo der errado, os DOs com SQLite têm recuperação até 30 dias atrás (point-in-time recovery).

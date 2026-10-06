@@ -2,22 +2,28 @@
 
 > **Só quer instalar e usar?** Baixe em [Releases](https://github.com/LucasLomiento/resenha/releases/latest) e siga o [INSTALAR.md](INSTALAR.md).
 
-Um "Discord" pequeno pro grupo: chat de texto com imagens e arquivos, call de voz e compartilhamento de tela até 1440p a 60 fps com áudio. O áudio da tela **não leva junto a voz da call**. Voz e tela vão direto entre os PCs (P2P), e o Cloudflare só cuida do login, do chat e de apresentar as pessoas umas às outras.
+Um app no estilo do Discord: vários servidores com canais, cargos e moderação, mensagens privadas, amigos, chat com imagens e arquivos, call de voz, câmera e compartilhamento de tela até 1440p a 60 fps com áudio. O áudio da tela **não leva junto a voz da call**. Voz e tela vão direto entre os PCs (P2P), e o Cloudflare só cuida das contas, do chat e de apresentar as pessoas umas às outras.
 
 ## Como funciona
 
 ```
- app (Electron, Linux/Windows)              Cloudflare
- ├─ chat, presença, sinalização ── WSS ──▶  Worker + 1 Durable Object (SQLite)
- ├─ anexos ─────────────────────── HTTPS ─▶  o mesmo Durable Object (URLs assinadas)
- └─ voz e tela ── WebRTC P2P direto ──▶ outros PCs
-                  (TURN do Cloudflare só se a rede bloquear o direto)
+ app (Electron, Linux/Windows)                 Cloudflare (Worker + Durable Objects com SQLite)
+ ├─ HTTP (login, perfil, anexos) ─── HTTPS ─▶  Worker ─▶ Directory: contas, sessões, servidores, convites, amigos
+ ├─ 1 WebSocket por servidor ──────── WSS ──▶  Guild (um por servidor): canais, cargos, mensagens, voz
+ ├─ 1 WebSocket pessoal ───────────── WSS ──▶  Home (um por pessoa): DMs, amigos, status
+ │                                              └─▶ Conversation (uma por DM): mensagens e chamada
+ └─ voz, câmera e tela ── WebRTC P2P direto ──▶ outros PCs
+                          (TURN do Cloudflare só se a rede bloquear o direto)
 ```
 
-- **server/**: Worker com um único Durable Object (`Space`) criado na América do Sul. Ele guarda contas, sessões, convites, canais, mensagens e anexos no SQLite embutido, e segura os WebSockets com hibernação, então fica parado sem gastar nada quando ninguém está usando.
-- **Anexos** (`server/src/files.ts`): ficam no SQLite do próprio Durable Object, em pedaços de 1 MB. São até 25 MB por arquivo e 4 GB no total, sem precisar ativar o R2 (que pede cartão). Pra trocar por Supabase Storage ou R2, basta outra classe com os mesmos métodos `put`, `read` e `delete`.
-- **app/**: Electron + Svelte. Cada pessoa da call tem uma `RTCPeerConnection` própria (`src/renderer/lib/peer.ts`, usando "perfect negotiation"). A tela só é enviada pra quem clica em **Assistir**.
-- **shared/protocol.ts**: os tipos das mensagens trocadas entre o app e o servidor.
+Os detalhes (e as regras de segurança do servidor) estão em [docs/ARQUITETURA.md](docs/ARQUITETURA.md).
+
+- **server/**: Worker e quatro Durable Objects, todos criados na América do Sul. Os WebSockets usam hibernação: parado, não gasta nada.
+- **Permissões** no modelo do Discord: cargos com hierarquia, exceções por canal e por categoria, castigo, expulsão, banimento e registro de auditoria. Tudo é conferido no servidor (`server/src/permissions.ts`).
+- **Mensagens**: resposta, menções (pessoa, cargo, @everyone), reações, fixadas, busca sem acento (FTS5), contagem de não lidas e menções, e prévia de link buscada pelo servidor (quem lê nunca acessa o site do link).
+- **Anexos** (`server/src/files.ts`): ficam no SQLite do servidor/conversa, em pedaços de 1 MB, até 25 MB por arquivo, com teto de espaço pra plataforma inteira.
+- **app/**: Electron + Svelte 5. Cada pessoa da call tem uma `RTCPeerConnection` própria (`src/renderer/lib/peer.ts`, com "perfect negotiation"); a mesma call serve pro canal de voz e pra chamada privada. A tela só é enviada pra quem clica em **Assistir**.
+- **shared/**: os tipos das mensagens trocadas entre o app e o servidor, e o cálculo de permissões.
 
 ### Áudio da tela sem a voz da call
 
@@ -48,7 +54,7 @@ VITE_DEFAULT_SERVER=http://127.0.0.1:8787 npm run dev:app   # app com hot reload
 FILE_SECRET=qualquer-coisa-local
 ```
 
-O servidor do app vem do build: `VITE_DEFAULT_SERVER`, e sem ela vale o de produção. A primeira conta criada vira a do admin. Pra abrir uma segunda instância com outra conta no mesmo PC: `RESENHA_PROFILE=b npm -w app run start`.
+O servidor do app vem do build: `VITE_DEFAULT_SERVER`, e sem ela vale o de produção. A primeira conta criada vira a dona da plataforma (painel de administração). As outras entram com convite de algum servidor, ou pelo cadastro aberto, se ele estiver ligado. Pra abrir uma segunda instância com outra conta no mesmo PC: `RESENHA_PROFILE=b npm -w app run start`.
 
 ## Colocar no ar (Cloudflare)
 
@@ -72,6 +78,12 @@ openssl rand -base64 32 | tr -d '\n' | npx wrangler secret put FILE_SECRET
    ```
 
 Sem essas duas variáveis o app usa só STUN e tenta sempre a conexão direta. O TURN tem 1000 GB grátis por mês, e como aqui ele só entra quando o direto falha, na prática fica de graça.
+
+**Cadastro aberto com anti-robô (opcional).** Por padrão só entra quem tem convite. Pra deixar qualquer pessoa criar conta:
+
+1. No painel do Cloudflare, vá em **Turnstile**, crie um widget e coloque o domínio do Worker.
+2. Ponha a chave do site em `TURNSTILE_SITE_KEY` (no `wrangler.jsonc`) e a secreta com `npx wrangler secret put TURNSTILE_SECRET`.
+3. No app, a dona da plataforma liga em Configurações → Plataforma.
 
 ## Lançar uma versão nova
 
@@ -112,8 +124,9 @@ Com o Resenha aberto, esse comando só manda a ação pra janela que já está r
 ## Testes
 
 ```bash
-npm test                       # servidor: contas, convites, chat, histórico, anexos, sinalização, hibernação
+npm test                       # servidor: contas, servidores, permissões, moderação, mensagens, DMs, chamadas, migração da 0.5
 npm -w app run typecheck
+npm -w app run test:ui         # formatação das mensagens
 npm -w app run test:mic        # processador do microfone (RNNoise + limiar), no Node, sem áudio
 npm -w app run e2e             # duas instâncias escondidas do app contra o servidor local
 ```
