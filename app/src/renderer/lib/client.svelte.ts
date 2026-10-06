@@ -1,4 +1,4 @@
-import type { GuildInfo, Me, Message, SignalData, Status } from '../../../../shared/protocol'
+import type { GuildInfo, Me, Message, Presence, SignalData, Status, User, VisibleStatus, VoiceMember } from '../../../../shared/protocol'
 import type { DesktopPrefs, PlatformInfo, SavedSession, ShortcutAction, UpdateState } from '../../preload/api'
 import { Api, HttpError } from './api'
 import { Call, type CallTransport } from './call.svelte'
@@ -7,7 +7,7 @@ import { HomeState, type HomeHost } from './home.svelte'
 import { settings } from './settings.svelte'
 import { playSound } from './sounds'
 import { ui } from './ui.svelte'
-import type { CloseReason } from './ws'
+import type { CloseReason, ConnectionStatus } from './ws'
 
 /** O servidor da plataforma; definido no build (VITE_DEFAULT_SERVER) pra testes locais. */
 export const DEFAULT_SERVER = import.meta.env.VITE_DEFAULT_SERVER || 'https://resenha.lucaslomiento.workers.dev'
@@ -145,6 +145,83 @@ class Client implements GuildHost, HomeHost {
 
   get server(): string {
     return this.api?.server ?? ''
+  }
+
+  // ---------- Leitura pra interface ----------
+
+  /** Servidor aberto agora (null na tela inicial ou numa conversa privada). */
+  get guild(): GuildState | null {
+    return this.route.kind === 'guild' ? (this.guilds[this.route.guildId] ?? null) : null
+  }
+
+  /** Servidores na ordem do trilho (a da conexão pessoal). */
+  get guildList(): GuildState[] {
+    return (this.home?.guilds ?? []).map((g) => this.guilds[g.id]).filter((g): g is GuildState => !!g)
+  }
+
+  /** Servidor da call (null fora de call ou numa chamada privada). */
+  get callGuild(): GuildState | null {
+    return this.call.guildId ? (this.guilds[this.call.guildId] ?? null) : null
+  }
+
+  /** Minha conexão na call (pra saber qual bloco sou eu). */
+  get callConnId(): string | null {
+    return this.call.current?.connId() ?? null
+  }
+
+  /** Quem está na minha call. */
+  get callMembers(): VoiceMember[] {
+    return this.call.current?.members() ?? []
+  }
+
+  /** Nome e lugar da call, pro dock: "Geral" em "Turma", ou a pessoa da chamada privada. */
+  get callPlace(): { name: string; where: string } | null {
+    if (!this.call.channelId) return null
+    const guild = this.callGuild
+    if (guild) return { name: guild.channel(this.call.channelId)?.name ?? 'Call', where: guild.info.name }
+    const dm = this.call.dmId ? this.home?.dm(this.call.dmId) : undefined
+    return { name: dm?.user.name ?? 'Chamada', where: 'Mensagem privada' }
+  }
+
+  /** Perfil de alguém, de onde a gente tiver (servidor, amigos, conversas). */
+  user(userId: string, guildId?: string | null): User | undefined {
+    if (userId === this.me?.id) return this.me ?? undefined
+    const found = guildId ? this.guilds[guildId]?.users[userId] : undefined
+    if (found) return found
+    for (const g of Object.values(this.guilds)) if (g.users[userId]) return g.users[userId]
+    return this.home?.friends.find((f) => f.user.id === userId)?.user ?? this.home?.dms.find((d) => d.user.id === userId)?.user
+  }
+
+  /** Nome pra mostrar: apelido no servidor, senão o nome de exibição. */
+  displayName(userId: string, guildId?: string | null): string {
+    const nick = guildId ? this.guilds[guildId]?.members[userId]?.nick : null
+    return nick || this.user(userId, guildId)?.name || 'Alguém'
+  }
+
+  /** Foto de alguém (URL completa), ou null pro degradê com iniciais. */
+  avatarOf(userId: string, guildId?: string | null): string | null {
+    return this.api?.media(this.user(userId, guildId)?.avatar ?? null) ?? null
+  }
+
+  /** Status visível de alguém (de algum servidor em comum, ou dos amigos). Eu: o meu de agora. */
+  presenceOf(userId: string): Presence {
+    if (userId === this.me?.id) {
+      const status = this.effectiveStatus
+      return { status: (status === 'invisible' ? 'offline' : status) as VisibleStatus, text: this.statusText }
+    }
+    for (const g of Object.values(this.guilds)) {
+      const p = g.presences[userId]
+      if (p) return p
+    }
+    return this.home?.presences[userId] ?? { status: 'offline', text: null }
+  }
+
+  /** Conexão com o servidor: a pior entre a pessoal e a do servidor aberto. */
+  get connection(): ConnectionStatus {
+    const states = [this.home?.status ?? 'connecting', this.guild?.status]
+    if (states.includes('offline')) return 'offline'
+    if (states.includes('connecting')) return 'connecting'
+    return 'open'
   }
 
   async logout() {

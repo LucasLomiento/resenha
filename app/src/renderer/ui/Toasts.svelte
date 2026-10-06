@@ -1,10 +1,10 @@
 <script lang="ts">
-  import { store } from '../lib/store.svelte'
+  import { client } from '../lib/client.svelte'
   import { Icon } from './kit'
 </script>
 
 <div class="toasts" aria-live="polite">
-  {#each store.toasts as toast (toast.id)}
+  {#each client.toasts as toast (toast.id)}
     <div class="toast" class:info={toast.kind === 'info'} role={toast.kind === 'error' ? 'alert' : 'status'}>
       <Icon name={toast.kind === 'info' ? 'info' : 'circle-alert'} size={18} />
       <span>{toast.text}</span>

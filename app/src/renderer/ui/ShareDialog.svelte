@@ -2,11 +2,11 @@
   import { onMount } from 'svelte'
   import type { CaptureSource } from '../../preload/api'
   import { settings, type ScreenMode, type ScreenPreset } from '../lib/settings.svelte'
-  import { store } from '../lib/store.svelte'
+  import { client } from '../lib/client.svelte'
   import { ui } from '../lib/ui.svelte'
   import { Button, Icon, IconButton, Modal, Segmented, Spinner, Switch, Tabs } from './kit'
 
-  const platform = store.platform!
+  const platform = client.platform!
   let sources = $state<CaptureSource[]>([])
   let selected = $state<string | null>(null)
   let loading = $state(!platform.portalPicker)
@@ -73,7 +73,7 @@
   async function start() {
     starting = true
     ui.share = false
-    await store.call.startShare(platform.portalPicker ? null : selected)
+    await client.call.startShare(platform.portalPicker ? null : selected)
     starting = false
   }
 </script>

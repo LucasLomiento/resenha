@@ -2,16 +2,16 @@
   import { formatBitrate } from '../lib/format'
   import type { VideoStats } from '../lib/peer'
   import { settings } from '../lib/settings.svelte'
-  import { store } from '../lib/store.svelte'
+  import { client } from '../lib/client.svelte'
   import { Avatar, Badge, Icon, IconButton, Slider, Spinner } from './kit'
 
   let { full }: { full: boolean } = $props()
 
-  const call = store.call
+  const call = client.call
   const stream = $derived(call.watchedStream)
-  const self = $derived(call.watching === store.connId)
-  const sharer = $derived(store.voice.find((m) => m.connId === call.watching))
-  const user = $derived(sharer ? store.users[sharer.userId] : null)
+  const self = $derived(call.watching === client.callConnId)
+  const sharer = $derived(client.callMembers.find((m) => m.connId === call.watching))
+  const user = $derived(sharer ? client.user(sharer.userId, call.guildId) : null)
   const link = $derived(call.watching ? call.links[call.watching] : undefined)
 
   let video = $state<HTMLVideoElement>()
@@ -68,7 +68,7 @@
   async function togglePip() {
     if (!video) return
     if (document.pictureInPictureElement) await document.exitPictureInPicture()
-    else await video.requestPictureInPicture().catch(() => store.toast('Não deu pra abrir a janela flutuante.'))
+    else await video.requestPictureInPicture().catch(() => client.toast('Não deu pra abrir a janela flutuante.'))
   }
 
   function describe(s: VideoStats) {
@@ -115,7 +115,7 @@
       pip = clamp(pip)
       settings.pip = { ...pip }
       // Clique sem arrastar na miniatura abre a transmissão grande.
-      if (!moved && mode === 'move') store.view = 'stream'
+      if (!moved && mode === 'move') client.view = 'stream'
     }
     target.addEventListener('pointermove', move)
     target.addEventListener('pointerup', up)
@@ -179,10 +179,10 @@
     {/if}
     <IconButton variant="glass" icon="pip" label="Janela flutuante" active={nativePip} onclick={togglePip} />
     {#if full}
-      <IconButton variant="glass" icon="minimize" label="Minimizar" onclick={() => (store.view = 'chat')} />
+      <IconButton variant="glass" icon="minimize" label="Minimizar" onclick={() => (client.view = 'chat')} />
       <IconButton variant="glass" icon="fullscreen" label={fullscreen ? 'Sair da tela cheia' : 'Tela cheia'} onclick={toggleFullscreen} />
     {:else}
-      <IconButton variant="glass" icon="maximize" label="Ampliar" onclick={() => (store.view = 'stream')} />
+      <IconButton variant="glass" icon="maximize" label="Ampliar" onclick={() => (client.view = 'stream')} />
     {/if}
     <span class="divider"></span>
     <IconButton variant="glass" icon="x" label="Parar de assistir" tone="danger" onclick={() => call.unwatch()} />
@@ -205,7 +205,7 @@
       {/if}
       {#each stats.outbound as out (out.userId)}
         <div>
-          → {store.users[out.userId]?.name}: {describe(out.stats)}{out.stats.implementation !== '?' ? ` · ${out.stats.implementation}` : ''}
+          → {client.displayName(out.userId, call.guildId)}: {describe(out.stats)}{out.stats.implementation !== '?' ? ` · ${out.stats.implementation}` : ''}
           {#if out.stats.limitation && out.stats.limitation !== 'none'}· limitado por {out.stats.limitation}{/if}
         </div>
       {/each}

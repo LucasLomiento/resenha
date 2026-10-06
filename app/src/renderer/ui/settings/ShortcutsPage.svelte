@@ -2,7 +2,7 @@
   import { onDestroy } from 'svelte'
   import type { ShortcutAction } from '../../../preload/api'
   import { ACTIONS, acceleratorFrom, describeAccelerator } from '../../lib/shortcuts'
-  import { store } from '../../lib/store.svelte'
+  import { client } from '../../lib/client.svelte'
   import { ui } from '../../lib/ui.svelte'
   import { Icon, IconButton, Kbd, PageHeader, Row, Section } from '../kit'
 
@@ -34,12 +34,12 @@
   }
 
   async function setShortcut(action: ShortcutAction, accelerator: string | null) {
-    if (!store.desktop) return
+    if (!client.desktop) return
     // O mesmo atalho não pode ficar em duas ações.
-    const shortcuts = { ...store.desktop.shortcuts }
+    const shortcuts = { ...client.desktop.shortcuts }
     for (const key of Object.keys(shortcuts) as ShortcutAction[]) if (accelerator && shortcuts[key] === accelerator) shortcuts[key] = null
     shortcuts[action] = accelerator
-    failed = await store.setDesktop({ shortcuts })
+    failed = await client.setDesktop({ shortcuts })
   }
 
   function onRecordKey(event: KeyboardEvent) {
@@ -55,17 +55,17 @@
 
   onDestroy(() => (ui.recordingShortcut = false))
 
-  const platform = $derived(store.platform?.platform ?? '')
+  const platform = $derived(client.platform?.platform ?? '')
 </script>
 
 <svelte:window onkeydowncapture={onRecordKey} />
 
 <PageHeader title="Atalhos" description="Funcionam mesmo com o Resenha minimizado." />
 
-{#if store.desktop}
+{#if client.desktop}
   <Section>
     {#each ACTIONS as action (action.id)}
-      {@const value = store.desktop.shortcuts[action.id]}
+      {@const value = client.desktop.shortcuts[action.id]}
       <Row label={LABELS[action.id]}>
         <button
           class="key"
@@ -93,7 +93,7 @@
   </Section>
 {/if}
 
-{#if store.platform?.hyprland}
+{#if client.platform?.hyprland}
   <Section title="No Hyprland" plain>
     <p class="hypr">
       Pra funcionar com o app em segundo plano, crie um bind no seu config chamando

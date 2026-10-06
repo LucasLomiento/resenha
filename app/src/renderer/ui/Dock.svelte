@@ -1,11 +1,11 @@
 <script lang="ts">
-  import { store } from '../lib/store.svelte'
+  import { client } from '../lib/client.svelte'
   import { ui } from '../lib/ui.svelte'
   import { Avatar, Icon, IconButton, SignalBars, Spinner, tooltip } from './kit'
   import SharePanel from './SharePanel.svelte'
 
-  const call = store.call
-  const channel = $derived(store.channels.find((c) => c.id === call.channelId))
+  const call = client.call
+  const place = $derived(client.callPlace)
   const inCall = $derived(!!call.channelId || call.joining)
 
   /** Pior ping entre as conexões da call, pro resumo. */
@@ -20,7 +20,7 @@
   async function toggleCamera() {
     const turningOn = !call.camera
     await call.toggleCamera()
-    if (turningOn && call.camera) store.view = 'call'
+    if (turningOn && call.camera) client.view = 'call'
   }
 
   function screenClick() {
@@ -39,7 +39,7 @@
           disabled={!call.channelId}
           aria-label="Abrir a call"
           use:tooltip={{ text: 'Abrir a call', placement: 'top' }}
-          onclick={() => (store.view = 'call')}
+          onclick={() => (client.view = 'call')}
         >
           <span class="status">
             {#if call.joining}
@@ -48,12 +48,12 @@
               <Icon name="audio-lines" size={14} /> Na call
             {/if}
           </span>
-          <span class="where">{channel?.name ?? ''}</span>
+          <span class="where">{place ? `${place.name} · ${place.where}` : ''}</span>
         </button>
         {#if call.channelId && worstLink}
           <SignalBars rtt={worstLink.rtt} route={worstLink.route} />
         {/if}
-        <IconButton icon="phone-off" label="Sair da call" tone="danger" disabled={!call.channelId} onclick={() => call.leave()} />
+        <IconButton icon="phone-off" label="Sair da call" tone="danger" disabled={!call.channelId} onclick={() => client.leaveCall()} />
       </div>
 
       <div class="call-actions">
@@ -91,16 +91,16 @@
   {/if}
 
   <div class="me">
-    {#if store.me}
+    {#if client.me}
       <Avatar
-        id={store.me.id}
-        name={store.me.name}
+        id={client.me.id}
+        name={client.me.name}
         size={32}
         cutout="var(--bg-raised)"
-        status={store.status === 'open' ? 'online' : 'offline'}
-        speaking={!!store.connId && call.speaking[store.connId]}
+        status={client.presenceOf(client.me.id).status}
+        speaking={!!client.callConnId && call.speaking[client.callConnId]}
       />
-      <span class="me-name">{store.me.name}</span>
+      <span class="me-name">{client.me.name}</span>
     {/if}
     <IconButton
       icon={call.muted ? 'mic-off' : 'mic'}

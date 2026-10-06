@@ -1,18 +1,18 @@
 <script lang="ts">
   import { plural, userColor } from '../lib/format'
-  import { store } from '../lib/store.svelte'
+  import { client } from '../lib/client.svelte'
   import { Avatar, Badge, Button, Icon } from './kit'
   import VideoTile from './VideoTile.svelte'
 
-  const call = store.call
-  const channel = $derived(store.channels.find((c) => c.id === call.channelId))
-  const members = $derived(call.channelId ? store.membersOf(call.channelId) : [])
+  const call = client.call
+  const place = $derived(client.callPlace)
+  const members = $derived(client.callMembers)
   // Até 1 pessoa: bloco grande; até 4: 2 colunas; mais que isso: 3.
   const cols = $derived(members.length <= 1 ? 1 : members.length <= 4 ? 2 : 3)
 
   function watch(connId: string) {
     call.watch(connId)
-    store.view = 'stream'
+    client.view = 'stream'
   }
 </script>
 
@@ -20,15 +20,15 @@
 <section aria-label="Call">
   <header>
     <Icon name="volume" size={20} class="header-icon" />
-    <h1>{channel?.name ?? ''}</h1>
+    <h1>{place?.name ?? ''}</h1>
     <span class="count">{members.length <= 1 ? 'só você por aqui' : plural(members.length, 'pessoa', 'pessoas')}</span>
   </header>
 
   <div class="stage">
     <div class="grid" style:--cols={cols}>
       {#each members as member (member.connId)}
-        {@const self = member.connId === store.connId}
-        {@const user = store.users[member.userId]}
+        {@const self = member.connId === client.callConnId}
+        {@const user = client.user(member.userId, call.guildId)}
         {@const stream = self ? call.camera : call.cameras[member.connId]}
         <div class="tile" class:speaking={call.speaking[member.connId]} style:--tint={userColor(member.userId)}>
           {#if stream}

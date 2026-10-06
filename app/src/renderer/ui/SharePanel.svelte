@@ -1,14 +1,14 @@
 <script lang="ts">
   import { plural } from '../lib/format'
   import { settings, type ScreenMode, type ScreenPreset } from '../lib/settings.svelte'
-  import { store } from '../lib/store.svelte'
+  import { client } from '../lib/client.svelte'
   import { ui } from '../lib/ui.svelte'
   import { Button, Popover, Segmented } from './kit'
 
   /** O dock: o painel abre logo acima dele, com a mesma largura. */
   let { anchor }: { anchor?: HTMLElement } = $props()
 
-  const call = store.call
+  const call = client.call
   const width = $derived(anchor?.offsetWidth ?? 232)
 
   const qualities: { value: ScreenPreset; label: string }[] = [
@@ -52,8 +52,8 @@
         icon="eye"
         full
         onclick={() => {
-          call.watch(store.connId!)
-          store.view = 'stream'
+          call.watch(client.callConnId!)
+          client.view = 'stream'
           close()
         }}>Ver minha tela</Button
       >

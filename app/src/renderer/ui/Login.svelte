@@ -1,47 +1,91 @@
 <script lang="ts">
   import { onMount } from 'svelte'
-  import { Api } from '../lib/api'
-  import { DEFAULT_SERVER, store } from '../lib/store.svelte'
+  import type { InvitePreview } from '../../../../shared/protocol'
   import logo from '../../../build/icon.svg?url'
-  import { Button, Icon, TextField } from './kit'
+  import { Api } from '../lib/api'
+  import { client, DEFAULT_SERVER, inviteCode } from '../lib/client.svelte'
+  import { Avatar, Button, Icon, TextField } from './kit'
 
   const server = DEFAULT_SERVER
   let mode = $state<'login' | 'register'>('login')
+  let username = $state('')
   let name = $state('')
   let password = $state('')
-  let invite = $state('')
+  let invite = $state(client.pendingInvite ?? '')
   let needsInvite = $state(true)
+  let open = $state(false)
   let busy = $state(false)
   let error = $state('')
+  let preview = $state<InvitePreview | null>(null)
 
   const subtitle = $derived(
     mode === 'login'
       ? 'Que bom te ver de novo.'
-      : needsInvite
-        ? 'Crie sua conta com o convite que te mandaram.'
-        : 'Servidor novo: esta conta vira a do admin.',
+      : !needsInvite && !open
+        ? 'Servidor novo: esta conta vira a dona da plataforma.'
+        : open
+          ? 'Crie sua conta. Se tiver um convite, cole aqui.'
+          : 'Crie sua conta com o convite que te mandaram.',
   )
 
   async function checkServer() {
     try {
       const status = await new Api(server).status()
       needsInvite = status.needsInvite
-      // Servidor vazio: a primeira conta vira a do admin.
-      if (!status.needsInvite) mode = 'register'
+      open = status.signup === 'open'
+      // Servidor vazio (a primeira conta vira a dona) ou veio de um link de convite: já abre em "criar conta".
+      if (!status.needsInvite || client.pendingInvite) mode = 'register'
     } catch {
       // erro aparece no envio
     }
   }
 
+  // Convite colado (código ou link): mostra pra onde a pessoa vai entrar.
+  let lastCode = ''
+  $effect(() => {
+    const code = inviteCode(invite)
+    if (code === lastCode) return
+    lastCode = code
+    preview = null
+    if (code.length < 4) return
+    const timer = setTimeout(async () => {
+      try {
+        const found = await new Api(server).invitePreview(code)
+        if (inviteCode(invite) === code) preview = found
+      } catch {
+        // convite inválido: o erro aparece no envio
+      }
+    }, 300)
+    return () => clearTimeout(timer)
+  })
+
   async function submit(event: SubmitEvent) {
     event.preventDefault()
-    const url = server
     busy = true
     error = ''
     try {
-      const api = new Api(url)
-      const auth = mode === 'login' ? await api.login(name, password) : await api.register(name, password, invite)
-      await store.start({ server: url, token: auth.token })
+      const api = new Api(server)
+      let auth
+      if (mode === 'login') {
+        auth = await api.login(username.trim(), password)
+      } else {
+        const code = inviteCode(invite)
+        // Cadastro aberto sem convite: a verificação anti-robô abre numa janelinha.
+        const turnstileToken = !code && open ? await window.resenha.turnstile(server) : null
+        if (!code && open && !turnstileToken) {
+          error = 'Faltou confirmar que você não é um robô.'
+          return
+        }
+        auth = await api.register({
+          username: username.trim().toLowerCase(),
+          name: name.trim() || username.trim(),
+          password,
+          invite: code || undefined,
+          turnstileToken: turnstileToken ?? undefined,
+        })
+        client.pendingInvite = null
+      }
+      await client.start({ server, token: auth.token, userId: auth.user.id })
     } catch (err) {
       error = (err as Error).message
       // Alguém criou a primeira conta enquanto esta tela estava aberta: agora precisa de convite.
@@ -73,8 +117,31 @@
     <h1>{mode === 'login' ? 'Entrar no Resenha' : 'Criar conta'}</h1>
     <p class="sub">{subtitle}</p>
 
+    {#if mode === 'register' && preview}
+      <div class="invite">
+        <Avatar id={preview.guild.id} name={preview.guild.name} size={40} square src={new Api(server).media(preview.guild.icon)} cutout="var(--bg-raised)" />
+        <div>
+          <span class="invite-label">{preview.inviter ? `${preview.inviter.name} te convidou pra` : 'Você foi convidado pra'}</span>
+          <strong>{preview.guild.name}</strong>
+        </div>
+      </div>
+    {/if}
+
     <div class="fields">
-      <TextField label="Apelido" size="lg" bind:value={name} autocomplete="username" required minlength={2} maxlength={32} spellcheck={false} />
+      <TextField
+        label={mode === 'login' ? 'Nome de usuário' : 'Nome de usuário'}
+        size="lg"
+        bind:value={username}
+        autocomplete="username"
+        required
+        minlength={2}
+        maxlength={mode === 'login' ? 64 : 32}
+        spellcheck={false}
+        hint={mode === 'register' ? 'Letras minúsculas, números, _ e ponto. É como te acham.' : undefined}
+      />
+      {#if mode === 'register'}
+        <TextField label="Nome de exibição" size="lg" bind:value={name} maxlength={32} placeholder={username || undefined} hint="Como aparece pros outros. Dá pra mudar depois." />
+      {/if}
       <TextField
         label="Senha"
         size="lg"
@@ -82,11 +149,20 @@
         bind:value={password}
         autocomplete={mode === 'login' ? 'current-password' : 'new-password'}
         required
-        minlength={mode === 'register' ? 6 : 1}
-        hint={mode === 'register' ? 'Pelo menos 6 caracteres.' : undefined}
+        minlength={mode === 'register' ? 8 : 1}
+        hint={mode === 'register' ? 'Pelo menos 8 caracteres.' : undefined}
       />
-      {#if mode === 'register' && needsInvite}
-        <TextField label="Convite" size="lg" mono bind:value={invite} required spellcheck={false} autocomplete="off" />
+      {#if mode === 'register' && (needsInvite || open)}
+        <TextField
+          label={open ? 'Convite (opcional)' : 'Convite'}
+          size="lg"
+          mono
+          bind:value={invite}
+          required={!open}
+          spellcheck={false}
+          autocomplete="off"
+          placeholder="Código ou link"
+        />
       {/if}
     </div>
 
@@ -100,7 +176,7 @@
   </form>
 
   <p class="switch">
-    {mode === 'login' ? 'Recebeu um convite?' : 'Já tem conta?'}
+    {mode === 'login' ? 'Ainda não tem conta?' : 'Já tem conta?'}
     <button type="button" onclick={switchMode}>{mode === 'login' ? 'Criar conta' : 'Entrar'}</button>
   </p>
 </div>
@@ -185,6 +261,35 @@
 
   .error :global(svg) {
     margin-top: 1px;
+  }
+
+  .invite {
+    display: flex;
+    align-items: center;
+    gap: var(--s-3);
+    margin-top: var(--s-5);
+    padding: 12px;
+    border-radius: var(--r-lg);
+    background: var(--bg-raised);
+    box-shadow: 0 0 0 1px var(--line);
+  }
+
+  .invite div {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+
+  .invite-label {
+    color: var(--fg-3);
+    font-size: var(--text-xs);
+  }
+
+  .invite strong {
+    overflow: hidden;
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .switch {

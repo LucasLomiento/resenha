@@ -3,11 +3,11 @@
   import { getCameraStream, getMicTrack } from '../../lib/media'
   import { MicPipeline } from '../../lib/mic'
   import { settings, type VideoCodec } from '../../lib/settings.svelte'
-  import { store } from '../../lib/store.svelte'
+  import { client } from '../../lib/client.svelte'
   import { Button, Icon, Meter, PageHeader, Row, Section, Segmented, Select, Switch } from '../kit'
   import VideoTile from '../VideoTile.svelte'
 
-  const call = store.call
+  const call = client.call
 
   let inputs = $state<MediaDeviceInfo[]>([])
   let outputs = $state<MediaDeviceInfo[]>([])
@@ -80,7 +80,7 @@
       loadDevices()
     } catch (err) {
       stopTest()
-      store.toast(`Sem acesso ao microfone: ${(err as Error).message}`)
+      client.toast(`Sem acesso ao microfone: ${(err as Error).message}`)
     }
   }
 
@@ -104,7 +104,7 @@
       preview = await getCameraStream()
       loadDevices()
     } catch (err) {
-      store.toast(`Não deu pra abrir a câmera: ${(err as Error).message}`)
+      client.toast(`Não deu pra abrir a câmera: ${(err as Error).message}`)
     }
   }
 
