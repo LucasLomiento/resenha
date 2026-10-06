@@ -454,8 +454,9 @@ class Client implements GuildHost, HomeHost {
   }
 
   ringing(channelId: string, from: string, video: boolean) {
-    if (this.status === 'dnd') return
     this.incomingCall = { channelId, from, video }
+    // Não perturbe: a ligação aparece, mas sem tocar nem notificar.
+    if (this.status === 'dnd') return
     playSound('ring')
     this.ringTimer = setInterval(() => playSound('ring'), 2600)
     if (!document.hasFocus()) {
