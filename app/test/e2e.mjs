@@ -60,7 +60,9 @@ async function launch(profile) {
   })
   // Sem sons do app durante o teste (nada toca na caixa de som de quem roda). Sem RNNoise
   // também: o microfone falso é um tom puro, e pro RNNoise apito não é voz.
-  await page.evaluate(() => localStorage.setItem('resenha.settings', JSON.stringify({ sounds: false, noiseReduction: 'off' })))
+  await page.evaluate(() =>
+    localStorage.setItem('resenha.settings', JSON.stringify({ sounds: false, noiseReduction: 'off', streamVolume: 0 })),
+  )
   await page.reload()
   page.on('console', (msg) => {
     if (msg.type() !== 'error') return
@@ -114,9 +116,13 @@ async function fakeMic(page) {
   })
 }
 
-/** "Tela" falsa: canvas 2560x1440 a 60 fps com movimento e o Date.now() em 48 blocos no topo. */
-async function fakeScreen(page) {
-  await page.evaluate(() => {
+/**
+ * "Tela" falsa: canvas 2560x1440 a 60 fps com movimento e o Date.now() em 48 blocos no topo.
+ * `stereo`: com áudio de teste gerado na memória (440 Hz só na esquerda, 1500 Hz só na direita),
+ * que não toca em lugar nenhum (quem assiste está com o volume da tela em 0).
+ */
+async function fakeScreen(page, stereo = false) {
+  await page.evaluate((stereo) => {
     const canvas = document.createElement('canvas')
     canvas.width = 2560
     canvas.height = 1440
@@ -137,7 +143,58 @@ async function fakeScreen(page) {
       }
     }, 1000 / 60)
     const stream = canvas.captureStream(60)
-    navigator.mediaDevices.getDisplayMedia = async () => new MediaStream([stream.getVideoTracks()[0].clone()])
+    let audio = null
+    if (stereo) {
+      const ctx = new AudioContext()
+      const merger = ctx.createChannelMerger(2)
+      for (const [hz, channel] of [
+        [440, 0],
+        [1500, 1],
+      ]) {
+        const osc = ctx.createOscillator()
+        osc.frequency.value = hz
+        osc.connect(merger, 0, channel)
+        osc.start()
+      }
+      const dest = ctx.createMediaStreamDestination()
+      dest.channelCount = 2
+      merger.connect(dest)
+      audio = dest.stream.getAudioTracks()[0]
+    }
+    navigator.mediaDevices.getDisplayMedia = async () =>
+      new MediaStream([stream.getVideoTracks()[0].clone(), ...(audio ? [audio.clone()] : [])])
+  }, stereo)
+}
+
+/** Nível (dB) de cada tom em cada canal do áudio da tela que chega em quem assiste. */
+async function stereoLevels(page) {
+  return page.evaluate(async () => {
+    const track = document.querySelector('.stream video')?.srcObject?.getAudioTracks?.()[0]
+    if (!track) return null
+    const ctx = new AudioContext()
+    const split = ctx.createChannelSplitter(2)
+    ctx.createMediaStreamSource(new MediaStream([track])).connect(split)
+    const silent = ctx.createGain()
+    silent.gain.value = 0
+    silent.connect(ctx.destination)
+    const analysers = [0, 1].map((channel) => {
+      const analyser = ctx.createAnalyser()
+      analyser.fftSize = 8192
+      split.connect(analyser, channel)
+      analyser.connect(silent)
+      return analyser
+    })
+    await new Promise((r) => setTimeout(r, 1500))
+    const level = (analyser, hz) => {
+      const bins = new Float32Array(analyser.frequencyBinCount)
+      analyser.getFloatFrequencyData(bins)
+      const i = Math.round(hz / (ctx.sampleRate / analyser.fftSize))
+      return Math.round(Math.max(bins[i - 1], bins[i], bins[i + 1]))
+    }
+    const [left, right] = analysers
+    const out = { left440: level(left, 440), left1500: level(left, 1500), right440: level(right, 440), right1500: level(right, 1500) }
+    await ctx.close()
+    return out
   })
 }
 
@@ -586,7 +643,7 @@ try {
   // Tela: A compartilha (áudio pelo venmic no Linux) e B assiste.
   const player = withAudio ? silentPlayer() : null
   await a.page.waitForTimeout(500)
-  await fakeScreen(a.page)
+  await fakeScreen(a.page, !withAudio)
   const screenBefore = await rectOf(a.page, 'Compartilhar tela')
   await a.page.getByRole('button', { name: 'Compartilhar tela', exact: true }).click({ force: true })
   await a.page.locator('.modal').waitFor()
@@ -618,6 +675,11 @@ try {
     }
     const audioTracks = await b.page.evaluate(() => document.querySelector('.stream video')?.srcObject?.getAudioTracks().length ?? 0)
     check(audioTracks === 1, 'B recebe o áudio da tela junto com o vídeo')
+  } else {
+    // Áudio da tela em estéreo de verdade: cada tom chega só no seu lado.
+    const levels = await stereoLevels(b.page)
+    const separated = !!levels && levels.left440 - levels.left1500 > 30 && levels.right1500 - levels.right440 > 30
+    check(separated, 'áudio da tela chega em estéreo (esquerda e direita separadas)', JSON.stringify(levels))
   }
 
   // Atraso e estatísticas do lado de quem assiste, já na resolução cheia (o WebRTC começa baixo e sobe).

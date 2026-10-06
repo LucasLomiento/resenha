@@ -21,9 +21,12 @@ function mergeFmtp(existing: string, extra: Record<string, string>): string {
 
 /**
  * Pro áudio da tela (música, jogo, vídeo) sair em estéreo e com qualidade, o
- * lado que RECEBE precisa anunciar stereo=1 e um bitrate maior. Quem
- * compartilha aplica isso na descrição que recebe, só nas seções (mids) do
- * áudio da tela; a voz continua no padrão do Opus.
+ * lado que RECEBE precisa anunciar stereo=1 e um bitrate maior, só nas seções
+ * (mids) do áudio da tela; a voz continua no padrão do Opus.
+ *
+ * Vale nos dois lados: quem assiste põe na própria descrição (senão o Chromium
+ * decodifica em mono, mesmo chegando estéreo), e quem compartilha põe na que
+ * recebe (pra quem assiste com versão antiga ainda receber no bitrate cheio).
  */
 export function tuneScreenOpus(sdp: string, mids: Set<string>): string {
   if (mids.size === 0 || !sdp) return sdp
@@ -44,4 +47,16 @@ export function tuneScreenOpus(sdp: string, mids: Set<string>): string {
       )
     })
     .join('')
+}
+
+/** Mids das seções de áudio cujo stream (pelo `a=msid`) é desse tipo, numa descrição. */
+export function audioMidsOf(sdp: string, wanted: (streamId: string) => boolean): Set<string> {
+  const mids = new Set<string>()
+  for (const section of sdp.split(/(?=\r\nm=)/)) {
+    if (!section.startsWith('\r\nm=audio ')) continue
+    const mid = section.match(/\r\na=mid:(\S+)/)?.[1]
+    const streamId = section.match(/\r\na=msid:(\S+)/)?.[1]
+    if (mid && streamId && wanted(streamId)) mids.add(mid)
+  }
+  return mids
 }

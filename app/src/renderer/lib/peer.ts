@@ -1,5 +1,5 @@
 import type { SignalData } from '../../../../shared/protocol'
-import { tuneScreenOpus } from './sdp'
+import { audioMidsOf, tuneScreenOpus } from './sdp'
 import type { ScreenMode, VideoCodec } from './settings.svelte'
 
 /** Sinalização sem os ids das conexões (o Peer põe na hora de mandar). */
@@ -101,7 +101,7 @@ export class Peer {
     this.pc.onnegotiationneeded = async () => {
       try {
         this.makingOffer = true
-        await this.pc.setLocalDescription()
+        await this.setLocal('offer')
         this.sendDescription()
       } catch (err) {
         console.error('[rtc] oferta falhou', this.connId, err)
@@ -200,7 +200,7 @@ export class Peer {
         this.settingAnswer = false
         await this.flushCandidates()
         if (description.type === 'offer') {
-          await this.pc.setLocalDescription()
+          await this.setLocal('answer')
           this.sendDescription()
         }
         await this.applyVideoParameters()
@@ -225,6 +225,17 @@ export class Peer {
       case 'unwatch':
         return this.events.watchRequest(false)
     }
+  }
+
+  /**
+   * Cria e aplica a descrição local pedindo estéreo no áudio de tela que eu
+   * recebo: sem isso o Chromium decodifica em mono, mesmo chegando estéreo.
+   */
+  private async setLocal(type: 'offer' | 'answer') {
+    const created = type === 'offer' ? await this.pc.createOffer() : await this.pc.createAnswer()
+    const remote = this.pc.remoteDescription?.sdp ?? ''
+    const mids = audioMidsOf(remote, (streamId) => this.remoteStreams[streamId] === 'screen')
+    await this.pc.setLocalDescription(mids.size ? { type, sdp: tuneScreenOpus(created.sdp ?? '', mids) } : created)
   }
 
   private async flushCandidates() {

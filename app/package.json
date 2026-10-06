@@ -18,7 +18,7 @@
     "e2e": "VITE_DEFAULT_SERVER=http://127.0.0.1:8797 electron-vite build && node test/e2e.mjs",
     "dist:win:zip": "electron-vite build && electron-builder --win zip",
     "test:mic": "node --test test/mic-worklet.test.mjs",
-    "test:ui": "node --test test/markdown.test.mts",
+    "test:ui": "node --test test/markdown.test.mts test/sdp.test.mts",
     "proto:shots": "electron-vite build && node test/proto-shots.mjs"
   },
   "devDependencies": {
