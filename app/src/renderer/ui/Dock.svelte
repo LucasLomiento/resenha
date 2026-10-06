@@ -252,7 +252,7 @@
     align-items: center;
     gap: 2px;
     height: 52px;
-    padding: 0 8px 0 10px;
+    padding: 0 8px;
   }
 
   .me-name {

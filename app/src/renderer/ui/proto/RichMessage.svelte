@@ -137,7 +137,7 @@
   article {
     position: relative;
     margin-top: 14px;
-    padding: 3px 20px 3px 18px;
+    padding: 3px 20px;
   }
 
   article.grouped {

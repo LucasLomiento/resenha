@@ -169,7 +169,7 @@
         membersOpen={id !== 'search'}
         pinsOpen={id === 'pins'}
         searchQuery={id === 'search' ? 'ícone' : undefined}
-        hovered={id === 'server' ? 'm5' : id === 'server-reply' || id === 'menus' ? 'm4' : undefined}
+        hovered={id === 'server' ? 'm5' : id === 'menus' ? 'm7' : undefined}
         replyTo={id === 'server-reply' ? 'Rafa' : undefined}
         mentionPicker={id === 'server-reply'}
         typing={id === 'server' ? 'Thiago' : undefined}

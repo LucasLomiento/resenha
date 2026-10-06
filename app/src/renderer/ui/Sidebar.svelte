@@ -257,7 +257,7 @@
     gap: 10px;
     min-width: 0;
     height: 40px;
-    padding: 0 10px 0 7px;
+    padding: 0 10px;
     border-radius: var(--r-lg);
     color: var(--fg-3);
     transition: background-color var(--t-fast) var(--ease);
@@ -346,7 +346,7 @@
     display: flex;
     align-items: center;
     gap: 6px;
-    padding-left: 28px;
+    padding-left: 32px;
   }
 
   .member-main {
@@ -416,7 +416,7 @@
     display: flex;
     align-items: center;
     gap: 10px;
-    margin: 0 4px 6px 64px;
+    margin: 0 4px 6px 68px;
     color: var(--fg-3);
     font-size: var(--text-xs);
   }

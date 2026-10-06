@@ -180,7 +180,7 @@ Cada uma tem um protótipo estático com dados de exemplo em `ui/proto`. Os nome
 
 **Como ver:** `VITE_PROTO=1 npm run dev:app` (abre direto nos protótipos), ou `#proto` / `#proto/<tela>` no endereço (num app aberto: F12 e `location.hash = '#proto'`). Funciona até num navegador comum pelo servidor do Vite, porque o modo protótipo não liga no servidor. Alt + ← / → passa de tela; o seletor fica embaixo. `/clean` no fim esconde o seletor.
 
-**Capturas:** `cd app && npx electron-vite build && node test/proto-shots.mjs <pasta>` (com `PROTO_SMALL=1`, também na janela mínima).
+**Capturas:** `npm -w app run proto:shots -- <pasta>` (com `PROTO_SMALL=1`, também na janela mínima). As do app de hoje saem do e2e com `RESENHA_SHOTS=<pasta>`.
 
 ### Trilho de servidores — `#proto/server`
 - 72 px, direto no fundo. Início (logo do app) no topo, fio, servidores (squircle 44, raio 16 → 13 no hover/aberto), "+" verde no fim (criar ou entrar).

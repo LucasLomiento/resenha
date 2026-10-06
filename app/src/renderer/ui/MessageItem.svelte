@@ -126,7 +126,7 @@
     display: flex;
     gap: 14px;
     margin-top: 14px;
-    padding: 3px 20px 3px 18px;
+    padding: 3px 20px;
     transition: background-color var(--t-fast) var(--ease);
   }
 

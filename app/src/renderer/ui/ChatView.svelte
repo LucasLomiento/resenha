@@ -258,7 +258,7 @@
     gap: 6px;
     flex: none;
     height: 26px;
-    padding: 0 22px 2px;
+    padding: 0 20px 2px;
     overflow: hidden;
     color: var(--fg-3);
     font-size: var(--text-xs);

@@ -172,7 +172,7 @@
     align-items: center;
     gap: 8px;
     height: 30px;
-    padding: 0 6px 0 34px;
+    padding: 0 6px 0 38px;
     border-radius: var(--r-md);
     color: var(--fg-2);
     font-size: var(--text-sm);
