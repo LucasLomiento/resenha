@@ -28,8 +28,26 @@ import {
 } from '../../shared/protocol'
 import type { LegacyExport } from './directory'
 import { newId } from './ids'
-import { IN_LIST, MessageStore, columns, list, parseJsonList, validEmoji, type AttachmentRow, type MessageRow } from './messages'
-import { basePermissions, channelPermissions, outranks, sanitizeOverwrites, topPosition, type MemberLike } from './permissions'
+import {
+  IN_LIST,
+  MessageStore,
+  columns,
+  list,
+  parseJsonList,
+  validEmoji,
+  type AttachmentRow,
+  type MessageRow,
+  type UploadTicket,
+} from './messages'
+import {
+  basePermissions,
+  channelPermissions,
+  outranks,
+  sameOverwrites,
+  sanitizeOverwrites,
+  topPosition,
+  type MemberLike,
+} from '../../shared/permissions'
 import { aggregate, samePresence } from './presence'
 import { directory } from './stubs'
 import { unfurlAll } from './unfurl'
@@ -118,7 +136,9 @@ const DEAD_AFTER = 75_000
 const SWEEP_EVERY = 60_000
 const ORPHAN_TTL = DAY
 /** Teto de anexos por servidor (a plataforma inteira tem outro teto, no Directory). */
-const FILES_LIMIT = 4 * 1024 ** 3
+const FILES_LIMIT = 2 * 1024 ** 3
+/** Conexões abertas que ainda não se autenticaram (o resto espera). */
+const MAX_PENDING = 50
 const MAX_CHANNELS = 500
 const MAX_ROLES = 250
 const MAX_FRAME = 64 * 1024
@@ -214,8 +234,19 @@ export class Guild extends DurableObject<Env> {
     ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair('ping', 'pong'))
   }
 
-  private migrate() {
+  private async migrate() {
     this.sql.exec('CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)')
+    const legacy = columns(this.sql, 'channels')
+    if (legacy.size > 0 && !legacy.has('parent_id') && !this.meta('pre_v2_bookmark')) {
+      // Banco da 0.5: antes de mexer, guarda o ponto de restauração (dá pra voltar
+      // exatamente pra cá com onNextSessionRestoreBookmark, por até 30 dias).
+      try {
+        this.setMeta('pre_v2_bookmark', await this.ctx.storage.getCurrentBookmark())
+        this.setMeta('pre_v2_at', String(Date.now()))
+      } catch (err) {
+        console.error('sem ponto de restauração', err)
+      }
+    }
     this.sql.exec(`CREATE TABLE IF NOT EXISTS profiles (
       user_id TEXT PRIMARY KEY,
       username TEXT NOT NULL,
@@ -489,9 +520,8 @@ export class Guild extends DurableObject<Env> {
     if (row) {
       const ctx = this.permContext()
       const member = this.like(row)
-      const channels = this.channels()
-      for (const channel of channels.values()) {
-        const perms = channelPermissions(ctx, member, channel, channels)
+      for (const channel of this.channels().values()) {
+        const perms = channelPermissions(ctx, member, channel)
         if (perms & P.VIEW_CHANNEL) out.set(channel.id, perms)
       }
       // De castigo, as permissões mudam sozinhas quando o tempo acaba: não guarda.
@@ -563,8 +593,9 @@ export class Guild extends DurableObject<Env> {
     if (text) this.raw(ws, text)
   }
 
-  private error(ws: WebSocket, message: string) {
-    this.send(ws, { t: 'error', message })
+  /** `nonce`: o erro é de uma mensagem enviada (o app devolve o texto pro campo). */
+  private error(ws: WebSocket, message: string, nonce?: string) {
+    this.send(ws, { t: 'error', message, ...(nonce ? { nonce } : {}) })
   }
 
   /** Manda pra todo mundo, ou só pra quem vê o canal. */
@@ -863,17 +894,42 @@ export class Guild extends DurableObject<Env> {
     if (recent.length >= max) return false
     recent.push(now)
     this.flood.set(key, recent)
-    if (this.flood.size > 5000) this.flood.clear()
+    if (this.flood.size > 20_000) this.flood.clear()
     return true
   }
 
   // ---------- Espaço de anexos ----------
 
-  private async reserve(bytes: number): Promise<string | null> {
+  /** Bytes sendo enviados agora (dois envios ao mesmo tempo não cabem no mesmo espaço). */
+  private uploading = 0
+
+  /** Reserva o espaço antes de gravar (aqui e na plataforma); `done` fecha a conta. */
+  private async reserve(userId: string, bytes: number): Promise<UploadTicket> {
     const used = this.store.filesUsed()
-    if (used + bytes > FILES_LIMIT) return 'O espaço de anexos deste servidor está cheio.'
-    const ok = await directory(this.env).reserveStorage(`g:${this.id}`, used, bytes)
-    return ok ? null : 'O espaço de anexos da plataforma está cheio.'
+    if (used + this.uploading + bytes > FILES_LIMIT) return { error: 'O espaço de anexos deste servidor está cheio.' }
+    this.uploading += bytes
+    const scope = `g:${this.id}`
+    let released = false
+    const release = () => {
+      if (!released) this.uploading -= bytes
+      released = true
+    }
+    try {
+      const r = await directory(this.env).reserveStorage(scope, used, bytes, userId)
+      if (!r.ok) {
+        release()
+        return { error: r.error }
+      }
+      return {
+        done: async () => {
+          release()
+          await directory(this.env).finishUpload(r.value, scope, this.store.filesUsed())
+        },
+      }
+    } catch (err) {
+      release()
+      throw err
+    }
   }
 
   private async reportStorage() {
@@ -903,15 +959,24 @@ export class Guild extends DurableObject<Env> {
       const row = this.member(userId)
       if (!row) return Response.json({ error: 'Você não está nesse servidor.' }, { status: 403 })
       if (this.timedOut(row)) return Response.json({ error: 'Você está de castigo e não pode enviar arquivos.' }, { status: 403 })
+      // O app diz em que canal vai usar; a 0.5 não diz, aí vale a permissão do servidor.
+      const channelId = url.searchParams.get('channel')
+      const allowed = channelId ? this.can(row.user_id, channelId, P.ATTACH_FILES) : has(this.guildPerms(row.user_id), P.ATTACH_FILES)
+      if (!allowed) return Response.json({ error: 'Você não pode enviar arquivos aqui.' }, { status: 403 })
       if (!this.allow(`upload:${row.user_id}`, 30, MINUTE)) {
         return Response.json({ error: 'Calma! Muitos arquivos de uma vez.' }, { status: 429 })
       }
-      return this.store.upload(request, row.user_id, (bytes) => this.reserve(bytes))
+      // Anexo que nunca virar mensagem some num dia, mesmo sem ninguém conectado.
+      if ((await this.ctx.storage.getAlarm()) === null) await this.ctx.storage.setAlarm(Date.now() + ORPHAN_TTL)
+      return this.store.upload(request, row.user_id, (bytes) => this.reserve(row.user_id, bytes))
     }
     const file = pathname.match(/\/files\/([\w-]+)\/[^/]+$/)
     if (file && request.method === 'GET') return this.store.serve(request, file[1])
 
     if (request.headers.get('Upgrade') !== 'websocket') return new Response('Esperava WebSocket', { status: 426 })
+    if (this.ctx.getWebSockets().filter((ws) => this.state(ws).pending).length >= MAX_PENDING) {
+      return new Response('Ocupado, tente de novo', { status: 503 })
+    }
 
     const [client, server] = Object.values(new WebSocketPair())
     this.ctx.acceptWebSocket(server)
@@ -991,6 +1056,12 @@ export class Guild extends DurableObject<Env> {
       return this.completeAuth(ws, state, msg)
     }
     if (!this.member(state.userId)) return ws.close(4003, 'Você não está nesse servidor')
+    // Limite por conexão: sinalização da call tem folga maior (muitos candidatos ICE de uma vez).
+    const signal = msg.t === 'rtc.signal'
+    if (!this.allow(`${signal ? 'sig' : 'ws'}:${state.connId}`, signal ? 400 : 60, 10_000)) {
+      if (this.allow(`warn:${state.connId}`, 1, 10_000)) this.error(ws, 'Calma! Muitas ações de uma vez.')
+      return
+    }
 
     try {
       await this.handle(ws, state, msg)
@@ -1053,7 +1124,11 @@ export class Guild extends DurableObject<Env> {
     this.sql.exec('DELETE FROM slowmode WHERE last_at < ?', now - 6 * 60 * MINUTE)
     this.sql.exec('DELETE FROM audit WHERE created_at < ?', now - AUDIT_KEEP)
 
-    if (this.sockets().length > 0) await this.ctx.storage.setAlarm(now + SWEEP_EVERY)
+    // Com alguém conectado (mesmo sem login), volta logo; sem ninguém, só se sobrou anexo solto.
+    if (this.ctx.getWebSockets().length > 0) await this.ctx.storage.setAlarm(now + SWEEP_EVERY)
+    else if (this.sql.exec('SELECT 1 FROM attachments WHERE message_id IS NULL LIMIT 1').toArray().length > 0) {
+      await this.ctx.storage.setAlarm(now + ORPHAN_TTL / 4)
+    }
   }
 
   // ---------- Mensagens do app ----------
@@ -1062,7 +1137,7 @@ export class Guild extends DurableObject<Env> {
     const userId = state.userId
     switch (msg.t) {
       case 'presence': {
-        if (!STATUSES.includes(msg.status)) return
+        if (!STATUSES.includes(msg.status) || !this.allow(`presence:${state.connId}`, 10, MINUTE)) return
         const before = this.presenceOf(userId)
         this.save(ws, { ...state, status: msg.status, text: cleanLine(msg.text, 1, 128) })
         return this.announcePresence(userId, before)
@@ -1074,6 +1149,7 @@ export class Guild extends DurableObject<Env> {
       case 'chat.edit': {
         const row = this.store.get(msg.id)
         if (!row || row.author_id !== userId) return
+        if (!this.allow(`edit:${userId}`, 5, 5000)) return this.error(ws, 'Calma! Edições rápidas demais.')
         const channel = this.channel(row.channel_id, 'text')
         if (!channel || !this.can(userId, channel.id, P.VIEW_CHANNEL)) return
         if (this.timedOut(this.member(userId))) return this.error(ws, 'Você está de castigo e não pode editar agora.')
@@ -1166,6 +1242,7 @@ export class Guild extends DurableObject<Env> {
       }
 
       case 'chat.ack': {
+        if (!this.allow(`ack:${userId}`, 30, 10_000)) return
         const channel = this.channel(msg.channelId, 'text')
         if (!channel || typeof msg.messageId !== 'string' || !this.can(userId, channel.id, P.VIEW_CHANNEL)) return
         const read = this.markRead(userId, channel.id, msg.messageId.slice(0, 64))
@@ -1276,6 +1353,7 @@ export class Guild extends DurableObject<Env> {
       }
 
       case 'notify.update': {
+        if (!this.allow(`notify:${userId}`, 5, 10_000)) return this.error(ws, 'Calma! Mudanças rápidas demais.')
         const settings = cleanNotify(msg.settings, this.channels())
         if (!settings) return
         this.sql.exec(
@@ -1348,29 +1426,29 @@ export class Guild extends DurableObject<Env> {
     const userId = state.userId
     const nonce = typeof msg.nonce === 'string' ? msg.nonce.slice(0, 64) : undefined
     if (typeof msg.channelId === 'string' && dmMembers(msg.channelId)) {
-      return this.error(ws, 'Atualize o app pra usar as mensagens privadas.')
+      return this.error(ws, 'Atualize o app pra usar as mensagens privadas.', nonce)
     }
     const channel = this.channel(msg.channelId, 'text')
-    if (!channel) return this.error(ws, 'Canal não existe.')
+    if (!channel) return this.error(ws, 'Canal não existe.', nonce)
     const member = this.member(userId)
-    if (this.timedOut(member)) return this.error(ws, 'Você está de castigo e não pode escrever agora.')
+    if (this.timedOut(member)) return this.error(ws, 'Você está de castigo e não pode escrever agora.', nonce)
     const perms = this.perms(userId).get(channel.id) ?? 0
-    if (!has(perms, P.SEND_MESSAGES)) return this.error(ws, 'Você não pode escrever nesse canal.')
+    if (!has(perms, P.SEND_MESSAGES)) return this.error(ws, 'Você não pode escrever nesse canal.', nonce)
 
     const content = typeof msg.content === 'string' ? msg.content.trim() : ''
-    if (content.length > MAX_MESSAGE_LENGTH) return this.error(ws, 'Mensagem grande demais.')
+    if (content.length > MAX_MESSAGE_LENGTH) return this.error(ws, 'Mensagem grande demais.', nonce)
     const requested = Array.isArray(msg.attachmentIds) ? msg.attachmentIds.filter((id) => typeof id === 'string').slice(0, 10) : []
-    if (requested.length > 0 && !has(perms, P.ATTACH_FILES)) return this.error(ws, 'Você não pode enviar arquivos nesse canal.')
+    if (requested.length > 0 && !has(perms, P.ATTACH_FILES)) return this.error(ws, 'Você não pode enviar arquivos nesse canal.', nonce)
     const attachments = this.store.pendingAttachments(userId, requested)
     if (!content && attachments.length === 0) return
 
-    if (!this.allow(`send:${userId}`, 5, 5000)) return this.error(ws, 'Calma! Você está mandando mensagens rápido demais.')
+    if (!this.allow(`send:${userId}`, 5, 5000)) return this.error(ws, 'Calma! Você está mandando mensagens rápido demais.', nonce)
     if (channel.slowmode > 0 && !has(perms, P.MANAGE_MESSAGES) && !has(perms, P.MANAGE_CHANNELS)) {
       const last = this.sql
         .exec<{ last_at: number }>('SELECT last_at FROM slowmode WHERE channel_id = ? AND user_id = ?', channel.id, userId)
         .toArray()[0]?.last_at
       const wait = last ? last + channel.slowmode * 1000 - Date.now() : 0
-      if (wait > 0) return this.error(ws, `Modo lento: espere ${Math.ceil(wait / 1000)} s pra mandar outra mensagem.`)
+      if (wait > 0) return this.error(ws, `Modo lento: espere ${Math.ceil(wait / 1000)} s pra mandar outra mensagem.`, nonce)
       this.sql.exec(
         'INSERT INTO slowmode (channel_id, user_id, last_at) VALUES (?, ?, ?) ON CONFLICT DO UPDATE SET last_at = excluded.last_at',
         channel.id,
@@ -1416,7 +1494,8 @@ export class Guild extends DurableObject<Env> {
       if (!this.channel(msg.parentId, 'category')) return this.error(ws, 'Categoria não existe.')
       parentId = msg.parentId
     }
-    let overwrites: Overwrite[] = []
+    // Canal novo numa categoria nasce com as permissões dela ("sincronizado").
+    let overwrites: Overwrite[] = parentId ? (this.channel(parentId)?.overwrites ?? []) : []
     if (msg.overwrites !== undefined) {
       if (!has(this.guildPerms(userId), P.MANAGE_ROLES)) return this.error(ws, 'Você não pode mexer em permissões.')
       const clean = this.cleanOverwrites(userId, msg.overwrites, [])
@@ -1494,21 +1573,39 @@ export class Guild extends DurableObject<Env> {
       args.push(topic)
       changes.push('tópico')
     }
-    if (msg.parentId !== undefined && channel.kind !== 'category') {
-      if (msg.parentId !== null && !this.channel(msg.parentId, 'category')) return this.error(ws, 'Categoria não existe.')
+    // Mudar de categoria não muda quem vê o canal (as permissões são dele).
+    if (msg.parentId !== undefined && channel.kind !== 'category' && msg.parentId !== channel.parentId) {
+      if (msg.parentId !== null) {
+        if (!this.channel(msg.parentId, 'category')) return this.error(ws, 'Categoria não existe.')
+        if (!this.can(userId, msg.parentId, P.MANAGE_CHANNELS)) return this.error(ws, 'Você não pode mexer nessa categoria.')
+      }
       sets.push('parent_id = ?')
       args.push(msg.parentId)
       changes.push('categoria')
     }
-    if (msg.overwrites !== undefined) {
+    let overwrites: Overwrite[] | null = null
+    if (msg.overwrites !== undefined) overwrites = msg.overwrites
+    else if (msg.syncWithCategory && channel.kind !== 'category') {
+      const parent = this.channel(msg.parentId !== undefined ? msg.parentId : channel.parentId)
+      if (!parent) return this.error(ws, 'Esse canal não está numa categoria.')
+      overwrites = parent.overwrites
+    }
+    let synced: Channel[] = []
+    let syncedTo = ''
+    if (overwrites !== null) {
       if (!this.can(userId, channel.id, P.MANAGE_ROLES) && !has(this.guildPerms(userId), P.MANAGE_ROLES)) {
         return this.error(ws, 'Você não pode mexer em permissões.')
       }
-      const clean = this.cleanOverwrites(userId, msg.overwrites, channel.overwrites)
+      const clean = this.cleanOverwrites(userId, overwrites, channel.overwrites)
       if (typeof clean === 'string') return this.error(ws, clean)
       sets.push('overwrites = ?')
       args.push(JSON.stringify(clean))
-      changes.push('permissões')
+      changes.push(msg.syncWithCategory ? 'permissões sincronizadas com a categoria' : 'permissões')
+      // Categoria: os canais que estavam iguais a ela acompanham a mudança.
+      if (channel.kind === 'category') {
+        synced = [...this.channels().values()].filter((c) => c.parentId === channel.id && sameOverwrites(c.overwrites, channel.overwrites))
+        syncedTo = JSON.stringify(clean)
+      }
     }
     if (msg.userLimit !== undefined && channel.kind === 'voice') {
       if (typeof msg.userLimit !== 'number' || !Number.isInteger(msg.userLimit) || msg.userLimit < 0 || msg.userLimit > 99) return
@@ -1525,8 +1622,9 @@ export class Guild extends DurableObject<Env> {
     if (sets.length === 0) return
     const before = this.snapshot()
     this.sql.exec(`UPDATE channels SET ${sets.join(', ')} WHERE id = ?`, ...args, channel.id)
+    for (const child of synced) this.sql.exec('UPDATE channels SET overwrites = ? WHERE id = ?', syncedTo, child.id)
     this.audit(userId, 'channel.update', channel.id, `#${channel.name}: ${changes.join(', ')}`)
-    this.pushAccess(before, { changed: [channel.id] })
+    this.pushAccess(before, { changed: [channel.id, ...synced.map((c) => c.id)] })
   }
 
   private async reorderChannels(ws: WebSocket, userId: string, msg: Extract<ClientMessage, { t: 'channel.reorder' }>) {
@@ -1537,11 +1635,13 @@ export class Guild extends DurableObject<Env> {
     for (const item of msg.order) {
       if (!item || typeof item !== 'object') return
       const channel = channels.get(item.id)
-      if (!channel) continue
+      // Só mexe no que a pessoa vê e pode organizar (o resto fica onde está).
+      if (!channel || !this.can(userId, channel.id, P.MANAGE_CHANNELS)) continue
       if (typeof item.position !== 'number' || !Number.isInteger(item.position) || item.position < 0 || item.position > 10_000) return
       let parentId = item.parentId ?? null
       if (channel.kind === 'category') parentId = null
       else if (parentId !== null && channels.get(parentId)?.kind !== 'category') return
+      if (parentId !== channel.parentId && parentId !== null && !this.can(userId, parentId, P.MANAGE_CHANNELS)) continue
       updates.push({ id: channel.id, position: item.position, parentId })
     }
     if (updates.length === 0) return

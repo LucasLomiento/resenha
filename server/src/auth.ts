@@ -69,11 +69,14 @@ async function verify(secret: string, message: string, sig: string | null): Prom
   return crypto.subtle.verify('HMAC', await hmacKey(secret), raw, encoder.encode(message))
 }
 
-const WEEK = 7 * 24 * 60 * 60
+const DAY_S = 24 * 60 * 60
 
-/** Validade arredondada pra semana seguinte inteira: a URL se repete por dias e o cache aproveita. */
-function weekExpiry(now: number): number {
-  return (Math.floor(now / 1000 / WEEK) + 2) * WEEK
+/**
+ * Validade de 2 a 3 dias, arredondada pro dia: a URL se repete o dia todo (o
+ * cache aproveita) e um link que vazou, ou de quem saiu do servidor, morre logo.
+ */
+function shortExpiry(now: number): number {
+  return (Math.floor(now / 1000 / DAY_S) + 3) * DAY_S
 }
 
 function fresh(exp: string | null, now: number): boolean {
@@ -91,7 +94,7 @@ export function filePath(scope: FileScope, id: string, name: string): string {
 }
 
 export async function signFileUrl(secret: string, scope: FileScope, id: string, name: string, now = Date.now()): Promise<string> {
-  const exp = weekExpiry(now)
+  const exp = shortExpiry(now)
   const sig = await sign(secret, `${scope.kind}:${scope.id}:${id}:${exp}`)
   return `${filePath(scope, id, name)}?exp=${exp}&sig=${sig}`
 }
@@ -120,7 +123,7 @@ export async function verifyLegacyFileSignature(
 
 /** Imagem de prévia de link: o app só busca pelo nosso proxy, nunca no site (não vaza o IP de quem vê). */
 export async function signProxyUrl(secret: string, url: string, now = Date.now()): Promise<string> {
-  const exp = weekExpiry(now)
+  const exp = shortExpiry(now)
   const u = toBase64Url(encoder.encode(url))
   return `/api/proxy?u=${u}&exp=${exp}&sig=${await sign(secret, `proxy:${u}:${exp}`)}`
 }

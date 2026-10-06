@@ -10,7 +10,7 @@ import {
 import type { Result } from './directory'
 import { USER_HEADER } from './guild'
 import { newId } from './ids'
-import { MessageStore, validEmoji } from './messages'
+import { MessageStore, validEmoji, type UploadTicket } from './messages'
 import { directory, guild, home } from './stubs'
 import { unfurlAll } from './unfurl'
 
@@ -30,7 +30,7 @@ const ORPHAN_TTL = DAY
 /** Por quanto tempo o telefone toca. */
 const RING_TIMEOUT = 45_000
 /** Resultado de "pode mandar DM?" fica guardado esse tempo (bloqueio limpa na hora). */
-const CAN_DM_TTL = 5 * MINUTE
+const CAN_DM_TTL = MINUTE
 
 interface CallMember {
   connId: string
@@ -76,7 +76,7 @@ export class Conversation extends DurableObject<Env> {
     else this.sql.exec('INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value', key, value)
   }
 
-  /** Confere (e na primeira vez grava) de qual conversa este DO cuida. */
+  /** Grava de qual conversa este DO cuida (só ao abrir a conversa ou na migração). */
   private ensure(channelId: string): [string, string] | null {
     const pair = dmMembers(channelId)
     if (!pair) return null
@@ -87,8 +87,10 @@ export class Conversation extends DurableObject<Env> {
     return this.channelId === channelId ? pair : null
   }
 
+  /** A pessoa é da conversa (e a conversa já foi aberta)? Nunca cria nada. */
   private member(channelId: string, userId: string): { pair: [string, string]; peer: string } | null {
-    const pair = this.ensure(channelId)
+    if (!this.channelId || this.channelId !== channelId) return null
+    const pair = dmMembers(channelId)
     if (!pair || !pair.includes(userId)) return null
     return { pair, peer: pair[0] === userId ? pair[1] : pair[0] }
   }
@@ -126,9 +128,9 @@ export class Conversation extends DurableObject<Env> {
 
   // ---------- Chamadas dos Homes (RPC) ----------
 
-  /** Abre a conversa (cria se não existir). */
+  /** Abre a conversa (cria se não existir). O Home já conferiu se pode. */
   open(channelId: string, userId: string): Result<{ lastMessageId: string | null; lastMessageAt: number | null }> {
-    if (!this.member(channelId, userId)) return fail(404, 'Conversa não encontrada.')
+    if (!this.ensure(channelId)?.includes(userId)) return fail(404, 'Conversa não encontrada.')
     const last = this.last()
     return ok({ lastMessageId: last.id, lastMessageAt: last.at })
   }
@@ -186,6 +188,9 @@ export class Conversation extends DurableObject<Env> {
     const m = this.member(channelId, userId)
     const row = this.store.get(id)
     if (!m || !row || row.author_id !== userId) return fail(404, 'Mensagem não encontrada.')
+    // Bloqueado não reescreve mensagem antiga na tela de quem bloqueou.
+    if (!(await this.canSend(userId, m.peer))) return fail(403, 'Não dá pra editar mensagens nessa conversa.')
+    if (!this.allow(`edit:${userId}`, 5, 5000)) return fail(429, 'Calma! Edições rápidas demais.')
     const content = typeof contentInput === 'string' ? contentInput.trim() : ''
     if (content.length > MAX_MESSAGE_LENGTH) return fail(400, 'Mensagem grande demais.')
     if (!content && !this.store.hasAttachments(row.id)) return ok(null)
@@ -235,6 +240,7 @@ export class Conversation extends DurableObject<Env> {
     const now = Date.now()
     if (now - (this.typingAt.get(userId) ?? 0) < 2000) return
     this.typingAt.set(userId, now)
+    if (!(await this.canSend(userId, m.peer))) return
     await home(this.env, m.peer).dmEvent(channelId, userId, { t: 'dm.typing', channelId, userId })
   }
 
@@ -267,18 +273,42 @@ export class Conversation extends DurableObject<Env> {
       if (!(await this.canSend(userId, m.peer))) return Response.json({ error: 'Não dá pra mandar arquivo pra essa pessoa.' }, { status: 403 })
       if (!this.allow(`upload:${userId}`, 30, MINUTE)) return Response.json({ error: 'Calma! Muitos arquivos de uma vez.' }, { status: 429 })
       if ((await this.ctx.storage.getAlarm()) === null) await this.ctx.storage.setAlarm(Date.now() + ORPHAN_TTL)
-      return this.store.upload(request, userId, (bytes) => this.reserve(bytes))
+      return this.store.upload(request, userId, (bytes) => this.reserve(userId, bytes))
     }
     const file = url.pathname.match(/\/files\/([\w-]+)\/[^/]+$/)
     if (file && request.method === 'GET' && this.channelId && this.channelId === channelId) return this.store.serve(request, file[1])
     return Response.json({ error: 'Rota não existe.' }, { status: 404 })
   }
 
-  private async reserve(bytes: number): Promise<string | null> {
+  /** Bytes sendo enviados agora (dois envios ao mesmo tempo não cabem no mesmo espaço). */
+  private uploading = 0
+
+  private async reserve(userId: string, bytes: number): Promise<UploadTicket> {
     const used = this.store.filesUsed()
-    if (used + bytes > FILES_LIMIT) return 'O espaço de anexos desta conversa está cheio.'
-    const allowed = await directory(this.env).reserveStorage(`c:${this.channelId}`, used, bytes)
-    return allowed ? null : 'O espaço de anexos da plataforma está cheio.'
+    if (used + this.uploading + bytes > FILES_LIMIT) return { error: 'O espaço de anexos desta conversa está cheio.' }
+    this.uploading += bytes
+    const scope = `c:${this.channelId}`
+    let released = false
+    const release = () => {
+      if (!released) this.uploading -= bytes
+      released = true
+    }
+    try {
+      const r = await directory(this.env).reserveStorage(scope, used, bytes, userId)
+      if (!r.ok) {
+        release()
+        return { error: r.error }
+      }
+      return {
+        done: async () => {
+          release()
+          await directory(this.env).finishUpload(r.value, scope, this.store.filesUsed())
+        },
+      }
+    } catch (err) {
+      release()
+      throw err
+    }
   }
 
   private async reportStorage() {

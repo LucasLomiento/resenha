@@ -6,7 +6,9 @@ import { ALL_PERMISSIONS, P, type Channel, type Overwrite, type Role } from './p
 //      os "nega" e "permite"), depois a da própria pessoa;
 //   3. sem VIEW_CHANNEL no canal, não pode nada nele;
 //   4. de castigo, só vê e lê.
-// Canal sem exceções próprias herda as da categoria.
+// Cada canal guarda as próprias exceções (copiadas da categoria quando nasce
+// nela, e mantidas iguais enquanto estiverem "sincronizadas"). Nada é herdado
+// na hora: mover um canal ou apagar a categoria nunca muda quem vê o canal.
 
 export interface PermissionContext {
   guildId: string
@@ -27,22 +29,19 @@ export function basePermissions(ctx: PermissionContext, member: MemberLike): num
   return perms & P.ADMINISTRATOR ? ALL_PERMISSIONS : perms
 }
 
-export function effectiveOverwrites(channel: Channel, channels: Map<string, Channel>): Overwrite[] {
-  if (channel.overwrites.length > 0 || !channel.parentId) return channel.overwrites
-  return channels.get(channel.parentId)?.overwrites ?? []
+/** As exceções são iguais (mesmos ids e bits, em qualquer ordem)? */
+export function sameOverwrites(a: Overwrite[], b: Overwrite[]): boolean {
+  if (a.length !== b.length) return false
+  const key = (o: Overwrite) => `${o.type}:${o.id}:${o.allow}:${o.deny}`
+  const set = new Set(a.map(key))
+  return b.every((o) => set.has(key(o)))
 }
 
-export function channelPermissions(
-  ctx: PermissionContext,
-  member: MemberLike,
-  channel: Channel,
-  channels: Map<string, Channel>,
-  now = Date.now(),
-): number {
+export function channelPermissions(ctx: PermissionContext, member: MemberLike, channel: Channel, now = Date.now()): number {
   const base = basePermissions(ctx, member)
   if (base === ALL_PERMISSIONS) return ALL_PERMISSIONS
   let perms = base
-  const overwrites = effectiveOverwrites(channel, channels)
+  const overwrites = channel.overwrites
 
   const everyone = overwrites.find((o) => o.type === 'role' && o.id === ctx.guildId)
   if (everyone) perms = (perms & ~everyone.deny) | everyone.allow

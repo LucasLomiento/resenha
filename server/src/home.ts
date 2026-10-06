@@ -47,6 +47,8 @@ const AUTH_TIMEOUT = 15_000
 const DEAD_AFTER = 75_000
 const SWEEP_EVERY = 60_000
 const MAX_FRAME = 64 * 1024
+/** Conexões abertas que ainda não se autenticaram (o resto espera). */
+const MAX_PENDING = 20
 const STATUSES: Status[] = ['online', 'idle', 'dnd', 'invisible']
 
 /** Cabeçalho que o Worker põe com o id do dono deste Home. */
@@ -55,6 +57,7 @@ export const HOME_HEADER = 'X-Resenha-Home'
 export class Home extends DurableObject<Env> {
   private sql: SqlStorage
   private userId = ''
+  private flood = new Map<string, number[]>()
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env)
@@ -82,6 +85,22 @@ export class Home extends DurableObject<Env> {
   private setMeta(key: string, value: string | null) {
     if (value === null) this.sql.exec('DELETE FROM meta WHERE key = ?', key)
     else this.sql.exec('INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value', key, value)
+  }
+
+  /** No máximo `max` ações na janela (na memória: zera se hibernar, e tudo bem). */
+  private allow(key: string, max: number, window: number): boolean {
+    const now = Date.now()
+    const recent = (this.flood.get(key) ?? []).filter((t) => now - t < window)
+    if (recent.length >= max) return false
+    recent.push(now)
+    this.flood.set(key, recent)
+    if (this.flood.size > 5000) this.flood.clear()
+    return true
+  }
+
+  private dmRow(channelId: unknown): DmRow | undefined {
+    if (typeof channelId !== 'string') return undefined
+    return this.sql.exec<DmRow>('SELECT * FROM dms WHERE channel_id = ?', channelId).toArray()[0]
   }
 
   /** Grava de quem é este Home na primeira vez (o nome do DO é o id da pessoa). */
@@ -168,6 +187,9 @@ export class Home extends DurableObject<Env> {
     if (request.headers.get('Upgrade') !== 'websocket') return new Response('Esperava WebSocket', { status: 426 })
     const owner = request.headers.get(HOME_HEADER)
     if (!owner || !this.own(owner)) return new Response('Conta errada', { status: 403 })
+    if (this.ctx.getWebSockets().filter((ws) => this.state(ws).pending).length >= MAX_PENDING) {
+      return new Response('Ocupado, tente de novo', { status: 503 })
+    }
     const [client, server] = Object.values(new WebSocketPair())
     this.ctx.acceptWebSocket(server)
     const pending: HomeConn = {
@@ -258,6 +280,12 @@ export class Home extends DurableObject<Env> {
       if (msg.t !== 'auth') return ws.close(4001, 'Faltou autenticar')
       return this.completeAuth(ws, state, msg)
     }
+    // Limite por conexão: sinalização da chamada tem folga maior (muitos candidatos ICE de uma vez).
+    const signal = msg.t === 'call.signal'
+    if (!this.allow(`${signal ? 'sig' : 'ws'}:${state.connId}`, signal ? 400 : 60, 10_000)) {
+      if (this.allow(`warn:${state.connId}`, 1, 10_000)) this.send(ws, { t: 'error', message: 'Calma! Muitas ações de uma vez.' })
+      return
+    }
     try {
       await this.handle(ws, state, msg)
     } catch (err) {
@@ -301,16 +329,16 @@ export class Home extends DurableObject<Env> {
         await this.dropConnection(state)
       }
     }
-    if (this.sockets().length > 0) await this.ctx.storage.setAlarm(now + SWEEP_EVERY)
+    if (this.ctx.getWebSockets().length > 0) await this.ctx.storage.setAlarm(now + SWEEP_EVERY)
   }
 
   // ---------- Mensagens do app ----------
 
-  private peerOf(channelId: unknown): string | null {
-    if (typeof channelId !== 'string') return null
+  /** Conversa privada que existe pra esta pessoa (aberta por ela ou com mensagem recebida). */
+  private known(channelId: unknown): channelId is string {
+    if (typeof channelId !== 'string') return false
     const pair = dmMembers(channelId)
-    if (!pair || !pair.includes(this.userId)) return null
-    return pair[0] === this.userId ? pair[1] : pair[0]
+    return !!pair && pair.includes(this.userId) && !!this.dmRow(channelId)
   }
 
   private async handle(ws: WebSocket, state: HomeConn, msg: HomeClientMessage) {
@@ -322,7 +350,7 @@ export class Home extends DurableObject<Env> {
 
     switch (msg.t) {
       case 'presence': {
-        if (!STATUSES.includes(msg.status)) return
+        if (!STATUSES.includes(msg.status) || !this.allow(`presence:${state.connId}`, 10, 60_000)) return
         const text = cleanLine(msg.text, 1, 128)
         const before = this.presence()
         this.save(ws, { ...state, status: msg.status, text })
@@ -361,31 +389,35 @@ export class Home extends DurableObject<Env> {
       }
 
       case 'dm.send': {
-        if (!this.peerOf(msg.channelId)) return
-        return result(await conversation(this.env, msg.channelId).send(msg.channelId, me, msg))
+        if (!this.known(msg.channelId)) return
+        const nonce = typeof msg.nonce === 'string' ? msg.nonce.slice(0, 64) : undefined
+        const sent = await conversation(this.env, msg.channelId).send(msg.channelId, me, msg)
+        // Erro de envio volta com o nonce: o app devolve o texto pro campo.
+        if (!sent.ok) this.send(ws, { t: 'error', message: sent.error, ...(nonce ? { nonce } : {}) })
+        return
       }
 
       case 'dm.edit':
-        if (!this.peerOf(msg.channelId)) return
+        if (!this.known(msg.channelId)) return
         return result(await conversation(this.env, msg.channelId).edit(msg.channelId, me, msg.id, msg.content))
 
       case 'dm.delete':
-        if (!this.peerOf(msg.channelId)) return
+        if (!this.known(msg.channelId)) return
         return result(await conversation(this.env, msg.channelId).remove(msg.channelId, me, msg.id))
 
       case 'dm.history': {
-        if (!this.peerOf(msg.channelId)) return
+        if (!this.known(msg.channelId)) return
         const page = await conversation(this.env, msg.channelId).history(msg.channelId, me, { before: msg.before })
         if (!page.ok) return error(page.error)
         return this.send(ws, { t: 'dm.history', reqId: String(msg.reqId), channelId: msg.channelId, messages: page.value.messages, hasMore: page.value.hasMore })
       }
 
       case 'dm.react':
-        if (!this.peerOf(msg.channelId)) return
+        if (!this.known(msg.channelId)) return
         return result(await conversation(this.env, msg.channelId).react(msg.channelId, me, msg.id, msg.emoji, !!msg.on))
 
       case 'dm.typing':
-        if (!this.peerOf(msg.channelId)) return
+        if (!this.known(msg.channelId)) return
         return conversation(this.env, msg.channelId).typing(msg.channelId, me)
 
       case 'dm.ack': {
@@ -410,7 +442,7 @@ export class Home extends DurableObject<Env> {
 
       case 'call.ring':
       case 'call.answer': {
-        if (!this.peerOf(msg.channelId)) return
+        if (!this.known(msg.channelId)) return
         const joining = msg.t === 'call.ring' || msg.accept
         if (joining) {
           await this.leaveOtherCall(ws, state, msg.channelId)
@@ -432,18 +464,18 @@ export class Home extends DurableObject<Env> {
       }
 
       case 'call.hangup': {
-        if (!this.peerOf(msg.channelId)) return
+        if (!this.known(msg.channelId)) return
         await conversation(this.env, msg.channelId).callHangup(msg.channelId, me, state.connId)
         if (state.call === msg.channelId) this.save(ws, { ...this.state(ws), call: null })
         return
       }
 
       case 'call.update':
-        if (!this.peerOf(msg.channelId) || state.call !== msg.channelId) return
+        if (!this.known(msg.channelId) || state.call !== msg.channelId) return
         return conversation(this.env, msg.channelId).callUpdate(msg.channelId, me, state.connId, msg)
 
       case 'call.signal':
-        if (!this.peerOf(msg.channelId) || state.call !== msg.channelId || !msg.data || typeof msg.to !== 'string') return
+        if (!this.known(msg.channelId) || state.call !== msg.channelId || !msg.data || typeof msg.to !== 'string') return
         return conversation(this.env, msg.channelId).callSignal(msg.channelId, me, state.connId, msg.to, msg.data)
     }
   }
@@ -460,6 +492,13 @@ export class Home extends DurableObject<Env> {
 
   /** Evento de uma conversa privada (vem do Conversation). */
   async dmEvent(channelId: string, peerId: string, event: HomeServerMessage) {
+    // Ligação chegando numa conversa que a pessoa nunca abriu: a conversa aparece na lista.
+    if (event.t === 'call.ringing' && !this.dmRow(channelId)) {
+      this.sql.exec('INSERT INTO dms (channel_id, peer_id, open) VALUES (?, ?, 1) ON CONFLICT DO NOTHING', channelId, peerId)
+      const peer = await directory(this.env).getUser(peerId)
+      const row = this.dmRow(channelId)
+      if (peer && row) this.broadcast({ t: 'dm.channel', channel: this.toDm(row, peer) })
+    }
     if (event.t === 'dm.message') {
       const mine = event.message.authorId === this.userId
       const existing = this.sql.exec<DmRow>('SELECT * FROM dms WHERE channel_id = ?', channelId).toArray()[0]
@@ -487,6 +526,12 @@ export class Home extends DurableObject<Env> {
       }
     }
     this.broadcast(event)
+  }
+
+  /** Quem esta pessoa bloqueou/desbloqueou: a conversa entre os dois (se existir) fica sabendo. */
+  async dmBlocked(otherId: string) {
+    const row = this.sql.exec<DmRow>('SELECT * FROM dms WHERE peer_id = ?', otherId).toArray()[0]
+    if (row) await conversation(this.env, row.channel_id).blocked()
   }
 
   /** Evento de chamada privada; com `connId`, só pra aquela conexão. */

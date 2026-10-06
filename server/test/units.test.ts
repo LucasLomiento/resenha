@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { ALL_PERMISSIONS, DEFAULT_PERMISSIONS, P, type Channel, type Role } from '../../shared/protocol'
 import { signFileUrl, signProxyUrl, verifyFileSignature, verifyProxyUrl } from '../src/auth'
 import { validEmoji } from '../src/messages'
-import { channelPermissions, outranks, sanitizeOverwrites } from '../src/permissions'
+import { channelPermissions, outranks, sameOverwrites, sanitizeOverwrites } from '../../shared/permissions'
 import { extractUrls, safeUrl } from '../src/unfurl'
 import { cleanLine, passwordProblem, slugUsername, username } from '../src/validate'
 
@@ -32,8 +32,8 @@ describe('permissões', () => {
 
   it('dono e administrador podem tudo, mesmo com exceção negando', () => {
     const c = channel([{ id: guildId, type: 'role', allow: 0, deny: P.VIEW_CHANNEL }])
-    expect(channelPermissions(ctx, member('dono'), c, new Map())).toBe(ALL_PERMISSIONS)
-    expect(channelPermissions(ctx, member('x', ['adm']), c, new Map())).toBe(ALL_PERMISSIONS)
+    expect(channelPermissions(ctx, member('dono'), c)).toBe(ALL_PERMISSIONS)
+    expect(channelPermissions(ctx, member('x', ['adm']), c)).toBe(ALL_PERMISSIONS)
   })
 
   it('exceção do cargo vence a do @everyone e a da pessoa vence as dos cargos', () => {
@@ -42,21 +42,23 @@ describe('permissões', () => {
       { id: 'vip', type: 'role', allow: P.VIEW_CHANNEL, deny: 0 },
       { id: 'chato', type: 'member', allow: 0, deny: P.SEND_MESSAGES },
     ])
-    expect(channelPermissions(ctx, member('x'), c, new Map())).toBe(0)
-    expect(channelPermissions(ctx, member('x', ['vip']), c, new Map()) & P.VIEW_CHANNEL).toBeTruthy()
-    const chato = channelPermissions(ctx, member('chato', ['vip']), c, new Map())
+    expect(channelPermissions(ctx, member('x'), c)).toBe(0)
+    expect(channelPermissions(ctx, member('x', ['vip']), c) & P.VIEW_CHANNEL).toBeTruthy()
+    const chato = channelPermissions(ctx, member('chato', ['vip']), c)
     expect(chato & P.VIEW_CHANNEL).toBeTruthy()
     expect(chato & P.SEND_MESSAGES).toBe(0)
   })
 
-  it('canal sem exceção herda da categoria', () => {
-    const cat = { ...channel([{ id: guildId, type: 'role', allow: 0, deny: P.VIEW_CHANNEL }]), id: 'cat', kind: 'category' as const }
-    const c = channel([], 'cat')
-    expect(channelPermissions(ctx, member('x'), c, new Map([['cat', cat]]))).toBe(0)
+  it('o canal vale pelas próprias exceções, não pelas da categoria', () => {
+    // Nada é herdado na hora: o canal guarda as dele (copiadas ao nascer na categoria).
+    const c = channel([], 'cat-privada')
+    expect(channelPermissions(ctx, member('x'), c) & P.VIEW_CHANNEL).toBeTruthy()
+    expect(sameOverwrites([{ id: 'a', type: 'role', allow: 1, deny: 0 }, { id: 'b', type: 'member', allow: 0, deny: 2 }], [{ id: 'b', type: 'member', allow: 0, deny: 2 }, { id: 'a', type: 'role', allow: 1, deny: 0 }])).toBe(true)
+    expect(sameOverwrites([{ id: 'a', type: 'role', allow: 1, deny: 0 }], [{ id: 'a', type: 'role', allow: 3, deny: 0 }])).toBe(false)
   })
 
   it('castigo deixa só ver e ler', () => {
-    const p = channelPermissions(ctx, member('x', ['mod'], Date.now() + 60_000), channel([]), new Map())
+    const p = channelPermissions(ctx, member('x', ['mod'], Date.now() + 60_000), channel([]))
     expect(p).toBe(P.VIEW_CHANNEL | P.READ_HISTORY)
   })
 
@@ -73,7 +75,7 @@ describe('permissões', () => {
         { id: 'vip', type: 'role', allow: P.ADMINISTRATOR | P.VIEW_CHANNEL, deny: 0 },
         { id: 'fantasma', type: 'role', allow: P.VIEW_CHANNEL, deny: 0 },
       ],
-      (id) => roles.has(id),
+      (id: string) => roles.has(id),
       () => true,
     )
     expect(clean).toEqual([{ id: 'vip', type: 'role', allow: P.VIEW_CHANNEL, deny: 0 }])

@@ -461,7 +461,7 @@ describe('anexos', () => {
       return invite(s)
     })())
     await post(`/api/guilds/${guild.id}/leave`, {}, stranger.token)
-    expect((await upload(`/api/g/${guild.id}/files`, stranger.token, 'x', 'x.txt')).status).toBe(403)
+    expect((await upload(`/api/g/${guild.id}/files`, stranger.token, 'x', 'x.txt')).status).toBe(404)
     expect((await upload(`/api/g/${guild.id}/files`, 'token-falso', 'x', 'x.txt')).status).toBe(401)
   })
 })

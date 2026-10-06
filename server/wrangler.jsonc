@@ -13,12 +13,16 @@
   },
   "migrations": [
     { "tag": "v1", "new_sqlite_classes": ["Space"] },
-    // 0.6: o Space "main" vira o primeiro servidor (Guild), com os mesmos dados.
-    {
-      "tag": "v2",
-      "renamed_classes": [{ "from": "Space", "to": "Guild" }],
-      "new_sqlite_classes": ["Directory", "Home", "Conversation"]
-    }
+    // 1.0: o Space "main" vira o primeiro servidor (Guild), com os mesmos dados.
+    // Renomear e criar classes ficam em passos separados (o deploy aplica os dois em ordem).
+    { "tag": "v2", "renamed_classes": [{ "from": "Space", "to": "Guild" }] },
+    { "tag": "v3", "new_sqlite_classes": ["Directory", "Home", "Conversation"] }
+  ],
+  // Limites por IP/pessoa (plano grátis): contam por local da Cloudflare, são uma rede de proteção.
+  "ratelimits": [
+    { "name": "IP_LIMITER", "namespace_id": "4101", "simple": { "limit": 300, "period": 60 } },
+    { "name": "AUTH_LIMITER", "namespace_id": "4102", "simple": { "limit": 20, "period": 60 } },
+    { "name": "USER_LIMITER", "namespace_id": "4103", "simple": { "limit": 20, "period": 60 } }
   ],
   "vars": {
     // Chave pública do Turnstile (anti-robô do cadastro aberto). Vazia = cadastro aberto desligado.

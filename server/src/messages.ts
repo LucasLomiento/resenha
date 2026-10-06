@@ -67,6 +67,9 @@ const MESSAGE_COLUMNS: [string, string][] = [
 
 export const SEARCH_PAGE = 25
 
+/** Espaço reservado pra um envio: `done` fecha a conta (deu certo ou não). */
+export type UploadTicket = { error: string } | { done: () => Promise<void> }
+
 export function columns(sql: SqlStorage, table: string): Set<string> {
   return new Set(
     sql
@@ -564,20 +567,23 @@ export class MessageStore {
   }
 
   /**
-   * Recebe um anexo. `reserve` confere o espaço (deste lugar e da plataforma)
-   * antes de gravar; devolve a mensagem de erro ou null.
+   * Recebe um anexo. `reserve` confere e reserva o espaço (deste lugar e da
+   * plataforma) antes de gravar.
    */
-  async upload(
-    request: Request,
-    uploaderId: string,
-    reserve: (bytes: number) => Promise<string | null>,
-  ): Promise<Response> {
+  async upload(request: Request, uploaderId: string, reserve: (bytes: number) => Promise<UploadTicket>): Promise<Response> {
     const declared = Number(request.headers.get('Content-Length'))
     if (!declared || !request.body) return Response.json({ error: 'Faltou o tamanho do arquivo.' }, { status: 411 })
     if (declared > MAX_UPLOAD_BYTES) return Response.json({ error: 'Arquivo maior que 25 MB.' }, { status: 413 })
-    const problem = await reserve(declared)
-    if (problem) return Response.json({ error: problem }, { status: 507 })
+    const ticket = await reserve(declared)
+    if ('error' in ticket) return Response.json({ error: ticket.error }, { status: 507 })
+    try {
+      return await this.receive(request, request.body, uploaderId, declared)
+    } finally {
+      await ticket.done()
+    }
+  }
 
+  private async receive(request: Request, body: ReadableStream<Uint8Array>, uploaderId: string, declared: number): Promise<Response> {
     let name = 'arquivo'
     try {
       name = decodeURIComponent(request.headers.get('X-File-Name') ?? '') || name
@@ -590,7 +596,7 @@ export class MessageStore {
 
     let size: number
     try {
-      size = await this.files.put(id, request.body, declared)
+      size = await this.files.put(id, body, declared)
     } catch (err) {
       if (err instanceof FileTooLarge) return Response.json({ error: 'O arquivo veio maior do que o anunciado.' }, { status: 413 })
       throw err

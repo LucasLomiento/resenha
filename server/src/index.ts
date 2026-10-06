@@ -1,4 +1,4 @@
-import { dmMembers, type ApiError, type StatusResponse } from '../../shared/protocol'
+import { dmMembers, type ApiError, type InvitePreview, type StatusResponse } from '../../shared/protocol'
 import { hashIp, verifyFileSignature, verifyLegacyFileSignature, verifyProxyUrl } from './auth'
 import type { AuthContext, ClientInfo, Result } from './directory'
 import { LEGACY_HEADER, USER_HEADER } from './guild'
@@ -37,12 +37,37 @@ function fromResult<T>(result: Result<T>): Response {
   return result.ok ? json(result.value ?? { ok: true }) : error(result.status, result.error)
 }
 
+/** Lê um corpo com teto de tamanho, mesmo sem Content-Length (para de ler ao passar). */
+async function readLimited(body: ReadableStream<Uint8Array> | null, max: number): Promise<Uint8Array | null> {
+  if (!body) return new Uint8Array(0)
+  const reader = body.getReader()
+  const chunks: Uint8Array[] = []
+  let total = 0
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    total += value.byteLength
+    if (total > max) {
+      reader.cancel().catch(() => {})
+      return null
+    }
+    chunks.push(value)
+  }
+  const out = new Uint8Array(total)
+  let offset = 0
+  for (const chunk of chunks) {
+    out.set(chunk, offset)
+    offset += chunk.byteLength
+  }
+  return out
+}
+
 async function readJson(request: Request): Promise<Record<string, unknown>> {
   if (Number(request.headers.get('Content-Length') ?? 0) > MAX_JSON) return {}
   try {
-    const text = await request.text()
-    if (text.length > MAX_JSON) return {}
-    const body = JSON.parse(text)
+    const bytes = await readLimited(request.body, MAX_JSON)
+    if (!bytes) return {}
+    const body = JSON.parse(new TextDecoder().decode(bytes))
     return body && typeof body === 'object' && !Array.isArray(body) ? (body as Record<string, unknown>) : {}
   } catch {
     return {}
@@ -52,8 +77,52 @@ async function readJson(request: Request): Promise<Record<string, unknown>> {
 /** Corpo binário pequeno (foto, ícone), com teto. */
 async function readImage(request: Request): Promise<ArrayBuffer | null> {
   if (Number(request.headers.get('Content-Length') ?? 0) > MAX_IMAGE) return null
-  const body = await request.arrayBuffer()
-  return body.byteLength > 0 && body.byteLength <= MAX_IMAGE ? body : null
+  const bytes = await readLimited(request.body, MAX_IMAGE)
+  return bytes && bytes.byteLength > 0 ? (bytes.buffer as ArrayBuffer) : null
+}
+
+/**
+ * Limite de pedidos por IP (pra ninguém derrubar o plano grátis). Sem o IP
+ * (testes locais), não limita.
+ */
+async function limited(limiter: RateLimit | undefined, key: string | null): Promise<boolean> {
+  if (!limiter || !key) return false
+  try {
+    return !(await limiter.limit({ key })).success
+  } catch {
+    return false
+  }
+}
+
+const escapeHtml = (text: string) =>
+  text.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!)
+
+/** Página do link de convite: mostra o servidor e abre o app (ou leva pra baixar). */
+function invitePage(preview: InvitePreview | null, code: string): Response {
+  const title = preview ? `Convite pra ${escapeHtml(preview.guild.name)}` : 'Convite inválido'
+  const icon = preview?.guild.icon ? `<img src="/media/${escapeHtml(preview.guild.icon)}" alt="">` : `<div class="icon">${preview ? escapeHtml(preview.guild.name.slice(0, 1).toUpperCase()) : '?'}</div>`
+  const body = preview
+    ? `${icon}<p class="small">${preview.inviter ? `${escapeHtml(preview.inviter.name)} te convidou pra entrar em` : 'Você foi convidado pra entrar em'}</p>
+<h1>${escapeHtml(preview.guild.name)}</h1><p class="small">${preview.memberCount} ${preview.memberCount === 1 ? 'membro' : 'membros'}</p>
+<a class="button" href="resenha://invite/${escapeHtml(code)}">Abrir no Resenha</a>
+<p class="small">Ainda não tem o app? <a href="https://github.com/LucasLomiento/resenha/releases/latest">Baixe aqui</a> e use o código <code>${escapeHtml(code)}</code>.</p>`
+    : `<h1>Convite inválido</h1><p class="small">Esse convite venceu ou já foi usado. Peça um novo pra quem te convidou.</p>`
+  const html = `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>${title} · Resenha</title><meta name="robots" content="noindex">
+<style>html,body{height:100%;margin:0}body{background:#0f0d16;color:#ecebf3;font:15px/1.5 system-ui,sans-serif;display:grid;place-items:center;padding:16px;box-sizing:border-box}
+main{max-width:380px;width:100%;text-align:center;background:#17151f;border:1px solid #2a2636;border-radius:20px;padding:32px 24px}
+img,.icon{width:72px;height:72px;border-radius:22px;object-fit:cover;margin:0 auto 12px;display:grid;place-items:center;background:#6a5cf6;font-size:28px;font-weight:600}
+h1{font-size:22px;margin:4px 0}.small{color:#a7a3b8;font-size:13px;margin:6px 0}a{color:#a99ffb}
+.button{display:block;margin:20px 0 12px;padding:12px;border-radius:12px;background:#6a5cf6;color:#fff;text-decoration:none;font-weight:600}
+code{background:#221f2c;padding:2px 6px;border-radius:6px}</style></head><body><main>${body}</main></body></html>`
+  return new Response(html, {
+    status: preview ? 200 : 404,
+    headers: {
+      'Content-Type': 'text/html; charset=utf-8',
+      'Cache-Control': 'no-store',
+      'Content-Security-Policy': "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'",
+    },
+  })
 }
 
 function clean(request: Request, extra: Record<string, string> = {}): Request {
@@ -147,8 +216,8 @@ async function proxyImage(request: Request, url: URL, env: Env, ctx: ExecutionCo
     res.body?.cancel().catch(() => {})
     return error(413, 'Imagem grande demais.')
   }
-  const body = await res.arrayBuffer()
-  if (body.byteLength > MAX_PROXY) return error(413, 'Imagem grande demais.')
+  const body = await readLimited(res.body, MAX_PROXY)
+  if (!body) return error(413, 'Imagem grande demais.')
   const out = new Response(body, {
     headers: {
       'Content-Type': type,
@@ -166,7 +235,13 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
   const { pathname } = url
   const method = request.method
   const dir = directory(env)
+  const ip = request.headers.get('CF-Connecting-IP')
   let m: RegExpMatchArray | null
+
+  if (await limited(env.IP_LIMITER, ip)) return error(429, 'Muitos pedidos. Espere um pouco.')
+  // Entrar, criar conta e ver convite: limite bem mais apertado por IP.
+  const sensitive = /^\/(api\/(register|login|invites\/)|verify|i\/)/.test(pathname) && method !== 'OPTIONS'
+  if (sensitive && (await limited(env.AUTH_LIMITER, ip))) return error(429, 'Muitas tentativas. Espere um minuto.')
 
   // ---------- Sem login ----------
 
@@ -204,6 +279,7 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
     const preview = await dir.previewInvite(m[1])
     return preview ? json(preview) : error(404, 'Convite inválido, vencido ou já usado.')
   }
+  if ((m = pathname.match(/^\/i\/([\w-]{4,32})\/?$/)) && method === 'GET') return invitePage(await dir.previewInvite(m[1]), m[1])
 
   if ((m = pathname.match(/^\/media\/([\w-]{8,64})$/)) && method === 'GET') {
     const media = await dir.getMedia(m[1])
@@ -257,7 +333,11 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
     await dir.logout(token)
     return json({ ok: true })
   }
-  if (pathname === '/api/ice' && method === 'GET') return json({ iceServers: await getIceServers(env) })
+  if (pathname === '/api/ice' && method === 'GET') {
+    // Cada pedido gera credencial do TURN (que custa banda): poucos por pessoa.
+    if (await limited(env.USER_LIMITER, `ice:${me}`)) return error(429, 'Muitos pedidos. Espere um pouco.')
+    return json({ iceServers: await getIceServers(env) })
+  }
 
   // Conta
   if (pathname === '/api/me' && method === 'GET') return json(auth.me)
@@ -325,8 +405,13 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
   if ((m = pathname.match(/^\/api\/invites\/([\w-]{4,32})$/)) && method === 'POST') return fromResult(await dir.joinByInvite(me, m[1]))
 
   // Anexos (o DO de destino confere se a pessoa pode mandar ali)
-  if (pathname === '/api/files' && method === 'POST') return guild(env, 'main').fetch(clean(request, { [USER_HEADER]: me }))
+  if (pathname === '/api/files' && method === 'POST') {
+    if (!(await dir.isMember('main', me))) return error(404, 'Servidor não encontrado.')
+    return guild(env, 'main').fetch(clean(request, { [USER_HEADER]: me }))
+  }
   if ((m = pathname.match(/^\/api\/g\/([\w-]{1,64})\/files$/)) && method === 'POST') {
+    // Confere antes de acordar o DO (servidor que não existe nem chega a ser criado).
+    if (!(await dir.isMember(m[1], me))) return error(404, 'Servidor não encontrado.')
     return guild(env, m[1]).fetch(clean(request, { [USER_HEADER]: me }))
   }
   if ((m = pathname.match(/^\/api\/c\/([^/]+)\/files$/)) && method === 'POST') {

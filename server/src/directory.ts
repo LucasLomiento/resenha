@@ -1,7 +1,6 @@
 import { DurableObject } from 'cloudflare:workers'
 import {
   MAX_GUILDS_PER_USER,
-  dmChannelId,
   type AuthResponse,
   type DmPolicy,
   type Friend,
@@ -40,6 +39,10 @@ const FLAG_DELETED = 4
 
 /** Teto de anexos da plataforma inteira (o plano grátis tem 5 GB pra tudo). */
 const STORAGE_LIMIT = 4 * 1024 ** 3
+/** Quanto cada pessoa pode enviar por dia (a dona da plataforma não tem limite). */
+const USER_DAILY_UPLOAD = 500 * 1024 ** 2
+/** Reserva de envio que não fechou nesse tempo deixa de contar. */
+const RESERVATION_TTL = 15 * MINUTE
 
 const INVITE_AGES = [0, 1800, 3600, 6 * 3600, 12 * 3600, 86400, 7 * 86400]
 const INVITE_USES = [1, 5, 10, 25, 50, 100]
@@ -174,8 +177,18 @@ export class Directory extends DurableObject<Env> {
       kind TEXT NOT NULL,
       type TEXT NOT NULL,
       bytes BLOB NOT NULL,
+      size INTEGER NOT NULL DEFAULT 0,
       created_at INTEGER NOT NULL
     )`)
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS reservations (
+      id TEXT PRIMARY KEY,
+      scope TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      bytes INTEGER NOT NULL,
+      created_at INTEGER NOT NULL,
+      done INTEGER NOT NULL DEFAULT 0
+    )`)
+    this.sql.exec('CREATE INDEX IF NOT EXISTS reservations_by_user ON reservations (user_id, created_at)')
     this.sql.exec(`CREATE TABLE IF NOT EXISTS guilds (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
@@ -371,8 +384,7 @@ export class Directory extends DurableObject<Env> {
     const first = this.userCount() === 0
     let invite: InviteRow | null = null
     if (code) {
-      invite = this.validInvite(code, now)
-      if (!invite) return fail(403, 'Convite inválido, vencido ou já usado.')
+      if (!this.validInvite(code, now)) return fail(403, 'Convite inválido, vencido ou já usado.')
     } else if (!first && !(this.status().signup === 'open' && input.turnstile)) {
       return fail(403, this.status().signup === 'open' ? 'Confirme que você não é um robô.' : 'Pra criar conta você precisa de um convite.')
     }
@@ -381,6 +393,10 @@ export class Directory extends DurableObject<Env> {
       this.sql.exec('SELECT 1 FROM aliases WHERE alias = ?', username).toArray().length > 0
     ) {
       return fail(409, 'Esse nome de usuário já está em uso.')
+    }
+    if (code) {
+      invite = this.claimInvite(code, now)
+      if (!invite) return fail(403, 'Convite inválido, vencido ou já usado.')
     }
 
     const id = newId()
@@ -410,14 +426,18 @@ export class Directory extends DurableObject<Env> {
     const password = typeof input.password === 'string' ? input.password : ''
     if (!name || !password) return fail(400, 'Preencha usuário e senha.')
 
-    const ipKey = `login:${client.ipHash}`
-    const userKey = `login:user:${name}`
-    const wait = Math.max(this.waitFor(ipKey, now), this.waitFor(userKey, now))
-    if (wait) return this.tooMany(wait)
-
     const row =
       this.sql.exec<UserRow>('SELECT * FROM users WHERE username = ?', name).toArray()[0] ??
       this.sql.exec<UserRow>('SELECT u.* FROM aliases a JOIN users u ON u.id = a.user_id WHERE a.alias = ?', name).toArray()[0]
+    // A trava é por conta + IP: quem erra de propósito não tranca a conta dos outros.
+    // Um teto geral por conta segura tentativa espalhada por muitos IPs.
+    const account = row?.id ?? name
+    const ipKey = `login:${client.ipHash}`
+    const userKey = `login:user:${account}:${client.ipHash}`
+    const globalKey = `login:all:${account}`
+    const wait = Math.max(this.waitFor(ipKey, now), this.waitFor(userKey, now), this.waitFor(globalKey, now))
+    if (wait) return this.tooMany(wait)
+
     const usable = row && !(row.flags & FLAG_DELETED) && row.pass_hash
     // Usuário inexistente gasta o mesmo tempo de um existente: não dá pra descobrir quem existe.
     const valid = usable
@@ -426,6 +446,7 @@ export class Directory extends DurableObject<Env> {
     if (!valid) {
       this.failure(ipKey, 20, 15 * MINUTE, 15 * MINUTE, now)
       this.failure(userKey, 5, 15 * MINUTE, 30_000, now)
+      this.failure(globalKey, 100, HOUR, 15 * MINUTE, now)
       return fail(401, 'Usuário ou senha incorretos.')
     }
     if (row.flags & FLAG_BANNED) return fail(403, 'Esta conta foi suspensa.')
@@ -510,13 +531,10 @@ export class Directory extends DurableObject<Env> {
   }
 
   /** Derruba na hora as conexões abertas dessas sessões (servidores e pessoal). */
-  private async closeSockets(userId: string, tokenHashes: string[]) {
+  private async closeSockets(userId: string, tokenHashes: string[], guildIds?: string[]) {
     if (tokenHashes.length === 0) return
-    const guilds = this.sql.exec<{ guild_id: string }>('SELECT guild_id FROM members WHERE user_id = ?', userId).toArray()
-    await Promise.allSettled([
-      ...guilds.map((g) => this.guild(g.guild_id).closeSessions(tokenHashes)),
-      this.home(userId).closeSessions(tokenHashes),
-    ])
+    const guilds = guildIds ?? this.sql.exec<{ guild_id: string }>('SELECT guild_id FROM members WHERE user_id = ?', userId).toArray().map((g) => g.guild_id)
+    await Promise.allSettled([...guilds.map((g) => this.guild(g).closeSessions(tokenHashes)), this.home(userId).closeSessions(tokenHashes)])
   }
 
   async changePassword(
@@ -553,6 +571,8 @@ export class Directory extends DurableObject<Env> {
   ): Promise<Result<Me>> {
     const row = this.user(userId)
     if (!row) return fail(404, 'Conta não encontrada.')
+    const limit = this.action(`profile:${userId}`, 20, MINUTE)
+    if (limit) return limit
     const sets: string[] = []
     const args: SqlStorageValue[] = []
     if (patch.name !== undefined) {
@@ -611,22 +631,47 @@ export class Directory extends DurableObject<Env> {
     if (data.byteLength === 0 || data.byteLength > MAX_AVATAR_BYTES) return fail(413, 'A imagem pode ter até 512 KB.')
     const type = imageType(new Uint8Array(data.slice(0, 16)))
     if (!type) return fail(415, 'Use uma imagem PNG, JPEG, WebP ou GIF.')
+    const limit = this.action(`media:${ownerId}`, 20, HOUR)
+    if (limit) return limit
+    if (this.storageUsed() + data.byteLength > STORAGE_LIMIT) return fail(507, 'O espaço da plataforma está cheio.')
     const id = randomToken(16)
     this.sql.exec(
-      'INSERT INTO media (id, owner_id, kind, type, bytes, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+      'INSERT INTO media (id, owner_id, kind, type, bytes, size, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
       id,
       ownerId,
       kind,
       type,
       data,
+      data.byteLength,
       Date.now(),
     )
     return ok(id)
   }
 
-  /** Ícone de servidor (só o dono do upload consegue usar em `guild.update`). */
+  /** Ícone de servidor (só quem enviou consegue usar em `guild.update`). Fica no máximo um solto por pessoa. */
   uploadGuildIcon(userId: string, data: ArrayBuffer): Result<string> {
-    return this.storeImage(userId, 'guild_icon', data)
+    const stored = this.storeImage(userId, 'guild_icon', data)
+    if (stored.ok) {
+      this.sql.exec(
+        `DELETE FROM media WHERE kind = 'guild_icon' AND owner_id = ? AND id != ?
+         AND id NOT IN (SELECT icon FROM guilds WHERE icon IS NOT NULL)`,
+        userId,
+        stored.value,
+      )
+    }
+    return stored
+  }
+
+  /**
+   * Conta uma ação e diz se passou do limite (`max` na janela). Diferente de
+   * `failure`, conta toda tentativa, não só as que deram errado.
+   */
+  private action(key: string, max: number, window: number): Result<never> | null {
+    const now = Date.now()
+    const wait = this.waitFor(key, now)
+    if (wait) return this.tooMany(wait)
+    this.failure(key, max, window, window, now)
+    return null
   }
 
   mediaOwner(id: string): string | null {
@@ -653,37 +698,47 @@ export class Directory extends DurableObject<Env> {
   async deleteAccount(userId: string, password: unknown): Promise<Result<null>> {
     const row = this.user(userId)
     if (!row) return fail(404, 'Conta não encontrada.')
-    if (typeof password !== 'string' || !(await verifyPassword(password, row.pass_hash, row.pass_salt))) {
-      return fail(401, 'Senha incorreta.')
-    }
+    // Dono de servidor nem chega a testar a senha (não vira um jeito de adivinhar).
     const owned = this.sql.exec<GuildRow>('SELECT * FROM guilds WHERE owner_id = ?', userId).toArray()
     if (owned.length > 0) {
       return fail(409, `Antes, transfira ou exclua seus servidores: ${owned.map((g) => g.name).join(', ')}.`)
     }
+    const key = `password:${userId}`
+    const wait = this.waitFor(key)
+    if (wait) return this.tooMany(wait)
+    if (typeof password !== 'string' || !(await verifyPassword(password, row.pass_hash, row.pass_salt))) {
+      this.failure(key, 5, 15 * MINUTE, 60_000)
+      return fail(401, 'Senha incorreta.')
+    }
+    this.clearLimit(key)
 
+    // Tudo no banco de uma vez (sem pausa no meio): ou a conta some inteira, ou nada muda.
     const sessions = this.sql.exec<SessionRow>('SELECT * FROM sessions WHERE user_id = ?', userId).toArray()
+    const friends = this.friendIds(userId)
+    const guilds = this.sql.exec<{ guild_id: string }>('SELECT guild_id FROM members WHERE user_id = ?', userId).toArray()
+    this.ctx.storage.transactionSync(() => {
+      // A conta vira "Usuário excluído": as mensagens antigas continuam, sem nome nem foto.
+      // O nome reservado tem ":", que não vale em nome de usuário: ninguém consegue tomar antes.
+      this.sql.exec(
+        `UPDATE users SET username = ?, name = 'Usuário excluído', avatar = NULL, bio = '', accent = NULL,
+         pass_hash = '', pass_salt = '', flags = flags | ? WHERE id = ?`,
+        `deleted:${userId}`,
+        FLAG_DELETED,
+        userId,
+      )
+      this.sql.exec('DELETE FROM aliases WHERE user_id = ?', userId)
+      this.sql.exec('DELETE FROM sessions WHERE user_id = ?', userId)
+      this.sql.exec('DELETE FROM friendships WHERE low = ? OR high = ?', userId, userId)
+      this.sql.exec('DELETE FROM blocks WHERE blocker = ? OR blocked = ?', userId, userId)
+      this.sql.exec('DELETE FROM media WHERE owner_id = ?', userId)
+      this.sql.exec('DELETE FROM members WHERE user_id = ?', userId)
+    })
+    const deleted = this.toUser(this.user(userId)!)
     await this.closeSockets(
       userId,
       sessions.map((s) => s.token_hash),
+      guilds.map((g) => g.guild_id),
     )
-    this.sql.exec('DELETE FROM sessions WHERE user_id = ?', userId)
-    const friends = this.friendIds(userId)
-    this.sql.exec('DELETE FROM friendships WHERE low = ? OR high = ?', userId, userId)
-    this.sql.exec('DELETE FROM blocks WHERE blocker = ? OR blocked = ?', userId, userId)
-    if (row.avatar) this.sql.exec('DELETE FROM media WHERE id = ?', row.avatar)
-    this.sql.exec('DELETE FROM media WHERE owner_id = ?', userId)
-
-    // A conta vira um "Usuário excluído": as mensagens antigas continuam, sem nome nem foto.
-    this.sql.exec(
-      `UPDATE users SET username = ?, name = 'Usuário excluído', avatar = NULL, bio = '', accent = NULL,
-       pass_hash = '', pass_salt = '', flags = flags | ? WHERE id = ?`,
-      `deleted.${userId}`,
-      FLAG_DELETED,
-      userId,
-    )
-    const deleted = this.toUser(this.user(userId)!)
-    const guilds = this.sql.exec<{ guild_id: string }>('SELECT guild_id FROM members WHERE user_id = ?', userId).toArray()
-    this.sql.exec('DELETE FROM members WHERE user_id = ?', userId)
     await Promise.allSettled([
       ...guilds.map((g) => this.guild(g.guild_id).memberRemoved(userId, deleted)),
       ...friends.map((f) => this.pushFriends(f)),
@@ -801,15 +856,49 @@ export class Directory extends DurableObject<Env> {
     return row
   }
 
-  /** Entra num servidor (convite já validado). */
+  /**
+   * Gasta um uso do convite na mesma instrução que confere se ele ainda vale:
+   * dois pedidos ao mesmo tempo nunca usam a mesma vaga.
+   */
+  private claimInvite(code: string, now: number): InviteRow | null {
+    const claimed = this.sql.exec(
+      `UPDATE invites SET uses = uses + 1 WHERE code = ? AND (expires_at IS NULL OR expires_at > ?)
+       AND (max_uses IS NULL OR uses < max_uses)`,
+      code,
+      now,
+    ).rowsWritten
+    return claimed > 0 ? this.sql.exec<InviteRow>('SELECT * FROM invites WHERE code = ?', code).one() : null
+  }
+
+  private unclaimInvite(code: string) {
+    this.sql.exec('UPDATE invites SET uses = MAX(uses - 1, 0) WHERE code = ?', code)
+  }
+
+  /** Entra num servidor (o uso do convite, se houver, já foi gasto: devolve se não entrar). */
   private async addToGuild(guildId: string, user: UserRow, code: string | null): Promise<Result<GuildInfo>> {
+    const giveBack = () => {
+      if (code) this.unclaimInvite(code)
+    }
     const info = this.guildInfo(guildId)
-    if (!info) return fail(404, 'Esse servidor não existe mais.')
-    if (this.isMember(guildId, user.id)) return ok(info)
-    if (this.membershipCount(user.id) >= MAX_GUILDS_PER_USER) return fail(409, `Você já está em ${MAX_GUILDS_PER_USER} servidores.`)
-    if (await this.guild(guildId).isBanned(user.id)) return fail(403, 'Você foi banido desse servidor.')
+    if (!info) {
+      giveBack()
+      return fail(404, 'Esse servidor não existe mais.')
+    }
+    if (this.isMember(guildId, user.id)) {
+      giveBack()
+      return ok(info)
+    }
+    if (this.membershipCount(user.id) >= MAX_GUILDS_PER_USER) {
+      giveBack()
+      return fail(409, `Você já está em ${MAX_GUILDS_PER_USER} servidores.`)
+    }
+    const banned = await this.guild(guildId).isBanned(user.id)
+    // Durante a espera, outro pedido da mesma pessoa pode ter entrado.
+    if (banned || this.isMember(guildId, user.id)) {
+      giveBack()
+      return banned ? fail(403, 'Você foi banido desse servidor.') : ok(info)
+    }
     this.sql.exec('INSERT INTO members (guild_id, user_id, joined_at) VALUES (?, ?, ?)', guildId, user.id, Date.now())
-    if (code) this.sql.exec('UPDATE invites SET uses = uses + 1 WHERE code = ?', code)
     await this.guild(guildId).addMember(this.toUser(user))
     await this.home(user.id).guildJoined(info)
     return ok(info)
@@ -818,7 +907,9 @@ export class Directory extends DurableObject<Env> {
   async joinByInvite(userId: string, code: unknown): Promise<Result<GuildInfo>> {
     const row = this.user(userId)
     if (!row) return fail(404, 'Conta não encontrada.')
-    const invite = typeof code === 'string' ? this.validInvite(code.trim(), Date.now()) : null
+    const limit = this.action(`join:${userId}`, 30, HOUR)
+    if (limit) return limit
+    const invite = typeof code === 'string' ? this.claimInvite(code.trim(), Date.now()) : null
     if (!invite) return fail(404, 'Convite inválido, vencido ou já usado.')
     return this.addToGuild(invite.guild_id, row, invite.code)
   }
@@ -981,13 +1072,12 @@ export class Directory extends DurableObject<Env> {
 
   async friendRequest(userId: string, usernameInput: unknown): Promise<Result<Friend['state']>> {
     if (typeof usernameInput !== 'string') return fail(400, 'Digite o nome de usuário.')
+    // O limite vem antes da busca: ninguém usa isso pra varrer quem existe.
+    const limit = this.action(`friend:${userId}`, 30, HOUR)
+    if (limit) return limit
     const target = this.findByUsername(usernameInput)
     if (!target || target.id === userId) return fail(404, 'Não achamos ninguém com esse nome de usuário.')
     if (this.isBlocked(userId, target.id)) return fail(403, 'Não foi possível enviar o pedido.')
-    const key = `friend:${userId}`
-    const wait = this.waitFor(key)
-    if (wait) return this.tooMany(wait)
-    this.failure(key, 30, HOUR, HOUR)
 
     const [low, high] = pair(userId, target.id)
     const row = this.sql
@@ -1028,7 +1118,8 @@ export class Directory extends DurableObject<Env> {
   /** Recusa, cancela ou desfaz amizade. */
   async friendRemove(userId: string, otherId: string): Promise<Result<null>> {
     const [low, high] = pair(userId, otherId)
-    this.sql.exec('DELETE FROM friendships WHERE low = ? AND high = ?', low, high)
+    const removed = this.sql.exec('DELETE FROM friendships WHERE low = ? AND high = ?', low, high).rowsWritten
+    if (removed === 0) return ok(null)
     await Promise.allSettled([this.pushFriends(userId), this.pushFriends(otherId)])
     return ok(null)
   }
@@ -1038,17 +1129,15 @@ export class Directory extends DurableObject<Env> {
     const [low, high] = pair(userId, otherId)
     this.sql.exec('DELETE FROM friendships WHERE low = ? AND high = ?', low, high)
     this.sql.exec('INSERT INTO blocks (blocker, blocked, created_at) VALUES (?, ?, ?) ON CONFLICT DO NOTHING', userId, otherId, Date.now())
-    await Promise.allSettled([
-      this.pushFriends(userId),
-      this.pushFriends(otherId),
-      this.conversation(dmChannelId(userId, otherId)).blocked(),
-    ])
+    // A conversa (se existir: o Home de quem bloqueou sabe) esquece o "pode mandar" e encerra a chamada.
+    await Promise.allSettled([this.pushFriends(userId), this.pushFriends(otherId), this.home(userId).dmBlocked(otherId)])
     return ok(null)
   }
 
   async unblock(userId: string, otherId: string): Promise<Result<null>> {
-    this.sql.exec('DELETE FROM blocks WHERE blocker = ? AND blocked = ?', userId, otherId)
-    await Promise.allSettled([this.pushFriends(userId), this.conversation(dmChannelId(userId, otherId)).blocked()])
+    const removed = this.sql.exec('DELETE FROM blocks WHERE blocker = ? AND blocked = ?', userId, otherId).rowsWritten
+    if (removed === 0) return ok(null)
+    await Promise.allSettled([this.pushFriends(userId), this.home(userId).dmBlocked(otherId)])
     return ok(null)
   }
 
@@ -1092,19 +1181,42 @@ export class Directory extends DurableObject<Env> {
 
   // ---------- Espaço de anexos ----------
 
-  private storageUsed(): number {
-    return this.sql.exec<{ n: number }>('SELECT COALESCE(SUM(bytes), 0) AS n FROM storage').one().n
+  /** Anexos guardados + fotos + envios em andamento. */
+  private storageUsed(now = Date.now()): number {
+    const files = this.sql.exec<{ n: number }>('SELECT COALESCE(SUM(bytes), 0) AS n FROM storage').one().n
+    const media = this.sql.exec<{ n: number }>('SELECT COALESCE(SUM(size), 0) AS n FROM media').one().n
+    const pending = this.sql
+      .exec<{ n: number }>('SELECT COALESCE(SUM(bytes), 0) AS n FROM reservations WHERE done = 0 AND created_at > ?', now - RESERVATION_TTL)
+      .one().n
+    return files + media + pending
   }
 
   /**
    * Antes de receber um anexo: o lugar diz quanto já usa (corrige a conta) e
-   * quanto quer guardar. Cabe no teto da plataforma?
+   * quanto quer guardar. Cabe no teto da plataforma e no limite do dia da
+   * pessoa? Devolve o id da reserva, que `finishUpload` fecha.
    */
-  reserveStorage(scope: string, current: number, bytes: number): boolean {
+  reserveStorage(scope: string, current: number, bytes: number, userId: string): Result<string> {
+    const now = Date.now()
+    const user = this.user(userId)
+    if (!user) return fail(404, 'Conta não encontrada.')
     this.reportStorage(scope, current)
-    if (this.storageUsed() + bytes > STORAGE_LIMIT) return false
-    this.sql.exec('UPDATE storage SET bytes = bytes + ? WHERE scope = ?', bytes, scope)
-    return true
+    if (!(user.flags & FLAG_STAFF)) {
+      const today = this.sql
+        .exec<{ n: number }>('SELECT COALESCE(SUM(bytes), 0) AS n FROM reservations WHERE user_id = ? AND created_at > ?', userId, now - DAY)
+        .one().n
+      if (today + bytes > USER_DAILY_UPLOAD) return fail(429, 'Você já enviou muitos arquivos hoje. Tente amanhã.')
+    }
+    if (this.storageUsed(now) + bytes > STORAGE_LIMIT) return fail(507, 'O espaço de anexos da plataforma está cheio.')
+    const id = randomToken(12)
+    this.sql.exec('INSERT INTO reservations (id, scope, user_id, bytes, created_at) VALUES (?, ?, ?, ?, ?)', id, scope, userId, bytes, now)
+    return ok(id)
+  }
+
+  /** O envio acabou (deu certo ou não): a reserva sai e vale o que o lugar diz que usa. */
+  finishUpload(id: string, scope: string, current: number) {
+    this.sql.exec('UPDATE reservations SET done = 1 WHERE id = ?', id)
+    this.reportStorage(scope, current)
   }
 
   reportStorage(scope: string, current: number) {
@@ -1183,6 +1295,7 @@ export class Directory extends DurableObject<Env> {
     }
     this.sql.exec('DELETE FROM sessions WHERE expires_at < ?', now)
     this.sql.exec('DELETE FROM limits WHERE blocked_until < ? AND window_start < ?', now, now - DAY)
+    this.sql.exec('DELETE FROM reservations WHERE created_at < ?', now - 2 * DAY)
     this.sql.exec('DELETE FROM invites WHERE (expires_at IS NOT NULL AND expires_at < ?) OR (max_uses IS NOT NULL AND uses >= max_uses)', now)
     // Ícone enviado e nunca usado.
     this.sql.exec(

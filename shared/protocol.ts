@@ -401,6 +401,8 @@ export type ClientMessage =
       topic?: string
       parentId?: string | null
       overwrites?: Overwrite[]
+      /** Copia as permissões da categoria (volta a ficar "sincronizado"). */
+      syncWithCategory?: boolean
       userLimit?: number
       slowmode?: number
     }
