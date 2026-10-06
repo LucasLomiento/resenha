@@ -1,10 +1,9 @@
-## 1.0.2 — A call aguenta queda de conexão
+## 1.0.3 — Áudio da tela em estéreo
 
-- **Caiu a conexão por uns segundos? A call continua.** Ninguém sai da sala pros outros, e quem estava assistindo a sua tela continua assistindo, sem precisar clicar de novo. Voz e tela vão direto entre os PCs, então seguem enquanto o app reconecta.
-- **Nem o servidor reiniciando derruba a transmissão:** a tela não para e a call volta sozinha.
-- **Ligação privada também:** cair e voltar não desliga mais.
-- **O app percebe a queda bem mais rápido** (uns 10 s, antes até 70 s) e reconecta na hora.
+- **O áudio da transmissão agora chega em estéreo de verdade.** Já saía em estéreo de quem compartilha, mas o app de quem assistia juntava os dois lados num só. Agora esquerda e direita chegam separadas (jogo, música e vídeo com o som no lugar certo), a 128 kbps. A voz da call continua como era.
+
+Veio na 1.0.2: a call e a transmissão aguentam queda de conexão sem ninguém sair da sala.
 
 ## Como atualizar
 
-Clique no botão de download no pé da coluna de servidores, à esquerda (ou Configurações → Aplicativo → Procurar atualização).
+Clique no botão de download no pé da coluna de servidores, à esquerda (ou Configurações → Aplicativo → Procurar atualização). Pra ouvir em estéreo, quem assiste precisa estar na 1.0.3.
