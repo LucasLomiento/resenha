@@ -1,18 +1,29 @@
 <script lang="ts">
   import { ui } from '../lib/ui.svelte'
-  import Icon from './Icon.svelte'
+  import { IconButton, layer, portal } from './kit'
 
   const item = $derived(ui.lightbox!)
+
+  function close() {
+    ui.lightbox = null
+  }
 </script>
 
-<svelte:window onkeydown={(e) => e.key === 'Escape' && (ui.lightbox = null)} />
-
-<div class="lightbox" role="presentation" onmousedown={(e) => e.target === e.currentTarget && (ui.lightbox = null)}>
-  <img src={item.url} alt={item.name} />
+<div
+  class="lightbox"
+  role="dialog"
+  aria-modal="true"
+  aria-label={item.name}
+  tabindex="-1"
+  use:portal
+  use:layer={close}
+  onmousedown={(e) => e.target === e.currentTarget && close()}
+>
+  <img src={item.url} alt={item.name} draggable="false" />
   <div class="bar">
-    <span>{item.name}</span>
-    <button class="icon-btn" title="Baixar" onclick={() => window.resenha.download(item.url)}><Icon name="download" /></button>
-    <button class="icon-btn" title="Fechar" onclick={() => (ui.lightbox = null)}><Icon name="x" /></button>
+    <span class="name">{item.name}</span>
+    <IconButton variant="glass" icon="download" label="Baixar" tip="bottom" onclick={() => window.resenha.download(item.url)} />
+    <IconButton variant="glass" icon="x" label="Fechar" tip="bottom" onclick={close} />
   </div>
 </div>
 
@@ -20,31 +31,43 @@
   .lightbox {
     position: fixed;
     inset: 0;
-    z-index: 60;
+    z-index: var(--z-lightbox);
     display: grid;
     place-items: center;
-    background: rgb(0 0 0 / 0.85);
+    background: rgb(4 4 7 / 0.9);
+    backdrop-filter: blur(6px);
+    animation: rs-fade-in var(--t) var(--ease);
   }
 
   img {
-    max-width: calc(100vw - 80px);
-    max-height: calc(100vh - 120px);
+    max-width: calc(100vw - 96px);
+    max-height: calc(100vh - 128px);
     object-fit: contain;
-    border-radius: 6px;
+    border-radius: var(--r-lg);
+    box-shadow: var(--shadow-lg);
     pointer-events: none;
+    animation: rs-pop-in var(--t-slow) var(--ease);
   }
 
   .bar {
     position: fixed;
     top: 12px;
     right: 12px;
+    left: 12px;
     display: flex;
     align-items: center;
+    justify-content: flex-end;
     gap: 4px;
-    color: var(--text-dim);
   }
 
-  .bar span {
-    margin-right: 8px;
+  .name {
+    flex: 1;
+    min-width: 0;
+    margin-left: 8px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--fg-2);
+    font-size: var(--text-sm);
   }
 </style>

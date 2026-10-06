@@ -1,10 +1,14 @@
 <script lang="ts">
   import { store } from '../lib/store.svelte'
+  import { Icon } from './kit'
 </script>
 
 <div class="toasts" aria-live="polite">
   {#each store.toasts as toast (toast.id)}
-    <div class="toast" class:info={toast.kind === 'info'}>{toast.text}</div>
+    <div class="toast" class:info={toast.kind === 'info'} role={toast.kind === 'error' ? 'alert' : 'status'}>
+      <Icon name={toast.kind === 'info' ? 'info' : 'circle-alert'} size={18} />
+      <span>{toast.text}</span>
+    </div>
   {/each}
 </div>
 
@@ -13,28 +17,46 @@
     position: fixed;
     left: 50%;
     bottom: 24px;
-    transform: translateX(-50%);
+    z-index: var(--z-toast);
     display: flex;
     flex-direction: column;
-    gap: 8px;
     align-items: center;
-    z-index: 100;
+    gap: 8px;
+    translate: -50% 0;
     pointer-events: none;
   }
 
   .toast {
-    max-width: 520px;
-    padding: 10px 14px;
-    border-radius: var(--radius);
-    background: #3a1f24;
-    border: 1px solid #6b2b33;
-    color: #ffd9dd;
-    box-shadow: 0 8px 24px rgb(0 0 0 / 0.4);
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    max-width: 480px;
+    padding: 11px 16px 11px 12px;
+    border-radius: var(--r-lg);
+    background: #1f1f28;
+    box-shadow:
+      0 0 0 1px var(--line-strong),
+      var(--highlight),
+      var(--shadow-lg);
+    color: var(--fg);
+    font-size: var(--text-sm);
+    line-height: 1.4;
+    animation: toast-in var(--t-slow) var(--ease);
   }
 
-  .toast.info {
-    background: #1f2440;
-    border-color: #3a4380;
-    color: #dfe3ff;
+  .toast :global(svg) {
+    margin-top: 0.5px;
+    color: var(--red);
+  }
+
+  .toast.info :global(svg) {
+    color: var(--accent-fg);
+  }
+
+  @keyframes toast-in {
+    from {
+      opacity: 0;
+      transform: translateY(10px) scale(0.97);
+    }
   }
 </style>

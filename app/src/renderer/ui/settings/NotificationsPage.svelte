@@ -1,0 +1,37 @@
+<script lang="ts">
+  import { settings } from '../../lib/settings.svelte'
+  import { playSound } from '../../lib/sounds'
+  import { IconButton, PageHeader, Row, Section, Slider, Switch } from '../kit'
+</script>
+
+<PageHeader title="Notificações" />
+
+<Section title="Sons">
+  <Row label="Sons do app" for="notify-sounds" description="Entrar e sair da call, mutar e transmissões.">
+    <Switch id="notify-sounds" bind:checked={settings.sounds} />
+  </Row>
+  <Row label="Volume" indent disabled={!settings.sounds}>
+    <div class="volume">
+      <Slider label="Volume dos sons" min={0} max={1} step={0.05} bind:value={settings.soundVolume} disabled={!settings.sounds} />
+      <IconButton icon="play" label="Ouvir" size="sm" disabled={!settings.sounds} onclick={() => playSound('self-join')} />
+    </div>
+  </Row>
+  <Row label="Mensagem nova" for="notify-message" indent disabled={!settings.sounds}>
+    <Switch id="notify-message" bind:checked={settings.messageSound} disabled={!settings.sounds} />
+  </Row>
+</Section>
+
+<Section title="Avisos do sistema">
+  <Row label="Mostrar o texto da mensagem" for="notify-content" description="Desligado, o aviso só diz que chegou mensagem.">
+    <Switch id="notify-content" bind:checked={settings.notifyContent} />
+  </Row>
+</Section>
+
+<style>
+  .volume {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 220px;
+  }
+</style>

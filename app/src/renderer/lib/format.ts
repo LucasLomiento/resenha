@@ -1,9 +1,31 @@
-const COLORS = ['#e8875b', '#5fb3a1', '#7c8cff', '#d873c8', '#e5b94e', '#5aa7e0', '#9bcf6a', '#ef6f7f']
+// Cores das pessoas: um degradê por id, sempre o mesmo. As duplas seguem o
+// ícone do app (violeta, roxo, coral) e vão até o verde e o azul pra variar.
+const GRADIENTS: [string, string][] = [
+  ['#8b7bff', '#b56dff'], // violeta
+  ['#ff7a93', '#ffa070'], // coral
+  ['#48b9ff', '#6a6cff'], // oceano
+  ['#36d6ad', '#36a9dd'], // menta
+  ['#ffc35a', '#ff8160'], // sol
+  ['#ee78dc', '#9663ff'], // orquídea
+  ['#9edc66', '#36c492'], // lima
+  ['#ff86ad', '#cf74ff'], // rosa
+]
 
-export function userColor(id: string): string {
+function hashOf(id: string): number {
   let hash = 0
   for (const ch of id) hash = (hash * 31 + ch.charCodeAt(0)) | 0
-  return COLORS[Math.abs(hash) % COLORS.length]
+  return Math.abs(hash)
+}
+
+/** Cor sólida da pessoa (primeira do degradê), pra tingir fundos. */
+export function userColor(id: string): string {
+  return GRADIENTS[hashOf(id) % GRADIENTS.length][0]
+}
+
+/** Degradê do avatar (sem foto). */
+export function userGradient(id: string): string {
+  const [a, b] = GRADIENTS[hashOf(id) % GRADIENTS.length]
+  return `linear-gradient(135deg, ${a}, ${b})`
 }
 
 export function initials(name: string): string {
@@ -12,33 +34,57 @@ export function initials(name: string): string {
 }
 
 const timeFmt = new Intl.DateTimeFormat('pt-BR', { hour: '2-digit', minute: '2-digit' })
-const dateFmt = new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })
+const fullFmt = new Intl.DateTimeFormat('pt-BR', { dateStyle: 'full', timeStyle: 'short' })
+const dayFmt = new Intl.DateTimeFormat('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })
+const dayYearFmt = new Intl.DateTimeFormat('pt-BR', { day: 'numeric', month: 'long', year: 'numeric' })
+const shortDateFmt = new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit' })
 
 export function formatTime(ms: number): string {
   return timeFmt.format(ms)
 }
 
+/** Data e hora por extenso, pra dica do horário da mensagem. */
+export function formatFull(ms: number): string {
+  const text = fullFmt.format(ms)
+  return text.charAt(0).toUpperCase() + text.slice(1)
+}
+
+function sameDay(a: Date, b: Date) {
+  return a.toDateString() === b.toDateString()
+}
+
+/** Horário ao lado do nome: "14:32" hoje, "Ontem 14:32", "03/10/26 14:32". */
 export function formatStamp(ms: number): string {
   const date = new Date(ms)
   const today = new Date()
-  const yesterday = new Date(today.getTime() - 86_400_000)
-  if (date.toDateString() === today.toDateString()) return `Hoje às ${timeFmt.format(date)}`
-  if (date.toDateString() === yesterday.toDateString()) return `Ontem às ${timeFmt.format(date)}`
-  return `${dateFmt.format(date)} ${timeFmt.format(date)}`
+  if (sameDay(date, today)) return timeFmt.format(date)
+  if (sameDay(date, new Date(today.getTime() - 86_400_000))) return `Ontem ${timeFmt.format(date)}`
+  return `${shortDateFmt.format(date)} ${timeFmt.format(date)}`
 }
 
+/** Divisória de dia no chat: "Hoje", "Ontem", "sexta, 3 de outubro" ou com ano, se for de outro ano. */
 export function formatDay(ms: number): string {
-  return new Intl.DateTimeFormat('pt-BR', { day: 'numeric', month: 'long', year: 'numeric' }).format(ms)
+  const date = new Date(ms)
+  const today = new Date()
+  if (sameDay(date, today)) return 'Hoje'
+  if (sameDay(date, new Date(today.getTime() - 86_400_000))) return 'Ontem'
+  const text = date.getFullYear() === today.getFullYear() ? dayFmt.format(date) : dayYearFmt.format(date)
+  return text.replace('-feira', '')
 }
 
 export function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`
-  return `${(bytes / 1024 / 1024).toFixed(1)} MB`
+  return `${(bytes / 1024 / 1024).toFixed(1).replace('.', ',')} MB`
 }
 
 export function formatBitrate(bps: number): string {
   return bps >= 1_000_000 ? `${(bps / 1_000_000).toFixed(1)} Mbps` : `${Math.round(bps / 1000)} kbps`
+}
+
+/** "1 pessoa", "3 pessoas". */
+export function plural(count: number, one: string, many: string): string {
+  return `${count} ${count === 1 ? one : many}`
 }
 
 export type Segment =
