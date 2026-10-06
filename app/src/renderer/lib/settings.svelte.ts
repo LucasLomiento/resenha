@@ -8,7 +8,10 @@ export interface Settings {
   inputDevice: string
   outputDevice: string
   echoCancellation: boolean
-  noiseSuppression: boolean
+  /** rnnoise: dentro do app (igual ao noise-suppression-for-voice); browser: o do Chromium. */
+  noiseReduction: 'rnnoise' | 'browser' | 'off'
+  /** Limiar do microfone: só transmite acima dele (ou, no automático, quando detecta voz). */
+  gate: { enabled: boolean; auto: boolean; thresholdDb: number }
   /** Desligado por padrão: o AGC do Chromium já baixou o volume do microfone do sistema. */
   autoGainControl: boolean
   screenPreset: ScreenPreset
@@ -35,7 +38,8 @@ const defaults: Settings = {
   inputDevice: 'default',
   outputDevice: 'default',
   echoCancellation: true,
-  noiseSuppression: true,
+  noiseReduction: 'rnnoise',
+  gate: { enabled: false, auto: true, thresholdDb: -50 },
   autoGainControl: false,
   screenPreset: '1440p',
   screenMode: 'motion',

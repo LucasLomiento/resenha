@@ -1,7 +1,7 @@
 {
   "name": "resenha",
   "productName": "Resenha",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "description": "Voz, chat e compartilhamento de tela pro grupo",
   "author": "Lucas Reis",
@@ -16,9 +16,11 @@
     "dist:appimage": "electron-vite build && electron-builder --linux AppImage",
     "dist:win": "electron-vite build && electron-builder --win nsis",
     "e2e": "VITE_DEFAULT_SERVER=http://127.0.0.1:8787 electron-vite build && node test/e2e.mjs",
-    "dist:win:zip": "electron-vite build && electron-builder --win zip"
+    "dist:win:zip": "electron-vite build && electron-builder --win zip",
+    "test:mic": "node --test test/mic-worklet.test.mjs"
   },
   "devDependencies": {
+    "@jitsi/rnnoise-wasm": "^0.2.1",
     "@sveltejs/vite-plugin-svelte": "6.2.4",
     "@tsconfig/svelte": "5.0.8",
     "@types/node": "^24.19.1",

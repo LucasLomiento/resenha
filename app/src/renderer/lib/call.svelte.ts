@@ -1,7 +1,8 @@
 import type { ClientMessage, SignalData, VoiceMember } from '../../../../shared/protocol'
 import type { PlatformInfo } from '../../preload/api'
 import type { Api } from './api'
-import { captureScreen, getMicTrack, LevelMeter, stopCapture } from './media'
+import { captureScreen, getMicTrack, stopCapture } from './media'
+import { MicPipeline } from './mic'
 import { Peer, type LinkStats, type VideoStats } from './peer'
 import { PRESETS, settings } from './settings.svelte'
 import { playSound } from './sounds'
@@ -15,7 +16,6 @@ interface CallDeps {
   toast(text: string, kind?: 'error' | 'info'): void
 }
 
-const SPEAKING_LOCAL = 0.02
 const SPEAKING_REMOTE = 0.03
 const ICE_TTL = 6 * 60 * 60 * 1000
 
@@ -38,7 +38,8 @@ export class Call {
   /** Container estável do microfone: o id dele é o que os outros usam pra reconhecer a faixa. */
   private micStream = new MediaStream()
   private micTrack: MediaStreamTrack | null = null
-  private meter: LevelMeter | null = null
+  /** Microfone já processado (RNNoise + limiar); `micTrack` é a saída dele. */
+  mic: MicPipeline | null = null
   private ice: { servers: RTCIceServer[]; at: number } | null = null
   private ticker: ReturnType<typeof setInterval> | null = null
   private statsTicker: ReturnType<typeof setInterval> | null = null
@@ -98,10 +99,9 @@ export class Call {
     this.stopShare(false)
     this.watching = null
     this.channelId = null
-    this.meter?.close()
-    this.meter = null
-    this.micTrack?.stop()
     if (this.micTrack) this.micStream.removeTrack(this.micTrack)
+    this.mic?.close()
+    this.mic = null
     this.micTrack = null
     this.speaking = {}
     this.links = {}
@@ -112,17 +112,21 @@ export class Call {
   }
 
   private async openMic() {
-    const track = await getMicTrack()
+    const mic = await MicPipeline.create(await getMicTrack())
+    const track = mic.track
     track.enabled = !this.muted
-    if (this.micTrack) {
-      this.micStream.removeTrack(this.micTrack)
-      this.micTrack.stop()
-    }
+    if (this.micTrack) this.micStream.removeTrack(this.micTrack)
+    const previous = this.mic
     this.micStream.addTrack(track)
     this.micTrack = track
-    this.meter?.close()
-    this.meter = new LevelMeter(track)
+    this.mic = mic
     await Promise.all(this.peerList.map((p) => p.replaceMic(track)))
+    previous?.close()
+  }
+
+  /** Redução de ruído ou limiar mudou: aplica na hora, sem reabrir o microfone. */
+  updateMicProcessing() {
+    this.mic?.update()
   }
 
   /** Reabre o microfone com o dispositivo/processamento atual das configurações. */
@@ -381,7 +385,7 @@ export class Call {
     this.ticker = setInterval(() => {
       const me = this.deps.connId()
       const next: Record<string, boolean> = {}
-      if (me) next[me] = !this.muted && (this.meter?.level() ?? 0) > SPEAKING_LOCAL
+      if (me) next[me] = !this.muted && !!this.mic?.speaking
       for (const peer of this.peers.values()) next[peer.connId] = !this.deafened && peer.audioLevel() > SPEAKING_REMOTE
       for (const [key, value] of Object.entries(next)) {
         if (this.speaking[key] !== value) this.speaking[key] = value

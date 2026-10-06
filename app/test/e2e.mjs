@@ -27,6 +27,8 @@ const full = process.env.RESENHA_E2E_FULL === '1'
 const targetWidth = full ? 2560 : 1280
 
 let failures = 0
+/** Erros de console que indicam que o microfone caiu no plano B (sem processamento). */
+const micFallbacks = []
 
 /** Captura pelo processo principal: page.screenshot trava em janela escondida. */
 async function shot(side, name) {
@@ -49,11 +51,16 @@ async function launch(profile) {
     env: { ...process.env, RESENHA_PROFILE: profile, RESENHA_HIDDEN: '1' },
   })
   const page = await app.firstWindow()
-  // Sem sons do app durante o teste (nada toca na caixa de som de quem roda).
-  await page.evaluate(() => localStorage.setItem('resenha.settings', JSON.stringify({ sounds: false })))
+  // Sem sons do app durante o teste (nada toca na caixa de som de quem roda). Sem RNNoise
+  // também: o microfone falso é um tom puro, e pro RNNoise apito não é voz.
+  await page.evaluate(() => localStorage.setItem('resenha.settings', JSON.stringify({ sounds: false, noiseReduction: 'off' })))
   await page.reload()
   page.on('console', (msg) => {
-    if (msg.type() === 'error') console.log(`   [${profile}] ${msg.text()}`)
+    if (msg.type() !== 'error') return
+    console.log(`   [${profile}] ${msg.text()}`)
+    if (/processamento do microfone indisponível|RNNoise não carregou|processador do microfone parou/.test(msg.text())) {
+      micFallbacks.push(profile)
+    }
   })
   page.on('pageerror', (err) => console.log(`   [${profile}] pageerror: ${err.message}`))
   return { app, page }
@@ -302,6 +309,7 @@ try {
   await a.page.waitForTimeout(800)
   const speaking = await a.page.locator('.member', { hasText: 'Amigo' }).locator('.avatar.speaking').count()
   check(speaking === 1, 'A vê o indicador de fala de B')
+  check(micFallbacks.length === 0, 'microfone passa pelo processador (RNNoise/limiar) carregado no AudioWorklet')
   await shot(a, '2-call')
 
   // Tela: A compartilha (áudio pelo venmic no Linux) e B assiste.

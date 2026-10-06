@@ -12,3 +12,4 @@ interface ImportMetaEnv {
   /** Servidor sugerido na tela de login (definido no build). */
   readonly VITE_DEFAULT_SERVER?: string
 }
+

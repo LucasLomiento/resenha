@@ -67,7 +67,8 @@ Pra atualizar pelo app no pacote `.pacman`, ele pede a sua senha: numa janelinha
 - **Miniatura:** enquanto assiste, você pode voltar pro chat e a transmissão vira uma miniatura que dá pra arrastar e redimensionar. Também tem a **janela flutuante**, que fica por cima de tudo, até de outros apps.
 - **Atalhos:** em Configurações → Atalhos você escolhe teclas pra mutar, ensurdecer, compartilhar a tela, sair da call e mostrar o Resenha. O padrão é `Ctrl+Shift+M` pra mutar e `Ctrl+Shift+D` pra ensurdecer.
 - **Bandeja, abrir com o computador, sons e zoom:** em Configurações → App. O zoom também funciona com `Ctrl +`, `Ctrl −` e `Ctrl 0`.
-- **Configurações:** no botão de ajustes, no canto de baixo. Lá dá pra escolher microfone, saída de áudio, supressão de ruído e codec de vídeo. O **Testar microfone** toca a sua voz de volta (use fone).
+- **Configurações:** no botão de ajustes, no canto de baixo. Lá dá pra escolher microfone, saída de áudio e codec de vídeo. O **Testar microfone** toca a sua voz de volta (use fone).
+- **Ruído e limiar:** em Configurações → Voz. A **redução de ruído** com RNNoise tira teclado, ventilador e barulho de fundo. O **limiar do microfone** só transmite quando você fala: no automático ele reconhece a voz, no manual você arrasta a marca no medidor.
 
 ## Problemas comuns
 

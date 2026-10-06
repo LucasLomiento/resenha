@@ -2,7 +2,8 @@
   import { onDestroy, onMount } from 'svelte'
   import type { ChannelKind } from '../../../../shared/protocol'
   import type { ShortcutAction } from '../../preload/api'
-  import { getMicTrack, LevelMeter } from '../lib/media'
+  import { getMicTrack } from '../lib/media'
+  import { MicPipeline } from '../lib/mic'
   import { PRESETS, settings, type ScreenPreset, type VideoCodec } from '../lib/settings.svelte'
   import { ACTIONS, acceleratorFrom, describeAccelerator } from '../lib/shortcuts'
   import { playSound } from '../lib/sounds'
@@ -49,23 +50,35 @@
 
   // --- teste do microfone: medidor + sua voz de volta no fone, como no Discord ---
   let testing = $state(false)
-  let level = $state(0)
-  let testTrack: MediaStreamTrack | null = null
-  let testMeter: LevelMeter | null = null
+  let levelDb = $state(-100)
+  let passing = $state(false)
+  let testMic: MicPipeline | null = null
   let testAudio: HTMLAudioElement | null = null
-  let timer: ReturnType<typeof setInterval> | null = null
+
+  // Medidor ao vivo: do teste, ou da call se você estiver numa.
+  const METER_MIN = -80
+  const meterPos = (db: number) => Math.min(1, Math.max(0, (db - METER_MIN) / -METER_MIN))
+  const hasMic = $derived(testing || !!call.mic)
+
+  onMount(() => {
+    const timer = setInterval(() => {
+      const mic = testMic ?? call.mic
+      levelDb = mic ? mic.currentDb : -100
+      passing = mic ? (settings.gate.enabled ? mic.open : mic.speaking) : false
+    }, 50)
+    return () => clearInterval(timer)
+  })
 
   async function startTest() {
     stopTest()
     try {
-      testTrack = await getMicTrack()
-      testMeter = new LevelMeter(testTrack)
+      // O teste passa pelo mesmo processamento da call: você ouve o RNNoise e o limiar funcionando.
+      testMic = await MicPipeline.create(await getMicTrack())
       testAudio = new Audio()
-      testAudio.srcObject = new MediaStream([testTrack])
+      testAudio.srcObject = new MediaStream([testMic.track])
       await testAudio.setSinkId(settings.outputDevice === 'default' ? '' : settings.outputDevice).catch(() => {})
       await testAudio.play()
       testing = true
-      timer = setInterval(() => (level = Math.min(1, (testMeter?.level() ?? 0) * 6)), 50)
       loadDevices()
     } catch (err) {
       stopTest()
@@ -74,17 +87,12 @@
   }
 
   function stopTest() {
-    if (timer) clearInterval(timer)
-    timer = null
     testAudio?.pause()
     if (testAudio) testAudio.srcObject = null
     testAudio = null
-    testMeter?.close()
-    testTrack?.stop()
-    testMeter = null
-    testTrack = null
+    testMic?.close()
+    testMic = null
     testing = false
-    level = 0
   }
 
   onDestroy(stopTest)
@@ -92,6 +100,19 @@
   function micChanged() {
     call.reloadMic()
     if (testing) startTest()
+  }
+
+  /** Limiar mudou: vale na hora, no teste e na call. */
+  function processingChanged() {
+    call.updateMicProcessing()
+    testMic?.update()
+  }
+
+  function setNoise(mode: typeof settings.noiseReduction) {
+    if (settings.noiseReduction === mode) return
+    settings.noiseReduction = mode
+    // Trocar pro filtro do Chromium (ou sair dele) precisa reabrir o microfone.
+    micChanged()
   }
 
   // --- grupo ---
@@ -194,18 +215,80 @@
       <button class="btn secondary" onclick={() => (testing ? stopTest() : startTest())}>
         <Icon name="mic" size={16} />{testing ? 'Parar teste' : 'Testar microfone'}
       </button>
-      <div class="meter"><div style:width="{level * 100}%"></div></div>
+      <span class="hint inline">No teste você se ouve de volta. Use fone, senão dá microfonia.</span>
     </div>
-    <p class="hint">No teste você se ouve de volta. Use fone, senão dá microfonia.</p>
+
+    <span class="label">Redução de ruído</span>
+    <div class="segmented">
+      <button class:on={settings.noiseReduction === 'rnnoise'} onclick={() => setNoise('rnnoise')}>RNNoise</button>
+      <button class:on={settings.noiseReduction === 'browser'} onclick={() => setNoise('browser')}>Do Chromium</button>
+      <button class:on={settings.noiseReduction === 'off'} onclick={() => setNoise('off')}>Desligada</button>
+    </div>
+    <p class="hint">
+      {#if settings.noiseReduction === 'rnnoise'}
+        O mesmo filtro do noise-suppression-for-voice: tira teclado, ventilador e barulho de fundo e deixa a voz. Se o seu
+        microfone já passa por ele no sistema, deixe desligado aqui pra não filtrar duas vezes.
+      {:else if settings.noiseReduction === 'browser'}
+        O filtro que vem no Chromium: mais leve, mas tira menos ruído que o RNNoise.
+      {:else}
+        Sem filtro nenhum: a voz sai como o microfone entrega.
+      {/if}
+    </p>
+
+    <label class="check">
+      <input type="checkbox" bind:checked={settings.gate.enabled} onchange={processingChanged} />
+      <span>Limiar do microfone <small>Só transmite quando você fala; o resto vira silêncio.</small></span>
+    </label>
+    {#if settings.gate.enabled}
+      <div class="segmented gate-mode">
+        <button
+          class:on={settings.gate.auto}
+          onclick={() => {
+            settings.gate.auto = true
+            processingChanged()
+          }}>Automático (detecta voz)</button
+        >
+        <button
+          class:on={!settings.gate.auto}
+          onclick={() => {
+            settings.gate.auto = false
+            processingChanged()
+          }}>Manual (por volume)</button
+        >
+      </div>
+    {/if}
+
+    <div class="level" class:passing class:idle={!hasMic}>
+      <div class="level-fill" style:width="{meterPos(levelDb) * 100}%"></div>
+      {#if settings.gate.enabled && !settings.gate.auto}
+        <div class="threshold" style:left="{meterPos(settings.gate.thresholdDb) * 100}%"></div>
+      {/if}
+    </div>
+    {#if settings.gate.enabled && !settings.gate.auto}
+      <div class="row tight">
+        <input
+          type="range"
+          class="threshold-range"
+          min={METER_MIN}
+          max="0"
+          step="1"
+          bind:value={settings.gate.thresholdDb}
+          oninput={processingChanged}
+        />
+        <span class="db">{settings.gate.thresholdDb} dB</span>
+      </div>
+    {/if}
+    <p class="hint">
+      {#if !hasMic}Clique em Testar microfone pra ver o nível.
+      {:else if !settings.gate.enabled}Barra verde: tem som saindo.
+      {:else if settings.gate.auto}Verde quando o RNNoise reconhece voz; fora disso, silêncio.
+      {:else}Arraste a marca: acima dela (verde) passa, abaixo é cortado. Deixe a marca logo acima do barulho de fundo.{/if}
+    </p>
 
     <div class="toggles">
       <label class="check">
         <input type="checkbox" bind:checked={settings.echoCancellation} onchange={micChanged} />
         <span>Cancelamento de eco <small>Deixe ligado se usa caixa de som; com fone dá pra desligar.</small></span>
-      </label>
-      <label class="check">
-        <input type="checkbox" bind:checked={settings.noiseSuppression} onchange={micChanged} />
-        <span>Supressão de ruído <small>Desligue se o microfone já passa por um filtro (ex.: RNNoise).</small></span>
       </label>
       <label class="check">
         <input type="checkbox" bind:checked={settings.autoGainControl} onchange={micChanged} />
@@ -462,18 +545,84 @@
     margin: 16px 0 6px;
   }
 
-  .meter {
-    flex: 1;
-    height: 8px;
-    border-radius: 4px;
+  .hint.inline {
+    margin: 0;
+  }
+
+  .segmented {
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: 1fr;
+    gap: 3px;
+    padding: 3px;
+    margin: 6px 0 0;
+    border-radius: 8px;
+    background: var(--bg-deep);
+  }
+
+  .segmented button {
+    padding: 6px 8px;
+    border-radius: 6px;
+    color: var(--text-dim);
+    font-size: 13px;
+  }
+
+  .segmented button.on {
+    background: var(--bg-active);
+    color: var(--text);
+    font-weight: 600;
+  }
+
+  .gate-mode {
+    margin: 8px 0 0 26px;
+  }
+
+  .level {
+    position: relative;
+    height: 10px;
+    margin-top: 12px;
+    border-radius: 5px;
     background: var(--bg-deep);
     overflow: hidden;
   }
 
-  .meter div {
+  .level-fill {
     height: 100%;
-    background: var(--green);
+    background: #5a5c66;
     transition: width 50ms linear;
+  }
+
+  .level.passing .level-fill {
+    background: var(--green);
+  }
+
+  .level.idle {
+    opacity: 0.5;
+  }
+
+  .threshold {
+    position: absolute;
+    top: -2px;
+    bottom: -2px;
+    width: 3px;
+    margin-left: -1px;
+    background: var(--yellow);
+  }
+
+  .row.tight {
+    margin: 6px 0 0;
+  }
+
+  .threshold-range {
+    flex: 1;
+    max-width: none !important;
+  }
+
+  .db {
+    min-width: 56px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-dim);
   }
 
   .toggles {

@@ -4,7 +4,8 @@ import { PRESETS, settings, type ScreenMode, type ScreenPreset } from './setting
 export async function getMicTrack(): Promise<MediaStreamTrack> {
   const base: MediaTrackConstraints = {
     echoCancellation: settings.echoCancellation,
-    noiseSuppression: settings.noiseSuppression,
+    // Com o RNNoise do app ligado, o do Chromium fica desligado pra não filtrar duas vezes.
+    noiseSuppression: settings.noiseReduction === 'browser',
     autoGainControl: settings.autoGainControl,
     channelCount: 1,
     sampleRate: 48_000,

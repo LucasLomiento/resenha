@@ -114,6 +114,7 @@ Com o Resenha aberto, esse comando só manda a ação pra janela que já está r
 ```bash
 npm test                       # servidor: contas, convites, chat, histórico, anexos, sinalização, hibernação
 npm -w app run typecheck
+npm -w app run test:mic        # processador do microfone (RNNoise + limiar), no Node, sem áudio
 npm -w app run e2e             # duas instâncias escondidas do app contra o servidor local
 ```
 
