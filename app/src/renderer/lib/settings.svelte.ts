@@ -32,8 +32,6 @@ export interface Settings {
   /** 0..1 */
   soundVolume: number
   messageSound: boolean
-  /** Diminui e converte imagens pra WebP antes de enviar. */
-  compressImages: boolean
   /** Miniatura da transmissão: posição (px a partir da esquerda/topo) e largura. */
   pip: { x: number; y: number; width: number } | null
 }
@@ -61,7 +59,6 @@ const defaults: Settings = {
   sounds: true,
   soundVolume: 0.6,
   messageSound: true,
-  compressImages: true,
   pip: null,
 }
 
