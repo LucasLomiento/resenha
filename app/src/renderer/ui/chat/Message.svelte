@@ -38,6 +38,9 @@
   const IMAGE = /^image\/(png|jpe?g|gif|webp|avif|bmp)$/
   const VIDEO = /^video\/(mp4|webm|ogg)$/
 
+  /** Imagens que não abriram (arquivo estragado, link vencido): viram cartão de arquivo, ou somem na prévia de link. */
+  let broken = $state<Record<string, boolean>>({})
+
   // ---------- Editar ----------
 
   let editing = $state(false)
@@ -220,9 +223,9 @@
       {/if}
 
       {#each message.attachments as a (a.id)}
-        {#if IMAGE.test(a.type)}
+        {#if IMAGE.test(a.type) && !broken[a.id]}
           <button class="image" aria-label="Abrir {a.name}" onclick={() => openImage(a)} style:aspect-ratio={ratio(a)} style:width={fitWidth(a, 420, 320)}>
-            <img src={url(a.url)} alt={a.name} loading="lazy" draggable="false" />
+            <img src={url(a.url)} alt={a.name} loading="lazy" draggable="false" onerror={() => (broken[a.id] = true)} />
           </button>
         {:else if VIDEO.test(a.type)}
           <!-- svelte-ignore a11y_media_has_caption -->
@@ -240,19 +243,21 @@
       {/each}
 
       {#each message.embeds as embed (embed.url)}
-        {@const image = embedImage(embed)}
-        <div class="embed" class:only-image={!embed.title && !embed.description}>
-          {#if embed.title || embed.description}
-            <span class="site">{embed.siteName}</span>
-            {#if embed.title}<a class="embed-title" href={embed.url} target="_blank" rel="noreferrer noopener">{embed.title}</a>{/if}
-            {#if embed.description}<p>{embed.description}</p>{/if}
-          {/if}
-          {#if image}
-            <a class="embed-image" href={embed.url} target="_blank" rel="noreferrer noopener" aria-label={embed.title || embed.siteName}>
-              <img src={image} alt="" loading="lazy" draggable="false" />
-            </a>
-          {/if}
-        </div>
+        {@const image = broken[embed.url] ? null : embedImage(embed)}
+        {#if image || embed.title || embed.description}
+          <div class="embed" class:only-image={!embed.title && !embed.description}>
+            {#if embed.title || embed.description}
+              <span class="site">{embed.siteName}</span>
+              {#if embed.title}<a class="embed-title" href={embed.url} target="_blank" rel="noreferrer noopener">{embed.title}</a>{/if}
+              {#if embed.description}<p>{embed.description}</p>{/if}
+            {/if}
+            {#if image}
+              <a class="embed-image" href={embed.url} target="_blank" rel="noreferrer noopener" aria-label={embed.title || embed.siteName}>
+                <img src={image} alt="" loading="lazy" draggable="false" onerror={() => (broken[embed.url] = true)} />
+              </a>
+            {/if}
+          </div>
+        {/if}
       {/each}
 
       {#if message.reactions.length}
