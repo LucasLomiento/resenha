@@ -3,9 +3,8 @@
   import { MAX_MESSAGE_LENGTH, MAX_UPLOAD_BYTES, type Attachment } from '../../../../shared/protocol'
   import { formatSize } from '../lib/format'
   import { compressImage } from '../lib/media'
-  import { settings } from '../lib/settings.svelte'
   import { store } from '../lib/store.svelte'
-  import Icon from './Icon.svelte'
+  import { Icon, IconButton, Spinner } from './kit'
 
   let { channelId, placeholder }: { channelId: string; placeholder: string } = $props()
 
@@ -45,14 +44,15 @@
     if (!store.api) return
     for (const original of files) {
       const key = ++uploadKey
+      const image = original.type.startsWith('image/')
       uploads.push({
         key,
         file: original,
-        preview: original.type.startsWith('image/') ? URL.createObjectURL(original) : null,
+        preview: image ? URL.createObjectURL(original) : null,
         progress: 0,
         attachment: null,
         error: null,
-        preparing: settings.compressImages && original.type.startsWith('image/'),
+        preparing: image,
         abort: () => {},
       })
       startUpload(key, original)
@@ -61,11 +61,12 @@
   }
 
   async function startUpload(key: number, original: File) {
-    const file = settings.compressImages ? await compressImage(original) : original
+    // Imagem sempre vai diminuída (WebP, até 2560 px): a pessoa não precisa pensar nisso.
+    const file = await compressImage(original)
     const current = uploads.find((u) => u.key === key)
     if (!current || !store.api) return // removido enquanto comprimia
     if (file.size > MAX_UPLOAD_BYTES) {
-      return update(key, { preparing: false, error: `Passa de ${formatSize(MAX_UPLOAD_BYTES)}` })
+      return update(key, { preparing: false, error: `Maior que ${formatSize(MAX_UPLOAD_BYTES)}` })
     }
     const job = store.api.upload(file, (fraction) => update(key, { progress: fraction }))
     update(key, { file, preparing: false, abort: job.abort })
@@ -95,10 +96,10 @@
   async function send() {
     if (!canSend) return
     const content = text.trim()
-    if (content.length > MAX_MESSAGE_LENGTH) return store.toast(`Mensagem passa de ${MAX_MESSAGE_LENGTH} caracteres.`)
+    if (content.length > MAX_MESSAGE_LENGTH) return store.toast(`A mensagem passa de ${MAX_MESSAGE_LENGTH} caracteres.`)
     const sent = uploads.filter((u) => u.attachment)
     const ids = sent.map((u) => u.attachment!.id)
-    // Limpa na hora (como no Discord); o que for anexado enquanto isso envia não é afetado.
+    // Limpa na hora; o que for anexado enquanto isso envia não é afetado.
     text = ''
     for (const u of sent) if (u.preview) URL.revokeObjectURL(u.preview)
     uploads = uploads.filter((u) => !sent.some((s) => s.key === u.key))
@@ -146,40 +147,51 @@
 </script>
 
 <div class="composer">
-  {#if uploads.length}
-    <div class="uploads">
-      {#each uploads as u (u.key)}
-        <div class="upload" class:error={!!u.error}>
-          {#if u.preview}
-            <img src={u.preview} alt={u.file.name} />
-          {:else}
-            <div class="file-icon"><Icon name="file" size={30} stroke={1.5} /></div>
-          {/if}
-          <span class="upload-name" title={u.file.name}>{u.file.name}</span>
-          <span class="upload-meta">
-            {u.error ?? (u.preparing ? 'comprimindo…' : u.attachment ? formatSize(u.file.size) : `${Math.round(u.progress * 100)}%`)}
-          </span>
-          {#if !u.attachment && !u.error && !u.preparing}
-            <div class="bar"><div style:width="{u.progress * 100}%"></div></div>
-          {/if}
-          <button class="remove" title="Remover" onclick={() => removeUpload(u.key)}><Icon name="x" size={14} /></button>
-        </div>
-      {/each}
-    </div>
-  {/if}
-
   <div class="box">
-    <button class="icon-btn" title="Enviar arquivo" onclick={() => picker?.click()}><Icon name="clip" /></button>
-    <textarea
-      bind:this={input}
-      bind:value={text}
-      rows="1"
-      {placeholder}
-      onkeydown={onKeydown}
-      oninput={onInput}
-      onpaste={onPaste}
-    ></textarea>
-    {#if uploading}<span class="hint">enviando arquivo…</span>{/if}
+    {#if uploads.length}
+      <div class="uploads">
+        {#each uploads as u (u.key)}
+          <div class="upload" class:error={!!u.error}>
+            <div class="thumb">
+              {#if u.preview}
+                <img src={u.preview} alt={u.file.name} />
+              {:else}
+                <Icon name="file" size={24} />
+              {/if}
+              {#if !u.attachment && !u.error}
+                <div class="veil">
+                  {#if u.preparing}<Spinner size={18} />{:else}<span class="tabular">{Math.round(u.progress * 100)}%</span>{/if}
+                </div>
+              {/if}
+            </div>
+            <span class="upload-name" title={u.file.name}>{u.file.name}</span>
+            <span class="upload-meta">
+              {u.error ?? (u.preparing ? 'Preparando…' : u.attachment ? formatSize(u.file.size) : 'Enviando…')}
+            </span>
+            {#if !u.attachment && !u.error && !u.preparing}
+              <div class="bar"><div style:width="{u.progress * 100}%"></div></div>
+            {/if}
+            <button class="remove" aria-label="Remover {u.file.name}" onclick={() => removeUpload(u.key)}>
+              <Icon name="x" size={14} />
+            </button>
+          </div>
+        {/each}
+      </div>
+    {/if}
+
+    <div class="input-row">
+      <IconButton icon="paperclip" label="Anexar arquivo" onclick={() => picker?.click()} />
+      <textarea
+        bind:this={input}
+        bind:value={text}
+        rows="1"
+        {placeholder}
+        aria-label={placeholder}
+        onkeydown={onKeydown}
+        oninput={onInput}
+        onpaste={onPaste}
+      ></textarea>
+    </div>
   </div>
   <input
     bind:this={picker}
@@ -195,58 +207,115 @@
 
 <style>
   .composer {
-    padding: 0 18px 2px;
     flex: none;
+    padding: 0 16px;
   }
+
+  .box {
+    border-radius: var(--r-xl);
+    background: var(--bg-raised);
+    box-shadow:
+      0 0 0 1px var(--line),
+      var(--highlight);
+    transition: box-shadow var(--t) var(--ease);
+  }
+
+  .box:focus-within {
+    box-shadow:
+      0 0 0 1px var(--line-strong),
+      var(--highlight);
+  }
+
+  .input-row {
+    display: flex;
+    align-items: flex-end;
+    gap: 4px;
+    min-height: 48px;
+    padding: 8px 12px 8px 8px;
+  }
+
+  textarea {
+    flex: 1;
+    min-width: 0;
+    max-height: 240px;
+    padding: 6px 4px;
+    border: 0;
+    outline: none;
+    background: transparent;
+    color: var(--fg);
+    font-size: var(--text-lg);
+    line-height: 1.35;
+    resize: none;
+    user-select: text;
+  }
+
+  textarea::placeholder {
+    color: var(--fg-3);
+  }
+
+  /* ---------- Anexos ---------- */
 
   .uploads {
     display: flex;
     gap: 10px;
+    padding: 12px 12px 4px;
     overflow-x: auto;
-    padding: 10px;
-    border-radius: 10px 10px 0 0;
-    background: var(--bg-raised);
-    border-bottom: 1px solid var(--border);
   }
 
   .upload {
     position: relative;
-    flex: none;
-    width: 150px;
     display: flex;
     flex-direction: column;
-    gap: 4px;
-    padding: 8px;
-    border-radius: 8px;
-    background: var(--bg-main);
+    gap: 2px;
+    flex: none;
+    width: 128px;
   }
 
-  .upload.error {
-    outline: 1px solid var(--red);
-  }
-
-  .upload img,
-  .file-icon {
-    width: 100%;
-    height: 90px;
-    object-fit: cover;
-    border-radius: 6px;
+  .thumb {
+    position: relative;
     display: grid;
     place-items: center;
-    background: var(--bg-deep);
-    color: var(--text-faint);
+    height: 88px;
+    margin-bottom: 6px;
+    border-radius: var(--r-lg);
+    background: var(--bg-input);
+    box-shadow: inset 0 0 0 1px var(--line);
+    color: var(--fg-3);
+    overflow: hidden;
+  }
+
+  .thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .veil {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    background: rgb(11 11 16 / 0.55);
+    color: #fff;
+    font-size: var(--text-xs);
+    font-weight: 600;
+  }
+
+  .upload.error .thumb {
+    box-shadow: inset 0 0 0 1px rgb(255 92 114 / 0.6);
   }
 
   .upload-name {
-    font-size: 12px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    font-size: var(--text-xs);
+    font-weight: 500;
   }
 
   .upload-meta {
+    color: var(--fg-3);
     font-size: 11px;
-    color: var(--text-faint);
   }
 
   .upload.error .upload-meta {
@@ -255,56 +324,40 @@
 
   .bar {
     height: 3px;
+    margin-top: 4px;
     border-radius: 2px;
-    background: var(--bg-active);
+    background: rgb(255 255 255 / 0.08);
     overflow: hidden;
   }
 
   .bar div {
     height: 100%;
-    background: var(--accent);
+    background: var(--accent-fg);
+    transition: width var(--t) linear;
   }
 
   .remove {
     position: absolute;
-    top: 4px;
-    right: 4px;
-    width: 22px;
-    height: 22px;
+    top: 6px;
+    right: 6px;
     display: grid;
     place-items: center;
+    width: 22px;
+    height: 22px;
     border-radius: 50%;
-    background: rgb(0 0 0 / 0.6);
-    color: white;
+    background: rgb(11 11 16 / 0.75);
+    color: #fff;
+    opacity: 0;
+    transition: opacity var(--t-fast) var(--ease);
   }
 
-  .box {
-    display: flex;
-    align-items: flex-end;
-    gap: 4px;
-    padding: 6px 10px 6px 6px;
-    border-radius: 10px;
-    background: var(--bg-raised);
+  .upload:hover .remove,
+  .remove:focus-visible,
+  .upload.error .remove {
+    opacity: 1;
   }
 
-  .uploads + .box {
-    border-radius: 0 0 10px 10px;
-  }
-
-  textarea {
-    flex: 1;
-    resize: none;
-    border: 0;
-    outline: none;
-    background: transparent;
-    padding: 6px 4px;
-    max-height: 240px;
-    user-select: text;
-  }
-
-  .hint {
-    font-size: 12px;
-    color: var(--text-faint);
-    padding-bottom: 7px;
+  .remove:hover {
+    background: var(--red);
   }
 </style>

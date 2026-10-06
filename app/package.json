@@ -18,10 +18,14 @@
     "e2e": "VITE_DEFAULT_SERVER=http://127.0.0.1:8787 electron-vite build && node test/e2e.mjs",
     "dist:win:zip": "electron-vite build && electron-builder --win zip",
     "test:mic": "node --test test/mic-worklet.test.mjs",
-    "test:ui": "node --test test/markdown.test.mts"
+    "test:ui": "node --test test/markdown.test.mts",
+    "proto:shots": "electron-vite build && node test/proto-shots.mjs"
   },
   "devDependencies": {
+    "@fontsource-variable/geist": "^5.3.0",
+    "@fontsource-variable/geist-mono": "^5.3.0",
     "@jitsi/rnnoise-wasm": "^0.2.1",
+    "@lucide/svelte": "^1.52.0",
     "@sveltejs/vite-plugin-svelte": "6.2.4",
     "@tsconfig/svelte": "5.0.8",
     "@types/node": "^24.19.1",

@@ -15,11 +15,12 @@
 
 <style>
   video {
+    display: block;
     width: 100%;
     height: 100%;
     object-fit: cover;
-    display: block;
     background: #000;
+    animation: rs-fade-in var(--t-slow) var(--ease);
   }
 
   .mirror {

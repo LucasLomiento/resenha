@@ -1,16 +1,15 @@
 <script lang="ts">
   import { dmChannelId, type VoiceMember } from '../../../../shared/protocol'
+  import logo from '../../../build/icon.svg?url'
   import { settings } from '../lib/settings.svelte'
   import { store } from '../lib/store.svelte'
   import { ui } from '../lib/ui.svelte'
-  import Avatar from './Avatar.svelte'
-  import Icon from './Icon.svelte'
-  import SharePanel from './SharePanel.svelte'
+  import Dock from './Dock.svelte'
+  import { Avatar, Icon, Menu, NavItem, SignalBars, Slider, Spinner, tooltip, type MenuItem } from './kit'
 
   const call = store.call
   const textChannels = $derived(store.channels.filter((c) => c.kind === 'text'))
   const voiceChannels = $derived(store.channels.filter((c) => c.kind === 'voice'))
-  const callChannel = $derived(store.channels.find((c) => c.id === call.channelId))
   /** Todo mundo menos você, quem está online primeiro, pra conversa privada. */
   const people = $derived(
     Object.values(store.users)
@@ -20,22 +19,46 @@
   const dmUser = $derived(store.currentChannel ? store.dmPeer(store.currentChannel) : null)
   const update = $derived(store.update)
 
+  // ---------- Menu do grupo (admin) ----------
+
+  let groupButton = $state<HTMLButtonElement>()
+  let groupMenu = $state(false)
+  const groupItems: MenuItem[] = [
+    {
+      label: 'Convidar pessoas',
+      icon: 'user-plus',
+      onselect: () => {
+        if (!store.invite) store.send({ t: 'invite.create' })
+        ui.settings = 'group'
+      },
+    },
+    { label: 'Configurações do grupo', icon: 'settings', onselect: () => (ui.settings = 'group') },
+  ]
+
+  // ---------- Atualização ----------
+
+  const updateLabel = $derived(
+    update.status === 'available'
+      ? 'Atualizar'
+      : update.status === 'downloading'
+        ? `Baixando ${update.percent}%`
+        : update.status === 'installing'
+          ? 'Instalando…'
+          : update.status === 'ready'
+            ? 'Reiniciar'
+            : null,
+  )
+
   function updateClick() {
     if (update.status === 'available') window.resenha.update.download()
     else if (update.status === 'ready') window.resenha.update.install()
   }
 
-  /** Pior ping entre as conexões da call, pro resumo no painel. */
-  const worstLink = $derived.by(() => {
-    const links = Object.values(call.links).filter((l) => l.rtt != null)
-    if (links.length === 0) return null
-    return links.reduce((a, b) => ((a.rtt ?? 0) > (b.rtt ?? 0) ? a : b))
-  })
+  // ---------- Call ----------
 
   let volumeFor = $state<string | null>(null)
 
   function memberClick(member: VoiceMember) {
-    if (member.connId === store.connId) return
     volumeFor = volumeFor === member.connId ? null : member.connId
   }
 
@@ -48,298 +71,282 @@
     settings.userVolumes[userId] = value
     call.applyVolumes()
   }
-
-  function pingClass(rtt: number | null | undefined) {
-    if (rtt == null) return ''
-    return rtt < 80 ? 'good' : rtt < 160 ? 'ok' : 'bad'
-  }
 </script>
 
-<aside>
+<aside class="sidebar">
   <header>
-    <span class="title">Resenha</span>
-    {#if update.status === 'available' || update.status === 'ready' || update.status === 'downloading' || update.status === 'installing'}
+    {#if store.me?.admin}
+      <button
+        bind:this={groupButton}
+        class="group"
+        class:open={groupMenu}
+        aria-haspopup="menu"
+        aria-expanded={groupMenu}
+        onclick={() => (groupMenu = !groupMenu)}
+      >
+        <img src={logo} alt="" width="26" height="26" draggable="false" />
+        <span class="group-name">Resenha</span>
+        <Icon name="chevron-down" size={16} />
+      </button>
+    {:else}
+      <div class="group static">
+        <img src={logo} alt="" width="26" height="26" draggable="false" />
+        <span class="group-name">Resenha</span>
+      </div>
+    {/if}
+
+    {#if updateLabel}
       <button
         class="update"
         disabled={update.status === 'downloading' || update.status === 'installing'}
-        title="Nova versão {update.version}"
+        use:tooltip={'version' in update ? `Versão ${update.version}` : null}
         onclick={updateClick}
       >
-        {#if update.status === 'available'}Atualizar
-        {:else if update.status === 'downloading'}Baixando {update.percent}%
-        {:else if update.status === 'installing'}Instalando…
-        {:else}Reiniciar e atualizar{/if}
+        {#if update.status === 'downloading' || update.status === 'installing'}
+          <Spinner size={12} />
+        {:else}
+          <Icon name={update.status === 'ready' ? 'restart' : 'download'} size={14} />
+        {/if}
+        {updateLabel}
       </button>
     {/if}
-    <span class="dot" class:on={store.status === 'open'} title={store.status === 'open' ? 'Conectado' : 'Sem conexão'}></span>
   </header>
 
-  <nav>
-    <div class="section">
-      <span class="label">Canais de texto</span>
-      {#if store.me?.admin}
-        <button class="add" title="Gerenciar canais" onclick={() => (ui.settings = 'group')}><Icon name="plus" size={15} /></button>
-      {/if}
-    </div>
-    {#each textChannels as channel (channel.id)}
-      <button
-        class="channel"
-        class:active={store.currentChannel === channel.id && store.view === 'chat'}
-        class:unread={store.unread[channel.id]}
-        onclick={() => store.openChannel(channel.id)}
-      >
-        <Icon name="hash" size={17} />
-        <span class="name">{channel.name}</span>
-      </button>
-    {/each}
-
-    <div class="section">
-      <span class="label">Canais de voz</span>
-      {#if store.me?.admin}
-        <button class="add" title="Gerenciar canais" onclick={() => (ui.settings = 'group')}><Icon name="plus" size={15} /></button>
-      {/if}
-    </div>
-    {#each voiceChannels as channel (channel.id)}
-      <button class="channel" class:active={call.channelId === channel.id} onclick={() => store.openChannel(channel.id)}>
-        <Icon name="volume" size={17} />
-        <span class="name">{channel.name}</span>
-      </button>
-      <div class="members">
-        {#each store.membersOf(channel.id) as member (member.connId)}
-          {@const user = store.users[member.userId]}
-          {@const self = member.connId === store.connId}
-          {@const link = call.links[member.connId]}
-          <div class="member">
-            <button class="member-main" onclick={() => memberClick(member)} title={self ? 'Você' : 'Volume'}>
-              <Avatar id={member.userId} name={user?.name ?? '?'} size={24} speaking={call.channelId === channel.id && call.speaking[member.connId]} />
-              <span class="member-name" class:dim={!self && call.channelId !== channel.id}>{user?.name ?? '?'}</span>
-              {#if member.camera}<span class="cam"><Icon name="camera" size={14} /></span>{/if}
-              {#if member.deafened}<span class="state"><Icon name="headphones-off" size={14} /></span>
-              {:else if member.muted}<span class="state"><Icon name="mic-off" size={14} /></span>{/if}
-              {#if !self && call.channelId === channel.id && link?.rtt != null}
-                <span class="ping {pingClass(link.rtt)}" title={link.route === 'relay' ? 'Passando pelo TURN do Cloudflare' : 'Conexão direta'}>
-                  {link.rtt}ms{link.route === 'relay' ? ' ·relay' : ''}
-                </span>
-              {/if}
-            </button>
-            {#if member.sharing}
-              <button
-                class="live"
-                title={call.channelId === channel.id ? 'Assistir' : 'Entre na call pra assistir'}
-                disabled={call.channelId !== channel.id}
-                onclick={() => watch(member)}>AO VIVO</button
-              >
-            {/if}
-          </div>
-          {#if volumeFor === member.connId && !self}
-            <div class="volume">
-              <Icon name="volume" size={14} />
-              <input
-                type="range"
-                min="0"
-                max="1"
-                step="0.01"
-                value={settings.userVolumes[member.userId] ?? 1}
-                oninput={(e) => setVolume(member.userId, Number(e.currentTarget.value))}
-              />
-              <span>{Math.round((settings.userVolumes[member.userId] ?? 1) * 100)}%</span>
-            </div>
-          {/if}
-        {/each}
-      </div>
-    {/each}
-
-    <div class="section">
-      <span class="label">Mensagens diretas</span>
-    </div>
-    {#each people as person (person.id)}
-      {@const dm = store.me ? dmChannelId(store.me.id, person.id) : ''}
-      <button
-        class="channel person"
-        class:active={dmUser === person.id && store.view === 'chat'}
-        class:unread={store.unread[dm]}
-        onclick={() => store.openDm(person.id)}
-      >
-        <span class="presence-wrap">
-          <Avatar id={person.id} name={person.name} size={22} />
-          <span class="presence" class:on={store.online[person.id]}></span>
-        </span>
-        <span class="name">{person.name}</span>
-      </button>
-    {/each}
-  </nav>
-
-  {#if call.channelId || call.joining}
-    <div class="voice-panel">
-      <button class="voice-info" title="Abrir a call (câmeras)" disabled={!call.channelId} onclick={() => (store.view = 'call')}>
-        <span class="connected">{call.joining ? 'Entrando na call…' : call.sharing ? 'Ao vivo' : 'Voz conectada'}</span>
-        <span class="where">
-          {callChannel?.name ?? ''}
-          {#if call.sharing}· {call.viewerCount} assistindo
-          {:else if worstLink}<span class="ping {pingClass(worstLink.rtt)}">· {worstLink.rtt}ms</span>{/if}
-        </span>
-      </button>
-      <!-- Sempre os mesmos três botões, no mesmo lugar: muda só o que eles fazem. -->
-      <button
-        class="icon-btn"
-        class:cam-on={!!call.camera}
-        disabled={!call.channelId}
-        title={call.camera ? 'Desligar câmera' : 'Ligar câmera'}
-        onclick={async () => {
-          const turningOn = !call.camera
-          await call.toggleCamera()
-          if (turningOn && call.camera) store.view = 'call'
-        }}
-      >
-        <Icon name={call.camera ? 'camera' : 'camera-off'} />
-      </button>
-      <button
-        class="icon-btn"
-        class:live-on={call.sharing}
-        disabled={!call.channelId}
-        title={call.sharing ? 'Transmissão: qualidade, codec, parar' : 'Compartilhar tela'}
-        onclick={() => (call.sharing ? (ui.sharePanel = !ui.sharePanel) : (ui.share = true))}
-      >
-        <Icon name="screen" />
-      </button>
-      <button class="icon-btn hangup" title="Sair da call" disabled={!call.channelId} onclick={() => call.leave()}>
-        <Icon name="hangup" />
-      </button>
-    </div>
-    {#if ui.sharePanel && call.sharing}<SharePanel />{/if}
+  {#if groupMenu}
+    <Menu items={groupItems} anchor={groupButton} placement="bottom-start" width={232} onclose={() => (groupMenu = false)} />
   {/if}
 
-  <footer>
-    {#if store.me}
-      <Avatar id={store.me.id} name={store.me.name} size={32} speaking={!!store.connId && call.speaking[store.connId]} />
-      <span class="me">{store.me.name}</span>
+  <nav aria-label="Canais e conversas">
+    <div class="section-label">Canais</div>
+    {#each textChannels as channel (channel.id)}
+      <NavItem
+        class="channel"
+        icon="hash"
+        label={channel.name}
+        active={store.currentChannel === channel.id && store.view === 'chat'}
+        unread={store.unread[channel.id]}
+        onclick={() => store.openChannel(channel.id)}
+      />
+    {/each}
+
+    <div class="section-label">Voz</div>
+    {#each voiceChannels as channel (channel.id)}
+      {@const here = call.channelId === channel.id}
+      {@const members = store.membersOf(channel.id)}
+      <NavItem
+        class="channel"
+        icon="volume"
+        label={channel.name}
+        active={here && store.view === 'call'}
+        aria-label={here ? `${channel.name}: abrir a call` : `${channel.name}: entrar na call`}
+        onclick={() => store.openChannel(channel.id)}
+      >
+        {#snippet trailing()}
+          {#if call.joining && !here}<Spinner size={14} />{/if}
+        {/snippet}
+      </NavItem>
+
+      {#if members.length}
+        <ul class="members">
+          {#each members as member (member.connId)}
+            {@const user = store.users[member.userId]}
+            {@const self = member.connId === store.connId}
+            {@const link = call.links[member.connId]}
+            <li class="member">
+              {#if self}
+                <div class="member-main self">
+                  <Avatar id={member.userId} name={user?.name ?? '?'} size={22} speaking={here && call.speaking[member.connId]} />
+                  <span class="member-name">{user?.name ?? '?'}</span>
+                  {#if member.camera}<Icon name="camera" size={14} class="cam" />{/if}
+                  {#if member.deafened}<Icon name="headphones-off" size={14} class="state" />
+                  {:else if member.muted}<Icon name="mic-off" size={14} class="state" />{/if}
+                </div>
+              {:else}
+                <button
+                  class="member-main"
+                  class:dim={!here}
+                  aria-expanded={volumeFor === member.connId}
+                  use:tooltip={{ text: 'Volume', placement: 'right' }}
+                  onclick={() => memberClick(member)}
+                >
+                  <Avatar id={member.userId} name={user?.name ?? '?'} size={22} speaking={here && call.speaking[member.connId]} />
+                  <span class="member-name">{user?.name ?? '?'}</span>
+                  {#if member.camera}<Icon name="camera" size={14} class="cam" />{/if}
+                  {#if member.deafened}<Icon name="headphones-off" size={14} class="state" />
+                  {:else if member.muted}<Icon name="mic-off" size={14} class="state" />{/if}
+                  {#if here}<SignalBars class="ping" rtt={link?.rtt} route={link?.route} />{/if}
+                </button>
+              {/if}
+              {#if member.sharing}
+                <button
+                  class="live"
+                  disabled={!here}
+                  use:tooltip={here ? (self ? 'Ver minha tela' : 'Assistir') : 'Entre na call pra assistir'}
+                  onclick={() => watch(member)}
+                >
+                  AO VIVO
+                </button>
+              {/if}
+            </li>
+            {#if volumeFor === member.connId && !self}
+              <li class="volume">
+                <Icon name="volume" size={14} />
+                <Slider
+                  label="Volume de {user?.name ?? '?'}"
+                  max={1}
+                  value={settings.userVolumes[member.userId] ?? 1}
+                  oninput={(e) => setVolume(member.userId, Number(e.currentTarget.value))}
+                />
+                <span class="tabular">{Math.round((settings.userVolumes[member.userId] ?? 1) * 100)}%</span>
+              </li>
+            {/if}
+          {/each}
+        </ul>
+      {/if}
+    {/each}
+
+    {#if people.length}
+      <div class="section-label">Mensagens privadas</div>
+      {#each people as person (person.id)}
+        {@const dm = store.me ? dmChannelId(store.me.id, person.id) : ''}
+        <NavItem
+          class="person"
+          label={person.name}
+          active={dmUser === person.id && store.view === 'chat'}
+          unread={store.unread[dm]}
+          onclick={() => store.openDm(person.id)}
+        >
+          {#snippet leading()}
+            <Avatar
+              id={person.id}
+              name={person.name}
+              size={24}
+              status={store.online[person.id] ? 'online' : 'offline'}
+              cutout="var(--row-bg)"
+            />
+          {/snippet}
+        </NavItem>
+      {/each}
     {/if}
-    <button class="icon-btn" class:on={call.muted} title={call.muted ? 'Desmutar' : 'Mutar'} onclick={() => call.toggleMute()}>
-      <Icon name={call.muted ? 'mic-off' : 'mic'} />
-    </button>
-    <button class="icon-btn" class:on={call.deafened} title={call.deafened ? 'Voltar a ouvir' : 'Ensurdecer'} onclick={() => call.toggleDeafen()}>
-      <Icon name={call.deafened ? 'headphones-off' : 'headphones'} />
-    </button>
-    <button class="icon-btn" title="Configurações" onclick={() => (ui.settings = 'voice')}><Icon name="settings" /></button>
-  </footer>
+  </nav>
+
+  <Dock />
 </aside>
 
 <style>
-  aside {
+  .sidebar {
     position: relative;
     display: flex;
     flex-direction: column;
     min-height: 0;
-    background: var(--bg-sidebar);
-    border-right: 1px solid var(--border);
+    padding-top: 8px;
   }
 
   header {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    height: 52px;
-    padding: 0 16px;
-    border-bottom: 1px solid var(--border);
-  }
-
-  .title {
-    font-weight: 800;
-    font-size: 16px;
-    letter-spacing: -0.01em;
-  }
-
-  .update {
-    margin-left: auto;
-    margin-right: 10px;
-    padding: 3px 9px;
-    border-radius: 999px;
-    background: var(--green);
-    color: #0f2a1c;
-    font-size: 12px;
-    font-weight: 700;
-    white-space: nowrap;
-  }
-
-  .update:disabled {
-    opacity: 0.85;
-  }
-
-  .dot {
+    gap: var(--s-2);
+    height: var(--header-h);
+    padding: 0 10px 0 8px;
     flex: none;
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: var(--yellow);
   }
 
-  .dot.on {
-    background: var(--green);
-  }
-
-  nav {
-    flex: 1;
-    min-height: 0;
-    overflow-y: auto;
-    padding: 8px 8px 16px;
-  }
-
-  .section {
+  .group {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    padding: 16px 8px 6px;
+    gap: 10px;
+    min-width: 0;
+    height: 40px;
+    padding: 0 10px;
+    border-radius: var(--r-lg);
+    color: var(--fg-3);
+    transition: background-color var(--t-fast) var(--ease);
   }
 
-  .add {
-    color: var(--text-faint);
-    display: grid;
+  button.group:hover,
+  button.group.open {
+    background: var(--hover);
+    color: var(--fg-2);
   }
 
-  .add:hover {
-    color: var(--text);
+  .group img {
+    flex: none;
+    border-radius: 8px;
   }
 
-  .channel {
-    width: 100%;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 6px 8px;
-    border-radius: 6px;
-    color: var(--text-faint);
-    text-align: left;
-  }
-
-  .channel:hover {
-    background: var(--bg-hover);
-    color: var(--text-dim);
-  }
-
-  .channel.active {
-    background: var(--bg-active);
-    color: var(--text);
-  }
-
-  .channel.unread {
-    color: var(--text);
-    font-weight: 700;
-  }
-
-  .name {
+  .group-name {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    color: var(--fg);
+    font-size: var(--text-lg);
+    font-weight: 650;
+    letter-spacing: -0.015em;
   }
 
+  .update {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    flex: none;
+    height: 26px;
+    margin-left: auto;
+    padding: 0 10px 0 8px;
+    border-radius: var(--r-full);
+    background: var(--accent-soft);
+    box-shadow: inset 0 0 0 1px var(--accent-line);
+    color: var(--accent-fg);
+    font-size: var(--text-xs);
+    font-weight: 600;
+    white-space: nowrap;
+    transition: background-color var(--t-fast) var(--ease);
+  }
+
+  .update:hover:not(:disabled) {
+    background: rgb(122 108 255 / 0.24);
+  }
+
+  nav {
+    --row-bg: var(--bg-canvas);
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 4px 8px 16px;
+    scrollbar-width: thin;
+  }
+
+  nav :global(.nav-item:hover) {
+    --row-bg: color-mix(in srgb, var(--bg-canvas) 95.5%, white);
+  }
+
+  nav :global(.nav-item.active) {
+    --row-bg: color-mix(in srgb, var(--bg-canvas) 92.5%, white);
+  }
+
+  .section-label {
+    padding: 18px 10px 6px;
+    color: var(--fg-3);
+    font-size: var(--text-xs);
+    font-weight: 500;
+  }
+
+  .section-label:first-child {
+    padding-top: 6px;
+  }
+
+  /* ---------- Quem está na call ---------- */
+
   .members {
-    padding-left: 26px;
+    margin: 2px 0 4px;
+    padding: 0;
+    list-style: none;
   }
 
   .member {
     display: flex;
     align-items: center;
     gap: 6px;
+    padding-left: 32px;
   }
 
   .member-main {
@@ -348,13 +355,22 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 4px 6px;
-    border-radius: 6px;
+    height: 30px;
+    padding: 0 6px;
+    border-radius: var(--r-md);
+    color: var(--fg-2);
+    font-size: var(--text-sm);
     text-align: left;
+    transition: background-color var(--t-fast) var(--ease);
   }
 
-  .member-main:hover {
-    background: var(--bg-hover);
+  button.member-main:hover {
+    background: var(--hover);
+    color: var(--fg);
+  }
+
+  .member-main.dim {
+    color: var(--fg-3);
   }
 
   .member-name {
@@ -363,152 +379,50 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    color: var(--text-dim);
   }
 
-  .member-name.dim {
-    color: var(--text-faint);
+  .member :global(.cam) {
+    color: var(--fg-3);
   }
 
-  .state {
-    display: grid;
+  .member :global(.state) {
     color: var(--red);
   }
 
-  .ping {
-    font-size: 11px;
-    color: var(--text-faint);
-    font-variant-numeric: tabular-nums;
+  button.live {
+    flex: none;
+    height: 18px;
+    padding: 0 6px;
+    border-radius: 5px;
+    background: var(--red);
+    color: #fff;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    transition:
+      filter var(--t-fast) var(--ease),
+      opacity var(--t-fast) var(--ease);
   }
 
-  .ping.good {
-    color: var(--green);
-  }
-
-  .ping.ok {
-    color: var(--yellow);
-  }
-
-  .ping.bad {
-    color: var(--red);
+  button.live:hover:not(:disabled) {
+    filter: brightness(1.12);
   }
 
   button.live:disabled {
-    opacity: 0.6;
+    opacity: 0.55;
   }
 
   .volume {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 4px 8px 8px 38px;
-    color: var(--text-faint);
-    font-size: 12px;
+    gap: 10px;
+    margin: 0 4px 6px 68px;
+    color: var(--fg-3);
+    font-size: var(--text-xs);
   }
 
-  .volume input {
-    flex: 1;
-    accent-color: var(--accent);
-  }
-
-  .voice-panel {
-    display: flex;
-    align-items: center;
-    gap: 2px;
-    padding: 10px 8px 10px 14px;
-    border-top: 1px solid var(--border);
-    background: #141519;
-  }
-
-  .voice-info {
-    flex: 1;
-    min-width: 0;
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    text-align: left;
-    border-radius: 6px;
-    padding: 2px 4px;
-    margin-left: -4px;
-  }
-
-  .voice-info:hover:not(:disabled) {
-    background: var(--bg-hover);
-  }
-
-  .cam {
-    display: grid;
-    color: var(--text-faint);
-  }
-
-  .cam-on {
-    color: var(--green) !important;
-    background: rgb(63 191 127 / 0.14);
-  }
-
-  .connected {
-    color: var(--green);
-    font-weight: 700;
-    font-size: 13px;
-  }
-
-  .where {
-    color: var(--text-faint);
-    font-size: 12px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .person {
-    padding: 4px 8px;
-  }
-
-  .presence-wrap {
-    position: relative;
-    display: inline-grid;
-  }
-
-  .presence {
-    position: absolute;
-    right: -2px;
-    bottom: -2px;
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-    background: var(--text-faint);
-    border: 2px solid var(--bg-sidebar);
-  }
-
-  .presence.on {
-    background: var(--green);
-  }
-
-  .live-on {
-    color: var(--red) !important;
-    background: var(--red-soft);
-  }
-
-  .hangup:hover {
-    color: var(--red) !important;
-  }
-
-  footer {
-    display: flex;
-    align-items: center;
-    gap: 2px;
-    padding: 8px 8px 8px 10px;
-    background: #121317;
-    border-top: 1px solid var(--border);
-  }
-
-  .me {
-    flex: 1;
-    min-width: 0;
-    margin-left: 8px;
-    font-weight: 600;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+  .volume span {
+    min-width: 34px;
+    text-align: right;
   }
 </style>

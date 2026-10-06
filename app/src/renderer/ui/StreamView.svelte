@@ -3,8 +3,7 @@
   import type { VideoStats } from '../lib/peer'
   import { settings } from '../lib/settings.svelte'
   import { store } from '../lib/store.svelte'
-  import Avatar from './Avatar.svelte'
-  import Icon from './Icon.svelte'
+  import { Avatar, Badge, Icon, IconButton, Slider, Spinner } from './kit'
 
   let { full }: { full: boolean } = $props()
 
@@ -85,8 +84,8 @@
   function clamp(next: { x: number; y: number; width: number }) {
     const width = Math.min(Math.max(next.width, MIN_WIDTH), window.innerWidth - 24)
     const height = (width * 9) / 16
-    const x = next.x < 0 ? window.innerWidth - width - 20 : Math.min(Math.max(next.x, 8), window.innerWidth - width - 8)
-    const y = next.y < 0 ? window.innerHeight - height - 84 : Math.min(Math.max(next.y, 8), window.innerHeight - height - 8)
+    const x = next.x < 0 ? window.innerWidth - width - 24 : Math.min(Math.max(next.x, 8), window.innerWidth - width - 8)
+    const y = next.y < 0 ? window.innerHeight - height - 96 : Math.min(Math.max(next.y, 8), window.innerHeight - height - 8)
     return { x, y, width }
   }
 
@@ -139,66 +138,58 @@
   <video bind:this={video} autoplay playsinline ondblclick={toggleFullscreen}></video>
 
   {#if !stream}
-    <div class="waiting">Conectando à transmissão…</div>
+    <div class="waiting"><Spinner size={18} /> Conectando à transmissão…</div>
   {:else if nativePip}
-    <div class="waiting">Na janela flutuante</div>
+    <div class="waiting"><Icon name="pip" size={18} /> Na janela flutuante</div>
   {/if}
 
   {#if !full}
-    <button
-      class="drag-surface"
-      aria-label="Arraste pra mover, clique pra abrir"
-      onpointerdown={(e) => startDrag(e, 'move')}
-    ></button>
+    <button class="drag-surface" aria-label="Abrir a transmissão (arraste pra mover)" onpointerdown={(e) => startDrag(e, 'move')}></button>
   {/if}
 
-  <div class="who">
-    {#if user && sharer}
-      <Avatar id={sharer.userId} name={user.name} size={22} />
+  {#if user && sharer}
+    <div class="who">
+      <Avatar id={sharer.userId} name={user.name} size={20} />
       <span>{self ? 'Sua tela' : user.name}</span>
-      <span class="live">AO VIVO</span>
-    {/if}
-  </div>
+      <Badge tone="live">AO VIVO</Badge>
+    </div>
+  {/if}
 
   <!-- Controles sempre centralizados embaixo, na mesma ordem, em qualquer tamanho de tela. -->
   <div class="controls">
     {#if full}
-      <div class="volume" class:disabled={self}>
-        <button
-          class="icon-btn"
-          title={self ? 'Sua prévia fica sem som' : 'Som da transmissão'}
+      <div class="volume">
+        <IconButton
+          variant="glass"
+          icon={self || settings.streamVolume === 0 ? 'volume-off' : 'volume'}
+          label={self ? 'Sua prévia fica sem som' : settings.streamVolume === 0 ? 'Ativar o som' : 'Tirar o som'}
           disabled={self}
           onclick={() => (settings.streamVolume = settings.streamVolume > 0 ? 0 : 1)}
-        >
-          <Icon name={self || settings.streamVolume === 0 ? 'volume-off' : 'volume'} />
-        </button>
-        <input type="range" min="0" max="1" step="0.01" disabled={self} bind:value={settings.streamVolume} />
+        />
+        <Slider label="Volume da transmissão" disabled={self} bind:value={settings.streamVolume} />
       </div>
-      <button class="icon-btn" class:active={settings.showStats} title="Estatísticas" onclick={() => (settings.showStats = !settings.showStats)}>
-        <Icon name="stats" />
-      </button>
+      <span class="divider"></span>
+      <IconButton
+        variant="glass"
+        icon="activity"
+        label="Estatísticas"
+        active={settings.showStats}
+        onclick={() => (settings.showStats = !settings.showStats)}
+      />
     {/if}
-    <button class="icon-btn" class:active={nativePip} title="Janela flutuante (fica por cima de tudo)" onclick={togglePip}>
-      <Icon name="pip" />
-    </button>
+    <IconButton variant="glass" icon="pip" label="Janela flutuante" active={nativePip} onclick={togglePip} />
     {#if full}
-      <button class="icon-btn" title="Miniatura (volta pro chat)" onclick={() => (store.view = 'chat')}>
-        <Icon name="shrink" />
-      </button>
-      <button class="icon-btn" title="Tela cheia" onclick={toggleFullscreen}>
-        <Icon name={fullscreen ? 'shrink' : 'expand'} />
-      </button>
+      <IconButton variant="glass" icon="minimize" label="Minimizar" onclick={() => (store.view = 'chat')} />
+      <IconButton variant="glass" icon="fullscreen" label={fullscreen ? 'Sair da tela cheia' : 'Tela cheia'} onclick={toggleFullscreen} />
     {:else}
-      <button class="icon-btn" title="Abrir grande" onclick={() => (store.view = 'stream')}>
-        <Icon name="expand" />
-      </button>
+      <IconButton variant="glass" icon="maximize" label="Ampliar" onclick={() => (store.view = 'stream')} />
     {/if}
-    <button class="icon-btn stop" title="Parar de assistir" onclick={() => call.unwatch()}><Icon name="x" /></button>
+    <span class="divider"></span>
+    <IconButton variant="glass" icon="x" label="Parar de assistir" tone="danger" onclick={() => call.unwatch()} />
   </div>
 
   {#if !full}
-    <button class="resize" aria-label="Redimensionar" title="Arraste pra redimensionar" onpointerdown={(e) => startDrag(e, 'resize')}
-    ></button>
+    <button class="resize" aria-label="Redimensionar" onpointerdown={(e) => startDrag(e, 'resize')}></button>
   {/if}
 
   {#if stats}
@@ -237,26 +228,31 @@
 
   .mini {
     position: fixed;
+    z-index: var(--z-float);
     aspect-ratio: 16 / 9;
-    border-radius: 12px;
-    box-shadow: 0 12px 40px rgb(0 0 0 / 0.55);
-    border: 1px solid var(--border);
-    z-index: 30;
+    border-radius: var(--r-xl);
+    box-shadow:
+      0 0 0 1px var(--line-strong),
+      var(--shadow-lg);
+    animation: rs-pop-in var(--t-slow) var(--ease);
   }
 
   video {
+    display: block;
     width: 100%;
     height: 100%;
     object-fit: contain;
-    display: block;
   }
 
   .waiting {
     position: absolute;
     inset: 0;
-    display: grid;
-    place-items: center;
-    color: var(--text-dim);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    color: var(--fg-2);
+    font-size: var(--text-sm);
     pointer-events: none;
   }
 
@@ -272,41 +268,55 @@
 
   .who {
     position: absolute;
-    top: 10px;
+    top: 12px;
     left: 12px;
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 4px 10px 4px 4px;
-    border-radius: 999px;
-    background: rgb(0 0 0 / 0.55);
-    font-weight: 700;
+    height: 32px;
+    padding: 0 6px 0 6px;
+    border-radius: var(--r-full);
+    background: rgb(10 10 14 / 0.62);
+    backdrop-filter: blur(12px);
+    box-shadow: 0 0 0 1px rgb(255 255 255 / 0.08);
+    color: #f4f4f8;
+    font-size: var(--text-sm);
+    font-weight: 600;
     pointer-events: none;
     opacity: 0;
-    transition: opacity 150ms;
+    transition: opacity var(--t) var(--ease);
+  }
+
+  .mini .who {
+    top: 8px;
+    left: 8px;
+    height: 28px;
   }
 
   .controls {
     position: absolute;
     left: 50%;
-    bottom: 14px;
-    transform: translateX(-50%);
+    bottom: 16px;
     display: flex;
     align-items: center;
     gap: 2px;
     padding: 4px;
-    border-radius: 12px;
-    background: rgb(16 17 21 / 0.82);
-    border: 1px solid rgb(255 255 255 / 0.08);
-    box-shadow: 0 8px 24px rgb(0 0 0 / 0.45);
+    border-radius: var(--r-xl);
+    background: rgb(12 12 17 / 0.72);
+    backdrop-filter: blur(16px);
+    box-shadow:
+      0 0 0 1px rgb(255 255 255 / 0.09),
+      var(--shadow-md);
     white-space: nowrap;
+    translate: -50% 0;
     opacity: 0;
-    transition: opacity 150ms;
+    transition: opacity var(--t) var(--ease);
   }
 
   .mini .controls {
     bottom: 8px;
     padding: 2px;
+    border-radius: 12px;
   }
 
   .stream:hover .controls,
@@ -315,54 +325,52 @@
     opacity: 1;
   }
 
-  .controls .icon-btn {
-    color: #e8e8ee;
-  }
-
-  .controls .icon-btn:hover:not(:disabled),
-  .controls .icon-btn.active {
-    background: rgb(255 255 255 / 0.14);
-  }
-
-  .stop:hover {
-    color: var(--red) !important;
+  .divider {
+    width: 1px;
+    height: 18px;
+    margin: 0 4px;
+    background: rgb(255 255 255 / 0.12);
   }
 
   .volume {
     display: flex;
     align-items: center;
-    padding-right: 6px;
+    gap: 2px;
+    padding-right: 8px;
   }
 
-  .volume input {
-    width: 100px;
-    accent-color: var(--accent);
-  }
-
-  .volume.disabled input {
-    opacity: 0.4;
+  .volume :global(.slider) {
+    width: 96px;
   }
 
   .resize {
     position: absolute;
     right: 0;
     bottom: 0;
-    width: 18px;
-    height: 18px;
+    width: 20px;
+    height: 20px;
     cursor: nwse-resize;
-    background: linear-gradient(135deg, transparent 50%, rgb(255 255 255 / 0.35) 50%);
-    border-bottom-right-radius: 12px;
+    background: linear-gradient(135deg, transparent 55%, rgb(255 255 255 / 0.4) 55%, rgb(255 255 255 / 0.4) 62%, transparent 62%, transparent 72%, rgb(255 255 255 / 0.4) 72%, rgb(255 255 255 / 0.4) 79%, transparent 79%);
+    border-bottom-right-radius: var(--r-xl);
+    opacity: 0;
+    transition: opacity var(--t) var(--ease);
+  }
+
+  .mini:hover .resize {
+    opacity: 1;
   }
 
   .stats {
     position: absolute;
     left: 12px;
-    top: 48px;
-    padding: 8px 10px;
-    border-radius: 8px;
-    background: rgb(0 0 0 / 0.7);
-    font: 12px/1.6 var(--mono);
-    color: #d6f5e3;
+    top: 56px;
+    padding: 10px 12px;
+    border-radius: var(--r-lg);
+    background: rgb(10 10 14 / 0.72);
+    backdrop-filter: blur(12px);
+    box-shadow: 0 0 0 1px rgb(255 255 255 / 0.08);
+    color: #c9f7e2;
+    font: 12px/1.65 var(--mono);
     pointer-events: none;
   }
 </style>

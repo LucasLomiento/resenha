@@ -3,9 +3,8 @@
   import type { Message } from '../../../../shared/protocol'
   import { formatDay } from '../lib/format'
   import { store } from '../lib/store.svelte'
-  import Avatar from './Avatar.svelte'
   import Composer from './Composer.svelte'
-  import Icon from './Icon.svelte'
+  import { Avatar, Icon, Spinner } from './kit'
   import MessageItem from './MessageItem.svelte'
 
   // Canal do grupo, ou conversa privada (que não está na lista de canais).
@@ -22,7 +21,7 @@
   let composer = $state<{ addFiles(files: File[]): void }>()
   let dragging = $state(false)
 
-  // Mensagens agrupadas como no Discord: mesmo autor em sequência (até 7 min) sem repetir cabeçalho.
+  // Mensagens agrupadas: mesmo autor em sequência (até 7 min) sem repetir o cabeçalho.
   function isGrouped(prev: Message | undefined, m: Message) {
     return !!prev && prev.authorId === m.authorId && m.createdAt - prev.createdAt < 7 * 60_000 && sameDay(prev, m)
   }
@@ -94,12 +93,11 @@
 >
   <header>
     {#if dmUser}
-      <Avatar id={dmUser} name={channel?.name ?? '?'} size={24} />
-      <span class="title">{channel?.name ?? ''}</span>
-      <span class="online" class:on={store.online[dmUser]}></span>
+      <Avatar id={dmUser} name={channel?.name ?? '?'} size={24} status={store.online[dmUser] ? 'online' : 'offline'} cutout="var(--bg-panel)" />
+      <h1>{channel?.name ?? ''}</h1>
     {:else}
-      <Icon name="hash" size={20} />
-      <span class="title">{channel?.name ?? ''}</span>
+      <Icon name="hash" size={20} class="header-icon" />
+      <h1>{channel?.name ?? ''}</h1>
     {/if}
   </header>
 
@@ -109,35 +107,47 @@
         {#if dmUser}
           <Avatar id={dmUser} name={channel.name} size={64} />
           <h2>{channel.name}</h2>
-          <p>Começo da conversa privada com {channel.name}. Só vocês dois veem.</p>
+          <p>Só vocês dois veem esta conversa.</p>
         {:else}
-          <div class="start-icon"><Icon name="hash" size={30} /></div>
+          <div class="start-icon"><Icon name="hash" size={28} /></div>
           <h2>Bem-vindo a #{channel.name}</h2>
           <p>Este é o começo do canal.</p>
         {/if}
       </div>
     {:else if channel && store.loadingHistory[channel.id]}
-      <div class="loading">Carregando…</div>
+      <div class="loading"><Spinner size={18} /></div>
     {/if}
 
     {#each messages as message, i (message.id)}
       {#if i === 0 || !sameDay(messages[i - 1], message)}
-        <div class="day"><span>{formatDay(message.createdAt)}</span></div>
+        <div class="day" role="separator"><span>{formatDay(message.createdAt)}</span></div>
       {/if}
       <MessageItem {message} grouped={isGrouped(messages[i - 1], message)} />
     {/each}
   </div>
 
   {#if channel}
-    <Composer bind:this={composer} channelId={channel.id} placeholder={dmUser ? `Mensagem para @${channel.name}` : `Conversar em #${channel.name}`} />
+    <Composer
+      bind:this={composer}
+      channelId={channel.id}
+      placeholder={dmUser ? `Mensagem para ${channel.name}` : `Mensagem em #${channel.name}`}
+    />
   {/if}
-  <div class="typing">
-    {#if typing.length === 1}<b>{typing[0].name}</b> está digitando…
-    {:else if typing.length > 1}<b>{typing.map((u) => u.name).join(', ')}</b> estão digitando…{/if}
+  <div class="typing" aria-live="polite">
+    {#if typing.length}
+      <span class="dots" aria-hidden="true"><i></i><i></i><i></i></span>
+      {#if typing.length === 1}<b>{typing[0].name}</b> está digitando…
+      {:else}<b>{typing.map((u) => u.name).join(', ')}</b> estão digitando…{/if}
+    {/if}
   </div>
 
   {#if dragging}
-    <div class="drop">Solte pra enviar {dmUser ? `pra ${channel?.name}` : `em #${channel?.name}`}</div>
+    <div class="drop">
+      <div class="drop-card">
+        <Icon name="upload" size={28} />
+        <span>Solte pra enviar {dmUser ? `pra ${channel?.name}` : `em #${channel?.name}`}</span>
+      </div>
+    </div>
   {/if}
 </section>
 
@@ -152,73 +162,86 @@
   header {
     display: flex;
     align-items: center;
-    gap: 8px;
-    height: 52px;
-    padding: 0 18px;
-    border-bottom: 1px solid var(--border);
-    color: var(--text-faint);
+    gap: 10px;
     flex: none;
+    height: var(--header-h);
+    padding: 0 20px;
+    border-bottom: 1px solid var(--line);
   }
 
-  .title {
-    color: var(--text);
-    font-weight: 700;
-    font-size: 15px;
+  header :global(.header-icon) {
+    color: var(--fg-3);
   }
 
-  .online {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: var(--text-faint);
-  }
-
-  .online.on {
-    background: var(--green);
+  h1 {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: var(--text-lg);
+    font-weight: 600;
+    letter-spacing: -0.01em;
   }
 
   .scroller {
     flex: 1;
     min-height: 0;
     overflow-y: auto;
-    padding: 12px 0 8px;
+    padding: 8px 0 12px;
   }
 
   .start {
-    padding: 24px 18px 12px;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+    padding: 32px 20px 16px;
   }
 
   .start-icon {
-    width: 64px;
-    height: 64px;
-    border-radius: 50%;
     display: grid;
     place-items: center;
-    background: var(--bg-active);
+    width: 64px;
+    height: 64px;
+    margin-bottom: 8px;
+    border-radius: 20px;
+    background:
+      linear-gradient(var(--bg-raised), var(--bg-raised)) padding-box,
+      linear-gradient(135deg, rgb(111 125 255 / 0.65), rgb(145 80 255 / 0.4), rgb(255 90 122 / 0.55)) border-box;
+    border: 1px solid transparent;
+    color: var(--fg);
+    box-shadow: 0 12px 32px -12px rgb(111 125 255 / 0.4);
+  }
+
+  .start :global(.avatar) {
+    margin-bottom: 8px;
   }
 
   .start h2 {
-    margin: 12px 0 4px;
-    font-size: 24px;
+    font-size: var(--text-3xl);
+    font-weight: 650;
+    letter-spacing: -0.025em;
+    line-height: 1.15;
   }
 
-  .start p,
-  .loading {
-    margin: 0;
-    color: var(--text-dim);
+  .start p {
+    color: var(--fg-2);
   }
 
   .loading {
-    padding: 12px 18px;
+    display: grid;
+    place-items: center;
+    padding: 20px;
+    color: var(--fg-3);
   }
 
   .day {
     display: flex;
     align-items: center;
-    margin: 16px 18px 6px;
-    color: var(--text-faint);
-    font-size: 12px;
-    font-weight: 600;
+    gap: 12px;
+    margin: 20px 20px 8px;
+    color: var(--fg-3);
+    font-size: var(--text-xs);
+    font-weight: 500;
   }
 
   .day::before,
@@ -226,31 +249,86 @@
     content: '';
     flex: 1;
     height: 1px;
-    background: var(--border);
-  }
-
-  .day span {
-    padding: 0 10px;
+    background: var(--line);
   }
 
   .typing {
-    height: 22px;
-    padding: 0 18px 4px;
-    font-size: 12px;
-    color: var(--text-dim);
+    display: flex;
+    align-items: center;
+    gap: 6px;
     flex: none;
+    height: 26px;
+    padding: 0 20px 2px;
+    overflow: hidden;
+    color: var(--fg-3);
+    font-size: var(--text-xs);
+    white-space: nowrap;
+  }
+
+  .typing b {
+    color: var(--fg-2);
+    font-weight: 600;
+  }
+
+  .dots {
+    display: inline-flex;
+    gap: 3px;
+    margin-right: 2px;
+  }
+
+  .dots i {
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: var(--fg-2);
+    animation: typing 1.2s ease-in-out infinite;
+  }
+
+  .dots i:nth-child(2) {
+    animation-delay: 0.15s;
+  }
+
+  .dots i:nth-child(3) {
+    animation-delay: 0.3s;
+  }
+
+  @keyframes typing {
+    0%,
+    60%,
+    100% {
+      opacity: 0.3;
+      transform: translateY(0);
+    }
+    30% {
+      opacity: 1;
+      transform: translateY(-2px);
+    }
   }
 
   .drop {
     position: absolute;
-    inset: 12px;
+    inset: 0;
+    z-index: 15;
     display: grid;
     place-items: center;
-    border: 2px dashed var(--accent);
-    border-radius: 14px;
-    background: rgb(28 29 34 / 0.9);
-    font-size: 18px;
-    font-weight: 700;
+    padding: 16px;
+    background: rgb(11 11 16 / 0.72);
+    backdrop-filter: blur(2px);
     pointer-events: none;
+    animation: rs-fade-in var(--t) var(--ease);
+  }
+
+  .drop-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    padding: 32px 40px;
+    border: 1.5px dashed var(--accent-line);
+    border-radius: var(--r-2xl);
+    background: var(--accent-soft);
+    color: var(--fg);
+    font-size: var(--text-lg);
+    font-weight: 600;
   }
 </style>

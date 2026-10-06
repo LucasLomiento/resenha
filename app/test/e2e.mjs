@@ -33,6 +33,8 @@ const micFallbacks = []
 /** Captura pelo processo principal: page.screenshot trava em janela escondida. */
 async function shot(side, name) {
   if (!SHOTS) return
+  // A janela escondida pinta fora da tela: espera o quadro novo (e as transições curtas) antes de capturar.
+  await side.page.waitForTimeout(350)
   const png = await side.app.evaluate(async ({ BrowserWindow }) =>
     (await BrowserWindow.getAllWindows()[0].webContents.capturePage()).toPNG().toString('base64'),
   )
@@ -162,22 +164,34 @@ async function measureLatency(page, samples = 90) {
   }, samples)
 }
 
+/** Posição e largura de um botão (pelo nome acessível), pra conferir que nada muda de lugar entre estados. */
+function rectOf(page, name) {
+  return page.getByRole('button', { name, exact: true }).evaluate((el) => {
+    const r = el.getBoundingClientRect()
+    return `${Math.round(r.left)},${Math.round(r.top)},${Math.round(r.width)}`
+  })
+}
+
 function median(values) {
   const sorted = [...values].sort((a, b) => a - b)
   return sorted[Math.floor(sorted.length / 2)]
 }
 
-async function login(page, name, invite) {
+async function login(side, name, invite) {
+  const { page } = side
   // O servidor vem do build (VITE_DEFAULT_SERVER); espera a tela descobrir se é servidor novo.
   await page.waitForTimeout(700)
   if (invite) {
-    if (await page.getByText('Tenho um convite').isVisible()) await page.getByText('Tenho um convite').click({ force: true })
+    // Na tela de entrar, o link "Criar conta" embaixo do cartão troca pro cadastro com convite.
+    const toRegister = page.locator('.switch button', { hasText: 'Criar conta' })
+    if (await toRegister.isVisible()) await toRegister.click({ force: true })
     await page.getByLabel('Convite').fill(invite)
   }
   await page.getByLabel('Apelido').fill(name)
   await page.getByLabel('Senha').fill('senha-de-teste')
-  await page.getByRole('button', { name: 'Criar conta' }).click({ force: true })
-  await page.locator('aside header .dot.on').waitFor({ timeout: 10_000 })
+  await shot(side, invite ? '0b-cadastro-convite' : '0-cadastro')
+  await page.getByRole('button', { name: 'Criar conta', exact: true }).click({ force: true })
+  await page.locator('.shell[data-status=open]').waitFor({ timeout: 10_000 })
 }
 
 /** Tom silencioso tocando no alto-falante padrão: um "outro app" pro venmic capturar. */
@@ -240,20 +254,22 @@ const b = await launch('e2e-b')
 
 try {
   // Contas: A cria o servidor (admin) e gera o convite; B entra com ele.
-  await login(a.page, 'Lucas')
+  await login(a, 'Lucas')
   check(true, 'A criou a primeira conta (admin)')
-  await a.page.getByTitle('Configurações').click({ force: true })
-  await a.page.getByRole('button', { name: 'Grupo' }).click({ force: true })
+  await a.page.getByRole('button', { name: 'Configurações', exact: true }).click({ force: true })
+  await a.page.getByRole('button', { name: 'Grupo', exact: true }).click({ force: true })
   await a.page.getByRole('button', { name: 'Gerar convite' }).click({ force: true })
+  await a.page.locator('.invite code').waitFor({ timeout: 5000 })
   const invite = (await a.page.locator('.invite code').textContent())?.trim()
   check(!!invite, 'convite gerado', invite)
+  await shot(a, '0c-grupo-convite')
   await a.page.keyboard.press('Escape')
 
-  await login(b.page, 'Amigo', invite)
+  await login(b, 'Amigo', invite)
   check(true, 'B entrou com o convite')
 
   // Chat e anexo.
-  await b.page.getByPlaceholder('Conversar em #geral').fill('salve, tá me ouvindo?')
+  await b.page.getByPlaceholder('Mensagem em #geral').fill('salve, tá me ouvindo?')
   await b.page.keyboard.press('Enter')
   await a.page.getByText('salve, tá me ouvindo?').waitFor({ timeout: 5000 })
   check(true, 'mensagem de B chegou em A')
@@ -264,19 +280,19 @@ try {
   )
   await b.page.locator('input[type=file]').setInputFiles({ name: 'print.png', mimeType: 'image/png', buffer: png })
   await b.page.locator('.upload .upload-meta', { hasText: /\d+ B$/ }).waitFor({ timeout: 10_000 })
-  await b.page.getByPlaceholder('Conversar em #geral').press('Enter')
+  await b.page.getByPlaceholder('Mensagem em #geral').press('Enter')
   const img = a.page.locator('article img[alt="print.png"]')
   await img.waitFor({ timeout: 5000 })
   const loaded = await img.evaluate((el) => (el.complete ? el.naturalWidth : new Promise((r) => (el.onload = () => r(el.naturalWidth)))))
   check(loaded === 1, 'imagem enviada por B aparece em A (URL assinada)')
-  await b.page.getByPlaceholder('Conversar em #geral').fill('olha esse código: `npm run dev` e o link https://example.com')
+  await b.page.getByPlaceholder('Mensagem em #geral').fill('olha esse código: `npm run dev` e o link https://example.com')
   await b.page.keyboard.press('Enter')
   await a.page.getByText('olha esse código').waitFor()
   await shot(a, '1-chat')
 
   // Rolagem do chat: com mensagem suficiente, a lista tem que rolar (era o bug da 0.1.0).
   for (let i = 0; i < 30; i++) {
-    await b.page.getByPlaceholder('Conversar em #geral').fill(`mensagem ${i}`)
+    await b.page.getByPlaceholder('Mensagem em #geral').fill(`mensagem ${i}`)
     await b.page.keyboard.press('Enter')
   }
   await a.page.getByText('mensagem 29').waitFor()
@@ -287,25 +303,49 @@ try {
   })
   check(scroll.scrollable && scroll.moved, 'chat rola quando tem mensagem que não cabe')
 
+  if (SHOTS) {
+    // Confirmação de apagar (cancelada com Esc) e o visualizador de imagem.
+    await a.page.locator('.scroller').evaluate((el) => (el.scrollTop = el.scrollHeight))
+    const last = a.page.locator('article', { hasText: 'mensagem 29' })
+    await last.hover({ force: true })
+    await last.getByRole('button', { name: 'Apagar' }).click({ force: true })
+    await a.page.locator('.modal').waitFor()
+    await shot(a, '1e-confirmar')
+    await a.page.keyboard.press('Escape')
+    await a.page.locator('.modal').waitFor({ state: 'detached' })
+    await a.page.locator('article img[alt="print.png"]').click({ force: true })
+    await a.page.locator('.lightbox').waitFor()
+    await shot(a, '1f-imagem')
+    await a.page.keyboard.press('Escape')
+    await a.page.locator('.lightbox').waitFor({ state: 'detached' })
+  }
+
   // Mensagem privada: B manda pra A; A vê o aviso e abre.
   await b.page.locator('button.person', { hasText: 'Lucas' }).click({ force: true })
-  await b.page.getByPlaceholder('Mensagem para @Lucas').fill('oi no privado')
+  await b.page.getByPlaceholder('Mensagem para Lucas').fill('oi no privado')
   await b.page.keyboard.press('Enter')
   await a.page.locator('button.person.unread', { hasText: 'Amigo' }).waitFor({ timeout: 5000 })
+  await shot(a, '1b-nao-lida')
   await a.page.locator('button.person', { hasText: 'Amigo' }).click({ force: true })
   await a.page.locator('.scroller').getByText('oi no privado').waitFor({ timeout: 5000 })
   check(true, 'mensagem privada chega e aparece como não lida')
+  await shot(a, '1c-privado')
   await a.page.locator('nav button.channel', { hasText: 'geral' }).click({ force: true })
   await b.page.locator('nav button.channel', { hasText: 'geral' }).click({ force: true })
 
   // Call P2P.
   await fakeMic(a.page)
   await fakeMic(b.page)
+  const micBefore = await rectOf(a.page, 'Mutar')
   await a.page.locator('nav button.channel', { hasText: 'Resenha' }).click({ force: true })
   await b.page.locator('nav button.channel', { hasText: 'Resenha' }).click({ force: true })
-  await a.page.locator('.voice-panel .connected', { hasText: 'Voz conectada' }).waitFor({ timeout: 10_000 })
+  await a.page.locator('.dock .status', { hasText: 'Na call' }).waitFor({ timeout: 10_000 })
+  const micAfter = await rectOf(a.page, 'Mutar')
+  check(micBefore === micAfter, 'mutar/ensurdecer/configurações não mudam de lugar ao entrar na call', `${micBefore} → ${micAfter}`)
+  // As barras do sinal aparecem já medindo; o ping (em texto pra leitor de tela) chega em seguida.
   const ping = a.page.locator('.member .ping').first()
   await ping.waitFor({ timeout: 15_000 })
+  await a.page.waitForFunction(() => /\d+ ms/.test(document.querySelector('.member .ping')?.textContent ?? ''), null, { timeout: 15_000 })
   const pingText = await ping.textContent()
   check(!pingText.includes('relay'), 'A e B conectados direto (P2P)', pingText.trim())
 
@@ -324,15 +364,18 @@ try {
   check(micFallbacks.length === 0, 'microfone passa pelo processador (RNNoise/limiar) carregado no AudioWorklet')
 
   // Webcam: B liga, A abre a tela da call e vê o vídeo; B desliga e volta o avatar.
-  await b.page.getByTitle('Ligar câmera').click({ force: true })
+  const camBefore = await rectOf(b.page, 'Ligar câmera')
+  await b.page.getByRole('button', { name: 'Ligar câmera', exact: true }).click({ force: true })
   await a.page.locator('.member', { hasText: 'Amigo' }).locator('.cam').waitFor({ timeout: 10_000 })
-  await a.page.getByTitle('Abrir a call (câmeras)').click({ force: true })
+  const camAfter = await rectOf(b.page, 'Desligar câmera')
+  check(camBefore === camAfter, 'botão da câmera fica no mesmo lugar ligado e desligado', `${camBefore} → ${camAfter}`)
+  await a.page.getByRole('button', { name: 'Abrir a call', exact: true }).click({ force: true })
   await a.page
     .waitForFunction(() => [...document.querySelectorAll('.tile video')].some((v) => v.videoWidth > 0), null, { timeout: 15_000 })
     .then(() => check(true, 'A vê a câmera de B na tela da call'))
     .catch(() => check(false, 'A vê a câmera de B na tela da call'))
   await shot(a, '2b-camera')
-  await b.page.getByTitle('Desligar câmera').first().click({ force: true })
+  await b.page.getByRole('button', { name: 'Desligar câmera', exact: true }).click({ force: true })
   await a.page
     .waitForFunction(() => document.querySelectorAll('.tile video').length === 0, null, { timeout: 10_000 })
     .then(() => check(true, 'desligar a câmera volta o avatar'))
@@ -344,13 +387,15 @@ try {
   const player = withAudio ? silentPlayer() : null
   await a.page.waitForTimeout(500)
   await fakeScreen(a.page)
-  await a.page.getByTitle('Compartilhar tela').click({ force: true })
+  const screenBefore = await rectOf(a.page, 'Compartilhar tela')
+  await a.page.getByRole('button', { name: 'Compartilhar tela', exact: true }).click({ force: true })
   await a.page.locator('.modal').waitFor()
+  await a.page.waitForTimeout(300)
   await shot(a, '3-compartilhar')
   await a.page.locator('.segmented button', { hasText: full ? '1440p' : '720p' }).click({ force: true })
   const audioBox = a.page.locator('.modal input[type=checkbox]')
   if ((await audioBox.isChecked()) !== withAudio) await audioBox.click({ force: true })
-  await a.page.locator('.modal .btn:not(.secondary)').click({ force: true })
+  await a.page.locator('.modal').getByRole('button', { name: 'Compartilhar', exact: true }).click({ force: true })
   const live = b.page.locator('button.live')
   await live.waitFor({ timeout: 10_000 })
   await live.click({ force: true })
@@ -384,16 +429,24 @@ try {
   const med = median(delays)
   const p95 = [...delays].sort((x, y) => x - y)[Math.floor(delays.length * 0.95)]
   check(delays.length > 30, `atraso de ponta a ponta (${delays.length} quadros)`, `mediana ${med} ms, p95 ${p95} ms, ${width}x${height}`)
-  await b.page.getByTitle('Estatísticas').click({ force: true })
+  await b.page.getByRole('button', { name: 'Estatísticas', exact: true }).click({ force: true })
   await b.page.locator('.stats').waitFor()
   await b.page.waitForTimeout(2500)
   console.log('   estatísticas em B:', (await b.page.locator('.stats').innerText()).replace(/\n/g, ' | '))
-  // Muda qualidade e codec com a transmissão rolando, pelo painel de quem transmite.
-  await a.page.getByTitle('Transmissão: qualidade, codec, parar').click({ force: true })
+  // Muda a qualidade pelo painel de quem transmite e o codec pelas configurações (Avançado), com a transmissão rolando.
+  const livePanel = () => a.page.getByRole('button', { name: 'Ao vivo: opções da transmissão', exact: true }).click({ force: true })
+  const screenAfter = await rectOf(a.page, 'Ao vivo: opções da transmissão')
+  check(screenBefore === screenAfter, 'botão da tela fica no mesmo lugar antes e durante a transmissão', `${screenBefore} → ${screenAfter}`)
+  await livePanel()
   const viewers = await a.page.locator('.share-panel .viewers').textContent()
   check(viewers?.includes('1 pessoa'), 'quem transmite vê quantas pessoas assistem', viewers ?? '')
-  await a.page.locator('.share-panel .segmented button', { hasText: 'H264' }).click({ force: true })
+  await shot(a, '3b-ao-vivo')
   await a.page.locator('.share-panel .segmented button', { hasText: '1080p' }).click({ force: true })
+  await a.page.keyboard.press('Escape')
+  await a.page.getByRole('button', { name: 'Configurações', exact: true }).click({ force: true })
+  await a.page.getByRole('button', { name: 'Voz e vídeo', exact: true }).click({ force: true })
+  await a.page.getByRole('button', { name: 'Avançado', exact: true }).click({ force: true })
+  await a.page.locator('.settings .segmented button', { hasText: 'H264' }).click({ force: true })
   await a.page.keyboard.press('Escape')
   await b.page.waitForFunction(() => document.querySelector('.stats')?.textContent?.includes('H264'), null, { timeout: 20_000 })
     .then(() => check(true, 'codec trocou pra H264 ao vivo'))
@@ -405,32 +458,39 @@ try {
 
   await b.page.locator('.stream').hover({ force: true })
   await shot(b, '4-assistindo')
-  await b.page.getByTitle('Miniatura (volta pro chat)').click({ force: true })
+  await b.page.getByRole('button', { name: 'Minimizar', exact: true }).click({ force: true })
   await b.page.waitForTimeout(500)
   await shot(b, '5-miniatura')
 
-  await a.page.getByTitle('Transmissão: qualidade, codec, parar').click({ force: true })
+  await livePanel()
   await a.page.getByRole('button', { name: 'Ver minha tela' }).click({ force: true })
-  await a.page.getByTitle('Estatísticas').click({ force: true })
+  await a.page.getByRole('button', { name: 'Estatísticas', exact: true }).click({ force: true })
   await a.page.waitForTimeout(2500)
   console.log('   estatísticas em A:', (await a.page.locator('.stats').innerText()).replace(/\n/g, ' | '))
-  await a.page.getByTitle('Configurações').click({ force: true })
+  await a.page.getByRole('button', { name: 'Configurações', exact: true }).click({ force: true })
+  await a.page.waitForTimeout(300)
   await shot(a, '6-configuracoes')
-  // A janela de configurações não pode mudar de tamanho (e mover as abas) de uma aba pra outra.
-  const tabsTop = () => a.page.locator('.tabs').evaluate((el) => Math.round(el.getBoundingClientRect().top))
+  // Configurações em tela cheia: a navegação e o título da página não mudam de lugar entre as páginas.
+  const positions = () =>
+    a.page.evaluate(() => {
+      const nav = document.querySelector('.settings-nav button')?.getBoundingClientRect()
+      const title = document.querySelector('.settings-content h1')?.getBoundingClientRect()
+      return `${Math.round(nav?.top ?? -1)}/${Math.round(title?.top ?? -1)}`
+    })
   const tops = []
-  for (const tab of ['Voz', 'Tela', 'Atalhos', 'App', 'Grupo', 'Conta']) {
-    await a.page.locator('.tabs button', { hasText: tab }).click({ force: true })
-    tops.push(await tabsTop())
+  for (const page of ['Minha conta', 'Voz e vídeo', 'Notificações', 'Atalhos', 'Aplicativo', 'Grupo']) {
+    await a.page.locator('.settings-nav button', { hasText: page }).click({ force: true })
+    tops.push(await positions())
+    await shot(a, `6-configuracoes-${page.toLowerCase().replace(/\s+/g, '-').normalize('NFD').replace(/[̀-ͯ]/g, '')}`)
   }
-  check(new Set(tops).size === 1, 'abas das configurações ficam no mesmo lugar em todas as abas', tops.join(','))
-  await a.page.locator('.tabs button', { hasText: 'App' }).click({ force: true })
+  check(new Set(tops).size === 1, 'navegação e título das configurações ficam no mesmo lugar em todas as páginas', tops.join(','))
+  await a.page.locator('.settings-nav button', { hasText: 'Aplicativo' }).click({ force: true })
   await shot(a, '7-configuracoes-app')
   await a.page.keyboard.press('Escape')
 
   // Parar de compartilhar some com o player de B.
-  await a.page.getByTitle('Transmissão: qualidade, codec, parar').click({ force: true })
-  await a.page.locator('.share-panel .btn.danger').click({ force: true })
+  await livePanel()
+  await a.page.locator('.share-panel').getByRole('button', { name: 'Parar', exact: true }).click({ force: true })
   await b.page.locator('.stream').waitFor({ state: 'detached', timeout: 5000 })
   check(true, 'parar de compartilhar fecha o player de B')
   if (withAudio) {
@@ -438,6 +498,17 @@ try {
     check(venmicSources() === null, 'venmic desfez o microfone virtual ao parar')
   }
   player?.cleanup()
+
+  // Janela no tamanho mínimo (940x560): nada pode cortar nem sair do lugar.
+  if (SHOTS) {
+    await a.app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(940, 560))
+    await a.page.waitForTimeout(400)
+    await shot(a, '9-janela-minima')
+    await a.page.getByRole('button', { name: 'Configurações', exact: true }).click({ force: true })
+    await a.page.waitForTimeout(300)
+    await shot(a, '9b-janela-minima-configuracoes')
+    await a.page.keyboard.press('Escape')
+  }
 } catch (err) {
   failures++
   console.error('✘ falhou:', err)

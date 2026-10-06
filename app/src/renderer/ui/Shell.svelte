@@ -5,8 +5,10 @@
   import { ui } from '../lib/ui.svelte'
   import CallView from './CallView.svelte'
   import ChatView from './ChatView.svelte'
+  import Confirm from './Confirm.svelte'
+  import { Spinner } from './kit'
   import Lightbox from './Lightbox.svelte'
-  import Settings from './Settings.svelte'
+  import Settings from './settings/Settings.svelte'
   import ShareDialog from './ShareDialog.svelte'
   import Sidebar from './Sidebar.svelte'
   import StreamView from './StreamView.svelte'
@@ -57,9 +59,9 @@
 
 <svelte:window onkeydown={onKeydown} />
 
-<div class="shell">
+<div class="shell" data-status={store.status}>
   <Sidebar />
-  <main>
+  <main class="panel">
     <div class="chat" class:hidden={streamFull || callOpen}>
       <ChatView />
     </div>
@@ -70,7 +72,10 @@
       <StreamView full={streamFull} />
     {/if}
     {#if store.status !== 'open'}
-      <div class="offline">{store.status === 'connecting' ? 'Conectando…' : 'Sem conexão. Tentando de novo…'}</div>
+      <div class="offline" role="status">
+        <Spinner size={14} />
+        {store.status === 'connecting' ? 'Conectando…' : 'Sem conexão. Tentando de novo…'}
+      </div>
     {/if}
   </main>
 </div>
@@ -78,22 +83,32 @@
 {#if ui.settings}<Settings />{/if}
 {#if ui.share}<ShareDialog />{/if}
 {#if ui.lightbox}<Lightbox />{/if}
+{#if ui.confirm}<Confirm />{/if}
 
 <style>
   .shell {
     height: 100%;
     display: grid;
-    grid-template-columns: 260px minmax(0, 1fr);
+    grid-template-columns: 248px minmax(0, 1fr);
     /* Sem isso a linha cresce com o conteúdo e o chat nunca ganha barra de rolagem. */
     grid-template-rows: minmax(0, 1fr);
+    background:
+      radial-gradient(520px 360px at 0% 0%, rgb(111 125 255 / 0.07), transparent 70%),
+      var(--bg-canvas);
   }
 
-  main {
+  /* O conteúdo é um painel solto sobre a janela; a barra lateral fica direto no fundo. */
+  .panel {
     position: relative;
     min-width: 0;
     min-height: 0;
+    margin: 8px 8px 8px 0;
+    border-radius: var(--r-xl);
+    background: var(--bg-panel);
+    box-shadow:
+      0 0 0 1px var(--line),
+      var(--shadow-sm);
     overflow: hidden;
-    background: var(--bg-main);
   }
 
   .chat {
@@ -106,15 +121,22 @@
 
   .offline {
     position: absolute;
-    top: 10px;
+    top: 64px;
     left: 50%;
-    transform: translateX(-50%);
-    padding: 6px 12px;
-    border-radius: 999px;
-    background: #3a321b;
-    border: 1px solid #6b5a26;
-    color: #ffe7a8;
-    font-size: 13px;
     z-index: 20;
+    display: flex;
+    align-items: center;
+    gap: var(--s-2);
+    padding: 7px 14px 7px 12px;
+    border-radius: var(--r-full);
+    background: rgb(36 30 14 / 0.95);
+    box-shadow:
+      0 0 0 1px rgb(251 191 36 / 0.3),
+      var(--shadow-md);
+    color: #fde3a1;
+    font-size: var(--text-sm);
+    font-weight: 500;
+    translate: -50% 0;
+    animation: rs-pop-in var(--t) var(--ease);
   }
 </style>

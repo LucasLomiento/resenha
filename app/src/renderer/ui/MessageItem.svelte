@@ -1,10 +1,9 @@
 <script lang="ts">
   import type { Attachment, Message } from '../../../../shared/protocol'
-  import { formatSize, formatStamp, formatTime, parseMessage, userColor } from '../lib/format'
+  import { formatFull, formatSize, formatStamp, formatTime, parseMessage } from '../lib/format'
   import { store } from '../lib/store.svelte'
-  import { ui } from '../lib/ui.svelte'
-  import Avatar from './Avatar.svelte'
-  import Icon from './Icon.svelte'
+  import { confirmAction, ui } from '../lib/ui.svelte'
+  import { Avatar, Icon, IconButton, Kbd, tooltip } from './kit'
 
   let { message, grouped }: { message: Message; grouped: boolean } = $props()
 
@@ -38,8 +37,11 @@
     }
   }
 
-  function remove() {
-    store.send({ t: 'chat.delete', id: message.id })
+  /** Shift + clique apaga direto, sem perguntar. */
+  function remove(event: MouseEvent) {
+    const run = () => store.send({ t: 'chat.delete', id: message.id })
+    if (event.shiftKey) return run()
+    confirmAction({ title: 'Apagar mensagem?', description: 'Não dá pra desfazer.', confirm: 'Apagar', onconfirm: run })
   }
 
   function open(a: Attachment) {
@@ -52,26 +54,29 @@
   }
 </script>
 
-<article class:grouped>
+<article class:grouped class:editing>
   <div class="gutter">
     {#if grouped}
-      <span class="time-hover">{formatTime(message.createdAt)}</span>
+      <time class="time-hover tabular" use:tooltip={formatFull(message.createdAt)}>{formatTime(message.createdAt)}</time>
     {:else}
-      <Avatar id={message.authorId} name={author?.name ?? '?'} size={38} />
+      <Avatar id={message.authorId} name={author?.name ?? '?'} size={36} />
     {/if}
   </div>
 
   <div class="body">
     {#if !grouped}
       <div class="head">
-        <span class="author" style:color={userColor(message.authorId)}>{author?.name ?? 'Alguém'}</span>
-        <span class="stamp">{formatStamp(message.createdAt)}</span>
+        <span class="author">{author?.name ?? 'Alguém'}</span>
+        <time class="stamp" use:tooltip={formatFull(message.createdAt)}>{formatStamp(message.createdAt)}</time>
       </div>
     {/if}
 
     {#if editing}
-      <textarea class="field edit" bind:value={draft} onkeydown={editKey} use:autofocus rows="2"></textarea>
-      <div class="edit-hint">Enter salva · Esc cancela</div>
+      <textarea class="edit" bind:value={draft} onkeydown={editKey} use:autofocus rows="2" aria-label="Editar mensagem" data-own-escape></textarea>
+      <div class="edit-hint">
+        <span><Kbd keys="Enter" /> salva</span>
+        <span><Kbd keys="Esc" /> cancela</span>
+      </div>
     {:else if message.content}
       <div class="content selectable">
         {#each segments as seg, i (i)}
@@ -80,28 +85,26 @@
           {:else if seg.kind === 'block'}<pre>{seg.text}</pre>
           {:else}{seg.text}{/if}
         {/each}
-        {#if message.editedAt}<span class="edited">(editada)</span>{/if}
+        {#if message.editedAt}<span class="edited" use:tooltip={formatFull(message.editedAt)}>editada</span>{/if}
       </div>
     {/if}
 
     {#each message.attachments as a (a.id)}
       {#if IMAGE.test(a.type)}
-        <button class="image" onclick={() => open(a)}>
-          <img src={store.server + a.url} alt={a.name} loading="lazy" />
+        <button class="image" aria-label="Abrir {a.name}" onclick={() => open(a)}>
+          <img src={store.server + a.url} alt={a.name} loading="lazy" draggable="false" />
         </button>
       {:else if VIDEO.test(a.type)}
         <!-- svelte-ignore a11y_media_has_caption -->
         <video class="video" src={store.server + a.url} controls preload="metadata"></video>
       {:else}
         <div class="file">
-          <Icon name="file" size={28} stroke={1.5} />
+          <span class="file-icon"><Icon name="file" size={20} /></span>
           <div class="file-info">
-            <span class="file-name">{a.name}</span>
+            <span class="file-name" title={a.name}>{a.name}</span>
             <span class="file-size">{formatSize(a.size)}</span>
           </div>
-          <button class="icon-btn" title="Baixar" onclick={() => window.resenha.download(store.server + a.url)}>
-            <Icon name="download" />
-          </button>
+          <IconButton icon="download" label="Baixar" onclick={() => window.resenha.download(store.server + a.url)} />
         </div>
       {/if}
     {/each}
@@ -110,9 +113,9 @@
   {#if !editing && (mine || store.me?.admin)}
     <div class="actions">
       {#if mine && message.content}
-        <button class="icon-btn" title="Editar" onclick={startEdit}><Icon name="pencil" size={16} /></button>
+        <IconButton icon="pencil" label="Editar" size="sm" onclick={startEdit} />
       {/if}
-      <button class="icon-btn" title="Apagar" onclick={remove}><Icon name="trash" size={16} /></button>
+      <IconButton icon="trash" label="Apagar" size="sm" tone="danger" onclick={remove} />
     </div>
   {/if}
 </article>
@@ -122,30 +125,34 @@
     position: relative;
     display: flex;
     gap: 14px;
-    padding: 6px 18px 2px;
-    margin-top: 10px;
+    margin-top: 14px;
+    padding: 3px 20px;
+    transition: background-color var(--t-fast) var(--ease);
   }
 
   article.grouped {
     margin-top: 0;
     padding-top: 1px;
+    padding-bottom: 1px;
   }
 
-  article:hover {
-    background: rgb(255 255 255 / 0.025);
+  article:hover,
+  article.editing {
+    background: rgb(255 255 255 / 0.022);
   }
 
   .gutter {
-    width: 38px;
-    flex: none;
     display: flex;
     justify-content: center;
+    flex: none;
+    width: 36px;
+    padding-top: 2px;
   }
 
   .time-hover {
     visibility: hidden;
-    font-size: 10px;
-    color: var(--text-faint);
+    color: var(--fg-3);
+    font-size: 10.5px;
     line-height: 22px;
   }
 
@@ -162,64 +169,98 @@
     display: flex;
     align-items: baseline;
     gap: 8px;
+    margin-bottom: 1px;
   }
 
   .author {
-    font-weight: 700;
+    color: var(--fg);
+    font-size: var(--text-md);
+    font-weight: 600;
   }
 
   .stamp {
-    font-size: 11px;
-    color: var(--text-faint);
+    color: var(--fg-3);
+    font-size: var(--text-xs);
+    font-variant-numeric: tabular-nums;
   }
 
   .content {
+    color: #dedee6;
+    font-size: var(--text-lg);
+    line-height: 1.5;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
-    color: #dcdde3;
   }
 
   code {
+    padding: 1px 5px;
+    border-radius: var(--r-xs);
+    background: rgb(255 255 255 / 0.07);
     font-family: var(--mono);
-    font-size: 12.5px;
-    padding: 1px 4px;
-    border-radius: 4px;
-    background: var(--bg-deep);
+    font-size: 0.86em;
   }
 
   pre {
-    margin: 4px 0;
-    padding: 10px 12px;
-    border-radius: 6px;
-    background: var(--bg-deep);
-    border: 1px solid var(--border);
+    margin: 6px 0;
+    padding: 12px 14px;
+    border-radius: var(--r-lg);
+    background: var(--bg-input);
+    box-shadow: inset 0 0 0 1px var(--line);
     font-family: var(--mono);
-    font-size: 12.5px;
+    font-size: 13px;
+    line-height: 1.55;
     white-space: pre-wrap;
   }
 
   .edited {
-    margin-left: 4px;
-    font-size: 11px;
-    color: var(--text-faint);
+    margin-left: 6px;
+    color: var(--fg-3);
+    font-size: var(--text-xs);
   }
 
   .edit {
+    width: 100%;
     margin-top: 2px;
+    padding: 10px 12px;
+    border: 0;
+    border-radius: var(--r-lg);
+    background: var(--bg-input);
+    box-shadow: inset 0 0 0 1px var(--accent-line);
+    color: var(--fg);
+    font-size: var(--text-lg);
+    line-height: 1.5;
     resize: none;
+    outline: none;
+    user-select: text;
   }
 
   .edit-hint {
-    font-size: 11px;
-    color: var(--text-faint);
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-top: 6px;
+    color: var(--fg-3);
+    font-size: var(--text-xs);
+  }
+
+  .edit-hint span {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
   }
 
   .image {
     display: block;
     margin-top: 6px;
-    border-radius: 8px;
-    overflow: hidden;
     max-width: min(420px, 100%);
+    border-radius: var(--r-lg);
+    overflow: hidden;
+    box-shadow: 0 0 0 1px var(--line);
+    transition: box-shadow var(--t-fast) var(--ease);
+  }
+
+  .image:hover {
+    box-shadow: 0 0 0 1px var(--line-strong);
   }
 
   .image img {
@@ -227,7 +268,7 @@
     max-width: 100%;
     max-height: 320px;
     object-fit: contain;
-    background: var(--bg-deep);
+    background: var(--bg-input);
   }
 
   .video {
@@ -235,21 +276,31 @@
     margin-top: 6px;
     max-width: min(480px, 100%);
     max-height: 320px;
-    border-radius: 8px;
-    background: black;
+    border-radius: var(--r-lg);
+    background: #000;
   }
 
   .file {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 12px;
+    max-width: 400px;
     margin-top: 6px;
-    padding: 10px 10px 10px 12px;
-    max-width: 420px;
-    border-radius: 8px;
+    padding: 10px 8px 10px 10px;
+    border-radius: var(--r-lg);
     background: var(--bg-raised);
-    border: 1px solid var(--border);
-    color: var(--text-dim);
+    box-shadow: 0 0 0 1px var(--line);
+  }
+
+  .file-icon {
+    display: grid;
+    place-items: center;
+    flex: none;
+    width: 40px;
+    height: 40px;
+    border-radius: var(--r-lg);
+    background: var(--accent-soft);
+    color: var(--accent-fg);
   }
 
   .file-info {
@@ -260,30 +311,35 @@
   }
 
   .file-name {
-    color: var(--accent);
-    font-weight: 600;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    color: var(--fg);
+    font-weight: 500;
   }
 
   .file-size {
-    font-size: 12px;
-    color: var(--text-faint);
+    color: var(--fg-3);
+    font-size: var(--text-xs);
   }
 
   .actions {
     position: absolute;
-    top: -12px;
-    right: 18px;
+    top: -14px;
+    right: 16px;
+    z-index: 2;
     display: none;
+    gap: 2px;
+    padding: 2px;
+    border-radius: var(--r-lg);
     background: var(--bg-raised);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    box-shadow: 0 4px 12px rgb(0 0 0 / 0.3);
+    box-shadow:
+      0 0 0 1px var(--line-strong),
+      var(--shadow-md);
   }
 
-  article:hover .actions {
+  article:hover .actions,
+  .actions:focus-within {
     display: flex;
   }
 </style>

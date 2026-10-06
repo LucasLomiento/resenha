@@ -1,38 +1,59 @@
 <script lang="ts">
   import { onMount } from 'svelte'
   import type { CaptureSource } from '../../preload/api'
-  import { PRESETS, settings, type ScreenPreset } from '../lib/settings.svelte'
+  import { settings, type ScreenMode, type ScreenPreset } from '../lib/settings.svelte'
   import { store } from '../lib/store.svelte'
   import { ui } from '../lib/ui.svelte'
-  import Icon from './Icon.svelte'
-  import Modal from './Modal.svelte'
+  import { Button, Icon, IconButton, Modal, Segmented, Spinner, Switch, Tabs } from './kit'
 
   const platform = store.platform!
   let sources = $state<CaptureSource[]>([])
   let selected = $state<string | null>(null)
   let loading = $state(!platform.portalPicker)
   let starting = $state(false)
+  let kind = $state<'screen' | 'window'>('screen')
 
   let playing = $state<{ binary: string; name: string; voice: boolean }[]>([])
+  let loadingApps = $state(false)
 
-  async function loadApps() {
-    if (platform.screenAudio === 'venmic') playing = await window.resenha.screenAudio.apps()
-  }
+  const qualities: { value: ScreenPreset; label: string; hint: string }[] = [
+    { value: '720p', label: '720p', hint: 'Mais leve' },
+    { value: '1080p', label: '1080p', hint: 'Full HD' },
+    { value: '1440p', label: '1440p', hint: 'Máxima' },
+  ]
+  const modes: { value: ScreenMode; label: string; hint: string }[] = [
+    { value: 'motion', label: 'Fluidez', hint: 'Jogos e vídeos' },
+    { value: 'detail', label: 'Nitidez', hint: 'Texto e código' },
+  ]
 
-  function toggleApp(binary: string, on: boolean) {
-    settings.screenAudioApps = on
-      ? [...new Set([...settings.screenAudioApps, binary])]
-      : settings.screenAudioApps.filter((app) => app !== binary)
-  }
+  const screens = $derived(sources.filter((s) => s.kind === 'screen'))
+  const windows = $derived(sources.filter((s) => s.kind === 'window'))
+  const shown = $derived(screens.length && windows.length ? (kind === 'screen' ? screens : windows) : sources)
 
   const audioNote = $derived(
     {
-      venmic: 'Som dos outros apps, nunca o da call nem o do Resenha.',
-      'exclude-self': 'Som do sistema todo, menos o do Resenha. No Windows não dá pra deixar outros apps de fora.',
-      'loopback-all': 'Este Windows não separa o som do app: a voz da call vai junto.',
-      none: 'Sem áudio da tela neste sistema.',
+      venmic: 'Sem o som da call.',
+      'exclude-self': 'Som do computador, sem o som da call.',
+      'loopback-all': 'Neste Windows, o som da call vai junto.',
+      none: 'Indisponível neste sistema.',
     }[platform.screenAudio],
   )
+
+  async function loadApps() {
+    if (platform.screenAudio !== 'venmic') return
+    loadingApps = true
+    try {
+      playing = await window.resenha.screenAudio.apps()
+    } finally {
+      loadingApps = false
+    }
+  }
+
+  function toggleApp(binary: string) {
+    settings.screenAudioApps = settings.screenAudioApps.includes(binary)
+      ? settings.screenAudioApps.filter((app) => app !== binary)
+      : [...settings.screenAudioApps, binary]
+  }
 
   // Só consulta o PipeWire quando a pessoa quer escolher os apps.
   $effect(() => {
@@ -57,263 +78,339 @@
   }
 </script>
 
-<Modal title="Compartilhar tela" onclose={() => (ui.share = false)} width={platform.portalPicker ? 460 : 720}>
+<Modal title="Compartilhar tela" size={platform.portalPicker ? 'lg' : 'xl'} onclose={() => (ui.share = false)}>
   {#if !platform.portalPicker}
+    {#if screens.length && windows.length}
+      <Tabs
+        label="Tipo"
+        class="kind-tabs"
+        tabs={[
+          { value: 'screen', label: 'Telas', count: screens.length },
+          { value: 'window', label: 'Janelas', count: windows.length },
+        ]}
+        bind:value={kind}
+      />
+    {/if}
     {#if loading}
-      <p class="dim">Procurando telas e janelas…</p>
+      <div class="sources-loading"><Spinner size={20} /></div>
     {:else}
-      <div class="grid">
-        {#each sources as source (source.id)}
-          <button class="source" class:selected={selected === source.id} onclick={() => (selected = source.id)} ondblclick={start}>
-            <img src={source.thumbnail} alt="" />
-            <span>{source.name}</span>
+      <div class="grid" role="listbox" aria-label="O que compartilhar">
+        {#each shown as source (source.id)}
+          <button
+            class="source"
+            class:selected={selected === source.id}
+            role="option"
+            aria-selected={selected === source.id}
+            onclick={() => (selected = source.id)}
+            ondblclick={start}
+          >
+            <span class="thumb"><img src={source.thumbnail} alt="" draggable="false" /></span>
+            <span class="source-name">
+              <Icon name={source.kind === 'screen' ? 'monitor' : 'app-window'} size={14} />
+              <span>{source.name}</span>
+            </span>
           </button>
         {/each}
       </div>
     {/if}
   {:else}
-    <p class="dim">Depois de confirmar, o seletor do sistema pergunta qual tela ou janela compartilhar.</p>
+    <div class="portal">
+      <span class="portal-icon"><Icon name="monitor" size={20} /></span>
+      <p>O sistema vai perguntar qual tela ou janela.</p>
+    </div>
   {/if}
 
   <div class="options">
     <div class="option">
-      <span class="label">Qualidade · sempre 60 fps</span>
-      <div class="segmented">
-        {#each Object.entries(PRESETS) as [key, preset] (key)}
-          <button class:on={settings.screenPreset === key} onclick={() => (settings.screenPreset = key as ScreenPreset)}>
-            {preset.label}
-          </button>
-        {/each}
-      </div>
+      <span class="label">Qualidade</span>
+      <Segmented label="Qualidade" options={qualities} bind:value={settings.screenPreset} />
     </div>
-
     <div class="option">
-      <span class="label">Prioridade</span>
-      <div class="segmented">
-        <button class:on={settings.screenMode === 'motion'} onclick={() => (settings.screenMode = 'motion')}>
-          Fluidez (jogo, vídeo)
-        </button>
-        <button class:on={settings.screenMode === 'detail'} onclick={() => (settings.screenMode = 'detail')}>
-          Nitidez (texto, código)
-        </button>
-      </div>
+      <span class="label">Priorizar</span>
+      <Segmented label="Priorizar" options={modes} bind:value={settings.screenMode} />
     </div>
+  </div>
 
-    <label class="check" class:disabled={platform.screenAudio === 'none'}>
-      <input type="checkbox" bind:checked={settings.screenAudio} disabled={platform.screenAudio === 'none'} />
-      <span>
-        Compartilhar o áudio
-        <small class:warn={platform.screenAudio === 'loopback-all'}>{audioNote}</small>
-      </span>
-    </label>
+  <div class="audio" class:off={platform.screenAudio === 'none'}>
+    <div class="audio-row">
+      <span class="audio-icon"><Icon name="volume" size={18} /></span>
+      <label for="share-audio" class="audio-text">
+        <span class="audio-title">Compartilhar o som</span>
+        <span class="audio-note" class:warn={platform.screenAudio === 'loopback-all'}>{audioNote}</span>
+      </label>
+      <Switch id="share-audio" bind:checked={settings.screenAudio} disabled={platform.screenAudio === 'none'} />
+    </div>
 
     {#if platform.screenAudio === 'venmic' && settings.screenAudio}
       <div class="apps">
-        <label class="radio">
-          <input type="radio" name="audio-mode" value="all" bind:group={settings.screenAudioMode} />
-          <span>Todos os apps, menos os de voz <small>Discord, Vesktop, TeamSpeak, Zoom e afins ficam de fora.</small></span>
-        </label>
-        <label class="radio">
-          <input type="radio" name="audio-mode" value="apps" bind:group={settings.screenAudioMode} />
-          <span>Só os apps que eu escolher</span>
-        </label>
-        {#if settings.screenAudioMode === 'apps'}
-          <div class="app-list">
+        <Segmented
+          label="De quais apps"
+          size="sm"
+          options={[
+            { value: 'all', label: 'Todos os apps' },
+            { value: 'apps', label: 'Escolher apps' },
+          ]}
+          bind:value={settings.screenAudioMode}
+        />
+        {#if settings.screenAudioMode === 'all'}
+          <p class="apps-note">Apps de voz, como o Discord, ficam de fora.</p>
+        {:else}
+          <div class="chips">
             {#each playing as app (app.binary)}
-              <label class="app">
-                <input
-                  type="checkbox"
-                  checked={settings.screenAudioApps.includes(app.binary)}
-                  onchange={(e) => toggleApp(app.binary, e.currentTarget.checked)}
-                />
-                <span>{app.name}{#if app.voice}<small> · app de voz</small>{/if}</span>
-              </label>
+              <button
+                class="chip"
+                class:on={settings.screenAudioApps.includes(app.binary)}
+                aria-pressed={settings.screenAudioApps.includes(app.binary)}
+                onclick={() => toggleApp(app.binary)}
+              >
+                {#if settings.screenAudioApps.includes(app.binary)}<Icon name="check" size={14} />{/if}
+                {app.name}
+                {#if app.voice}<span class="chip-note">voz</span>{/if}
+              </button>
             {:else}
-              <p class="dim small">Nenhum app tocando som agora. Dê play no que quer compartilhar e atualize.</p>
+              <p class="apps-note">{loadingApps ? 'Procurando…' : 'Nenhum app tocando agora. Dê play e atualize.'}</p>
             {/each}
-            <button class="btn secondary small" onclick={loadApps}>Atualizar lista</button>
-            {#if settings.screenAudioApps.length === 0}
-              <p class="warn small">Nenhum app escolhido: a transmissão vai sem áudio.</p>
-            {/if}
+            <IconButton icon="restart" label="Atualizar a lista" size="sm" onclick={loadApps} disabled={loadingApps} />
           </div>
+          {#if settings.screenAudioApps.length === 0 && playing.length}
+            <p class="apps-note warn">Escolha pelo menos um, senão vai sem som.</p>
+          {/if}
         {/if}
       </div>
     {/if}
   </div>
 
   {#snippet footer()}
-    <button class="btn secondary" onclick={() => (ui.share = false)}>Cancelar</button>
-    <button class="btn" onclick={start} disabled={starting || (!platform.portalPicker && !selected)}>
-      <Icon name="screen" size={16} />
-      {platform.portalPicker ? 'Escolher e transmitir' : 'Transmitir'}
-    </button>
+    <Button variant="ghost" onclick={() => (ui.share = false)}>Cancelar</Button>
+    <Button
+      variant="primary"
+      icon="screen"
+      loading={starting}
+      disabled={!platform.portalPicker && !selected}
+      onclick={start}>Compartilhar</Button
+    >
   {/snippet}
 </Modal>
 
 <style>
-  .dim {
-    color: var(--text-dim);
-    margin: 0 0 16px;
+  :global(.kind-tabs) {
+    margin-bottom: 12px;
+  }
+
+  .sources-loading {
+    display: grid;
+    place-items: center;
+    height: 180px;
+    color: var(--fg-3);
   }
 
   .grid {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 10px;
-    max-height: 340px;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+    max-height: 320px;
+    margin: 0 -4px 20px;
+    padding: 4px;
     overflow-y: auto;
-    margin-bottom: 18px;
   }
 
   .source {
     display: flex;
     flex-direction: column;
-    gap: 6px;
-    padding: 6px;
-    border-radius: 8px;
-    border: 2px solid transparent;
-    background: var(--bg-deep);
+    gap: 8px;
+    min-width: 0;
     text-align: left;
   }
 
-  .source.selected {
-    border-color: var(--accent);
-  }
-
-  .source img {
-    width: 100%;
+  .thumb {
+    display: block;
     aspect-ratio: 16 / 9;
-    object-fit: contain;
-    background: black;
-    border-radius: 4px;
+    border-radius: var(--r-lg);
+    background: #000;
+    box-shadow: 0 0 0 1px var(--line-strong);
+    overflow: hidden;
+    transition: box-shadow var(--t-fast) var(--ease);
   }
 
-  .source span {
-    font-size: 12px;
+  .thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+  }
+
+  .source:hover .thumb {
+    box-shadow: 0 0 0 1px rgb(255 255 255 / 0.25);
+  }
+
+  .source.selected .thumb {
+    box-shadow:
+      0 0 0 2px var(--accent-fg),
+      0 0 0 5px rgb(122 108 255 / 0.2);
+  }
+
+  .source-name {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    color: var(--fg-2);
+    font-size: var(--text-xs);
+  }
+
+  .source-name span {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
-  .options {
+  .source.selected .source-name {
+    color: var(--fg);
+  }
+
+  .portal {
     display: flex;
-    flex-direction: column;
-    gap: 14px;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 20px;
+    padding: 12px 14px;
+    border-radius: var(--r-lg);
+    background: rgb(255 255 255 / 0.035);
+    box-shadow: inset 0 0 0 1px var(--line);
+    color: var(--fg-2);
+  }
+
+  .portal-icon {
+    display: grid;
+    place-items: center;
+    width: 36px;
+    height: 36px;
+    border-radius: var(--r-lg);
+    background: var(--accent-soft);
+    color: var(--accent-fg);
+  }
+
+  .options {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
   }
 
   .option {
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: 8px;
+    min-width: 0;
   }
 
-  .segmented {
+  .label {
+    color: var(--fg-2);
+    font-size: var(--text-sm);
+    font-weight: 500;
+  }
+
+  .audio {
+    margin-top: 20px;
+    padding: 12px 14px;
+    border-radius: var(--r-lg);
+    background: rgb(255 255 255 / 0.035);
+    box-shadow: inset 0 0 0 1px var(--line);
+  }
+
+  .audio.off {
+    opacity: 0.55;
+  }
+
+  .audio-row {
     display: flex;
-    gap: 4px;
-    padding: 3px;
-    border-radius: 8px;
-    background: var(--bg-deep);
+    align-items: center;
+    gap: 12px;
   }
 
-  .segmented button {
+  .audio-icon {
+    display: grid;
+    place-items: center;
+    flex: none;
+    width: 36px;
+    height: 36px;
+    border-radius: var(--r-lg);
+    background: rgb(255 255 255 / 0.06);
+    color: var(--fg-2);
+  }
+
+  .audio-text {
     flex: 1;
-    padding: 7px 8px;
-    border-radius: 6px;
-    color: var(--text-dim);
-    font-size: 13px;
-  }
-
-  .segmented button.on {
-    background: var(--bg-active);
-    color: var(--text);
-    font-weight: 600;
-  }
-
-  .check {
+    min-width: 0;
     display: flex;
-    gap: 10px;
-    align-items: flex-start;
+    flex-direction: column;
     cursor: pointer;
   }
 
-  .check input {
-    margin-top: 3px;
-    accent-color: var(--accent);
+  .audio-title {
+    font-weight: 500;
   }
 
-  .check span {
-    display: flex;
-    flex-direction: column;
+  .audio-note {
+    color: var(--fg-3);
+    font-size: var(--text-sm);
   }
 
-  .check small {
-    color: var(--text-faint);
-  }
-
-  .check small.warn {
-    color: var(--yellow);
-  }
-
-  .check.disabled {
-    opacity: 0.5;
+  .warn {
+    color: var(--yellow) !important;
   }
 
   .apps {
     display: flex;
     flex-direction: column;
-    gap: 8px;
-    margin-left: 26px;
-  }
-
-  .radio,
-  .app {
-    display: flex;
     gap: 10px;
-    align-items: flex-start;
-    cursor: pointer;
+    margin: 12px 0 2px 48px;
   }
 
-  .radio input,
-  .app input {
-    margin-top: 3px;
-    accent-color: var(--accent);
+  .apps :global(.segmented) {
+    max-width: 280px;
   }
 
-  .radio span {
+  .apps-note {
+    color: var(--fg-3);
+    font-size: var(--text-xs);
+  }
+
+  .chips {
     display: flex;
-    flex-direction: column;
-  }
-
-  .radio small,
-  .app small {
-    color: var(--text-faint);
-  }
-
-  .app-list {
-    display: flex;
-    flex-direction: column;
+    flex-wrap: wrap;
+    align-items: center;
     gap: 6px;
-    padding: 10px 12px;
-    border-radius: 8px;
-    background: var(--bg-deep);
   }
 
-  .app-list .btn {
-    align-self: flex-start;
-    margin-top: 4px;
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 28px;
+    padding: 0 12px;
+    border-radius: var(--r-full);
+    background: rgb(255 255 255 / 0.06);
+    box-shadow: inset 0 0 0 1px var(--line);
+    color: var(--fg-2);
+    font-size: var(--text-xs);
+    font-weight: 500;
+    transition:
+      background-color var(--t-fast) var(--ease),
+      color var(--t-fast) var(--ease);
   }
 
-  .btn.small {
-    padding: 4px 10px;
-    font-size: 12px;
+  .chip:hover {
+    background: rgb(255 255 255 / 0.1);
+    color: var(--fg);
   }
 
-  .small {
-    font-size: 12px;
-    margin: 0;
+  .chip.on {
+    background: var(--accent-soft);
+    box-shadow: inset 0 0 0 1px var(--accent-line);
+    color: var(--accent-fg);
   }
 
-  .warn {
-    color: var(--yellow);
+  .chip-note {
+    color: var(--fg-3);
+    font-weight: 400;
   }
 </style>
