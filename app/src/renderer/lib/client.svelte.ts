@@ -30,6 +30,13 @@ const LAST_CHANNEL_KEY = 'resenha.lastChannel'
 
 let toastId = 0
 
+/** Aceita o código puro ou um link de convite (resenha://invite/x, https://.../i/x). */
+export function inviteCode(input: string): string {
+  const text = input.trim()
+  const match = /(?:invite\/|\/i\/)([\w-]{4,32})\/?$/.exec(text)
+  return match ? match[1] : text
+}
+
 function loadLastChannels(): Record<string, string> {
   try {
     return JSON.parse(localStorage.getItem(LAST_CHANNEL_KEY) ?? '{}')
@@ -62,6 +69,8 @@ class Client implements GuildHost, HomeHost {
   now = $state(Date.now())
   /** Chamada privada tocando pra mim. */
   incomingCall = $state<{ channelId: string; from: string; video: boolean } | null>(null)
+  /** Convite aberto por link (resenha://invite/...) esperando a pessoa confirmar. */
+  pendingInvite = $state<string | null>(null)
 
   api: Api | null = null
   private session: SavedSession | null = null
@@ -101,6 +110,8 @@ class Client implements GuildHost, HomeHost {
     this.update = await window.resenha.update.state()
     window.resenha.update.onState((state) => (this.update = state))
     window.resenha.onAction((action) => this.runAction(action))
+    window.resenha.onInvite((code) => (this.pendingInvite = code))
+    this.pendingInvite = await window.resenha.pendingInvite()
     const saved = await window.resenha.session.get()
     if (saved) await this.start(saved)
     else this.phase = 'login'
@@ -610,7 +621,8 @@ class Client implements GuildHost, HomeHost {
 
   async joinInvite(code: string) {
     if (!this.api) return
-    const info = await this.api.joinInvite(code)
+    const info = await this.api.joinInvite(inviteCode(code))
+    this.pendingInvite = null
     if (this.guilds[info.id]) this.openGuild(info.id)
     else this.openWhenJoined = info.id
   }
