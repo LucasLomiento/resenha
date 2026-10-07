@@ -436,8 +436,10 @@ const code = await inviteFor(guild.id, owner.token)
 await api('/api/register', { username: 'duarte', name: 'Duarte', password: PASSWORD, invite: code })
 check(true, 'contas, servidor e convite criados pela API', code)
 
-const a = await launch('e2e-a')
-const b = await launch('e2e-b')
+// Prefixo dos perfis: dá pra rodar dois e2e ao mesmo tempo (com RESENHA_E2E_PORT diferente também).
+const PROFILE = process.env.RESENHA_E2E_PROFILE ?? 'e2e'
+const a = await launch(`${PROFILE}-a`)
+const b = await launch(`${PROFILE}-b`)
 let closedA = false
 
 try {
