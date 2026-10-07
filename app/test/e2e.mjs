@@ -142,6 +142,11 @@ async function fakeScreen(page, stereo = false) {
         g.fillStyle = Math.floor(t / 2 ** b) % 2 ? '#fff' : '#000'
         g.fillRect(b * 40, 0, 40, 40)
       }
+      // O quadradinho que a camada dos rabiscos desenharia no monitor (o teste liga quando ela está no "certo").
+      if (window.__inkProbe) {
+        g.fillStyle = '#ff00ff'
+        g.fillRect(0, 0, 48, 48)
+      }
     }, 1000 / 60)
     const stream = canvas.captureStream(60)
     let audio = null
@@ -162,8 +167,13 @@ async function fakeScreen(page, stereo = false) {
       merger.connect(dest)
       audio = dest.stream.getAudioTracks()[0]
     }
-    navigator.mediaDevices.getDisplayMedia = async () =>
-      new MediaStream([stream.getVideoTracks()[0].clone(), ...(audio ? [audio.clone()] : [])])
+    navigator.mediaDevices.getDisplayMedia = async () => {
+      // Como no Wayland: o Electron diz "janela" até pra monitor inteiro.
+      const video = stream.getVideoTracks()[0].clone()
+      const real = video.getSettings.bind(video)
+      video.getSettings = () => ({ ...real(), displaySurface: 'window' })
+      return new MediaStream([video, ...(audio ? [audio.clone()] : [])])
+    }
   }, stereo)
 }
 
@@ -774,6 +784,16 @@ try {
   await a.page.locator('.segmented button', { hasText: full ? '1440p' : '720p' }).click({ force: true })
   const audioBox = a.page.locator('.modal input[type=checkbox]')
   if ((await audioBox.isChecked()) !== withAudio) await audioBox.click({ force: true })
+  // A "tela" é o monitor TESTE-2 (o da direita): o quadradinho só aparece na captura quando a camada está lá.
+  let probing = true
+  const probeBridge = (async () => {
+    for (let i = 0; probing && i < 400; i++) {
+      const log = await a.app.evaluate(() => globalThis.__resenhaInk)
+      const last = log.events.filter((e) => e.t === 'probe').at(-1)
+      await a.page.evaluate((on) => (window.__inkProbe = on), log.started === 'TESTE-2' && last?.on === true)
+      await a.page.waitForTimeout(25)
+    }
+  })()
   await a.page.locator('.modal').getByRole('button', { name: 'Compartilhar', exact: true }).click({ force: true })
   const live = b.page.locator('button.live')
   await live.waitFor({ timeout: 10_000 })
@@ -881,7 +901,13 @@ try {
   const scribble = b.page.getByRole('button', { name: 'Rabiscar na tela', exact: true })
   await b.page.locator('.stream').hover({ force: true })
   const offered = await scribble.waitFor({ timeout: 10_000 }).then(() => true, () => false)
-  check(offered && (await inkLog()).started === 'TESTE-1', 'compartilhando o monitor inteiro, quem assiste pode rabiscar', `camada em ${(await inkLog()).started}`)
+  probing = false
+  await probeBridge
+  check(
+    offered && (await inkLog()).started === 'TESTE-2',
+    'monitor inteiro (mesmo o Electron dizendo "janela", como no Wayland): quem assiste pode rabiscar, e a camada vai pro monitor transmitido',
+    `camada em ${(await inkLog()).started}`,
+  )
   if (offered) {
     await scribble.click({ force: true })
     const inkBox = await b.page.locator('.ink-layer').boundingBox()

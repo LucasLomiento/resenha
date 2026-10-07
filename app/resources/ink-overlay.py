@@ -29,6 +29,9 @@ gi.require_version('Gtk', '4.0')
 gi.require_version('Gdk', '4.0')
 from gi.repository import Gdk, Gio, GLib, Gtk  # noqa: E402
 
+# Quadradinho de teste (em pixels lógicos, no canto de cima à esquerda). Tem que bater com PROBE em lib/ink.svelte.ts.
+PROBE_SIZE = 48
+PROBE_COLOR = (1.0, 0.0, 1.0)
 # Caneta: fica até uns segundos depois de soltar e some devagar (como no Slack).
 PEN_LIFE = 6.0
 PEN_FADE = 0.8
@@ -65,6 +68,8 @@ class Scene:
     def __init__(self):
         self.strokes = {}
         self.pings = []
+        # Quadradinho no canto: o app procura ele na captura pra saber qual monitor está sendo transmitido.
+        self.probe = False
 
     def handle(self, event, now):
         kind = event.get('t')
@@ -98,6 +103,8 @@ class Scene:
             if x is not None and y is not None:
                 self.pings.append({'x': x, 'y': y, 'at': now, 'color': parse_color(event.get('color', '')), 'name': str(event.get('name', ''))[:40]})
                 self.pings = self.pings[-50:]
+        elif kind == 'probe':
+            self.probe = event.get('on') is True
         elif kind == 'clear':
             author = event.get('author')
             if author:
@@ -122,12 +129,16 @@ class Scene:
 
     @property
     def busy(self):
-        return bool(self.strokes or self.pings)
+        return bool(self.strokes or self.pings or self.probe)
 
     def draw(self, cr, width, height, now):
         cr.set_line_cap(cairo.LINE_CAP_ROUND)
         cr.set_line_join(cairo.LINE_JOIN_ROUND)
         unit = max(1.0, min(width, height) / 1080)
+        if self.probe:
+            cr.set_source_rgb(*PROBE_COLOR)
+            cr.rectangle(0, 0, PROBE_SIZE, PROBE_SIZE)
+            cr.fill()
         for s in self.strokes.values():
             if s['tool'] == 'laser':
                 self.draw_laser(cr, s, width, height, now, unit)

@@ -37,6 +37,12 @@ export type InkStatus =
   | 'failed'
 
 const MAX_POINTS = 400
+/** Quadradinho que a camada desenha no canto pra achar o monitor transmitido (PROBE_SIZE do ink-overlay.py). */
+const PROBE = 48
+/** Quanto esperar o quadradinho aparecer na captura antes de tentar o próximo monitor. */
+const PROBE_WAIT = 1200
+/** Diferença de formato (largura/altura) que ainda conta como "a imagem é esse monitor". */
+const SAME_SHAPE = 0.01
 /** Mensagens por segundo que cada pessoa pode mandar (o resto é jogado fora). */
 const MAX_RATE = 90
 
@@ -89,31 +95,90 @@ export class InkShare {
     return this.status === 'on'
   }
 
-  /** Começou a compartilhar: vê se é o monitor inteiro e abre a camada no monitor certo. */
+  /**
+   * Começou a compartilhar: vê se é um monitor inteiro e abre a camada no monitor certo.
+   *
+   * O tipo da captura não ajuda no Wayland: lá o Electron diz "janela" até pra monitor
+   * inteiro (o portal não conta o que foi escolhido). Então vale o formato da imagem:
+   * igual ao de um monitor, é esse monitor (ou uma janela em tela cheia nele, que dá no
+   * mesmo). Com mais de um monitor desse formato, a camada pisca um quadradinho no canto
+   * de cada um até ele aparecer na captura.
+   */
   async begin(track: MediaStreamTrack) {
     this.track = track
     const surface = (track.getSettings() as MediaTrackSettings & { displaySurface?: string }).displaySurface
-    if (surface === 'window' || surface === 'browser') return this.set('window')
+    if (surface === 'browser') return this.set('window')
     if (!settings.inkAllowed) return this.set('disabled')
+    this.set('starting')
     const monitors = await window.resenha.ink.monitors()
     if (this.track !== track) return
     if (!monitors) return this.set('unsupported')
     this.monitors = [...monitors].sort((a, b) => a.x - b.x || a.y - b.y)
-    const pick = this.pick(track)
-    if (pick) await this.open(pick)
-    else this.set('choose')
+    const reader = new FrameReader(track)
+    try {
+      const size = await reader.size()
+      if (this.track !== track) return
+      const candidates = this.candidates(surface, size)
+      if (candidates.length === 0) return this.set('window')
+      if (candidates.length === 1) return await this.open(candidates[0])
+      const remembered = candidates.find((m) => m.connector === settings.inkMonitor)
+      if (size) {
+        const ordered = remembered ? [remembered, ...candidates.filter((m) => m !== remembered)] : candidates
+        for (const monitor of ordered) {
+          const result = await this.probe(reader, monitor, track)
+          if (this.track !== track || result === 'found' || result === 'stop') return
+        }
+        window.resenha.ink.stop()
+      }
+      // Não deu pra descobrir (a captura não mostra a camada?): o último escolhido, ou pergunta.
+      if (remembered) await this.open(remembered)
+      else {
+        this.monitor = null
+        this.set('choose')
+      }
+    } finally {
+      reader.close()
+    }
   }
 
-  /** O monitor mais provável: o único, o único com o mesmo formato da transmissão, ou o último escolhido. */
-  private pick(track: MediaStreamTrack): InkMonitor | null {
+  /** Monitores que podem ser a imagem transmitida (pelo formato; sem quadros, todos). */
+  private candidates(surface: string | undefined, size: { width: number; height: number } | null): InkMonitor[] {
     const all = this.monitors
-    if (all.length === 1) return all[0]
-    const { width, height } = track.getSettings()
-    const ratio = width && height ? width / height : null
-    const shaped = ratio ? all.filter((m) => Math.abs(m.width / m.height - ratio) / ratio < 0.02) : all
-    if (shaped.length === 1) return shaped[0]
-    const remembered = all.find((m) => m.connector === settings.inkMonitor)
-    return remembered && (shaped.length === 0 || shaped.includes(remembered)) ? remembered : null
+    if (!size) return all
+    const ratio = size.width / size.height
+    const shaped = all.filter((m) => Math.abs(m.width / m.height - ratio) / ratio < SAME_SHAPE)
+    // Monitor de verdade (Windows/X11) com formato estranho (escala?): qualquer um serve.
+    return shaped.length === 0 && surface === 'monitor' ? all : shaped
+  }
+
+  /** Abre a camada nesse monitor e procura o quadradinho dela na captura. */
+  private async probe(reader: FrameReader, monitor: InkMonitor, track: MediaStreamTrack): Promise<'found' | 'missing' | 'stop'> {
+    this.monitor = monitor
+    const result = await window.resenha.ink.start(monitor.connector)
+    if (this.track !== track) {
+      if (result.ok) window.resenha.ink.stop()
+      return 'stop'
+    }
+    if (!result.ok) {
+      console.error('rabiscos: a camada não abriu', result.error)
+      this.set(result.error === 'unsupported' ? 'unsupported' : 'failed')
+      return 'stop'
+    }
+    // Canto já dessa cor antes do quadradinho: não dá pra saber por aqui.
+    if (reader.marked(monitor)) return 'missing'
+    window.resenha.ink.event({ t: 'probe', on: true })
+    const until = performance.now() + PROBE_WAIT
+    let found = false
+    while (!found && performance.now() < until && this.track === track) {
+      await new Promise((r) => setTimeout(r, 40))
+      found = reader.marked(monitor)
+    }
+    window.resenha.ink.event({ t: 'probe', on: false })
+    if (this.track !== track) return 'stop'
+    if (!found) return 'missing'
+    settings.inkMonitor = monitor.connector
+    this.set('on')
+    return 'found'
   }
 
   /** Escolheu (ou trocou) o monitor no painel da transmissão. */
@@ -193,6 +258,53 @@ export class InkShare {
     const before = this.allowed
     this.status = status
     if (this.allowed !== before) this.changed()
+  }
+}
+
+/** Lê a própria captura: o tamanho de verdade dos quadros e a cor do canto de cima à esquerda. */
+class FrameReader {
+  private video = document.createElement('video')
+  private canvas = document.createElement('canvas')
+
+  constructor(track: MediaStreamTrack) {
+    this.video.muted = true
+    this.video.srcObject = new MediaStream([track])
+    this.video.play().catch(() => {})
+    this.canvas.width = this.canvas.height = 4
+  }
+
+  /** Tamanho dos quadros (null se nenhum chegou a tempo). */
+  async size(timeout = 3000): Promise<{ width: number; height: number } | null> {
+    const until = performance.now() + timeout
+    while (performance.now() < until) {
+      if (this.video.videoWidth > 0) return { width: this.video.videoWidth, height: this.video.videoHeight }
+      await new Promise((r) => setTimeout(r, 40))
+    }
+    return null
+  }
+
+  /** O quadradinho da camada aparece no canto da imagem (olhando o meio dele, que escala e compressão não borram)? */
+  marked(monitor: InkMonitor): boolean {
+    const g = this.canvas.getContext('2d', { willReadFrequently: true })
+    if (!g || !this.video.videoWidth) return false
+    const side = (PROBE * this.video.videoWidth) / monitor.width
+    g.drawImage(this.video, side * 0.25, side * 0.25, side * 0.5, side * 0.5, 0, 0, 4, 4)
+    const data = g.getImageData(0, 0, 4, 4).data
+    let r = 0
+    let green = 0
+    let b = 0
+    for (let i = 0; i < data.length; i += 4) {
+      r += data[i]
+      green += data[i + 1]
+      b += data[i + 2]
+    }
+    const n = data.length / 4
+    return r / n > 190 && green / n < 80 && b / n > 190
+  }
+
+  close() {
+    this.video.pause()
+    this.video.srcObject = null
   }
 }
 

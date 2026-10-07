@@ -43,7 +43,12 @@ function helperEnv(): NodeJS.ProcessEnv {
 
 /** Monitores onde dá pra desenhar (null: não tem como desenhar neste sistema). */
 export async function inkMonitors(): Promise<InkMonitor[] | null> {
-  if (dry) return [{ connector: 'TESTE-1', name: 'Monitor de teste', x: 0, y: 0, width: 2560, height: 1440 }]
+  // Dois monitores iguais (como os do Lucas): o app tem que achar o certo pelo quadradinho.
+  if (dry)
+    return [
+      { connector: 'TESTE-1', name: 'Monitor de teste', x: 0, y: 0, width: 2560, height: 1440 },
+      { connector: 'TESTE-2', name: 'Monitor de teste', x: 2560, y: 0, width: 2560, height: 1440 },
+    ]
   if (wayland) {
     if (!existsSync(helperPath())) return null
     return new Promise((resolve) => {
@@ -79,7 +84,7 @@ export function inkStart(connector: string): Promise<{ ok: true } | { ok: false;
     return Promise.resolve({ ok: true })
   }
   if (wayland) return startHelper(connector)
-  return Promise.resolve(startWindow(connector))
+  return startWindow(connector)
 }
 
 function startHelper(connector: string): Promise<{ ok: true } | { ok: false; error: string }> {
@@ -136,10 +141,10 @@ function startHelper(connector: string): Promise<{ ok: true } | { ok: false; err
 }
 
 /** Windows e X11: janela transparente do Electron, sempre por cima, sem pegar clique. */
-function startWindow(connector: string): { ok: true } | { ok: false; error: string } {
+function startWindow(connector: string): Promise<{ ok: true } | { ok: false; error: string }> {
   const display = screen.getAllDisplays().find((d) => String(d.id) === connector)
-  if (!display) return { ok: false, error: 'monitor' }
-  overlay = new BrowserWindow({
+  if (!display) return Promise.resolve({ ok: false, error: 'monitor' })
+  const win = new BrowserWindow({
     ...display.bounds,
     transparent: true,
     frame: false,
@@ -151,14 +156,23 @@ function startWindow(connector: string): { ok: true } | { ok: false; error: stri
     show: false,
     webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false },
   })
-  overlay.setIgnoreMouseEvents(true)
-  overlay.setAlwaysOnTop(true, 'screen-saver')
-  overlay.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
-  overlay.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
-  overlay.webContents.on('will-navigate', (event) => event.preventDefault())
-  overlay.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(OVERLAY_PAGE)}`)
-  overlay.once('ready-to-show', () => overlay?.showInactive())
-  return { ok: true }
+  overlay = win
+  win.setIgnoreMouseEvents(true)
+  win.setAlwaysOnTop(true, 'screen-saver')
+  win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+  win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+  win.webContents.on('will-navigate', (event) => event.preventDefault())
+  // Pronta só depois de carregar a página: antes disso, o que chega pra ela se perde.
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve({ ok: false, error: 'timeout' }), 8000)
+    win.once('ready-to-show', () => {
+      clearTimeout(timer)
+      if (win.isDestroyed()) return resolve({ ok: false, error: 'closed' })
+      win.showInactive()
+      resolve({ ok: true })
+    })
+    win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(OVERLAY_PAGE)}`).catch(() => {})
+  })
 }
 
 export function inkEvent(event: unknown) {
@@ -197,7 +211,7 @@ const OVERLAY_PAGE = `<!doctype html><html><head><meta charset="utf-8">
 <body><canvas></canvas><script>
 const PEN_LIFE = 6, PEN_FADE = 0.8, LASER = 0.7, PING = 0.9, NAME = 1.6
 const canvas = document.querySelector('canvas'), cr = canvas.getContext('2d')
-const strokes = new Map(); let pings = []; let frame = 0
+const strokes = new Map(); let pings = []; let frame = 0; let probe = false
 const now = () => performance.now() / 1000
 const clamp = (v) => (Number.isFinite(+v) ? Math.min(1, Math.max(0, +v)) : null)
 function resize() { canvas.width = innerWidth * devicePixelRatio; canvas.height = innerHeight * devicePixelRatio }
@@ -214,6 +228,8 @@ window.ink = (e) => {
   } else if (e.t === 'ping') {
     const x = clamp(e.x), y = clamp(e.y)
     if (x !== null && y !== null) pings = [...pings.slice(-49), { x, y, at: t, color: String(e.color || '#ada4ff').slice(0, 9), name: String(e.name || '').slice(0, 40) }]
+  } else if (e.t === 'probe') {
+    probe = e.on === true
   } else if (e.t === 'clear') {
     if (e.author) { for (const [k, s] of strokes) if (s.author === e.author) strokes.delete(k) } else { strokes.clear(); pings = [] }
   }
@@ -229,6 +245,7 @@ function draw() {
   frame = 0
   const t = now(), W = canvas.width, H = canvas.height, u = Math.max(1, Math.min(W, H) / 1080)
   cr.clearRect(0, 0, W, H); cr.lineCap = 'round'; cr.lineJoin = 'round'
+  if (probe) { cr.fillStyle = '#ff00ff'; cr.fillRect(0, 0, 48 * devicePixelRatio, 48 * devicePixelRatio) }
   for (const [k, s] of strokes) {
     if (s.tool === 'laser') {
       if ((s.ended !== null && t - s.ended > LASER) || t - s.updated > 5) { strokes.delete(k); continue }
@@ -254,6 +271,6 @@ function draw() {
     cr.fillStyle = p.color; cr.beginPath(); cr.arc(x, y, 7 * u, 0, 7); cr.fill(); cr.globalAlpha = 1
     label(p.name, p.color, x + 6 * u, y - 40 * u, u, Math.max(0, 1 - k))
   }
-  if (strokes.size || pings.length) frame = requestAnimationFrame(draw)
+  if (strokes.size || pings.length || probe) frame = requestAnimationFrame(draw)
 }
 </script></body></html>`
