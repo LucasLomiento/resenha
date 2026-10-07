@@ -50,7 +50,7 @@ const ALL = [
   'server', 'server-reply', 'profile', 'pins', 'search', 'switcher', 'server-menu', 'menus', 'status',
   'home', 'home-pending', 'home-add', 'dm', 'create-server', 'create-server-form', 'join-server',
   'server-settings', 'server-roles', 'server-members', 'server-invites', 'server-bans', 'server-audit',
-  'account', 'account-devices', 'account-password', 'account-privacy', 'kit',
+  'account', 'account-devices', 'account-password', 'account-privacy', 'profile-style', 'kit',
 ]
 if (ids !== ALL.length) console.log(`   aviso: o seletor tem ${ids} telas e o script conhece ${ALL.length}`)
 
@@ -58,11 +58,12 @@ const size = (width, height) => app.evaluate(({ BrowserWindow }, [w, h]) => Brow
 
 let n = 0
 for (const id of only.length ? only : ALL) {
-  // A galeria do kit é comprida: captura inteira numa janela alta.
-  if (id === 'kit') await size(1280, 2000)
+  // As galerias são compridas: captura inteira numa janela alta.
+  const tall = id === 'kit' || id === 'profile-style'
+  if (tall) await size(1280, id === 'kit' ? 2000 : 1900)
   await page.evaluate((hash) => (location.hash = hash), `#proto/${id}/clean`)
   await shot(`${String(++n).padStart(2, '0')}-${id}`)
-  if (id === 'kit') await size(1280, 820)
+  if (tall) await size(1280, 820)
   console.log(`✔ ${id}`)
 }
 

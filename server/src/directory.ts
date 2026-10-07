@@ -1,5 +1,8 @@
 import { DurableObject } from 'cloudflare:workers'
 import {
+  MAX_ANIMATED_BYTES,
+  MAX_AVATAR_BYTES,
+  MAX_BANNER_BYTES,
   MAX_GUILDS_PER_USER,
   type AuthResponse,
   type DmPolicy,
@@ -13,7 +16,9 @@ import {
 } from '../../shared/protocol'
 import { hashPassword, hashToken, randomToken, verifyPassword } from './auth'
 import { newId } from './ids'
+import { columns } from './messages'
 import { conversation as conversationStub, guild as guildStub, home as homeStub } from './stubs'
+import { applyStylePatch, isAnimated, parseStyle, styleText } from './style'
 import { cleanLine, cleanText, color, passwordProblem, slugUsername, username as validUsername } from './validate'
 
 // O Directory é o cadastro central: contas, sessões, limites de tentativa,
@@ -31,7 +36,6 @@ const DAY = 24 * HOUR
 const SESSION_IDLE = 30 * DAY
 /** Atualiza o "visto por último" no máximo de hora em hora (poupa escrita). */
 const SEEN_EVERY = HOUR
-const MAX_AVATAR_BYTES = 512 * 1024
 
 const FLAG_STAFF = 1
 const FLAG_BANNED = 2
@@ -56,6 +60,8 @@ interface UserRow {
   avatar: string | null
   bio: string
   accent: number | null
+  /** Personalização do perfil (JSON, ver style.ts). */
+  style: string | null
   flags: number
   dm_policy: string
   created_at: number
@@ -125,6 +131,10 @@ function imageType(bytes: Uint8Array): string | null {
   return null
 }
 
+/** 524288 -> "512 KB", 1572864 -> "1,5 MB". */
+const sizeLabel = (bytes: number) =>
+  bytes >= 1024 ** 2 ? `${String(Math.round((bytes / 1024 ** 2) * 10) / 10).replace('.', ',')} MB` : `${Math.round(bytes / 1024)} KB`
+
 const pair = (a: string, b: string): [string, string] => (a < b ? [a, b] : [b, a])
 
 export class Directory extends DurableObject<Env> {
@@ -154,6 +164,8 @@ export class Directory extends DurableObject<Env> {
       created_at INTEGER NOT NULL,
       password_changed_at INTEGER NOT NULL
     )`)
+    // 1.1: personalização do perfil (coluna nova; as contas antigas ficam com NULL = padrão).
+    if (!columns(this.sql, 'users').has('style')) this.sql.exec('ALTER TABLE users ADD COLUMN style TEXT')
     this.sql.exec(`CREATE TABLE IF NOT EXISTS sessions (
       id TEXT PRIMARY KEY,
       token_hash TEXT NOT NULL UNIQUE,
@@ -265,6 +277,7 @@ export class Directory extends DurableObject<Env> {
 
   private toUser(row: UserRow): User {
     const deleted = (row.flags & FLAG_DELETED) !== 0
+    const style = deleted ? undefined : parseStyle(row.style)
     return {
       id: row.id,
       username: row.username,
@@ -274,6 +287,7 @@ export class Directory extends DurableObject<Env> {
       accent: row.accent,
       admin: false,
       ...(deleted ? { deleted: true } : {}),
+      ...(style ? { style } : {}),
     }
   }
 
@@ -567,7 +581,7 @@ export class Directory extends DurableObject<Env> {
 
   async updateProfile(
     userId: string,
-    patch: { name?: unknown; bio?: unknown; accent?: unknown; dmPolicy?: unknown },
+    patch: { name?: unknown; bio?: unknown; accent?: unknown; dmPolicy?: unknown; style?: unknown },
   ): Promise<Result<Me>> {
     const row = this.user(userId)
     if (!row) return fail(404, 'Conta não encontrada.')
@@ -598,19 +612,42 @@ export class Directory extends DurableObject<Env> {
       sets.push('dm_policy = ?')
       args.push(patch.dmPolicy as string)
     }
+    if (patch.style !== undefined) {
+      const style = applyStylePatch(parseStyle(row.style), patch.style)
+      if (!style.ok) return fail(400, style.error)
+      sets.push('style = ?')
+      args.push(styleText(style.value))
+    }
     if (sets.length > 0) this.sql.exec(`UPDATE users SET ${sets.join(', ')} WHERE id = ?`, ...args, userId)
     const updated = this.user(userId)!
     await this.propagateProfile(updated)
     return ok(this.toMe(updated))
   }
 
-  async setAvatar(userId: string, data: ArrayBuffer): Promise<Result<Me>> {
+  /**
+   * Foto parada (até 512 KB) ou animada (GIF/WebP até 1,5 MB). A animada vem
+   * com um quadro parado (`still`), que é o que aparece nas listas.
+   */
+  async setAvatar(userId: string, data: ArrayBuffer, still?: ArrayBuffer | null): Promise<Result<Me>> {
     const row = this.user(userId)
     if (!row) return fail(404, 'Conta não encontrada.')
-    const stored = this.storeImage(userId, 'avatar', data)
+    const animated = isAnimated(new Uint8Array(data))
+    if (animated && !still) return fail(400, 'Falta o quadro parado da foto animada.')
+    if (!animated && data.byteLength > MAX_AVATAR_BYTES) return fail(413, 'A foto pode ter até 512 KB (animada, até 1,5 MB).')
+    const stored = this.storeImage(userId, 'avatar', data, animated ? MAX_ANIMATED_BYTES : MAX_AVATAR_BYTES)
     if (!stored.ok) return stored
-    if (row.avatar) this.sql.exec('DELETE FROM media WHERE id = ?', row.avatar)
-    this.sql.exec('UPDATE users SET avatar = ? WHERE id = ?', stored.value, userId)
+    let stillId: string | undefined
+    if (animated) {
+      const storedStill = this.storeImage(userId, 'avatar_still', still!, MAX_AVATAR_BYTES)
+      if (!storedStill.ok) {
+        this.sql.exec('DELETE FROM media WHERE id = ?', stored.value)
+        return storedStill
+      }
+      stillId = storedStill.value
+    }
+    const style = parseStyle(row.style)
+    this.dropMedia(row.avatar, style?.avatarStill)
+    this.sql.exec('UPDATE users SET avatar = ?, style = ? WHERE id = ?', stored.value, styleText({ ...style, avatarStill: stillId }), userId)
     const updated = this.user(userId)!
     await this.propagateProfile(updated)
     return ok(this.toMe(updated))
@@ -619,16 +656,48 @@ export class Directory extends DurableObject<Env> {
   async clearAvatar(userId: string): Promise<Result<Me>> {
     const row = this.user(userId)
     if (!row) return fail(404, 'Conta não encontrada.')
-    if (row.avatar) this.sql.exec('DELETE FROM media WHERE id = ?', row.avatar)
-    this.sql.exec('UPDATE users SET avatar = NULL WHERE id = ?', userId)
+    const style = parseStyle(row.style)
+    this.dropMedia(row.avatar, style?.avatarStill)
+    this.sql.exec('UPDATE users SET avatar = NULL, style = ? WHERE id = ?', styleText({ ...style, avatarStill: undefined }), userId)
     const updated = this.user(userId)!
     await this.propagateProfile(updated)
     return ok(this.toMe(updated))
   }
 
-  /** Guarda uma imagem pequena (foto, ícone) conferindo o tipo pelos bytes, não pelo que o app diz. */
-  private storeImage(ownerId: string, kind: string, data: ArrayBuffer): Result<string> {
-    if (data.byteLength === 0 || data.byteLength > MAX_AVATAR_BYTES) return fail(413, 'A imagem pode ter até 512 KB.')
+  /** Imagem do topo do cartão de perfil (pode ser animada). */
+  async setBanner(userId: string, data: ArrayBuffer): Promise<Result<Me>> {
+    const row = this.user(userId)
+    if (!row) return fail(404, 'Conta não encontrada.')
+    const stored = this.storeImage(userId, 'banner', data, MAX_BANNER_BYTES)
+    if (!stored.ok) return stored
+    const style = parseStyle(row.style)
+    this.dropMedia(style?.banner)
+    this.sql.exec('UPDATE users SET style = ? WHERE id = ?', styleText({ ...style, banner: stored.value }), userId)
+    const updated = this.user(userId)!
+    await this.propagateProfile(updated)
+    return ok(this.toMe(updated))
+  }
+
+  async clearBanner(userId: string): Promise<Result<Me>> {
+    const row = this.user(userId)
+    if (!row) return fail(404, 'Conta não encontrada.')
+    const style = parseStyle(row.style)
+    this.dropMedia(style?.banner)
+    this.sql.exec('UPDATE users SET style = ? WHERE id = ?', styleText({ ...style, banner: undefined }), userId)
+    const updated = this.user(userId)!
+    await this.propagateProfile(updated)
+    return ok(this.toMe(updated))
+  }
+
+  private dropMedia(...ids: (string | null | undefined)[]) {
+    for (const id of ids) if (id) this.sql.exec('DELETE FROM media WHERE id = ?', id)
+  }
+
+  /** Guarda uma imagem (foto, banner, ícone) conferindo o tipo pelos bytes, não pelo que o app diz. */
+  private storeImage(ownerId: string, kind: string, data: ArrayBuffer, max = MAX_AVATAR_BYTES): Result<string> {
+    if (data.byteLength === 0 || data.byteLength > max) {
+      return fail(413, `A imagem pode ter até ${sizeLabel(max)}.`)
+    }
     const type = imageType(new Uint8Array(data.slice(0, 16)))
     if (!type) return fail(415, 'Use uma imagem PNG, JPEG, WebP ou GIF.')
     const limit = this.action(`media:${ownerId}`, 20, HOUR)
@@ -720,7 +789,7 @@ export class Directory extends DurableObject<Env> {
       // A conta vira "Usuário excluído": as mensagens antigas continuam, sem nome nem foto.
       // O nome reservado tem ":", que não vale em nome de usuário: ninguém consegue tomar antes.
       this.sql.exec(
-        `UPDATE users SET username = ?, name = 'Usuário excluído', avatar = NULL, bio = '', accent = NULL,
+        `UPDATE users SET username = ?, name = 'Usuário excluído', avatar = NULL, bio = '', accent = NULL, style = NULL,
          pass_hash = '', pass_salt = '', flags = flags | ? WHERE id = ?`,
         `deleted:${userId}`,
         FLAG_DELETED,

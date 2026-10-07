@@ -279,6 +279,59 @@ svg {
   }
 }
 
+/* ---------- Nome com estilo (personalização do perfil, lib/profile.ts) ---------- */
+
+/*
+ * Vai num <span> em volta do nome (cartão, mensagens, lista de membros). O
+ * line-height 1 deixa a fonte nova dentro da linha de quem está em volta:
+ * nada muda de altura.
+ */
+.styled-name {
+  line-height: 1;
+}
+
+.name-font-serif {
+  font-family: 'Fraunces Variable', Georgia, serif;
+  letter-spacing: 0;
+}
+
+.name-font-rounded {
+  font-family: 'Fredoka Variable', var(--font);
+  letter-spacing: 0;
+}
+
+.name-font-script {
+  font-family: 'Pacifico', cursive;
+  font-weight: 400;
+  letter-spacing: 0.01em;
+}
+
+.name-font-pixel {
+  font-family: 'Silkscreen', var(--mono);
+  font-weight: 400;
+  font-size: 0.86em;
+  letter-spacing: 0;
+}
+
+/* A sobra (padding com margem negativa) deixa o degradê cobrir as letras que passam da caixa. */
+.name-fx-gradient {
+  margin: -0.25em -0.12em;
+  padding: 0.25em 0.12em;
+  background: linear-gradient(90deg, var(--name-a), var(--name-b));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  text-decoration-color: var(--name-a);
+}
+
+.name-fx-neon {
+  color: var(--name-b);
+  text-shadow:
+    0 0 1px var(--name-a),
+    0 0 6px color-mix(in srgb, var(--name-a) 75%, transparent),
+    0 0 14px color-mix(in srgb, var(--name-a) 45%, transparent);
+}
+
 /* ---------- Animações compartilhadas ---------- */
 
 @keyframes rs-fade-in {

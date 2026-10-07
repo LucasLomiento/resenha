@@ -187,7 +187,7 @@
         {@const self = user.id === client.me?.id}
         <Row label={user.name} description="{user.username} · desde {date(user.createdAt)}">
           {#snippet leading()}
-            <Avatar id={user.id} name={user.name} size={32} src={client.api?.media(user.avatar) ?? null} cutout="var(--bg-raised)" />
+            <Avatar id={user.id} name={user.name} size={32} src={client.api?.avatar(user) ?? null} cutout="var(--bg-raised)" />
           {/snippet}
           {#if self}
             <Badge tone="accent">Você</Badge>

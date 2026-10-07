@@ -22,9 +22,14 @@ export function userColor(id: string): string {
   return GRADIENTS[hashOf(id) % GRADIENTS.length][0]
 }
 
+/** As duas cores do degradê da pessoa. */
+export function userColors(id: string): [string, string] {
+  return GRADIENTS[hashOf(id) % GRADIENTS.length]
+}
+
 /** Degradê do avatar (sem foto). */
 export function userGradient(id: string): string {
-  const [a, b] = GRADIENTS[hashOf(id) % GRADIENTS.length]
+  const [a, b] = userColors(id)
   return `linear-gradient(135deg, ${a}, ${b})`
 }
 

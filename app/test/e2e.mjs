@@ -515,8 +515,15 @@ const server = await startServer()
 const owner = await api('/api/register', { username: 'lucas', name: 'Lucas', password: PASSWORD })
 const guild = await api('/api/guilds', { name: 'Turma' }, owner.token)
 const code = await inviteFor(guild.id, owner.token)
-await api('/api/register', { username: 'duarte', name: 'Duarte', password: PASSWORD, invite: code })
+const duarte = await api('/api/register', { username: 'duarte', name: 'Duarte', password: PASSWORD, invite: code })
 check(true, 'contas, servidor e convite criados pela API', code)
+// Personalização do perfil de B (A confere no cartão e na lista de membros).
+const styled = await fetch(`${SERVER}/api/me`, {
+  method: 'PATCH',
+  headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${duarte.token}` },
+  body: JSON.stringify({ style: { theme: [0x2e8bff, 0x2ad4b0], pronouns: 'ele/dele', decoration: 'headset', effect: 'sparkles', nameFont: 'rounded', nameEffect: 'gradient' } }),
+})
+if (!styled.ok) throw new Error(`personalização: ${(await styled.json()).error}`)
 
 // Prefixo dos perfis: dá pra rodar dois e2e ao mesmo tempo (com RESENHA_E2E_PORT diferente também).
 const PROFILE = process.env.RESENHA_E2E_PROFILE ?? 'e2e'
@@ -647,6 +654,16 @@ try {
   await a.page.locator('.members button.member', { hasText: 'Duarte' }).click({ force: true })
   await a.page.getByRole('button', { name: 'Mensagem', exact: true }).waitFor({ timeout: 5000 })
   await shot(a, '2b-perfil')
+  const card = a.page.locator('.profile-pop')
+  const personalized = await Promise.all([
+    card.locator('.pronouns', { hasText: 'ele/dele' }).count(),
+    card.locator('.shell.themed').count(),
+    card.locator('.deco.headset').count(),
+    card.locator('.effect.sparkles').count(),
+    card.locator('h2 .name-font-rounded.name-fx-gradient').count(),
+    a.page.locator('.members button.member', { hasText: 'Duarte' }).locator('.deco.headset').count(),
+  ])
+  check(personalized.every((n) => n === 1), 'A vê a personalização de B (tema, pronomes, moldura, efeito, nome) no cartão e na lista', personalized.join(','))
   await a.page.getByRole('button', { name: 'Mensagem', exact: true }).click({ force: true })
   await a.page.getByPlaceholder('Mensagem pra Duarte').fill('oi no privado')
   await a.page.keyboard.press('Enter')

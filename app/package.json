@@ -22,8 +22,12 @@
     "proto:shots": "electron-vite build && node test/proto-shots.mjs"
   },
   "devDependencies": {
+    "@fontsource-variable/fraunces": "^5.3.0",
+    "@fontsource-variable/fredoka": "^5.3.0",
     "@fontsource-variable/geist": "^5.3.0",
     "@fontsource-variable/geist-mono": "^5.3.0",
+    "@fontsource/pacifico": "^5.3.0",
+    "@fontsource/silkscreen": "^5.3.0",
     "@jitsi/rnnoise-wasm": "^0.2.1",
     "@lucide/svelte": "^1.52.0",
     "@sveltejs/vite-plugin-svelte": "6.2.4",

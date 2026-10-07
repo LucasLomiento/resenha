@@ -6,6 +6,7 @@ import type {
   GuildInfo,
   InvitePreview,
   Me,
+  ProfileStylePatch,
   SessionInfo,
   StatusResponse,
   User,
@@ -64,6 +65,11 @@ export class Api {
     return id ? `${this.server}/media/${id}` : null
   }
 
+  /** Foto de alguém pras listas: a animada vem parada (o primeiro quadro). */
+  avatar(user: Pick<User, 'avatar' | 'style'> | null | undefined): string | null {
+    return this.media(user?.style?.avatarStill ?? user?.avatar ?? null)
+  }
+
   /** Endereço do WebSocket, sem o token: ele vai na primeira mensagem (URL acaba em log). */
   wsUrl(path: string): string {
     return `${this.server.replace(/^http/, 'ws')}${path}`
@@ -115,16 +121,29 @@ export class Api {
     return this.request<Me>('/api/me')
   }
 
-  updateMe(patch: Partial<Pick<Me, 'name' | 'bio' | 'accent' | 'dmPolicy'>>) {
+  updateMe(patch: Partial<Pick<Me, 'name' | 'bio' | 'accent' | 'dmPolicy'>> & { style?: ProfileStylePatch }) {
     return this.request<Me>('/api/me', { method: 'PATCH', json: patch })
   }
 
-  setAvatar(image: Blob) {
-    return this.request<Me>('/api/me/avatar', { method: 'PUT', body: image, headers: { 'Content-Type': image.type } })
+  /** Foto animada vai num formulário, junto com o quadro parado (o que aparece nas listas). */
+  setAvatar(image: Blob, still: Blob | null = null) {
+    if (!still) return this.request<Me>('/api/me/avatar', { method: 'PUT', body: image, headers: { 'Content-Type': image.type } })
+    const form = new FormData()
+    form.append('image', image)
+    form.append('still', still)
+    return this.request<Me>('/api/me/avatar', { method: 'PUT', body: form })
   }
 
   clearAvatar() {
     return this.request<Me>('/api/me/avatar', { method: 'DELETE' })
+  }
+
+  setBanner(image: Blob) {
+    return this.request<Me>('/api/me/banner', { method: 'PUT', body: image, headers: { 'Content-Type': image.type } })
+  }
+
+  clearBanner() {
+    return this.request<Me>('/api/me/banner', { method: 'DELETE' })
   }
 
   changePassword(current: string, next: string) {

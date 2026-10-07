@@ -1,5 +1,7 @@
 <script lang="ts">
+  import type { Decoration } from '../../../../../shared/protocol'
   import { initials, userGradient } from '../../lib/format'
+  import AvatarDecoration from './AvatarDecoration.svelte'
   import StatusDot, { type Status } from './StatusDot.svelte'
 
   let {
@@ -7,6 +9,9 @@
     name,
     size = 32,
     src = null,
+    animated = null,
+    decoration = null,
+    play = false,
     status = null,
     speaking = false,
     cutout = 'var(--bg-canvas)',
@@ -16,8 +21,14 @@
     id: string
     name: string
     size?: number
-    /** Foto de perfil; sem ela, degradê com as iniciais. */
+    /** Foto de perfil (parada); sem ela, degradê com as iniciais. */
     src?: string | null
+    /** Versão animada da foto (GIF/WebP): só aparece com `play`. */
+    animated?: string | null
+    /** Moldura do perfil, por cima do avatar. */
+    decoration?: Decoration | null
+    /** Anima a foto e a moldura (no cartão sempre; nas listas, no hover). */
+    play?: boolean
     status?: Status | null
     /** Anel verde de quem está falando. */
     speaking?: boolean
@@ -40,8 +51,13 @@
 >
   {#if src}
     <img src={src} alt="" draggable="false" />
+    <!-- A animada entra por cima da parada: enquanto carrega, a parada continua ali. -->
+    {#if play && animated}<img class="animated" src={animated} alt="" draggable="false" />{/if}
   {:else}
     <span class="face" style:background={userGradient(id)} style:font-size="{Math.round(size * 0.38)}px">{initials(name)}</span>
+  {/if}
+  {#if decoration && !square}
+    <AvatarDecoration kind={decoration} {play} />
   {/if}
   {#if status}
     <StatusDot {status} size={dot} {cutout} class="avatar-status" />
@@ -51,6 +67,8 @@
 <style>
   .avatar {
     position: relative;
+    /* A moldura e o status ficam por cima só aqui dentro (não passam de cabeçalhos fixos). */
+    isolation: isolate;
     display: inline-block;
     flex: none;
     width: var(--size);
@@ -75,6 +93,11 @@
     object-fit: cover;
   }
 
+  .animated {
+    position: absolute;
+    inset: 0;
+  }
+
   .face {
     color: rgb(12 10 24 / 0.78);
     font-weight: 650;
@@ -92,5 +115,6 @@
     position: absolute;
     right: -1px;
     bottom: -1px;
+    z-index: 2;
   }
 </style>

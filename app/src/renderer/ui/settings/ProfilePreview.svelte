@@ -1,7 +1,8 @@
 <script lang="ts">
-  import type { Presence } from '../../../../../shared/protocol'
-  import { userGradient } from '../../lib/format'
+  import type { Presence, ProfileStyle } from '../../../../../shared/protocol'
+  import { nameStyle } from '../../lib/profile'
   import { Avatar, Icon, STATUS_LABEL } from '../kit'
+  import ProfileShell from '../profile/ProfileShell.svelte'
 
   let {
     id,
@@ -10,6 +11,8 @@
     bio,
     accent,
     avatar,
+    banner = null,
+    style = undefined,
     presence,
     since,
   }: {
@@ -19,7 +22,11 @@
     bio: string
     /** 0xRRGGBB, ou null pro degradê automático. */
     accent: number | null
+    /** Foto (a animada, se for). */
     avatar: string | null
+    banner?: string | null
+    /** Personalização (o rascunho, pra prévia acompanhar na hora). */
+    style?: ProfileStyle
     presence: Presence
     /** Quando a conta foi criada (ms). */
     since: number
@@ -27,24 +34,21 @@
 
   const sinceFmt = new Intl.DateTimeFormat('pt-BR', { day: 'numeric', month: 'short', year: 'numeric' })
 
-  const color = $derived(accent === null ? null : `#${accent.toString(16).padStart(6, '0')}`)
-  const banner = $derived(
-    color ? `linear-gradient(135deg, ${color}, color-mix(in srgb, ${color} 45%, var(--bg-canvas)))` : userGradient(id),
-  )
+  const user = $derived({ id, accent, style })
+  const styledName = $derived(nameStyle(user))
   // "5 de out. de 2026" vira "5 out 2026", igual ao cartão de perfil.
   const sinceText = $derived(sinceFmt.format(since).replaceAll(' de ', ' ').replace('.', ''))
 </script>
 
 <!-- Prévia do cartão de perfil (como os outros te veem), sem os botões. -->
-<div class="card" aria-label="Prévia do perfil" role="group">
-  <div class="banner" style:background={banner}></div>
+<ProfileShell {user} {banner} variant="preview" label="Prévia do perfil">
   <div class="top">
-    <Avatar {id} name={name || username} size={80} src={avatar} status={presence.status} cutout="var(--bg-raised)" />
+    <Avatar {id} name={name || username} size={80} src={avatar} decoration={style?.decoration} play status={presence.status} cutout="var(--card-cut)" />
   </div>
 
   <div class="body">
-    <h2 class="truncate">{name.trim() || username}</h2>
-    <p class="username">{username}</p>
+    <h2><span class={styledName.class} style={styledName.style}>{name.trim() || username}</span></h2>
+    <p class="username">{username}{#if style?.pronouns}<span class="pronouns">{style.pronouns}</span>{/if}</p>
     {#if presence.text}
       <p class="custom"><span class="bubble">{presence.text}</span></p>
     {:else}
@@ -63,26 +67,9 @@
       <p class="since"><Icon name="calendar" size={14} />{sinceText}</p>
     </section>
   </div>
-</div>
+</ProfileShell>
 
 <style>
-  .card {
-    width: 100%;
-    max-width: 320px;
-    border-radius: var(--r-2xl);
-    background: var(--bg-raised);
-    box-shadow:
-      0 0 0 1px var(--line-strong),
-      var(--highlight),
-      var(--shadow-lg);
-    overflow: hidden;
-  }
-
-  .banner {
-    height: 96px;
-    opacity: 0.75;
-  }
-
   .top {
     display: flex;
     margin-top: -44px;
@@ -90,7 +77,7 @@
   }
 
   .top :global(.avatar) {
-    box-shadow: 0 0 0 6px var(--bg-raised);
+    box-shadow: 0 0 0 6px var(--card-cut);
   }
 
   .body {
@@ -101,11 +88,25 @@
     font-size: var(--text-xl);
     font-weight: 650;
     letter-spacing: -0.015em;
+    overflow-wrap: anywhere;
+  }
+
+  h2 :global(.styled-name) {
+    line-height: inherit;
   }
 
   .username {
     color: var(--fg-2);
     font-size: var(--text-sm);
+  }
+
+  .pronouns {
+    margin-left: 8px;
+    padding: 1px 7px;
+    border-radius: var(--r-full);
+    background: rgb(255 255 255 / 0.07);
+    font-size: var(--text-xs);
+    white-space: nowrap;
   }
 
   .custom {

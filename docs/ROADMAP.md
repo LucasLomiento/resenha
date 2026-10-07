@@ -54,6 +54,7 @@ As etapas 0.6 a 0.9 saíram juntas na 1.0 (uma atualização em vez de quatro).
 
 ## Depois da 1.0
 - [x] Mapa compartilhado por servidor: a mesma vista pra todo mundo, cursores e marcadores ao vivo, busca de endereço e "Abrir no Google Maps"
+- [x] Perfil personalizado, pra todo mundo: banner e foto animados, tema do cartão em duas cores, pronomes, moldura do avatar, efeito no cartão, fonte e efeito do nome
 - [ ] Modo privado (tudo via TURN, esconde o IP até dos amigos): precisa da chave TURN
 - [ ] Arrastar servidores no trilho pra reordenar
 - [ ] Emojis próprios de cada servidor

@@ -51,12 +51,13 @@ Cada servidor tem um mapa: quem abre vê o mesmo lugar que os outros, os cursore
 - Toda ação é checada no servidor (membro do servidor? tem permissão? é a própria mensagem?). O app nunca é confiável.
 - O Worker é o único que fala com os DOs e põe a identidade do usuário (`X-Resenha-User`) depois de autenticar; o que vem de fora com esse header é descartado.
 - Arquivos: URL assinada (HMAC) com validade; servidos com `Content-Security-Policy: sandbox` e `nosniff`.
-- Mídia de perfil (avatar, ícone) tem id impossível de adivinhar e cache imutável.
+- Mídia de perfil (avatar, banner, ícone) tem id impossível de adivinhar e cache imutável. O tipo é conferido pelos bytes. Foto parada até 512 KB; animada (GIF/WebP) e banner até 1,5 MB (uma linha do SQLite do DO aguenta 2 MB). Foto animada só entra com o quadro parado junto.
+- Personalização do perfil (`server/src/style.ts`): uma coluna `style` (JSON) no Directory e na cópia dos perfis de cada Guild. Só ids da lista embutida, cores 0..0xFFFFFF e pronomes limpos; banner e quadro parado só mudam pelas rotas de imagem.
 
 ## Rotas
 - `GET /api/g/<servidor>/ws` e `GET /api/home/<pessoa>/ws`: WebSockets (o Worker confere antes se o servidor/a conta existe, pra ninguém criar DO à toa).
 - `/api/...` por HTTP: login, perfil, sessões, amigos, bloqueios, criar/sair/excluir servidor, convites, anexos (`/api/g/<id>/files`, `/api/c/<conversa>/files`), proxy de imagem das prévias e o painel da dona da plataforma.
-- `/media/<id>`: fotos de perfil e ícones (id aleatório, cache imutável).
+- `/media/<id>`: fotos de perfil, banners e ícones (id aleatório, cache imutável). `PUT/DELETE /api/me/avatar` (foto animada vai em formulário: `image` + `still`) e `PUT/DELETE /api/me/banner`.
 - `/verify`: página do Turnstile (cadastro aberto).
 - Rotas da 0.5 (`/ws`, `/api/files`, `/api/register` com `name`): continuam funcionando pro app antigo até ele se atualizar.
 

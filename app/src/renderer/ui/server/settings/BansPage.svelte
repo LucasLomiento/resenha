@@ -65,7 +65,7 @@
     {#each shown as ban (ban.userId)}
       {@const name = nameOf(ban)}
       <div class="ban-row">
-        <Avatar id={ban.userId} {name} size={36} src={client.api?.media(ban.user?.avatar ?? null) ?? null} cutout="var(--bg-raised)" />
+        <Avatar id={ban.userId} {name} size={36} src={client.api?.avatar(ban.user) ?? null} cutout="var(--bg-raised)" />
         <span class="text">
           <span class="name">
             {name}

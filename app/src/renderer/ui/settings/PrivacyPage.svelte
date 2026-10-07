@@ -125,7 +125,7 @@
   {#each blocked as user (user.id)}
     <Row label={user.name} description={user.username}>
       {#snippet leading()}
-        <Avatar id={user.id} name={user.name} size={32} src={client.api?.media(user.avatar) ?? null} cutout="var(--bg-raised)" />
+        <Avatar id={user.id} name={user.name} size={32} src={client.api?.avatar(user) ?? null} cutout="var(--bg-raised)" />
       {/snippet}
       <Button size="sm" loading={unblocking === user.id} disabled={!!unblocking} onclick={() => unblock(user)}>Desbloquear</Button>
     </Row>
