@@ -44,9 +44,13 @@
   import KeyRound from '@lucide/svelte/icons/key-round'
   import Laptop from '@lucide/svelte/icons/laptop'
   import LinkIcon from '@lucide/svelte/icons/link'
+  import Layers from '@lucide/svelte/icons/layers'
   import Lock from '@lucide/svelte/icons/lock'
   import LogIn from '@lucide/svelte/icons/log-in'
   import LogOut from '@lucide/svelte/icons/log-out'
+  import MapIcon from '@lucide/svelte/icons/map'
+  import MapPin from '@lucide/svelte/icons/map-pin'
+  import MapPinPlus from '@lucide/svelte/icons/map-pin-plus'
   import Maximize from '@lucide/svelte/icons/maximize-2'
   import MessageCircle from '@lucide/svelte/icons/message-circle'
   import MessageSquarePlus from '@lucide/svelte/icons/message-square-plus'
@@ -141,10 +145,14 @@
     keyboard: Keyboard,
     key: KeyRound,
     laptop: Laptop,
+    layers: Layers,
     link: LinkIcon,
     lock: Lock,
     'log-in': LogIn,
     'log-out': LogOut,
+    map: MapIcon,
+    'map-pin': MapPin,
+    'map-pin-plus': MapPinPlus,
     maximize: Maximize,
     message: MessageCircle,
     'message-plus': MessageSquarePlus,

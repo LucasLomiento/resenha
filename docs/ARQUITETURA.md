@@ -35,6 +35,14 @@ Voz, câmera e tela vão direto entre os PCs (P2P); o servidor só apresenta as 
 - **No app, reconectar não desfaz as conexões P2P.** Se o servidor esqueceu a call (reiniciou, ou passou dos 30 s), o app entra de novo numa mensagem só, já com tela e câmera como estavam. Cada RTCPeerConnection tem um id que vai na sinalização (`pc` e `ack`): se um lado precisou recomeçar a dele, o outro percebe e recomeça junto, e quem assistia uma tela volta a assistir sozinho. Quem some da call ainda tem 15 s pra voltar antes de a conexão P2P fechar.
 - **Conexão morta é percebida em ~10 s.** O app manda `ping` a cada 20 s (o DO responde `pong` sozinho, sem acordar) e larga a conexão se a resposta não vier em 10 s. Ofertas sem resposta são reenviadas, e a sinalização espera o WebSocket voltar.
 
+## Mapa compartilhado
+Cada servidor tem um mapa: quem abre vê o mesmo lugar que os outros, os cursores de cada um e os marcadores.
+- **O mapa em si não passa pelo nosso servidor.** O app desenha com o MapLibre GL (carregado só quando o mapa abre) e baixa os mapas do OpenFreeMap; a busca de endereço vai pro Nominatim (OpenStreetMap), só ao apertar Enter e no máximo uma por segundo (`app/src/renderer/lib/geocode.ts`). A CSP libera só esses dois endereços, e o worker do MapLibre é servido pelo próprio app (sem `blob:`). O "Abrir no Google Maps" abre o navegador no mesmo lugar.
+- **Quem está no mapa é por conexão** (`ConnState.map`, no próprio socket): a lista de canais de todo mundo mostra quem está lá (`map.viewers`). Quem cai sem avisar continua no mapa enquanto é "fantasma"; voltando, o app confirma com `map.join` (ou sai, se fechou o mapa no meio-tempo).
+- **Vista e cursor** (`map.view`, `map.cursor`) vão só pra quem está com o mapa aberto, e têm um limite próprio (300 a cada 10 s por conexão), porque arrastar manda ~12 por segundo. Quem está mexendo não é puxado pela vista dos outros; ao soltar, vale a de quem parou por último. De castigo, a pessoa vê mas não mexe no mapa dos outros.
+- **A última vista** fica na memória e vai pra tabela `meta` (`map_view`) no máximo a cada 5 s, e na hora quando o último sai: quem abre depois começa nela.
+- **Marcadores** ficam na tabela `map_pins` do servidor (até 200). Qualquer membro marca; apaga quem marcou ou quem pode apagar mensagens.
+
 ## Segurança (regras do servidor)
 - Token de sessão: 32 bytes aleatórios, guardado só como SHA-256. Vai no header `Authorization` (HTTP) ou na primeira mensagem do WebSocket (`auth`), nunca na URL.
 - Sessões expiram após 30 dias sem uso; lista de aparelhos; derrubar um ou todos; trocar a senha derruba os outros.

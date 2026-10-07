@@ -2,6 +2,8 @@ import { DurableObject } from 'cloudflare:workers'
 import {
   ALL_PERMISSIONS,
   DEFAULT_PERMISSIONS,
+  MAX_MAP_PINS,
+  MAX_MAP_PIN_LABEL,
   MAX_MESSAGE_LENGTH,
   MAX_PINS_PER_CHANNEL,
   P,
@@ -14,6 +16,9 @@ import {
   type ChannelKind,
   type ClientMessage,
   type GuildInfo,
+  type MapPin,
+  type MapView,
+  type MapViewer,
   type Member,
   type NotifyLevel,
   type NotifySettings,
@@ -28,6 +33,7 @@ import {
 } from '../../shared/protocol'
 import type { LegacyExport } from './directory'
 import { newId } from './ids'
+import { cleanPoint, cleanView, parseView } from './map'
 import { CONN_KEY, GHOST_QUEUE, connIdFor, graceFor, unexpectedClose } from './resume'
 import {
   IN_LIST,
@@ -84,6 +90,8 @@ interface ConnState {
   resumable?: boolean
   /** Outra conexão com a mesma chave tomou o lugar desta: ao fechar, não mexe em nada. */
   replaced?: boolean
+  /** Desde quando está com o mapa aberto (ms). */
+  map?: number
 }
 
 /** Conexão que caiu sem avisar, esperando o app voltar. */
@@ -159,6 +167,8 @@ const TIMEOUT_MINUTES = [0, 1, 5, 10, 60, 1440, 10080]
 const SLOWMODES = [0, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600, 7200, 21600]
 const AUDIT_PAGE = 50
 const AUDIT_KEEP = 90 * DAY
+/** A vista do mapa vai pro banco no máximo a cada 5 s (arrastar manda uma dúzia por segundo). */
+const MAP_SAVE_EVERY = 5000
 const STATUSES: Status[] = ['online', 'idle', 'dnd', 'invisible']
 const NOTIFY_LEVELS: NotifyLevel[] = ['all', 'mentions', 'none']
 
@@ -242,6 +252,11 @@ export class Guild extends DurableObject<Env> {
   private ghosts = new Map<string, Ghost>()
   /** Sockets que já saíram (o fechamento e o erro podem chegar os dois). */
   private retired = new WeakSet<WebSocket>()
+  /** Última vista do mapa (undefined: ainda não leu do banco). */
+  private mapView: MapView | null | undefined
+  private mapDirty = false
+  private mapSavedAt = 0
+  private mapSaveTimer: ReturnType<typeof setTimeout> | null = null
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env)
@@ -325,6 +340,15 @@ export class Guild extends DurableObject<Env> {
       user_id TEXT NOT NULL,
       last_at INTEGER NOT NULL,
       PRIMARY KEY (channel_id, user_id)
+    )`)
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS map_pins (
+      id TEXT PRIMARY KEY,
+      author_id TEXT NOT NULL,
+      lng REAL NOT NULL,
+      lat REAL NOT NULL,
+      label TEXT NOT NULL,
+      color INTEGER NOT NULL,
+      created_at INTEGER NOT NULL
     )`)
 
     // A tabela de canais da 0.5 só aceitava texto e voz (CHECK); a nova aceita categoria e tem mais colunas.
@@ -744,18 +768,21 @@ export class Guild extends DurableObject<Env> {
     const before = this.presenceOf(ghost.state.userId)
     this.ghosts.delete(connId)
     if (ghost.state.voice) this.broadcastVoice()
+    if (ghost.state.map) this.leftMap()
     this.announcePresence(ghost.state.userId, before)
   }
 
-  private dropGhosts(match: (state: ConnState) => boolean): boolean {
-    let hadVoice = false
+  /** Esquece os fantasmas que batem; diz se algum estava na call ou no mapa. */
+  private dropGhosts(match: (state: ConnState) => boolean): { voice: boolean; map: boolean } {
+    const had = { voice: false, map: false }
     for (const [connId, ghost] of this.ghosts) {
       if (!match(ghost.state)) continue
       clearTimeout(ghost.timer)
       this.ghosts.delete(connId)
-      hadVoice ||= !!ghost.state.voice
+      had.voice ||= !!ghost.state.voice
+      had.map ||= !!ghost.state.map
     }
-    return hadVoice
+    return had
   }
 
   /**
@@ -763,14 +790,16 @@ export class Guild extends DurableObject<Env> {
    * anterior, que caiu (fantasma) ou ainda parece aberta mas morreu, e o que
    * ficou guardado pra ela. A anterior fecha sem mexer em nada.
    */
-  private takeOver(ws: WebSocket, userId: string, connId: string): { voice: VoiceState | null; queue: string[] } {
+  private takeOver(ws: WebSocket, userId: string, connId: string): { voice: VoiceState | null; map?: number; queue: string[] } {
     let voice: VoiceState | null = null
+    let map: number | undefined
     let queue: string[] = []
     const ghost = this.ghosts.get(connId)
     if (ghost && ghost.state.userId === userId) {
       clearTimeout(ghost.timer)
       this.ghosts.delete(connId)
       voice = ghost.state.voice
+      map = ghost.state.map
       queue = ghost.queue
     }
     for (const old of this.ctx.getWebSockets()) {
@@ -778,15 +807,16 @@ export class Guild extends DurableObject<Env> {
       const state = this.state(old)
       if (state.pending || state.connId !== connId || state.userId !== userId) continue
       voice = state.voice ?? voice
+      map = state.map ?? map
       this.retired.add(old)
       try {
-        this.save(old, { ...state, voice: null, replaced: true })
+        this.save(old, { ...state, voice: null, map: undefined, replaced: true })
         old.close(4005, 'Outra conexão tomou o lugar')
       } catch {
         // já estava fechando
       }
     }
-    return { voice, queue }
+    return { voice, map, queue }
   }
 
   /** A call que voltou ainda vale? (canal existe, pode entrar, não está de castigo) */
@@ -1113,6 +1143,7 @@ export class Guild extends DurableObject<Env> {
     if (this.saveProfile({ ...auth.me, admin: false })) this.broadcastMember(auth.me.id)
     const before = this.presenceOf(auth.me.id)
     const resumed = key ? this.takeOver(ws, auth.me.id, connId) : { voice: null, queue: [] }
+    // Quem estava no mapa continua nele (pros outros nada muda); o app confirma com `map.join` ou sai.
     const voice = this.validVoice(auth.me.id, resumed.voice)
     const state: ConnState = {
       ...pending,
@@ -1124,6 +1155,7 @@ export class Guild extends DurableObject<Env> {
       status: STATUSES.includes(msg.status as Status) ? (msg.status as Status) : 'online',
       text: cleanLine(msg.text, 1, 128),
       voice,
+      map: resumed.map,
     }
     this.save(ws, state)
 
@@ -1148,6 +1180,7 @@ export class Guild extends DurableObject<Env> {
       lastMessageIds: this.store.lastIds(text),
       notify: this.notifySettings(state.userId),
       resumed: !!voice,
+      mapViewers: this.mapViewers(),
     })
     for (const queued of resumed.queue) this.raw(ws, queued)
     if (resumed.voice && !voice) this.send(ws, { t: 'voice.forced', channelId: null })
@@ -1169,7 +1202,13 @@ export class Guild extends DurableObject<Env> {
       if (msg.t !== 'auth') return ws.close(4001, 'Faltou autenticar')
       return this.completeAuth(ws, state, msg)
     }
-    if (!this.member(state.userId)) return ws.close(4003, 'Você não está nesse servidor')
+    const member = this.member(state.userId)
+    if (!member) return ws.close(4003, 'Você não está nesse servidor')
+    // O mapa tem balde próprio: arrastar e mexer o mouse mandam uma dúzia de mensagens por segundo.
+    if (msg.t === 'map.view' || msg.t === 'map.cursor') {
+      if (this.allow(`map:${state.connId}`, 300, 10_000)) this.mapMotion(state, msg, member)
+      return
+    }
     // Limite por conexão: sinalização da call tem folga maior (muitos candidatos ICE de uma vez).
     const signal = msg.t === 'rtc.signal'
     if (!this.allow(`${signal ? 'sig' : 'ws'}:${state.connId}`, signal ? 400 : 120, 10_000)) {
@@ -1208,6 +1247,7 @@ export class Guild extends DurableObject<Env> {
     // O socket que caiu já não está aberto: o "antes" inclui ele à mão.
     const before = aggregate([...this.statesOf(state.userId, state.connId), state])
     if (state.voice) this.broadcastVoice(state.connId)
+    if (state.map) this.leftMap(state.connId)
     this.announcePresence(state.userId, before, state.connId)
   }
 
@@ -1548,6 +1588,12 @@ export class Guild extends DurableObject<Env> {
         if (ghost?.state.voice?.channelId === state.voice.channelId) this.enqueue(ghost, signal)
         return
       }
+
+      case 'map.join':
+      case 'map.leave':
+      case 'map.pin.add':
+      case 'map.pin.remove':
+        return this.handleMap(ws, state, msg)
     }
   }
 
@@ -2145,7 +2191,9 @@ export class Guild extends DurableObject<Env> {
   private removeMember(userId: string, reason: string) {
     if (!this.member(userId)) return
     const sockets = this.socketsOf(userId)
-    const hadVoice = this.dropGhosts((s) => s.userId === userId) || sockets.some((ws) => this.state(ws).voice)
+    const dropped = this.dropGhosts((s) => s.userId === userId)
+    const hadVoice = dropped.voice || sockets.some((ws) => this.state(ws).voice)
+    const hadMap = dropped.map || sockets.some((ws) => this.state(ws).map)
     for (const ws of sockets) ws.close(4003, reason)
     this.sql.exec('DELETE FROM members WHERE user_id = ?', userId)
     this.sql.exec('DELETE FROM read_states WHERE user_id = ?', userId)
@@ -2156,6 +2204,130 @@ export class Guild extends DurableObject<Env> {
     this.broadcast({ t: 'member.removed', userId })
     if (sockets.length > 0) this.broadcast({ t: 'presence', userId, online: false, presence: { status: 'offline', text: null } })
     if (hadVoice) this.broadcastVoice()
+    if (hadMap) this.leftMap()
+  }
+
+  // ---------- Mapa compartilhado ----------
+
+  /** Quem está com o mapa aberto (os fantasmas contam: caíram e ainda podem voltar), na ordem em que entrou. */
+  private mapViewers(exceptConnId?: string): MapViewer[] {
+    return [...this.sockets(exceptConnId).map((ws) => this.state(ws)), ...this.ghostStates(exceptConnId)]
+      .filter((s) => !!s.map)
+      .sort((a, b) => a.map! - b.map!)
+      .map(({ connId, userId }) => ({ connId, userId }))
+  }
+
+  /** Vista, cursores e marcadores só vão pra quem está com o mapa aberto. */
+  private toMap(msg: ServerMessage, exceptConnId?: string) {
+    const text = JSON.stringify(msg)
+    for (const ws of this.sockets(exceptConnId)) if (this.state(ws).map) this.raw(ws, text)
+  }
+
+  /** Alguém saiu do mapa: todo mundo atualiza quem está lá; sem ninguém, a vista vai pro banco já. */
+  private leftMap(exceptConnId?: string) {
+    const viewers = this.mapViewers(exceptConnId)
+    this.broadcast({ t: 'map.viewers', viewers }, { except: exceptConnId })
+    if (viewers.length === 0) this.flushMapView()
+  }
+
+  private currentMapView(): MapView | null {
+    if (this.mapView === undefined) this.mapView = parseView(this.meta('map_view'))
+    return this.mapView
+  }
+
+  private storeMapView(view: MapView) {
+    this.mapView = view
+    this.mapDirty = true
+    if (this.mapSaveTimer) return
+    this.mapSaveTimer = setTimeout(() => this.flushMapView(), Math.max(0, this.mapSavedAt + MAP_SAVE_EVERY - Date.now()))
+  }
+
+  private flushMapView() {
+    if (this.mapSaveTimer) clearTimeout(this.mapSaveTimer)
+    this.mapSaveTimer = null
+    if (!this.mapDirty || !this.mapView || !this.id) return
+    this.mapDirty = false
+    this.mapSavedAt = Date.now()
+    this.setMeta('map_view', JSON.stringify(this.mapView))
+  }
+
+  private mapPins(): MapPin[] {
+    return this.sql
+      .exec<{ id: string; author_id: string; lng: number; lat: number; label: string; color: number; created_at: number }>(
+        'SELECT * FROM map_pins ORDER BY id',
+      )
+      .toArray()
+      .map((r) => ({ id: r.id, authorId: r.author_id, lng: r.lng, lat: r.lat, label: r.label, color: r.color, createdAt: r.created_at }))
+  }
+
+  /** Vista e cursor: muitas por segundo, então não passam pelo `handle` (nem pelo limite geral). */
+  private mapMotion(state: ConnState, msg: Extract<ClientMessage, { t: 'map.view' | 'map.cursor' }>, member: MemberRow) {
+    // De castigo, a pessoa olha o mapa mas não mexe no dos outros.
+    if (!state.map || this.timedOut(member)) return
+    if (msg.t === 'map.view') {
+      const view = cleanView(msg.view)
+      if (!view) return
+      this.storeMapView(view)
+      return this.toMap({ t: 'map.view', view, connId: state.connId, userId: state.userId }, state.connId)
+    }
+    const at = msg.lng === null || msg.lat === null ? null : cleanPoint(msg.lng, msg.lat)
+    if (at === null && (msg.lng !== null || msg.lat !== null)) return
+    this.toMap({ t: 'map.cursor', connId: state.connId, userId: state.userId, lng: at?.lng ?? null, lat: at?.lat ?? null }, state.connId)
+  }
+
+  private handleMap(ws: WebSocket, state: ConnState, msg: Extract<ClientMessage, { t: 'map.join' | 'map.leave' | 'map.pin.add' | 'map.pin.remove' }>) {
+    const userId = state.userId
+    switch (msg.t) {
+      case 'map.join': {
+        // De novo (o app reconectou com o mapa aberto): só manda o estado, ninguém vê entrar outra vez.
+        const joined = !state.map
+        if (joined) this.save(ws, { ...state, map: Date.now() })
+        const viewers = this.mapViewers()
+        this.send(ws, { t: 'map.state', view: this.currentMapView(), pins: this.mapPins(), viewers })
+        if (joined) this.broadcast({ t: 'map.viewers', viewers }, { except: state.connId })
+        return
+      }
+
+      case 'map.leave':
+        if (!state.map) return
+        this.save(ws, { ...state, map: undefined })
+        return this.leftMap()
+
+      case 'map.pin.add': {
+        if (this.timedOut(this.member(userId))) return this.error(ws, 'Você está de castigo e não pode marcar lugares agora.')
+        const at = cleanPoint(msg.lng, msg.lat)
+        const label = cleanLine(msg.label, 1, MAX_MAP_PIN_LABEL)
+        const tint = color(msg.color)
+        if (!at || !label || tint === null || tint === undefined) return this.error(ws, 'Marcador inválido.')
+        if (!this.allow(`pin:${userId}`, 10, MINUTE)) return this.error(ws, 'Calma! Marcadores demais de uma vez.')
+        if (this.sql.exec<{ n: number }>('SELECT COUNT(*) AS n FROM map_pins').one().n >= MAX_MAP_PINS) {
+          return this.error(ws, `O mapa já tem ${MAX_MAP_PINS} marcadores. Apague algum antes.`)
+        }
+        const pin: MapPin = { id: newId(), authorId: userId, ...at, label, color: tint, createdAt: Date.now() }
+        this.sql.exec(
+          'INSERT INTO map_pins (id, author_id, lng, lat, label, color, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+          pin.id,
+          pin.authorId,
+          pin.lng,
+          pin.lat,
+          pin.label,
+          pin.color,
+          pin.createdAt,
+        )
+        return this.toMap({ t: 'map.pin', pin })
+      }
+
+      case 'map.pin.remove': {
+        if (typeof msg.id !== 'string') return
+        const row = this.sql.exec<{ author_id: string }>('SELECT author_id FROM map_pins WHERE id = ?', msg.id).toArray()[0]
+        if (!row) return
+        if (row.author_id !== userId && !has(this.guildPerms(userId), P.MANAGE_MESSAGES)) {
+          return this.error(ws, 'Só quem marcou (ou um moderador) apaga esse marcador.')
+        }
+        this.sql.exec('DELETE FROM map_pins WHERE id = ?', msg.id)
+        return this.toMap({ t: 'map.pin.removed', id: msg.id })
+      }
+    }
   }
 
   // ---------- Chamadas do Directory (RPC) ----------
@@ -2302,11 +2474,18 @@ export class Guild extends DurableObject<Env> {
       ws.close(4001, 'Sessão encerrada')
       this.dropConnection(ws, state, false)
     }
-    if (this.dropGhosts((s) => set.has(s.session))) this.broadcastVoice()
+    const dropped = this.dropGhosts((s) => set.has(s.session))
+    if (dropped.voice) this.broadcastVoice()
+    if (dropped.map) this.leftMap()
   }
 
   async destroy() {
     this.dropGhosts(() => true)
+    // Nada de gravar a vista do mapa depois de apagar tudo.
+    if (this.mapSaveTimer) clearTimeout(this.mapSaveTimer)
+    this.mapSaveTimer = null
+    this.mapView = undefined
+    this.mapDirty = false
     for (const ws of this.ctx.getWebSockets()) ws.close(4004, 'Servidor excluído')
     await this.ctx.storage.deleteAlarm()
     await this.ctx.storage.deleteAll()

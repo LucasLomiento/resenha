@@ -2,7 +2,7 @@
 
 > **Só quer instalar e usar?** Baixe em [Releases](https://github.com/LucasLomiento/resenha/releases/latest) e siga o [INSTALAR.md](INSTALAR.md).
 
-Um app no estilo do Discord: vários servidores com canais, cargos e moderação, mensagens privadas, amigos, chat com imagens e arquivos, call de voz, câmera e compartilhamento de tela até 1440p a 60 fps com áudio. O áudio da tela **não leva junto a voz da call**. Voz e tela vão direto entre os PCs (P2P), e o Cloudflare só cuida das contas, do chat e de apresentar as pessoas umas às outras.
+Um app no estilo do Discord: vários servidores com canais, cargos e moderação, mensagens privadas, amigos, chat com imagens e arquivos, call de voz, câmera e compartilhamento de tela até 1440p a 60 fps com áudio, e um mapa compartilhado em cada servidor. O áudio da tela **não leva junto a voz da call**. Voz e tela vão direto entre os PCs (P2P), e o Cloudflare só cuida das contas, do chat e de apresentar as pessoas umas às outras.
 
 ## Como funciona
 
@@ -22,6 +22,7 @@ Os detalhes (e as regras de segurança do servidor) estão em [docs/ARQUITETURA.
 - **Permissões** no modelo do Discord: cargos com hierarquia, exceções por canal e por categoria, castigo, expulsão, banimento e registro de auditoria. Tudo é conferido no servidor (o cálculo fica em `shared/permissions.ts`).
 - **Mensagens**: resposta, menções (pessoa, cargo, @everyone), reações, fixadas, busca sem acento (FTS5), contagem de não lidas e menções, e prévia de link buscada pelo servidor (quem lê nunca acessa o site do link).
 - **Anexos** (`server/src/files.ts`): ficam no SQLite do servidor/conversa, em pedaços de 1 MB, até 25 MB por arquivo, com teto de espaço pra plataforma inteira.
+- **Mapa** (`app/src/renderer/ui/map`): um por servidor, com a mesma vista pra todo mundo, cursores e marcadores ao vivo. Desenhado com o [MapLibre GL](https://maplibre.org) e os mapas grátis do [OpenFreeMap](https://openfreemap.org) (© OpenMapTiles, dados do © OpenStreetMap); a busca de endereço é do Nominatim (OpenStreetMap). Sem chave de API. Pra satélite e Street View, "Abrir no Google Maps".
 - **app/**: Electron + Svelte 5. Cada pessoa da call tem uma `RTCPeerConnection` própria (`src/renderer/lib/peer.ts`, com "perfect negotiation"); a mesma call serve pro canal de voz e pra chamada privada. A tela só é enviada pra quem clica em **Assistir**.
 - **shared/**: os tipos das mensagens trocadas entre o app e o servidor, e o cálculo de permissões.
 

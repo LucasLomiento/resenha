@@ -13,6 +13,7 @@ Esta política vale para quem usa um servidor do Resenha. Quem cuida do servidor
 | Servidores de que você participa, cargos, apelidos | Para o servidor funcionar | Até você sair ou ser removido |
 | Amizades, pedidos de amizade e bloqueios | Para a lista de amigos e para proteger você | Até você desfazer |
 | Registro de moderação (quem expulsou, baniu, apagou mensagem de alguém…) | Para os administradores do servidor saberem o que aconteceu | 90 dias |
+| Marcadores do mapa do servidor (lugar, nome, cor, quem marcou) e o último lugar que o mapa mostrou | Para todo mundo do servidor ver | Até quem marcou ou um moderador apagar, ou o servidor ser excluído |
 
 **O seu IP não fica guardado.** Para limitar tentativas de senha, o servidor guarda só um código embaralhado do IP (HMAC), que não permite descobrir o IP de volta, e apaga esses registros em até um dia.
 
@@ -20,12 +21,13 @@ Esta política vale para quem usa um servidor do Resenha. Quem cuida do servidor
 
 - **Voz, câmera e compartilhamento de tela** vão direto entre os computadores (P2P), criptografados (DTLS-SRTP). O servidor só ajuda os dois lados a se encontrarem. Quando a rede impede a ligação direta, a mídia pode passar por um retransmissor (TURN) da Cloudflare, ainda criptografada: o retransmissor não consegue ver nem ouvir o conteúdo.
 - **Prévias de link** são buscadas pelo servidor, e as imagens delas passam por ele. Assim o site do link nunca vê o IP de quem está lendo a conversa.
+- **O mapa** (de cada servidor) é baixado direto do [OpenFreeMap](https://openfreemap.org), e a busca de endereço vai direto pro [Nominatim](https://nominatim.org) (OpenStreetMap). Como em qualquer site, esses serviços veem o seu IP e, na busca, o que você procurou. Só quando você abre o mapa ou busca algo. Onde você está olhando no mapa e o seu cursor vão só pra quem está com o mapa do mesmo servidor aberto, e não ficam guardados (a não ser o último lugar que o mapa mostrou).
 
 Por ser P2P, quem está na mesma call que você vê o seu endereço IP (é assim que a ligação direta funciona). Se isso for um problema, não entre em call com quem você não conhece.
 
 ## Onde ficam os dados
 
-Os dados ficam na Cloudflare (Workers e Durable Objects), com preferência pela região da América do Sul. Os arquivos ficam no mesmo lugar das mensagens. Nada é enviado para terceiros.
+Os dados ficam na Cloudflare (Workers e Durable Objects), com preferência pela região da América do Sul. Os arquivos ficam no mesmo lugar das mensagens. Fora o mapa (acima), nada é enviado para terceiros.
 
 ## Seus direitos (LGPD)
 
@@ -39,7 +41,7 @@ Os dados ficam na Cloudflare (Workers e Durable Objects), com preferência pela 
 - Conexões sempre por HTTPS/WSS.
 - O app guarda a sua sessão criptografada com o chaveiro do sistema.
 - Links de arquivos são assinados e expiram; arquivos enviados nunca rodam como página.
-- O app só fala com o servidor configurado (política de segurança de conteúdo), e o que vem de fora nunca roda como código.
+- O app só fala com o servidor configurado e, no mapa, com o OpenFreeMap e a busca do OpenStreetMap (política de segurança de conteúdo), e o que vem de fora nunca roda como código.
 
 ## Mudanças
 

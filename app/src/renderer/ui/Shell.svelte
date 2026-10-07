@@ -13,6 +13,7 @@
   import IncomingCall from './IncomingCall.svelte'
   import { Spinner } from './kit'
   import Lightbox from './Lightbox.svelte'
+  import MapView from './map/MapView.svelte'
   import ProfileCard from './profile/ProfileCard.svelte'
   import QuickSwitcher from './QuickSwitcher.svelte'
   import ServerRail from './rail/ServerRail.svelte'
@@ -29,6 +30,7 @@
   const guild = $derived(client.guild)
   const streamFull = $derived(client.view === 'stream' && !!client.call.watching)
   const callOpen = $derived(client.view === 'call' && !!client.call.channelId)
+  const mapOpen = $derived(client.view === 'map' && !!guild)
 
   // Parou de assistir, ou saiu da call: volta pro chat.
   $effect(() => {
@@ -122,7 +124,7 @@
   <!-- O painel de baixo vai de ponta a ponta: embaixo do trilho de servidores e da lista. -->
   <div class="dock-area"><Dock /></div>
   <main class="panel">
-    <div class="content" class:hidden={streamFull || callOpen}>
+    <div class="content" class:hidden={streamFull || callOpen || mapOpen}>
       {#if client.route.kind === 'home'}
         <FriendsView />
       {:else}
@@ -131,6 +133,11 @@
     </div>
     {#if callOpen}
       <CallView />
+    {/if}
+    {#if mapOpen && guild}
+      {#key guild.id}
+        <MapView {guild} />
+      {/key}
     {/if}
     {#if client.call.watching}
       <StreamView full={streamFull} />
