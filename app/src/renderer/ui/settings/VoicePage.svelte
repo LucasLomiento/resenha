@@ -4,6 +4,7 @@
   import { MicPipeline } from '../../lib/mic'
   import { settings, type VideoCodec } from '../../lib/settings.svelte'
   import { client } from '../../lib/client.svelte'
+  import { ui } from '../../lib/ui.svelte'
   import { Button, Icon, Meter, PageHeader, Row, Section, Segmented, Select, Switch } from '../kit'
   import VideoTile from '../VideoTile.svelte'
 
@@ -141,18 +142,23 @@
   }
 
   let advanced = $state(false)
+  // A busca (ou o Ctrl+K) achou uma opção que fica no "Avançado": abre ele.
+  const ADVANCED = ['voice.echo', 'voice.agc', 'voice.codec', 'voice.stats']
+  $effect(() => {
+    if (ui.settingsTarget && ADVANCED.includes(ui.settingsTarget)) advanced = true
+  })
 </script>
 
 <PageHeader title="Voz e vídeo" />
 
 <Section title="Áudio">
-  <Row label="Microfone">
+  <Row label="Microfone" setting="voice.input">
     <div class="select"><Select label="Microfone" options={options(inputs, 'Microfone')} bind:value={settings.inputDevice} onchange={micChanged} /></div>
   </Row>
-  <Row label="Saída">
+  <Row label="Saída" setting="voice.output">
     <div class="select"><Select label="Saída de áudio" options={options(outputs, 'Alto-falante')} bind:value={settings.outputDevice} onchange={() => call.applyOutput()} /></div>
   </Row>
-  <Row stack description={testing ? 'Você está se ouvindo. Use fone pra não dar eco.' : undefined}>
+  <Row stack setting="voice.test" description={testing ? 'Você está se ouvindo. Use fone pra não dar eco.' : undefined}>
     <div class="test">
       <Button icon={testing ? 'x' : 'mic'} onclick={() => (testing ? stopTest() : startTest())}>
         {testing ? 'Parar teste' : 'Testar microfone'}
@@ -169,7 +175,7 @@
       />
     </div>
   </Row>
-  <Row label="Redução de ruído" description="Já filtra o ruído no sistema? Deixe desligada.">
+  <Row label="Redução de ruído" setting="voice.noise" description="Já filtra o ruído no sistema? Deixe desligada.">
     <Segmented
       label="Redução de ruído"
       options={[
@@ -181,7 +187,7 @@
       onchange={setNoise}
     />
   </Row>
-  <Row label="Só transmitir quando eu falar" for="voice-gate" description="O resto vira silêncio.">
+  <Row label="Só transmitir quando eu falar" setting="voice.gate" for="voice-gate" description="O resto vira silêncio.">
     <Switch id="voice-gate" bind:checked={settings.gate.enabled} onchange={processingChanged} />
   </Row>
   {#if settings.gate.enabled}
@@ -207,10 +213,10 @@
 </Section>
 
 <Section title="Câmera">
-  <Row label="Dispositivo">
+  <Row label="Dispositivo" setting="voice.camera">
     <div class="select"><Select label="Câmera" options={options(cameras, 'Câmera')} bind:value={settings.cameraDevice} onchange={cameraChanged} /></div>
   </Row>
-  <Row label="Prévia">
+  <Row label="Prévia" setting="voice.preview">
     <Button icon={preview ? 'camera-off' : 'camera'} onclick={togglePreview}>{preview ? 'Fechar prévia' : 'Ver prévia'}</Button>
   </Row>
   {#if preview}
@@ -225,13 +231,13 @@
   </button>
   {#if advanced}
     <Section>
-      <Row label="Cancelamento de eco" for="voice-echo" description="Útil pra quem usa caixa de som.">
+      <Row label="Cancelamento de eco" setting="voice.echo" for="voice-echo" description="Útil pra quem usa caixa de som.">
         <Switch id="voice-echo" bind:checked={settings.echoCancellation} onchange={micChanged} />
       </Row>
-      <Row label="Ganho automático" for="voice-agc" description="Ajusta o volume da sua voz sozinho.">
+      <Row label="Ganho automático" setting="voice.agc" for="voice-agc" description="Ajusta o volume da sua voz sozinho.">
         <Switch id="voice-agc" bind:checked={settings.autoGainControl} onchange={micChanged} />
       </Row>
-      <Row label="Codec da transmissão" description="VP8 e H264 pesam menos no computador.">
+      <Row label="Codec da transmissão" setting="voice.codec" description="VP8 e H264 pesam menos no computador.">
         <Segmented
           label="Codec da transmissão"
           options={(['VP9', 'VP8', 'H264', 'AV1'] as VideoCodec[]).map((codec) => ({ value: codec, label: codec }))}
@@ -239,7 +245,7 @@
           onchange={() => call.updateShare()}
         />
       </Row>
-      <Row label="Estatísticas no player" for="voice-stats" description="Resolução, fps e ping da transmissão.">
+      <Row label="Estatísticas no player" setting="voice.stats" for="voice-stats" description="Resolução, fps e ping da transmissão.">
         <Switch id="voice-stats" bind:checked={settings.showStats} />
       </Row>
     </Section>

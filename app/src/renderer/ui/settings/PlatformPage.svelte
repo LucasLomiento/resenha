@@ -120,7 +120,7 @@
       <span class="stat-label">Servidores</span>
       <span class="stat-value">{count.format(panel.guilds)}</span>
     </div>
-    <div class="stat storage">
+    <div class="stat storage" data-setting="platform.storage">
       <span class="stat-label">Espaço usado</span>
       <span class="stat-value">{bytes(panel.storageUsed)} <small>de {bytes(panel.storageLimit)}</small></span>
       <div
@@ -146,7 +146,7 @@
     </div>
   </div>
 
-  <Section title="Cadastro">
+  <Section title="Cadastro" setting="platform.signup">
     <RadioGroup
       label="Cadastro"
       bind:value={() => panel!.signup, (mode) => setSignup(mode)}
@@ -170,7 +170,7 @@
 {/if}
 
 <div class="accounts">
-  <Section title="Contas">
+  <Section setting="platform.accounts" title="Contas">
     {#snippet actions()}
       <div class="search">
         <TextField icon="search" placeholder="Nome ou usuário" aria-label="Buscar contas" bind:value={query} spellcheck={false} />

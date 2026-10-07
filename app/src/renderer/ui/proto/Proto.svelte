@@ -29,6 +29,7 @@
     { id: 'account-privacy', label: 'Privacidade', group: 'Conta' },
     { id: 'profile-style', label: 'Personalização do perfil', group: 'Conta' },
     { id: 'kit', label: 'Kit de componentes', group: 'Sistema' },
+    { id: 'update', label: 'Aviso de atualização', group: 'Sistema' },
   ] as const
 
   export type ScreenId = (typeof SCREENS)[number]['id']
@@ -48,6 +49,8 @@
   import ProfileStyleGallery from './ProfileStyleGallery.svelte'
   import ProfileCard from './ProfileCard.svelte'
   import ProtoFrame from './ProtoFrame.svelte'
+  import UpdateNotice from '../UpdateNotice.svelte'
+  import { client } from '../../lib/client.svelte'
   import QuickSwitcher from './QuickSwitcher.svelte'
   import SearchPanel from './SearchPanel.svelte'
   import ServerSettings from './ServerSettings.svelte'
@@ -130,6 +133,11 @@
     'account-password': 'password',
     'account-privacy': 'privacy',
   } as const
+
+  // O aviso de atualização lê o estado de verdade do app: aqui ele é inventado.
+  $effect(() => {
+    if (id === 'update') client.update = { status: 'ready', version: '1.2.2' }
+  })
 </script>
 
 <svelte:window {onkeydown} />
@@ -155,6 +163,12 @@
         {:else if id === 'join-server'}<CreateServer step="join" />{/if}
       {/snippet}
     </ProtoFrame>
+  {:else if id === 'update'}
+    <ProtoFrame rail="g-resenha">
+      {#snippet sidebar()}<ServerSidebar active="c-geral" />{/snippet}
+      <ChatPane title="geral" topic="Bem-vindo! Aqui é o papo de sempre." {messages} placeholder="Mensagem em #geral" />
+    </ProtoFrame>
+    <UpdateNotice />
   {:else if id === 'dm'}
     <ProtoFrame rail="home">
       {#snippet sidebar()}<HomeSidebar active="dm-bia" />{/snippet}

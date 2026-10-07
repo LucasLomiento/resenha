@@ -59,7 +59,7 @@
 
 <PageHeader title="Senha" description="Trocar a senha desconecta os outros aparelhos." />
 
-<Section>
+<Section setting="password.change">
   <Row stack>
     <form class="password" onsubmit={submit}>
       <!-- Pros gerenciadores de senha saberem de qual conta é. -->

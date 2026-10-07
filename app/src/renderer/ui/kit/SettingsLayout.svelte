@@ -20,6 +20,8 @@
     onselect,
     onclose,
     inline = false,
+    search,
+    results,
     footer,
     children,
   }: {
@@ -31,6 +33,10 @@
     onclose: () => void
     /** Protótipos: sem a camada do Esc. */
     inline?: boolean
+    /** Campo de busca no topo da navegação. */
+    search?: Snippet
+    /** Resultados da busca: aparecem no lugar da navegação. */
+    results?: Snippet
     /** Rodapé da navegação (versão do app, por exemplo). */
     footer?: Snippet
     children: Snippet
@@ -52,6 +58,10 @@
 <div class="settings" role="dialog" aria-modal="true" aria-label={title} data-portal-root={inline ? undefined : ''} use:closeLayer>
   <div class="frame">
     <nav class="settings-nav" aria-label={title}>
+      {#if search}<div class="search">{@render search()}</div>{/if}
+      {#if results}
+        {@render results()}
+      {:else}
       {#each nav as entry, i (i)}
         {#if 'separator' in entry}
           <div class="separator" role="separator"></div>
@@ -67,6 +77,7 @@
           />
         {/if}
       {/each}
+      {/if}
       {#if footer}<div class="nav-footer">{@render footer()}</div>{/if}
     </nav>
 
@@ -118,6 +129,10 @@
     gap: 2px;
     padding: 56px 12px 24px 16px;
     overflow-y: auto;
+  }
+
+  .search {
+    margin-bottom: 14px;
   }
 
   .heading {

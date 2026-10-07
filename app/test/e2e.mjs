@@ -985,6 +985,29 @@ try {
     await shot(a, `6-configuracoes-${page.trim().toLowerCase().replace(/\s+/g, '-').normalize('NFD').replace(/[\u0300-\u036f]/g, '')}`)
   }
   check(new Set(tops).size === 1, 'navegação e título das configurações ficam no mesmo lugar em todas as páginas', tops.join(','))
+  // Busca nas configurações: "ruido" (sem acento) leva pra "Redução de ruído", que pisca.
+  const settingsSearch = a.page.getByLabel('Buscar nas configurações')
+  await settingsSearch.fill('ruido')
+  const firstResult = a.page.locator('.settings-nav .result').first()
+  await firstResult.waitFor({ timeout: 3000 })
+  const resultText = (await firstResult.innerText()).replace(/\n/g, ' · ')
+  await shot(a, '6b-busca-configuracoes')
+  await settingsSearch.press('Enter')
+  const flashed = (id) =>
+    a.page.locator(`.settings-content [data-setting="${id}"].setting-flash`).waitFor({ timeout: 3000 }).then(() => true, () => false)
+  check(
+    resultText.startsWith('Redução de ruído') && (await flashed('voice.noise')) && (await a.page.locator('.settings-content h1').innerText()) === 'Voz e vídeo',
+    'busca nas configurações ("ruido") abre a página certa e destaca a opção',
+    resultText,
+  )
+  await a.page.keyboard.press('Escape')
+  // Pelo Ctrl+K, de fora das configurações: uma opção escondida no "Avançado".
+  await a.page.keyboard.press('Control+k')
+  await a.page.locator('.switcher input').fill('eco')
+  const settingItem = a.page.locator('.switcher .item', { hasText: 'Cancelamento de eco' })
+  const listed = await settingItem.waitFor({ timeout: 3000 }).then(() => true, () => false)
+  if (listed) await settingItem.click({ force: true })
+  check(listed && (await flashed('voice.echo')), 'Ctrl+K acha configuração e abre direto nela (até dentro do "Avançado")')
   await a.page.keyboard.press('Escape')
 
   // Parar de compartilhar some com o player de B.

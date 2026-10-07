@@ -26,6 +26,7 @@
   import ShareDialog from './ShareDialog.svelte'
   import ShortcutsHelp from './ShortcutsHelp.svelte'
   import StreamView from './StreamView.svelte'
+  import UpdateNotice from './UpdateNotice.svelte'
 
   const guild = $derived(client.guild)
   const streamFull = $derived(client.view === 'stream' && !!client.call.watching)
@@ -151,7 +152,7 @@
   </main>
 </div>
 
-{#if client.incomingCall}<IncomingCall />{/if}
+{#if client.incomingCall}<IncomingCall />{:else}<UpdateNotice />{/if}
 {#if ui.profile}<ProfileCard />{/if}
 {#if ui.switcher}<QuickSwitcher />{/if}
 {#if ui.shortcutsHelp}<ShortcutsHelp />{/if}

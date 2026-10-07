@@ -201,6 +201,19 @@ Tudo passa por um reverb curto e um compressor. O volume de cada som foi medido 
 - **Marcador:** gota na cor escolhida (as seis cores das pessoas), nome aparece no hover. Clicar abre o cartão (quem marcou, quando, Google Maps, Apagar). Botão direito no mapa também marca.
 - **Escuro** do OpenFreeMap puxado pro tom do painel; "Claro" e "Colorido" pra quem quiser (cada um escolhe o seu).
 
+### Busca nas configurações
+
+- **Campo no topo da navegação** das configurações (Ctrl+F foca). Com texto, a navegação vira a lista de resultados: ícone da página, nome da opção e "Página · Seção" embaixo. Setas escolhem, Enter abre, Esc limpa (com o campo vazio, fecha as configurações).
+- **Abrir um resultado** vai pra página, rola até a opção e faz ela piscar de leve (fundo e contorno na cor de destaque, 2 s). Se ela estiver num grupo fechado ("Avançado"), o grupo abre.
+- **Também no Ctrl+K**, no grupo "Configurações", depois de canais, pessoas e servidores.
+- **O que acha:** o nome, sem acento e com erro de uma ou duas letras, e as palavras-chave de cada opção (`lib/settings-search.ts`): sinônimos, o nome no Discord, em inglês. Opção nova entra no índice com `setting="<id>"` na linha; o teste `test:ui` confere que toda âncora existe.
+
+### Aviso de atualização
+
+- **Cartão no canto de baixo à direita**, acima do campo de mensagem (a ligação chegando tem a vez): ícone de download, "Resenha 1.2.2 chegou", uma linha do que fazer e "Novidades ↗" (a página da versão no GitHub) com o botão principal à direita. O X ("Depois") esconde até a próxima versão; o botão no pé do trilho continua lá.
+- **Estados:** pronta ("Reinicie pra usar a versão nova", ou "Reiniciar agora tira você da call"), esperando a call acabar pra baixar ("Baixar agora"), baixando (porcentagem) e instalando ("Se pedir senha, é pra isso").
+- **Fora do app:** um aviso do sistema por versão, quando ela fica pronta e a janela está fora de foco.
+
 ### Rabiscos na transmissão
 
 - **Quem assiste:** lápis na barra do player (só aparece quando quem compartilha deixa). Rabiscando, aparece no topo uma pílula de vidro: "Rabiscando na tela de Fulano", Laser | Caneta e fechar (Esc também sai). O cursor vira mira. O próprio traço deixa só um eco curto na cor da pessoa; o resto chega pela transmissão.

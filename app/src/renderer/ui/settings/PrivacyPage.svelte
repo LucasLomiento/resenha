@@ -109,7 +109,7 @@
 
 <PageHeader title="Privacidade" />
 
-<Section title="Quem pode te mandar mensagem privada" description="Seus amigos sempre podem.">
+<Section setting="privacy.dms" title="Quem pode te mandar mensagem privada" description="Seus amigos sempre podem.">
   <RadioGroup
     label="Quem pode te mandar mensagem privada"
     bind:value={() => policy, (value) => setPolicy(value)}
@@ -121,7 +121,7 @@
   />
 </Section>
 
-<Section title="Bloqueados" description="Não podem te mandar mensagem privada nem pedido de amizade.">
+<Section setting="privacy.blocked" title="Bloqueados" description="Não podem te mandar mensagem privada nem pedido de amizade.">
   {#each blocked as user (user.id)}
     <Row label={user.name} description={user.username}>
       {#snippet leading()}
@@ -135,15 +135,15 @@
 </Section>
 
 <Section title="Seus dados">
-  <Row label="Baixar meus dados" description="Perfil, aparelhos, servidores, amigos e bloqueios, num arquivo JSON.">
+  <Row setting="privacy.export" label="Baixar meus dados" description="Perfil, aparelhos, servidores, amigos e bloqueios, num arquivo JSON.">
     <Button icon="download" loading={exporting} onclick={download}>Baixar</Button>
   </Row>
-  <Row label="Excluir conta" description="Sai de todos os servidores. Suas mensagens ficam como “Usuário excluído”.">
+  <Row setting="privacy.delete" label="Excluir conta" description="Sai de todos os servidores. Suas mensagens ficam como “Usuário excluído”.">
     <Button variant="danger-soft" icon="trash" onclick={openDelete}>Excluir conta</Button>
   </Row>
 </Section>
 
-<p class="docs">
+<p class="docs" data-setting="privacy.docs">
   <a href="{DOCS}/PRIVACIDADE.md" target="_blank" rel="noreferrer">Política de privacidade<Icon name="arrow-up-right" size={14} /></a>
   <a href="{DOCS}/TERMOS.md" target="_blank" rel="noreferrer">Termos de uso<Icon name="arrow-up-right" size={14} /></a>
 </p>

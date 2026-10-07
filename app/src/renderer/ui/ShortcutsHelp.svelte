@@ -10,7 +10,8 @@
     {
       title: 'Navegar',
       items: [
-        ['Ctrl + K', 'Pular pra um canal, conversa ou servidor'],
+        ['Ctrl + K', 'Ir pra canal, conversa ou configuração'],
+        ['Ctrl + F', 'Buscar nas configurações'],
         ['Alt + ↑', 'Canal de cima'],
         ['Alt + ↓', 'Canal de baixo'],
         ['Esc', 'Fechar o que estiver aberto'],

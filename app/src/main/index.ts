@@ -26,7 +26,7 @@ import {
   unmuteScreenAudio,
   type ScreenAudioOptions,
 } from './screen-audio-linux'
-import { checkForUpdates, downloadUpdate, installUpdate, setupUpdater, updateState } from './updater'
+import { checkForUpdates, downloadUpdate, installUpdate, setUpdaterCall, setupUpdater, updateState } from './updater'
 
 // RESENHA_PROFILE=b roda uma segunda instância com outra conta no mesmo PC.
 const profile = process.env.RESENHA_PROFILE
@@ -355,7 +355,10 @@ handle('desktop:set', (_event, patch: Partial<DesktopPrefs>) => {
   return { prefs, failed: applyPrefs(previous) }
 })
 
-listen('call-state', (_event, state: CallState) => showCallState(state, win, showWindow, dispatch))
+listen('call-state', (_event, state: CallState) => {
+  showCallState(state, win, showWindow, dispatch)
+  setUpdaterCall(state.inCall)
+})
 
 // Não lidas (menções e mensagens privadas) no ícone do app, onde o sistema mostra (KDE, GNOME com dock, macOS).
 listen('unread', (_event, count: number) => {

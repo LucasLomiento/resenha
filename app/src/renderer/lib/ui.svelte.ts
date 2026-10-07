@@ -20,6 +20,8 @@ export type Anchor = HTMLElement | { x: number; y: number }
 export const ui = $state<{
   /** Página das configurações abertas (tela cheia), ou null. */
   settings: SettingsPage | null
+  /** Configuração achada pela busca: a página abre nela e ela pisca (id do índice de settings-search). */
+  settingsTarget: string | null
   /** Configurações de um servidor (tela cheia). */
   guildSettings: { guildId: string; page: GuildSettingsPage } | null
   /** Editar um canal ou categoria. */
@@ -48,6 +50,7 @@ export const ui = $state<{
   confirm: ConfirmRequest | null
 }>({
   settings: null,
+  settingsTarget: null,
   guildSettings: null,
   channelSettings: null,
   createChannel: null,
@@ -87,4 +90,10 @@ export function confirmAction(request: ConfirmRequest) {
 
 export function openProfile(userId: string, guildId: string | null, anchor: Anchor) {
   ui.profile = { userId, guildId, anchor }
+}
+
+/** Abre as configurações direto numa opção (busca nas configurações e Ctrl+K). */
+export function openSetting(entry: { id: string; page: SettingsPage }) {
+  ui.settingsTarget = entry.id
+  ui.settings = entry.page
 }

@@ -201,7 +201,7 @@
     <form class="profile" onsubmit={save}>
       <div class="form">
         <Section>
-          <Row stack label="Foto">
+          <Row stack label="Foto" setting="profile.photo">
             <div class="photo">
               <Avatar id={me.id} name={draft.name || me.username} size={72} src={avatar} decoration={draft.decoration} play cutout="var(--bg-raised)" />
               <div class="side">
@@ -222,16 +222,16 @@
               <input bind:this={photoInput} type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden onchange={changePhoto} />
             </div>
           </Row>
-          <Row stack>
+          <Row stack setting="profile.name">
             <TextField label="Nome de exibição" bind:value={draft.name} maxlength={32} hint="Como aparece nas conversas." error={nameError} />
           </Row>
-          <Row stack>
+          <Row stack setting="profile.pronouns">
             <TextField label="Pronomes" bind:value={draft.pronouns} maxlength={MAX_PRONOUNS} placeholder="ele/dele, ela/dela…" />
           </Row>
-          <Row stack>
+          <Row stack setting="profile.username">
             <TextField label="Nome de usuário" icon="at" value={me.username} mono readonly hint="Único. É como te acham pra adicionar como amigo." />
           </Row>
-          <Row stack>
+          <Row stack setting="profile.bio">
             <label class="bio">
               <span class="bio-label">Sobre mim</span>
               <textarea rows="3" maxlength={BIO_MAX} bind:value={draft.bio}></textarea>
@@ -241,7 +241,7 @@
         </Section>
 
         <Section title="Personalizar">
-          <Row stack label="Banner">
+          <Row stack label="Banner" setting="profile.banner">
             <div class="photo">
               <div class="banner-thumb" style:background={banner ? null : bannerFill(previewUser)}>
                 {#if banner}<img src={banner} alt="" draggable="false" />{/if}
@@ -265,7 +265,7 @@
             </div>
           </Row>
 
-          <Row stack label="Cor do perfil">
+          <Row stack label="Cor do perfil" setting="profile.color">
             <div class="swatches" role="radiogroup" aria-label="Cor do perfil">
               {#each swatches as swatch (swatch.color ?? 'auto')}
                 {@const on = draft.accent === swatch.color}
@@ -286,7 +286,7 @@
             </div>
           </Row>
 
-          <Row stack label="Tema do cartão">
+          <Row stack label="Tema do cartão" setting="profile.theme">
             <div class="swatches" role="radiogroup" aria-label="Tema do cartão">
               <button
                 type="button"
@@ -337,7 +337,7 @@
             {/if}
           </Row>
 
-          <Row stack label="Moldura do avatar">
+          <Row stack label="Moldura do avatar" setting="profile.decoration">
             <div class="tiles" role="radiogroup" aria-label="Moldura do avatar">
               {#each [null, ...DECORATIONS] as kind (kind ?? 'none')}
                 {@const on = draft.decoration === kind}
@@ -362,7 +362,7 @@
             </div>
           </Row>
 
-          <Row stack label="Efeito do perfil">
+          <Row stack label="Efeito do perfil" setting="profile.effect">
             <div class="tiles" role="radiogroup" aria-label="Efeito do perfil">
               {#each [null, ...PROFILE_EFFECTS] as kind (kind ?? 'none')}
                 {@const on = draft.effect === kind}
@@ -391,7 +391,7 @@
             </div>
           </Row>
 
-          <Row stack label="Fonte do nome">
+          <Row stack label="Fonte do nome" setting="profile.nameFont">
             <div class="fonts" role="radiogroup" aria-label="Fonte do nome">
               {#each [null, ...NAME_FONTS] as font (font ?? 'default')}
                 {@const on = draft.nameFont === font}
@@ -402,7 +402,7 @@
             </div>
           </Row>
 
-          <Row stack label="Efeito do nome">
+          <Row stack label="Efeito do nome" setting="profile.nameEffect">
             <Segmented
               label="Efeito do nome"
               options={[

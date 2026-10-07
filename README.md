@@ -98,9 +98,11 @@ Quem gera os pacotes é o GitHub Actions (`.github/workflows/release.yml`), e os
 Formatos que se atualizam pelo app:
 - **Instalador do Windows (NSIS):** o electron-updater instala sozinho.
 - **AppImage:** o electron-updater instala sozinho.
-- **`.pacman`:** a gente instala (`app/src/main/updater.ts`). Primeiro tenta o `pkexec`, que funciona quando há agente do polkit (KDE). Sem agente, abre um terminal com `sudo`.
+- **`.pacman`:** a gente instala (`app/src/main/updater.ts`). Primeiro tenta o `pkexec`, que funciona quando há agente do polkit (KDE, Omarchy). Sem agente, abre um terminal com `sudo`. O `pkexec`, o terminal e a reabertura do app saem pelo `systemd-run --user`: o `app.relaunch()` do Electron abre o app com a trava "no new privileges" do Linux, e com ela o `pkexec` e o `sudo` não funcionam (a atualização seguinte fechava o app sem instalar).
 
 O `.zip` do Windows não se atualiza.
+
+O app procura versão nova ao abrir e a cada 30 minutos, baixa sozinho quando não está em call e mostra um aviso no canto (e um aviso do sistema, se a janela estiver fora de foco) quando dá pra reiniciar e atualizar.
 
 Pra gerar localmente:
 

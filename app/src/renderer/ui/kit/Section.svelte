@@ -6,6 +6,7 @@
     description,
     note,
     plain = false,
+    setting,
     class: className,
     actions,
     children,
@@ -16,6 +17,8 @@
     note?: string
     /** Sem o cartão em volta (conteúdo solto). */
     plain?: boolean
+    /** Âncora da busca nas configurações (id do índice). */
+    setting?: string
     class?: string
     /** Botões à direita do título. */
     actions?: Snippet
@@ -24,7 +27,7 @@
 </script>
 
 <!-- Grupo de configurações: título curto + cartão com linhas (Row) separadas por fio. -->
-<section class={['section', className]}>
+<section class={['section', className]} data-setting={setting}>
   {#if title || actions}
     <header>
       <div class="titles">

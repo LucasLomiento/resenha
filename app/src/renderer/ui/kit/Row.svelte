@@ -8,6 +8,7 @@
     stack = false,
     indent = false,
     disabled = false,
+    setting,
     class: className,
     leading,
     children,
@@ -22,6 +23,8 @@
     /** Opção que depende da de cima. */
     indent?: boolean
     disabled?: boolean
+    /** Âncora da busca nas configurações (id do índice). */
+    setting?: string
     class?: string
     /** Avatar ou ícone antes do texto. */
     leading?: Snippet
@@ -29,7 +32,7 @@
   } = $props()
 </script>
 
-<div class={['row', className, { stack, indent, disabled }]}>
+<div class={['row', className, { stack, indent, disabled }]} data-setting={setting}>
   {#if leading}<div class="leading">{@render leading()}</div>{/if}
   {#if label || description}
     <div class="text">

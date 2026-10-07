@@ -4,15 +4,18 @@
   let {
     title,
     description,
+    setting,
     actions,
   }: {
     title: string
     description?: string
+    /** Âncora da busca nas configurações (id do índice). */
+    setting?: string
     actions?: Snippet
   } = $props()
 </script>
 
-<header class="page-header">
+<header class="page-header" data-setting={setting}>
   <div class="titles">
     <h1>{title}</h1>
     {#if description}<p>{description}</p>{/if}

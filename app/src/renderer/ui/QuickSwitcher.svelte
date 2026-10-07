@@ -1,11 +1,12 @@
 <script lang="ts">
   import { client } from '../lib/client.svelte'
-  import { ui } from '../lib/ui.svelte'
+  import { PAGE_LABEL, searchSettings } from '../lib/settings-search'
+  import { openSetting, ui } from '../lib/ui.svelte'
   import { Avatar, Icon, Kbd, layer, portal, type IconName } from './kit'
 
   interface Item {
     key: string
-    group: 'Conversas' | 'Canais' | 'Pessoas' | 'Servidores'
+    group: 'Conversas' | 'Canais' | 'Pessoas' | 'Servidores' | 'Configurações'
     name: string
     hint: string
     unread?: boolean
@@ -119,7 +120,22 @@
       }
     }
 
-    const order = { Conversas: 0, Canais: 1, Pessoas: 2, Servidores: 3 }
+    if (!only && q) {
+      const context = { staff: !!client.me?.staff, desktop: !!client.desktop, hyprland: !!client.platform?.hyprland }
+      for (const [i, entry] of searchSettings(raw, context).slice(0, 5).entries()) {
+        out.push({
+          key: `s:${entry.id}`,
+          group: 'Configurações',
+          name: entry.label,
+          hint: entry.section ? `${PAGE_LABEL[entry.page]} · ${entry.section}` : PAGE_LABEL[entry.page],
+          icon: 'settings',
+          score: 5 - i,
+          open: () => openSetting(entry),
+        })
+      }
+    }
+
+    const order = { Conversas: 0, Canais: 1, Pessoas: 2, Servidores: 3, Configurações: 4 }
     return out
       .sort((a, b) => order[a.group] - order[b.group] || b.score - a.score || Number(!!b.unread) - Number(!!a.unread))
       .slice(0, 40)

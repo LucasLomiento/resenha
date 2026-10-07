@@ -60,7 +60,7 @@
 
 <svelte:window onkeydowncapture={onRecordKey} />
 
-<PageHeader title="Atalhos" description="Funcionam mesmo com o Resenha minimizado.">
+<PageHeader title="Atalhos" description="Funcionam mesmo com o Resenha minimizado." setting="shortcuts.all">
   {#snippet actions()}
     <Button size="sm" variant="secondary" icon="keyboard" onclick={() => (ui.shortcutsHelp = true)}>Todos os atalhos</Button>
   {/snippet}
@@ -70,7 +70,7 @@
   <Section>
     {#each ACTIONS as action (action.id)}
       {@const value = client.desktop.shortcuts[action.id]}
-      <Row label={LABELS[action.id]}>
+      <Row label={LABELS[action.id]} setting="shortcuts.{action.id}">
         <button
           class="key"
           class:recording={recording === action.id}
@@ -98,7 +98,7 @@
 {/if}
 
 {#if client.platform?.hyprland}
-  <Section title="No Hyprland" plain>
+  <Section title="No Hyprland" plain setting="shortcuts.hyprland">
     <p class="hypr">
       Pra funcionar com o app em segundo plano, crie um bind no seu config chamando
       <code class="selectable">resenha --action=toggle-mute</code>. Também vale <code>toggle-deafen</code>,

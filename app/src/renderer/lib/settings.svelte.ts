@@ -35,6 +35,8 @@ export interface Settings {
   inkMonitor: string | null
   /** Ferramenta pra rabiscar na tela dos outros. */
   inkTool: 'laser' | 'pen'
+  /** Versão nova cujo aviso a pessoa fechou ("Depois"). */
+  updateDismissed: string | null
   showStats: boolean
   sounds: boolean
   /** 0..1 */
@@ -67,6 +69,7 @@ const defaults: Settings = {
   inkAllowed: true,
   inkMonitor: null,
   inkTool: 'laser',
+  updateDismissed: null,
   showStats: false,
   sounds: true,
   soundVolume: 0.6,

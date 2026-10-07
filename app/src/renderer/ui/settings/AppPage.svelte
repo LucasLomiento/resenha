@@ -38,10 +38,10 @@
 
 {#if desktop}
   <Section title="Ao ligar o computador">
-    <Row label="Abrir o Resenha" for="app-autostart">
+    <Row label="Abrir o Resenha" for="app-autostart" setting="app.autostart">
       <Switch id="app-autostart" checked={desktop.autostart} onchange={(e) => client.setDesktop({ autostart: e.currentTarget.checked })} />
     </Row>
-    <Row label="Começar minimizado" for="app-hidden" indent disabled={!desktop.autostart}>
+    <Row label="Começar minimizado" setting="app.hidden" for="app-hidden" indent disabled={!desktop.autostart}>
       <Switch
         id="app-hidden"
         checked={desktop.startHidden}
@@ -52,10 +52,10 @@
   </Section>
 
   <Section title="Janela">
-    <Row label="Ícone na bandeja" for="app-tray" description="Mutar, ensurdecer e sair da call pelo ícone.">
+    <Row label="Ícone na bandeja" setting="app.tray" for="app-tray" description="Mutar, ensurdecer e sair da call pelo ícone.">
       <Switch id="app-tray" checked={desktop.tray} onchange={(e) => client.setDesktop({ tray: e.currentTarget.checked })} />
     </Row>
-    <Row label="Fechar só esconde a janela" for="app-close" description="A call continua." indent disabled={!desktop.tray}>
+    <Row label="Fechar só esconde a janela" setting="app.close" for="app-close" description="A call continua." indent disabled={!desktop.tray}>
       <Switch
         id="app-close"
         checked={desktop.closeToTray}
@@ -63,7 +63,7 @@
         onchange={(e) => client.setDesktop({ closeToTray: e.currentTarget.checked })}
       />
     </Row>
-    <Row label="Tamanho da interface">
+    <Row label="Tamanho da interface" setting="app.zoom">
       <div class="zoom">
         <IconButton icon="minus" label="Diminuir" shortcut="Ctrl −" size="sm" onclick={() => zoom(-0.1)} />
         <span class="tabular">{Math.round(desktop.zoom * 100)}%</span>
@@ -74,7 +74,7 @@
   </Section>
 {/if}
 
-<Section title="Atualizações">
+<Section title="Atualizações" setting="app.update">
   <Row label="Resenha {client.platform?.version ?? ''}" description={updateText}>
     {#if update.status === 'available'}
       <Button variant="primary" icon="download" onclick={() => window.resenha.update.download()}>Baixar</Button>

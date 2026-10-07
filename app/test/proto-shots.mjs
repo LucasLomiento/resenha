@@ -50,7 +50,7 @@ const ALL = [
   'server', 'server-reply', 'profile', 'pins', 'search', 'switcher', 'server-menu', 'menus', 'status',
   'home', 'home-pending', 'home-add', 'dm', 'create-server', 'create-server-form', 'join-server',
   'server-settings', 'server-roles', 'server-members', 'server-invites', 'server-bans', 'server-audit',
-  'account', 'account-devices', 'account-password', 'account-privacy', 'profile-style', 'kit',
+  'account', 'account-devices', 'account-password', 'account-privacy', 'profile-style', 'kit', 'update',
 ]
 if (ids !== ALL.length) console.log(`   aviso: o seletor tem ${ids} telas e o script conhece ${ALL.length}`)
 

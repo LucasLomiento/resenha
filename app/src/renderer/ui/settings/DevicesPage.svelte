@@ -114,7 +114,7 @@
 <PageHeader title="Aparelhos" description="Onde sua conta está conectada. Aparelho parado por 30 dias sai sozinho." />
 
 {#if sessions}
-  <Section>
+  <Section setting="devices.list">
     {#each ordered as session (session.id)}
       <Row label={session.device} description={where(session)}>
         {#snippet leading()}<span class="device"><Icon name={deviceIcon(session.device)} size={18} /></span>{/snippet}
@@ -129,6 +129,7 @@
 
   <Section>
     <Row
+      setting="devices.others"
       label="Sair de todos os outros"
       description={others ? 'Só este aparelho continua conectado.' : 'Nenhum outro aparelho conectado.'}
     >

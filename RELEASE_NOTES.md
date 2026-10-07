@@ -1,15 +1,12 @@
-## 1.2.1: o lápis dos rabiscos aparece no Linux
+## 1.2.2: busca nas configurações e atualização que não falha
 
-- **Correção:** no Linux (Wayland: Hyprland, KDE), o lápis pra rabiscar não aparecia pra quem assistia, mesmo com o monitor inteiro compartilhado. O sistema informa toda captura como "janela"; agora o app olha o formato da imagem transmitida.
-- **O monitor certo sozinho:** com dois monitores do mesmo tamanho, o app descobre qual você está transmitindo. Um quadradinho rosa pisca por um instante no canto de cima à esquerda quando a transmissão começa: é ele procurando. Se não conseguir, pergunta no painel "Ao vivo".
+- **Busca nas configurações:** campo no topo da lista (ou Ctrl+F). Digite do seu jeito, sem acento, com erro ou com o nome que você conhece do Discord ("avatar", "webcam", "dm", "zoom", "ruido"…), e Enter leva direto pra opção, que pisca na tela.
+- **Configurações no Ctrl+K também:** "eco", "bandeja", "senha" e o app abre direto na opção.
+- **Aviso de versão nova:** o app procura atualização a cada 30 minutos, baixa sozinho (só fora de call, pra não engasgar a transmissão) e mostra um aviso no canto quando dá pra reiniciar e atualizar. "Novidades" abre o que mudou.
+- **Correção (Linux):** às vezes, ao clicar em "Reiniciar e atualizar", o app fechava sem instalar, e às vezes nem abria de novo. Era sempre quando ele tinha sido reaberto pela atualização anterior: o Linux deixava esse app sem permissão de pedir a senha de administrador. Agora a instalação e a reabertura passam pelo systemd, sem essa trava.
 
-### Da 1.2.0
-
-- **Rabiscar na tela de quem compartilha** (como nas calls do Slack): assistindo uma transmissão, clique no lápis do player e desenhe por cima. Quem compartilha vê os rabiscos direto no monitor dele, por cima de tudo, com o seu nome e a sua cor.
-  - **Laser** (some em menos de um segundo) ou **Caneta** (fica uns segundos). Um clique rápido marca um ponto. Esc sai.
-  - Só funciona compartilhando o **monitor inteiro**. A resolução de cada um não importa.
-  - Quem compartilha pode **limpar** ou **desligar** os rabiscos no painel "Ao vivo".
+**Atenção nesta atualização:** a correção vale a partir da próxima. Se o app fechar sem atualizar desta vez, abra de novo e clique em atualizar, que funciona.
 
 ## Como atualizar
 
-Clique no botão de download no pé da coluna de servidores, à esquerda (ou Configurações → Aplicativo → Procurar atualização). Quem compartilha a tela precisa estar na 1.2.1.
+Clique no botão de download no pé da coluna de servidores, à esquerda (ou Configurações → Aplicativo → Procurar atualização).
