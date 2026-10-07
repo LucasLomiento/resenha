@@ -24,6 +24,7 @@ import {
   type VoiceMember,
 } from '../../../../shared/protocol'
 import type { Api } from './api'
+import { GuildMap } from './map.svelte'
 import { Connection, connectionKey, type CloseReason, type ConnectionStatus } from './ws'
 
 /** O que o servidor precisa do resto do app (o Client implementa). */
@@ -95,6 +96,8 @@ export class GuildState {
   loadingHistory = $state<Record<string, boolean>>({})
   /** canal -> pessoa -> até quando mostrar "digitando" */
   typing = $state<Record<string, Record<string, number>>>({})
+  /** O mapa compartilhado do servidor. */
+  readonly map = new GuildMap((msg, quiet) => (quiet ? this.conn.send(msg) : this.send(msg)))
 
   private conn: Connection<ServerMessage, ClientMessage>
   private sends = new Map<string, { resolve: () => void; reject: (err: Error) => void; timer: ReturnType<typeof setTimeout> }>()
@@ -397,6 +400,7 @@ export class GuildState {
         this.loadingHistory = {}
         this.typing = {}
         this.loaded = true
+        this.map.ready(msg.mapViewers ?? [], msg.connId)
         this.host.ready(this, reconnected, !!msg.resumed)
         return
       }
@@ -528,6 +532,15 @@ export class GuildState {
 
       case 'notify.settings':
         this.notify = msg.settings
+        return
+
+      case 'map.state':
+      case 'map.viewers':
+      case 'map.view':
+      case 'map.cursor':
+      case 'map.pin':
+      case 'map.pin.removed':
+        this.map.handle(msg)
         return
 
       case 'error': {

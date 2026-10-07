@@ -272,6 +272,27 @@
 <nav aria-label="Canais" ondragover={dragOverNav} ondrop={dropHere}>
   {#if !guild.loaded}
     <div class="loading"><Spinner size={16} /></div>
+  {:else}
+    {@const people = guild.map.people}
+    <NavItem
+      class="map-entry"
+      icon="map"
+      label="Mapa"
+      active={client.view === 'map'}
+      aria-label={people.length ? `Mapa: ${people.length} ${people.length === 1 ? 'pessoa' : 'pessoas'} agora` : 'Mapa'}
+      onclick={() => client.openMap(guild.id)}
+    >
+      {#snippet trailing()}
+        {#if people.length}
+          <span class="map-people" use:tooltip={{ text: people.map((id) => guild.displayName(id)).join(', '), placement: 'right' }}>
+            {#each people.slice(0, 3) as id (id)}
+              <Avatar {id} name={guild.displayName(id)} size={18} src={client.avatarOf(id, guild.id)} />
+            {/each}
+            {#if people.length > 3}<span class="map-more">+{people.length - 3}</span>{/if}
+          </span>
+        {/if}
+      {/snippet}
+    </NavItem>
   {/if}
   {#each guild.groups as group (group.category?.id ?? 'loose')}
     {#if group.category}
@@ -506,6 +527,29 @@
 
   nav :global(.nav-item.active) {
     --row-bg: color-mix(in srgb, var(--bg-canvas) 92.5%, white);
+  }
+
+  /* Mapa no topo da lista: quem está nele aparece em rostinhos à direita. */
+  .map-people {
+    display: flex;
+    align-items: center;
+  }
+
+  .map-people :global(.avatar) {
+    margin-left: -5px;
+    border-radius: 50%;
+    box-shadow: 0 0 0 2px var(--row-bg);
+  }
+
+  .map-people :global(.avatar:first-child) {
+    margin-left: 0;
+  }
+
+  .map-more {
+    margin-left: 4px;
+    color: var(--fg-3);
+    font-size: var(--text-2xs);
+    font-variant-numeric: tabular-nums;
   }
 
   .loading {

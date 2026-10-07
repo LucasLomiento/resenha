@@ -175,6 +175,14 @@ Tudo exportado por `ui/kit/index.ts`. Nenhum componente do kit importa o store: 
 | Configurações | Modal 680 × 680 com seis abas e muito texto. | Tela cheia: Minha conta, Voz e vídeo, Notificações, Atalhos, Aplicativo, Grupo, Sair da conta. "Comprimir imagens" saiu (sempre comprime); codec, estatísticas, eco e ganho em "Avançado"; "RNNoise/Do Chromium/Desligada" virou "Forte/Leve/Desligada"; versão aparece uma vez só (Aplicativo). |
 | Avisos | Fundo vermelho ou azul chapado. | Cartão escuro com ícone colorido. |
 
+### Mapa do servidor
+
+- **Entrada:** "Mapa" no topo da lista de canais, com os rostinhos (18 px) de quem está nele agora. Abre no painel, no lugar do chat (`client.openMap()`); qualquer canal volta pro chat.
+- **Cabeçalho** igual ao do chat: ícone, "Mapa", quem está lá (some em painel estreito) · Buscar lugar (Enter), Marcar lugar, Marcadores, Estilo do mapa, "Google Maps ↗" (vira só o ícone em painel estreito).
+- **No mapa:** pílula no topo pra "Fulano está movendo o mapa" e "Clique no mapa pra marcar"; cursores dos outros com a cor da pessoa e o nome; zoom e "voltar pro norte" num grupo de vidro à direita; créditos do mapa (compactos, mas sempre lá: a licença pede).
+- **Marcador:** gota na cor escolhida (as seis cores das pessoas), nome aparece no hover. Clicar abre o cartão (quem marcou, quando, Google Maps, Apagar). Botão direito no mapa também marca.
+- **Escuro** do OpenFreeMap puxado pro tom do painel; "Claro" e "Colorido" pra quem quiser (cada um escolhe o seu).
+
 ## Telas que vão chegar (protótipos)
 
 Cada uma tem um protótipo estático com dados de exemplo em `ui/proto`. Os nomes de campo dos exemplos (`proto/data.ts`) seguem o protocolo novo (`shared/protocol.ts` da 0.6+), então ligar nos dados é trocar `data.ts` pelo store.

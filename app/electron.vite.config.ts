@@ -2,9 +2,13 @@ import { svelte } from '@sveltejs/vite-plugin-svelte'
 import { defineConfig } from 'electron-vite'
 import type { Plugin } from 'vite'
 
+/** Mapa compartilhado: os mapas do OpenFreeMap (estilo, pedaços, fontes, ícones) e a busca de endereço do OpenStreetMap. */
+const MAP_HOSTS = 'https://tiles.openfreemap.org https://nominatim.openstreetmap.org'
+
 /**
  * CSP do app: no build, a página só fala com o servidor do Resenha (mesmo se
- * um dia alguém achar um jeito de injetar código, não tem pra onde mandar dado).
+ * um dia alguém achar um jeito de injetar código, não tem pra onde mandar dado)
+ * e, pro mapa, com os dois serviços dele (só lendo: mapa e busca de endereço).
  * No modo dev fica mais aberta, por causa do servidor do Vite.
  */
 function csp(): Plugin {
@@ -19,9 +23,9 @@ function csp(): Plugin {
             "default-src 'none'",
             "script-src 'self' 'wasm-unsafe-eval'",
             "style-src 'self' 'unsafe-inline'",
-            `img-src 'self' data: blob: ${http}`,
+            `img-src 'self' data: blob: ${http} ${MAP_HOSTS}`,
             `media-src 'self' blob: ${http}`,
-            `connect-src 'self' ${http} ${ws}`,
+            `connect-src 'self' ${http} ${ws} ${MAP_HOSTS}`,
             "font-src 'self'",
             "worker-src 'self'",
             "object-src 'none'",

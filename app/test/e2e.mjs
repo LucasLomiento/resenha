@@ -427,6 +427,88 @@ function venmicSources() {
   })
 }
 
+/** Centro do mapa na tela (lng, lat, zoom), como o app mostra no `data-center`. */
+async function mapCenter(page) {
+  const text = await page.locator('.map-pane .stage').getAttribute('data-center')
+  return text.split(',').map(Number)
+}
+
+/** Espera o centro do mapa de quem acompanha chegar perto do de quem mexeu. */
+async function follows(page, [lng, lat, zoom], ms = 6000) {
+  for (const deadline = Date.now() + ms; Date.now() < deadline; ) {
+    const [x, y, z] = await mapCenter(page)
+    if (Math.abs(x - lng) < 1e-3 && Math.abs(y - lat) < 1e-3 && Math.abs(z - zoom) < 0.02) return true
+    await page.waitForTimeout(100)
+  }
+  return false
+}
+
+/**
+ * Mapa compartilhado: A e B abrem o mapa do servidor; A arrasta e o de B vai
+ * junto; o cursor de A aparece pra B; A busca um lugar e marca, e B vê o marcador.
+ * As janelas do teste pintam fora da tela, mas o WebGL funciona nelas (o MapLibre desenha).
+ */
+async function checkMap() {
+  for (const side of [a, b]) await side.page.getByRole('button', { name: /^Mapa/ }).click({ force: true })
+  const opened = []
+  for (const side of [a, b]) {
+    await side.page.locator('.map-pane .stage[data-ready], .map-pane .veil.failed').first().waitFor({ timeout: 30_000 })
+    opened.push((await side.page.locator('.map-pane .stage[data-ready]').count()) === 1)
+  }
+  check(opened.every(Boolean), 'mapa abre (MapLibre com WebGL e os mapas do OpenFreeMap)', opened.join(', '))
+  await b.page.locator('nav .map-people .avatar').nth(1).waitFor({ timeout: 5000 })
+  check(true, 'lista de canais mostra quem está no mapa')
+  if (!opened.every(Boolean)) return
+
+  // A arrasta o mapa: o de B segue.
+  const box = await a.page.locator('.map-pane .stage').boundingBox()
+  const cx = box.x + box.width / 2
+  const cy = box.y + box.height / 2
+  await a.page.mouse.move(cx, cy)
+  await a.page.mouse.down()
+  await a.page.mouse.move(cx - 220, cy - 140, { steps: 12 })
+  await a.page.mouse.up()
+  await a.page.waitForTimeout(900)
+  const dragged = await mapCenter(a.page)
+  check(await follows(b.page, dragged), 'A arrasta o mapa e o de B vai junto', dragged.join(', '))
+
+  // Cursor de A aparece pra B, com o nome.
+  await a.page.mouse.move(cx + 60, cy + 40, { steps: 4 })
+  await b.page
+    .locator('.map-cursor:not(.gone) .map-cursor-name', { hasText: 'Lucas' })
+    .waitFor({ timeout: 5000 })
+    .then(() => check(true, 'cursor de A aparece pra B'))
+    .catch(() => check(false, 'cursor de A aparece pra B'))
+  await shot(b, '2c-mapa-cursor')
+
+  // Busca (Nominatim, ao apertar Enter): A voa até o lugar e B vai junto.
+  const search = a.page.getByLabel('Buscar lugar')
+  await search.fill('Curitiba, Paraná')
+  await search.press('Enter')
+  await a.page.locator('.results .result').first().waitFor({ timeout: 15_000 })
+  await shot(a, '2d-mapa-busca')
+  await a.page.locator('.results .result').first().click({ force: true })
+  await a.page.waitForTimeout(2500)
+  const found = await mapCenter(a.page)
+  check(Math.abs(found[1] + 25.4) < 0.5 && (await follows(b.page, found)), 'busca leva A até o lugar e B vai junto', found.join(', '))
+
+  // A marca um lugar e B vê o marcador (no mapa e na lista).
+  await a.page.getByRole('button', { name: 'Marcar lugar', exact: true }).click({ force: true })
+  await a.page.mouse.click(cx, cy)
+  await a.page.getByLabel('Nome do lugar').fill('Padaria do Zé')
+  await shot(a, '2e-mapa-marcar')
+  await a.page.getByLabel('Nome do lugar').press('Enter')
+  await b.page.locator('.map-pin[aria-label="Padaria do Zé"]').waitFor({ state: 'attached', timeout: 5000 })
+  await b.page.getByRole('button', { name: 'Marcadores', exact: true }).click({ force: true })
+  await b.page.locator('.aside .pin-label', { hasText: 'Padaria do Zé' }).waitFor({ timeout: 5000 })
+  check(true, 'A marca um lugar e B vê o marcador')
+  await b.page.locator('.map-pin[aria-label="Padaria do Zé"]').click({ force: true })
+  await shot(b, '2f-mapa-marcadores')
+  const google = await a.page.locator('a.gmaps').first().getAttribute('href')
+  check(/^https:\/\/www\.google\.com\/maps\/@-?\d+\.\d+,-?\d+\.\d+,\d+\.\d+z$/.test(google), '"Google Maps" aponta pro mesmo lugar', google)
+  await b.page.getByRole('button', { name: 'Marcadores', exact: true }).click({ force: true })
+}
+
 // ---------------------------------------------------------------------------
 
 const server = await startServer()
@@ -549,6 +631,9 @@ try {
     return { scrollable: el.scrollHeight > el.clientHeight + 50, moved: before !== el.scrollTop }
   })
   check(scroll.scrollable && scroll.moved, 'chat rola quando tem mensagem que não cabe')
+
+  await checkMap()
+  for (const side of [a, b]) await channel(side.page, 'geral').click({ force: true })
 
   // Não lidas: A vai pro início; B manda; o servidor ganha a marquinha no trilho de A.
   await a.page.getByRole('button', { name: 'Início', exact: true }).click({ force: true })
@@ -794,6 +879,11 @@ try {
     await a.page.waitForTimeout(300)
     await shot(a, '9b-janela-minima-configuracoes')
     await a.page.keyboard.press('Escape')
+    await a.page.getByRole('button', { name: /^Mapa/ }).click({ force: true })
+    await a.page.locator('.map-pane .stage[data-ready]').waitFor({ timeout: 30_000 }).catch(() => {})
+    await a.page.getByRole('button', { name: 'Marcadores', exact: true }).click({ force: true })
+    await a.page.locator('.map-pin').first().click({ force: true })
+    await shot(a, '9c-janela-minima-mapa')
   }
 
   // Fechar o app sai da call na hora (não fica "esperando voltar" como numa queda de rede).

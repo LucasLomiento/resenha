@@ -58,8 +58,8 @@ class Client implements GuildHost, HomeHost {
   home = $state<HomeState | null>(null)
   guilds = $state<Record<string, GuildState>>({})
   route = $state<Route>({ kind: 'home' })
-  /** Área principal: conversa, transmissão em tela cheia ou a grade da call. */
-  view = $state<'chat' | 'stream' | 'call'>('chat')
+  /** Área principal: conversa, transmissão em tela cheia, a grade da call ou o mapa do servidor. */
+  view = $state<'chat' | 'stream' | 'call' | 'map'>('chat')
   /** Status escolhido (vale pra todos os aparelhos). */
   status = $state<Status>('online')
   statusText = $state<string | null>(null)
@@ -410,7 +410,10 @@ class Client implements GuildHost, HomeHost {
     guild.close()
     delete this.guilds[id]
     if (this.call.guildId === id) this.call.leave(false)
-    if (this.route.kind === 'guild' && this.route.guildId === id) this.route = { kind: 'home' }
+    if (this.route.kind === 'guild' && this.route.guildId === id) {
+      this.route = { kind: 'home' }
+      if (this.view === 'map') this.view = 'chat'
+    }
   }
 
   guildJoined(info: GuildInfo) {
@@ -585,6 +588,20 @@ class Client implements GuildHost, HomeHost {
     const last = this.lastChannels[guildId]
     const channel = guild.channel(last)?.kind === 'text' && guild.can(last, 1) ? last : guild.firstTextChannel?.id ?? null
     this.navigate({ kind: 'guild', guildId, channelId: channel })
+  }
+
+  /** Abre o mapa compartilhado do servidor (o aberto agora, se não disser qual) no painel principal. */
+  openMap(guildId = this.guild?.id) {
+    const guild = guildId ? this.guilds[guildId] : null
+    if (!guild) return
+    const here = this.route.kind === 'guild' && this.route.guildId === guild.id
+    if (!here) this.openGuild(guild.id)
+    this.view = 'map'
+  }
+
+  /** Mapa aberto agora (de qual servidor), ou null. */
+  get mapGuild(): GuildState | null {
+    return this.view === 'map' ? this.guild : null
   }
 
   /** Canal de texto abre a conversa; de voz entra na call (ou mostra a call, se já estiver nela). */
