@@ -26,6 +26,17 @@
     if (turningOn && call.camera) client.view = 'call'
   }
 
+  /** Mapa compartilhado do servidor da call (chamada privada não tem). */
+  const mapGuild = $derived(call.guildId ? (client.guilds[call.guildId] ?? null) : null)
+  const mapOpen = $derived(!!mapGuild && client.mapGuild?.id === mapGuild.id)
+  const onMap = $derived(mapGuild?.map.people.length ?? 0)
+
+  function mapClick() {
+    if (!mapGuild) return
+    if (mapOpen) client.view = 'chat'
+    else client.openMap(mapGuild.id)
+  }
+
   function screenClick() {
     if (call.sharing) ui.sharePanel = !ui.sharePanel
     else ui.share = true
@@ -59,7 +70,7 @@
         <IconButton icon="phone-off" label="Sair da call" tone="danger" disabled={!call.channelId} onclick={() => client.leaveCall()} />
       </div>
 
-      <div class="call-actions">
+      <div class="call-actions" class:three={!!mapGuild}>
         <button
           class="action"
           class:on={!!call.camera}
@@ -89,6 +100,20 @@
             Tela
           {/if}
         </button>
+        {#if mapGuild}
+          <button
+            class="action"
+            class:on={mapOpen}
+            aria-label={mapOpen ? 'Fechar o mapa' : 'Abrir o mapa do servidor'}
+            aria-pressed={mapOpen}
+            use:tooltip={onMap ? `${onMap} no mapa agora` : 'Mapa do servidor: todo mundo vê junto'}
+            onclick={mapClick}
+          >
+            <Icon name="map" size={16} />
+            Mapa
+            {#if onMap && !mapOpen}<span class="count tabular">{onMap}</span>{/if}
+          </button>
+        {/if}
       </div>
     </div>
   {/if}
@@ -218,6 +243,22 @@
     grid-template-columns: 1fr 1fr;
     gap: 6px;
     margin-top: 6px;
+  }
+
+  .call-actions.three {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  .count {
+    min-width: 16px;
+    height: 16px;
+    padding: 0 4px;
+    border-radius: var(--r-full);
+    background: var(--accent);
+    color: var(--fg-on-accent);
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 16px;
   }
 
   .action {
