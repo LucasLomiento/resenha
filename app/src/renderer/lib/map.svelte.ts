@@ -1,4 +1,4 @@
-import type { ClientMessage, MapPin, MapView, MapViewer, ServerMessage } from '../../../../shared/protocol'
+import type { ClientMessage, MapPin, MapView, MapViewer, ServerMessage, StreetSpot } from '../../../../shared/protocol'
 
 type MapMessage = Extract<ServerMessage, { t: 'map.state' | 'map.viewers' | 'map.view' | 'map.cursor' | 'map.pin' | 'map.pin.removed' }>
 
@@ -134,4 +134,23 @@ export class GuildMap {
   removePin(id: string) {
     this.send({ t: 'map.pin.remove', id })
   }
+
+  /** Abri (ou fechei) o Street View: os outros veem onde estou olhando. */
+  street(at: StreetSpot | null) {
+    this.send({ t: 'map.street', at })
+  }
+}
+
+/**
+ * Street View do Google dentro do app, sem chave: é a mesma incorporação que o
+ * Google oferece em "Compartilhar → Incorporar um mapa". Acha a foto mais perto do ponto.
+ */
+export function streetEmbedUrl(at: StreetSpot): string {
+  const n = (v: number, digits: number) => Number(v.toFixed(digits))
+  return `https://www.google.com/maps/embed?origin=mfe&pb=!6m7!1m6!2m2!1d${n(at.lat, 6)}!2d${n(at.lng, 6)}!3f${n(at.heading, 1)}!4f0!5f0.8`
+}
+
+/** O mesmo lugar no Google Maps (no navegador), já no Street View. */
+export function streetPageUrl(at: StreetSpot): string {
+  return `https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${at.lat.toFixed(6)},${at.lng.toFixed(6)}&heading=${Math.round(at.heading)}`
 }

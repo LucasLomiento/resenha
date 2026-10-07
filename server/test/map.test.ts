@@ -1,7 +1,7 @@
 import { env, evictAllDurableObjects, runInDurableObject } from 'cloudflare:test'
 import { describe, expect, it } from 'vitest'
 import { MAX_MAP_PINS, P } from '../../shared/protocol'
-import { cleanPoint, cleanView } from '../src/map'
+import { cleanPoint, cleanStreet, cleanView } from '../src/map'
 import { guildSocket, invite, signup, tick, world } from './helpers'
 
 // Nos testes a espera por quem caiu é de 400 ms (RESUME_GRACE_MS no vitest.config).
@@ -226,6 +226,26 @@ describe('mapa compartilhado', () => {
     expect(left.viewers[0].userId).toBe(w.owner.user.id)
   })
 
+  it('Street View: todo mundo vê onde a pessoa está olhando; fechar ou sair do mapa tira', async () => {
+    const { a, b, readyA, owner } = await onMap()
+    const spot = { lng: -49.2733, lat: -25.4284, heading: 90 }
+    a.send({ t: 'map.street', at: spot })
+    const seen = await b.next('map.viewers', (m) => m.viewers.some((v) => v.street))
+    expect(seen.viewers.find((v) => v.connId === readyA.connId)).toEqual({ connId: readyA.connId, userId: owner.user.id, street: spot })
+    a.send({ t: 'map.street', at: null })
+    const closed = await b.next('map.viewers')
+    expect(closed.viewers.find((v) => v.connId === readyA.connId)?.street).toBeUndefined()
+    // Lugar inválido não muda nada; fora do mapa também não.
+    a.send({ t: 'map.street', at: { lng: 'x', lat: 0, heading: 0 } as never })
+    await b.nothing('map.viewers')
+    a.send({ t: 'map.street', at: spot })
+    await b.next('map.viewers', (m) => m.viewers.some((v) => v.street))
+    a.send({ t: 'map.leave' })
+    expect((await b.next('map.viewers')).viewers.some((v) => v.street)).toBe(false)
+    a.send({ t: 'map.street', at: spot })
+    await b.nothing('map.viewers')
+  })
+
   it('expulso sai do mapa na hora', async () => {
     const { friend, a } = await onMap()
     a.send({ t: 'member.kick', userId: friend.user.id, reason: '' })
@@ -242,5 +262,7 @@ describe('mapa: validação', () => {
     expect(cleanPoint(-49.123456789, 89.9)).toEqual({ lng: -49.123457, lat: 85.06 })
     expect(cleanPoint(0, 91)).toBeNull()
     expect(cleanPoint(Infinity, 0)).toBeNull()
+    expect(cleanStreet({ lng: -49.1, lat: -25.4, heading: -90 })).toEqual({ lng: -49.1, lat: -25.4, heading: 270 })
+    expect(cleanStreet({ lng: -49.1, lat: -25.4 })).toBeNull()
   })
 })

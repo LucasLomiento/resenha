@@ -362,10 +362,20 @@ export interface MapView {
   pitch: number
 }
 
+/** Onde alguém está olhando no Street View (pros outros verem e irem junto). */
+export interface StreetSpot {
+  lng: number
+  lat: number
+  /** Pra onde está virado, em graus (0 = norte). */
+  heading: number
+}
+
 /** Uma conexão (instância do app) com o mapa aberto. */
 export interface MapViewer {
   connId: string
   userId: string
+  /** Está no Street View, nesse lugar. */
+  street?: StreetSpot | null
 }
 
 /** Marcador que fica no mapa até alguém apagar. */
@@ -549,6 +559,8 @@ export type ClientMessage =
   /** Onde está o mouse no mapa (null: saiu de cima dele). */
   | { t: 'map.cursor'; lng: number | null; lat: number | null }
   | { t: 'map.pin.add'; lng: number; lat: number; label: string; color: number }
+  /** Abriu (ou fechou, com null) o Street View: os outros veem onde e podem ir junto. */
+  | { t: 'map.street'; at: StreetSpot | null }
   | { t: 'map.pin.remove'; id: string }
 
 // ---------- WebSocket do servidor (Guild): servidor -> app ----------

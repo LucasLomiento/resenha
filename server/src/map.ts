@@ -1,4 +1,4 @@
-import type { MapView } from '../../shared/protocol'
+import type { MapView, StreetSpot } from '../../shared/protocol'
 
 // Mapa compartilhado de cada servidor: o que vem do app (vista, cursor,
 // marcador) é conferido aqui antes de ir pros outros ou pro banco.
@@ -23,6 +23,15 @@ function wrap(lng: number): number {
 export function cleanPoint(lng: unknown, lat: unknown): { lng: number; lat: number } | null {
   if (!finite(lng, 100_000) || !finite(lat, 90)) return null
   return { lng: round(wrap(lng), 6), lat: round(Math.max(-MAX_LAT, Math.min(MAX_LAT, lat)), 6) }
+}
+
+/** Lugar do Street View (ponto + direção), ou null se não for. */
+export function cleanStreet(value: unknown): StreetSpot | null {
+  if (!value || typeof value !== 'object') return null
+  const v = value as Record<string, unknown>
+  const at = cleanPoint(v.lng, v.lat)
+  if (!at || !finite(v.heading, 100_000)) return null
+  return { ...at, heading: round(((v.heading % 360) + 360) % 360, 1) }
 }
 
 export function cleanView(value: unknown): MapView | null {

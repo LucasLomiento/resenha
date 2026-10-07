@@ -29,7 +29,8 @@ function csp(): Plugin {
             "font-src 'self'",
             "worker-src 'self'",
             "object-src 'none'",
-            "frame-src 'none'",
+            // Só o Street View do Google (a incorporação dele, numa moldura sem acesso ao app).
+            'frame-src https://www.google.com',
             "base-uri 'none'",
             "form-action 'none'",
           ].join('; ')

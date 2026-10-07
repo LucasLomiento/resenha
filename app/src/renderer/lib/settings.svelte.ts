@@ -27,6 +27,8 @@ export interface Settings {
   /** userId -> 0..1 */
   userVolumes: Record<string, number>
   streamVolume: number
+  /** Som da transmissão tirado pelo botão (o volume continua guardado pra quando voltar). */
+  streamMuted: boolean
   showStats: boolean
   sounds: boolean
   /** 0..1 */
@@ -55,6 +57,7 @@ const defaults: Settings = {
   codec: 'VP9',
   userVolumes: {},
   streamVolume: 1,
+  streamMuted: false,
   showStats: false,
   sounds: true,
   soundVolume: 0.6,

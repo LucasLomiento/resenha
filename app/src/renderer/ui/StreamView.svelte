@@ -29,7 +29,7 @@
   $effect(() => {
     if (!video) return
     // A prévia da própria tela fica muda, senão o som volta pro alto-falante em dobro.
-    video.muted = self || call.deafened
+    video.muted = self || call.deafened || settings.streamMuted
     video.volume = settings.streamVolume
   })
 
@@ -58,6 +58,23 @@
       video?.removeEventListener('leavepictureinpicture', leave)
     }
   })
+
+  /** Sem som: pelo botão ou com o volume em zero. */
+  const silent = $derived(settings.streamMuted || settings.streamVolume === 0)
+
+  /** O botão tira e devolve o som sem mexer no volume escolhido. */
+  function toggleSound() {
+    if (silent) {
+      settings.streamMuted = false
+      if (settings.streamVolume === 0) settings.streamVolume = 0.5
+    } else settings.streamMuted = true
+  }
+
+  /** Mexer no volume já devolve o som. */
+  function setVolume(value: number) {
+    settings.streamVolume = value
+    if (value > 0) settings.streamMuted = false
+  }
 
   function toggleFullscreen() {
     if (document.fullscreenElement) document.exitFullscreen()
@@ -161,12 +178,17 @@
       <div class="volume">
         <IconButton
           variant="glass"
-          icon={self || settings.streamVolume === 0 ? 'volume-off' : 'volume'}
-          label={self ? 'Sua prévia fica sem som' : settings.streamVolume === 0 ? 'Ativar o som' : 'Tirar o som'}
+          icon={self || silent ? 'volume-off' : 'volume'}
+          label={self ? 'Sua prévia fica sem som' : silent ? 'Ativar o som' : 'Tirar o som'}
           disabled={self}
-          onclick={() => (settings.streamVolume = settings.streamVolume > 0 ? 0 : 1)}
+          onclick={toggleSound}
         />
-        <Slider label="Volume da transmissão" disabled={self} bind:value={settings.streamVolume} />
+        <Slider
+          label="Volume da transmissão"
+          disabled={self}
+          value={settings.streamMuted ? 0 : settings.streamVolume}
+          oninput={(e) => setVolume(Number(e.currentTarget.value))}
+        />
       </div>
       <span class="divider"></span>
       <IconButton

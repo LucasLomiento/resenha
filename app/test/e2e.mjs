@@ -506,6 +506,23 @@ async function checkMap() {
   await shot(b, '2f-mapa-marcadores')
   const google = await a.page.locator('a.gmaps').first().getAttribute('href')
   check(/^https:\/\/www\.google\.com\/maps\/@-?\d+\.\d+,-?\d+\.\d+,\d+\.\d+z$/.test(google), '"Google Maps" aponta pro mesmo lugar', google)
+
+  // Street View: B abre no marcador; A vê o bonequinho de B no mapa e, clicando nele, vai junto.
+  await b.page.locator('.pin-card').getByRole('button', { name: 'Street View', exact: true }).click({ force: true })
+  const frameB = await b.page.locator('iframe.street-frame').getAttribute('src', { timeout: 5000 })
+  const walker = a.page.locator('.map-walker', { hasText: 'Duarte' })
+  await walker.waitFor({ state: 'attached', timeout: 5000 })
+  await shot(a, '2g-mapa-street-view-alguem')
+  await walker.click({ force: true })
+  const frameA = await a.page.locator('iframe.street-frame').getAttribute('src', { timeout: 5000 })
+  await shot(b, '2h-mapa-street-view')
+  check(
+    /^https:\/\/www\.google\.com\/maps\/embed\?/.test(frameB ?? '') && frameA === frameB,
+    'Street View: B abre no marcador, A vê onde B está e vai junto',
+    frameB ?? '',
+  )
+  for (const page of [a.page, b.page]) await page.getByRole('button', { name: 'Fechar o Street View', exact: true }).first().click({ force: true })
+  await a.page.locator('.map-walker').waitFor({ state: 'detached', timeout: 5000 })
   await b.page.getByRole('button', { name: 'Marcadores', exact: true }).click({ force: true })
 }
 
@@ -844,6 +861,19 @@ try {
     'servidor reinicia no meio da transmissão: a tela não para e a call volta sozinha',
     `${framesDuring} quadros durante, ${after.frames} depois`,
   )
+
+  // Tirar e devolver o som da transmissão volta pro volume de antes (B ensurdecido: nada toca).
+  await b.page.getByRole('button', { name: 'Ensurdecer', exact: true }).click({ force: true })
+  await b.page.locator('.stream').hover({ force: true })
+  const streamVolume = b.page.getByLabel('Volume da transmissão')
+  await streamVolume.fill('0.3')
+  await b.page.getByRole('button', { name: 'Tirar o som', exact: true }).click({ force: true })
+  const whileMuted = await streamVolume.inputValue()
+  await b.page.getByRole('button', { name: 'Ativar o som', exact: true }).click({ force: true })
+  const volumeBack = await streamVolume.inputValue()
+  check(whileMuted === '0' && volumeBack === '0.3', 'tirar e devolver o som da transmissão volta pro volume de antes', `${whileMuted} → ${volumeBack}`)
+  await streamVolume.fill('0')
+  await b.page.getByRole('button', { name: 'Voltar a ouvir', exact: true }).click({ force: true })
 
   await b.page.locator('.stream').hover({ force: true })
   await shot(b, '4-assistindo')

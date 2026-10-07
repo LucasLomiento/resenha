@@ -49,6 +49,7 @@
   import LogIn from '@lucide/svelte/icons/log-in'
   import LogOut from '@lucide/svelte/icons/log-out'
   import MapIcon from '@lucide/svelte/icons/map'
+  import PersonStanding from '@lucide/svelte/icons/person-standing'
   import MapPin from '@lucide/svelte/icons/map-pin'
   import MapPinPlus from '@lucide/svelte/icons/map-pin-plus'
   import Maximize from '@lucide/svelte/icons/maximize-2'
@@ -151,6 +152,7 @@
     'log-in': LogIn,
     'log-out': LogOut,
     map: MapIcon,
+    'person-standing': PersonStanding,
     'map-pin': MapPin,
     'map-pin-plus': MapPinPlus,
     maximize: Maximize,

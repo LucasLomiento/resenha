@@ -1,12 +1,12 @@
 <script lang="ts">
   import { onMount, tick } from 'svelte'
-  import { MAX_MAP_PIN_LABEL, P, type MapPin, type MapView } from '../../../../../shared/protocol'
+  import { MAX_MAP_PIN_LABEL, P, type MapPin, type MapView, type StreetSpot } from '../../../../../shared/protocol'
   import { client } from '../../lib/client.svelte'
   import { formatStamp, plural, userColor } from '../../lib/format'
   import { searchPlaces, type Place } from '../../lib/geocode'
   import type { GuildState } from '../../lib/guild.svelte'
   import type { LngLat, SharedMap } from '../../lib/map-canvas'
-  import { MAP_STYLES, PIN_COLORS, type MapListener, type MapStyleName } from '../../lib/map.svelte'
+  import { MAP_STYLES, PIN_COLORS, streetEmbedUrl, streetPageUrl, type MapListener, type MapStyleName } from '../../lib/map.svelte'
   import { confirmAction } from '../../lib/ui.svelte'
   import { Avatar, Button, EmptyState, Icon, IconButton, Kbd, Menu, Spinner, layer, tooltip, type MenuItem } from '../kit'
 
@@ -33,6 +33,10 @@
   let styleName = $state<MapStyleName>(loadStyle())
   let pinsOpen = $state(loadPinsOpen())
   let placing = $state(false)
+  /** Escolhendo onde abrir o Street View (o próximo clique no mapa). */
+  let streetPicking = $state(false)
+  /** Street View aberto, nesse lugar. */
+  let street = $state.raw<StreetSpot | null>(null)
   let selected = $state<string | null>(null)
   let draft = $state<{ at: LngLat; label: string; color: number } | null>(null)
   let draftInput = $state<HTMLInputElement>()
@@ -49,6 +53,12 @@
   const people = $derived(shared.people)
   const mover = $derived(shared.mover && shared.mover !== guild.meId ? shared.mover : null)
   const pins = $derived([...shared.pins].reverse())
+  /** Quem está no Street View (eu também), pros bonequinhos no mapa. */
+  const walkers = $derived(shared.viewers.filter((v) => !!v.street))
+  /** Quem está olhando o mesmo lugar que eu no Street View. */
+  const together = $derived(
+    street ? [...new Set(walkers.filter((w) => w.connId !== guild.connId && near(w.street!, street!)).map((w) => w.userId))] : [],
+  )
   const selectedPin = $derived(shared.pins.find((p) => p.id === selected) ?? null)
   // O Google conta o zoom com quadradinhos de 256 px; o MapLibre, de 512: lá é um a mais.
   const googleUrl = $derived(
@@ -132,7 +142,11 @@
         pointer: (at) => {
           if (!timedOut) shared.cursor(at)
         },
-        pick: (at) => openDraft(at),
+        pick: (at) => (streetPicking ? openStreet({ ...at, heading: view.bearing }) : openDraft(at)),
+        walkerClicked: (connId) => {
+          const spot = shared.viewers.find((v) => v.connId === connId)?.street
+          if (spot) openStreet(spot)
+        },
         tapped: () => (selected = null),
         pinClicked: (id) => (selected = selected === id ? null : id),
         changed: (next) => (view = next),
@@ -164,7 +178,19 @@
   })
 
   $effect(() => {
-    canvas?.setPlacing(placing)
+    canvas?.setPlacing(placing || streetPicking)
+  })
+
+  $effect(() => {
+    canvas?.setWalkers(
+      walkers.map((w) => ({
+        connId: w.connId,
+        name: guild.displayName(w.userId),
+        color: userColor(w.userId),
+        at: w.street!,
+        mine: w.connId === guild.connId,
+      })),
+    )
   })
 
   // O cartão (novo marcador ou o escolhido) fica preso no lugar dele enquanto o mapa mexe.
@@ -187,6 +213,37 @@
   $effect(() => {
     if (selected && !selectedPin) selected = null
   })
+
+  // ---------- Street View ----------
+
+  /** Mais ou menos o mesmo lugar (uns 20 m). */
+  function near(a: StreetSpot, b: StreetSpot): boolean {
+    return Math.abs(a.lat - b.lat) < 0.0002 && Math.abs(a.lng - b.lng) < 0.0002
+  }
+
+  function openStreet(at: StreetSpot) {
+    streetPicking = false
+    placing = false
+    draft = null
+    street = at
+    shared.street(at)
+  }
+
+  function closeStreet() {
+    street = null
+    shared.street(null)
+  }
+
+  function streetAtPin(pin: MapPin | null) {
+    if (pin) openStreet({ lng: pin.lng, lat: pin.lat, heading: view.bearing })
+  }
+
+  function streetClick() {
+    if (street) return closeStreet()
+    streetPicking = !streetPicking
+    placing = false
+    draft = null
+  }
 
   // ---------- Marcadores ----------
 
@@ -290,7 +347,7 @@
   )
 </script>
 
-<section class="map-pane" class:with-aside={pinsOpen} aria-label="Mapa">
+<section class="map-pane" class:with-aside={pinsOpen} class:with-street={!!street} aria-label="Mapa">
   <header>
     <Icon name="map" size={20} class="header-icon" />
     <h1>Mapa</h1>
@@ -321,7 +378,15 @@
         active={placing}
         tone="accent"
         disabled={timedOut || status !== 'ready'}
-        onclick={() => ((placing = !placing), (draft = null))}
+        onclick={() => ((placing = !placing), (draft = null), (streetPicking = false))}
+      />
+      <IconButton
+        icon="person-standing"
+        label={street ? 'Fechar o Street View' : 'Street View'}
+        tip="bottom"
+        active={streetPicking || !!street}
+        disabled={status !== 'ready'}
+        onclick={streetClick}
       />
       <IconButton icon="map-pin" label="Marcadores" tip="bottom" active={pinsOpen} onclick={togglePins} />
       <span bind:this={styleButton}>
@@ -360,6 +425,12 @@
         <div class="pill" role="status" use:layer={() => (placing = false)}>
           <Icon name="map-pin-plus" size={15} />
           Clique no mapa pra marcar
+          <Kbd keys="Esc" />
+        </div>
+      {:else if streetPicking}
+        <div class="pill" role="status" use:layer={() => (streetPicking = false)}>
+          <Icon name="person-standing" size={15} />
+          Clique no mapa pra ver a rua
           <Kbd keys="Esc" />
         </div>
       {:else if mover}
@@ -438,6 +509,9 @@
                   {@const pin = selectedPin}
                   <Button size="sm" variant="danger-soft" icon="trash" onclick={(e) => deletePin(pin, e)}>Apagar</Button>
                 {/if}
+                <Button size="sm" variant="secondary" icon="person-standing" onclick={() => streetAtPin(selectedPin)}>
+                  Street View
+                </Button>
                 <a class="gmaps small" href={pinPlace(selectedPin)} target="_blank" rel="noreferrer noopener">
                   Google Maps <Icon name="arrow-up-right" size={14} />
                 </a>
@@ -455,6 +529,39 @@
         </span>
       </div>
     </div>
+
+    {#if street}
+      <section class="street" aria-label="Street View" use:layer={closeStreet}>
+        <div class="street-head">
+          <Icon name="person-standing" size={16} class="street-icon" />
+          <span class="street-title">Street View</span>
+          {#if together.length}
+            <span class="street-with" use:tooltip={{ text: `Olhando aqui também: ${together.map((id) => guild.displayName(id)).join(', ')}`, placement: 'bottom' }}>
+              {#each together.slice(0, 3) as id (id)}
+                <Avatar {id} name={guild.displayName(id)} size={20} src={client.avatarOf(id, guild.id)} cutout="var(--bg-raised)" />
+              {/each}
+            </span>
+          {/if}
+          <a class="gmaps small" href={streetPageUrl(street)} target="_blank" rel="noreferrer noopener" use:tooltip={{ text: 'Abrir no navegador, com tudo do Google Maps', placement: 'bottom' }}>
+            Google Maps <Icon name="arrow-up-right" size={14} />
+          </a>
+          <IconButton icon="x" label="Fechar o Street View" size="sm" tip="bottom" onclick={closeStreet} />
+        </div>
+        {#key streetEmbedUrl(street)}
+          <!-- Sem allow-top-navigation: a página do Google não consegue tirar o app do lugar. -->
+          <iframe
+            class="street-frame"
+            title="Street View"
+            src={streetEmbedUrl(street)}
+            sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox"
+            allow="fullscreen"
+            scrolling="no"
+            referrerpolicy="strict-origin-when-cross-origin"
+          ></iframe>
+        {/key}
+        <p class="street-note">Andar aqui dentro não mexe nos outros; eles veem onde você abriu e podem vir junto.</p>
+      </section>
+    {/if}
 
     {#if pinsOpen}
       <aside class="aside" aria-label="Marcadores">
@@ -652,6 +759,137 @@
 
   .with-aside .body {
     grid-template-columns: minmax(0, 1fr) 280px;
+  }
+
+  .with-street .body {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr);
+  }
+
+  .with-street.with-aside .body {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr) 280px;
+  }
+
+  /* ---------- Street View ---------- */
+
+  .street {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    border-left: 1px solid var(--line);
+    background: var(--bg-raised);
+  }
+
+  .street-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    height: 44px;
+    padding: 0 8px 0 14px;
+    flex: none;
+  }
+
+  .street-head :global(.street-icon) {
+    color: var(--fg-3);
+  }
+
+  .street-title {
+    font-size: var(--text-sm);
+    font-weight: 600;
+  }
+
+  .street-with {
+    display: flex;
+    padding-left: 6px;
+  }
+
+  .street-with > :global(*) {
+    margin-left: -6px;
+    border-radius: 50%;
+    box-shadow: 0 0 0 2px var(--bg-raised);
+  }
+
+  .street-head .gmaps {
+    margin-left: auto;
+  }
+
+  .street-frame {
+    flex: 1;
+    min-height: 0;
+    width: 100%;
+    border: 0;
+    background: #0f0f15;
+  }
+
+  .street-note {
+    flex: none;
+    padding: 8px 14px;
+    color: var(--fg-3);
+    font-size: var(--text-xs);
+  }
+
+  /* Bonequinho de quem está no Street View, com o cone pra onde está olhando. */
+  .canvas :global(.map-walker) {
+    --c: var(--accent-fg);
+    position: relative;
+    display: grid;
+    place-items: center;
+    width: 30px;
+    height: 30px;
+    cursor: pointer;
+  }
+
+  .canvas :global(.map-walker-body) {
+    position: relative;
+    z-index: 1;
+    display: grid;
+    place-items: center;
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    background: var(--c);
+    box-shadow:
+      0 0 0 2px rgb(255 255 255 / 0.9),
+      0 2px 6px rgb(0 0 0 / 0.45);
+  }
+
+  .canvas :global(.map-walker-body svg) {
+    width: 16px;
+    height: 16px;
+    fill: none;
+    stroke: rgb(12 10 24 / 0.9);
+    stroke-width: 2.2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  .canvas :global(.map-walker-cone) {
+    position: absolute;
+    inset: -14px;
+    border-radius: 50%;
+    background: conic-gradient(from calc(var(--heading, 0deg) - 30deg), color-mix(in srgb, var(--c) 45%, transparent) 0deg 60deg, transparent 60deg);
+    mask: radial-gradient(circle, transparent 11px, #000 12px);
+    pointer-events: none;
+  }
+
+  .canvas :global(.map-walker-name) {
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    margin-top: 4px;
+    padding: 2px 7px;
+    border-radius: var(--r-full);
+    background: var(--c);
+    color: rgb(12 10 24 / 0.88);
+    font-size: var(--text-xs);
+    font-weight: 600;
+    white-space: nowrap;
+    translate: -50% 0;
+    box-shadow: 0 1px 3px rgb(0 0 0 / 0.35);
+  }
+
+  .canvas :global(.map-walker.mine) {
+    cursor: default;
   }
 
   /* Painel estreito (janela pequena): as pessoas saem do cabeçalho e o link vira só o ícone. */

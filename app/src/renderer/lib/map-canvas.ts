@@ -3,7 +3,7 @@
 import { Map as MapLibre, Marker, Popup, setWorkerUrl, type PositionAnchor } from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url'
-import type { MapPin, MapView } from '../../../../shared/protocol'
+import type { MapPin, MapView, StreetSpot } from '../../../../shared/protocol'
 
 // O worker do MapLibre vem do próprio app: nada de blob:, a CSP continua fechada.
 setWorkerUrl(workerUrl)
@@ -23,6 +23,8 @@ export interface SharedMapEvents {
   /** Clique no mapa fora de qualquer marcador (fora do modo de marcar). */
   tapped(): void
   pinClicked(id: string): void
+  /** Clicou no bonequinho de quem está no Street View (pra ir junto). */
+  walkerClicked(connId: string): void
   /** Qualquer mudança da vista (minha ou dos outros), pra tela acompanhar. */
   changed(view: MapView): void
   loaded(): void
@@ -41,6 +43,10 @@ const SETTLE_MS = 420
 
 const PIN_SVG =
   '<svg viewBox="0 0 28 36" aria-hidden="true"><path class="map-pin-body" d="M14 35s12-11.3 12-21A12 12 0 0 0 2 14c0 9.7 12 21 12 21z"/><circle class="map-pin-dot" cx="14" cy="14" r="4.5"/></svg>'
+/** Bonequinho do Street View (pessoa em pé), com um cone pra onde está olhando. */
+const WALKER_SVG =
+  '<span class="map-walker-cone" aria-hidden="true"></span><span class="map-walker-body" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="5" r="1.6"/><path d="m9 20 3-6 3 6M6 8l6 2 6-2M12 10v4"/></svg></span>'
+
 const CURSOR_SVG =
   '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 2.5 17 8.9l-6.1 1.6L8.6 17z" stroke-linejoin="round"/></svg>'
 
@@ -90,6 +96,7 @@ export class SharedMap {
   private style: string
   private loaded = false
   private pins = new Map<string, { marker: Marker; el: HTMLElement }>()
+  private walkers = new Map<string, { marker: Marker; el: HTMLElement; name: HTMLElement }>()
   private cursors = new Map<string, CursorMark>()
   private selected: string | null = null
   private draft: Marker | null = null
@@ -401,6 +408,45 @@ export class SharedMap {
       el.classList.toggle('selected', pin.id === this.selected)
       const marker = new Marker({ element: el, anchor: 'bottom', subpixelPositioning: true }).setLngLat([pin.lng, pin.lat]).addTo(this.map)
       this.pins.set(pin.id, { marker, el })
+    }
+  }
+
+  // ---------- Quem está no Street View ----------
+
+  /** Um bonequinho com o nome no lugar onde cada um está olhando no Street View. */
+  setWalkers(list: { connId: string; name: string; color: string; at: StreetSpot; mine: boolean }[]) {
+    const wanted = new Set(list.map((w) => w.connId))
+    for (const [connId, { marker }] of this.walkers) {
+      if (wanted.has(connId)) continue
+      marker.remove()
+      this.walkers.delete(connId)
+    }
+    for (const walker of list) {
+      let entry = this.walkers.get(walker.connId)
+      if (!entry) {
+        const el = document.createElement('button')
+        el.type = 'button'
+        el.className = 'map-walker'
+        el.innerHTML = WALKER_SVG
+        const name = document.createElement('span')
+        name.className = 'map-walker-name'
+        el.append(name)
+        const connId = walker.connId
+        el.addEventListener('click', (event) => {
+          event.stopPropagation()
+          this.events.walkerClicked(connId)
+        })
+        const marker = new Marker({ element: el, anchor: 'bottom', subpixelPositioning: true }).setLngLat([walker.at.lng, walker.at.lat]).addTo(this.map)
+        entry = { marker, el, name }
+        this.walkers.set(walker.connId, entry)
+      }
+      entry.marker.setLngLat([walker.at.lng, walker.at.lat])
+      entry.el.style.setProperty('--c', walker.color)
+      entry.el.style.setProperty('--heading', `${walker.at.heading}deg`)
+      entry.el.classList.toggle('mine', walker.mine)
+      entry.el.setAttribute('aria-label', walker.mine ? 'Você no Street View' : `${walker.name} no Street View: ver junto`)
+      const label = walker.mine ? 'Você' : walker.name
+      if (entry.name.textContent !== label) entry.name.textContent = label
     }
   }
 

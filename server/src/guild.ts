@@ -19,6 +19,7 @@ import {
   type MapPin,
   type MapView,
   type MapViewer,
+  type StreetSpot,
   type Member,
   type NotifyLevel,
   type NotifySettings,
@@ -33,7 +34,7 @@ import {
 } from '../../shared/protocol'
 import type { LegacyExport } from './directory'
 import { newId } from './ids'
-import { cleanPoint, cleanView, parseView } from './map'
+import { cleanPoint, cleanStreet, cleanView, parseView } from './map'
 import { CONN_KEY, GHOST_QUEUE, connIdFor, graceFor, unexpectedClose } from './resume'
 import {
   IN_LIST,
@@ -93,6 +94,8 @@ interface ConnState {
   replaced?: boolean
   /** Desde quando está com o mapa aberto (ms). */
   map?: number
+  /** No Street View, olhando esse lugar. */
+  street?: StreetSpot
 }
 
 /** Conexão que caiu sem avisar, esperando o app voltar. */
@@ -800,9 +803,14 @@ export class Guild extends DurableObject<Env> {
    * anterior, que caiu (fantasma) ou ainda parece aberta mas morreu, e o que
    * ficou guardado pra ela. A anterior fecha sem mexer em nada.
    */
-  private takeOver(ws: WebSocket, userId: string, connId: string): { voice: VoiceState | null; map?: number; queue: string[] } {
+  private takeOver(
+    ws: WebSocket,
+    userId: string,
+    connId: string,
+  ): { voice: VoiceState | null; map?: number; street?: StreetSpot; queue: string[] } {
     let voice: VoiceState | null = null
     let map: number | undefined
+    let street: StreetSpot | undefined
     let queue: string[] = []
     const ghost = this.ghosts.get(connId)
     if (ghost && ghost.state.userId === userId) {
@@ -810,6 +818,7 @@ export class Guild extends DurableObject<Env> {
       this.ghosts.delete(connId)
       voice = ghost.state.voice
       map = ghost.state.map
+      street = ghost.state.street
       queue = ghost.queue
     }
     for (const old of this.ctx.getWebSockets()) {
@@ -818,15 +827,16 @@ export class Guild extends DurableObject<Env> {
       if (state.pending || state.connId !== connId || state.userId !== userId) continue
       voice = state.voice ?? voice
       map = state.map ?? map
+      street = state.street ?? street
       this.retired.add(old)
       try {
-        this.save(old, { ...state, voice: null, map: undefined, replaced: true })
+        this.save(old, { ...state, voice: null, map: undefined, street: undefined, replaced: true })
         old.close(4005, 'Outra conexão tomou o lugar')
       } catch {
         // já estava fechando
       }
     }
-    return { voice, map, queue }
+    return { voice, map, street, queue }
   }
 
   /** A call que voltou ainda vale? (canal existe, pode entrar, não está de castigo) */
@@ -1166,6 +1176,7 @@ export class Guild extends DurableObject<Env> {
       text: cleanLine(msg.text, 1, 128),
       voice,
       map: resumed.map,
+      street: resumed.map ? resumed.street : undefined,
     }
     this.save(ws, state)
 
@@ -1601,6 +1612,7 @@ export class Guild extends DurableObject<Env> {
 
       case 'map.join':
       case 'map.leave':
+      case 'map.street':
       case 'map.pin.add':
       case 'map.pin.remove':
         return this.handleMap(ws, state, msg)
@@ -2224,7 +2236,7 @@ export class Guild extends DurableObject<Env> {
     return [...this.sockets(exceptConnId).map((ws) => this.state(ws)), ...this.ghostStates(exceptConnId)]
       .filter((s) => !!s.map)
       .sort((a, b) => a.map! - b.map!)
-      .map(({ connId, userId }) => ({ connId, userId }))
+      .map(({ connId, userId, street }) => ({ connId, userId, ...(street ? { street } : {}) }))
   }
 
   /** Vista, cursores e marcadores só vão pra quem está com o mapa aberto. */
@@ -2285,7 +2297,11 @@ export class Guild extends DurableObject<Env> {
     this.toMap({ t: 'map.cursor', connId: state.connId, userId: state.userId, lng: at?.lng ?? null, lat: at?.lat ?? null }, state.connId)
   }
 
-  private handleMap(ws: WebSocket, state: ConnState, msg: Extract<ClientMessage, { t: 'map.join' | 'map.leave' | 'map.pin.add' | 'map.pin.remove' }>) {
+  private handleMap(
+    ws: WebSocket,
+    state: ConnState,
+    msg: Extract<ClientMessage, { t: 'map.join' | 'map.leave' | 'map.street' | 'map.pin.add' | 'map.pin.remove' }>,
+  ) {
     const userId = state.userId
     switch (msg.t) {
       case 'map.join': {
@@ -2300,8 +2316,16 @@ export class Guild extends DurableObject<Env> {
 
       case 'map.leave':
         if (!state.map) return
-        this.save(ws, { ...state, map: undefined })
+        this.save(ws, { ...state, map: undefined, street: undefined })
         return this.leftMap()
+
+      case 'map.street': {
+        if (!state.map) return
+        const street = msg.at === null ? undefined : (cleanStreet(msg.at) ?? undefined)
+        if (msg.at !== null && !street) return
+        this.save(ws, { ...state, street })
+        return this.broadcast({ t: 'map.viewers', viewers: this.mapViewers() })
+      }
 
       case 'map.pin.add': {
         if (this.timedOut(this.member(userId))) return this.error(ws, 'Você está de castigo e não pode marcar lugares agora.')
