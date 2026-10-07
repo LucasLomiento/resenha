@@ -50,7 +50,8 @@ async function launch(profile) {
   const app = await electron.launch({
     executablePath: electronPath,
     args: [APP_DIR],
-    env: { ...process.env, RESENHA_PROFILE: profile, RESENHA_HIDDEN: '1' },
+    // RESENHA_INK_DRY: a camada dos rabiscos não abre de verdade, só registra o que chegou.
+    env: { ...process.env, RESENHA_PROFILE: profile, RESENHA_HIDDEN: '1', RESENHA_INK_DRY: '1' },
   })
   const page = await app.firstWindow()
   // As conexões com os servidores passam pelo teste, pra dar pra derrubar uma no meio (queda de rede).
@@ -874,6 +875,60 @@ try {
   check(whileMuted === '0' && volumeBack === '0.3', 'tirar e devolver o som da transmissão volta pro volume de antes', `${whileMuted} → ${volumeBack}`)
   await streamVolume.fill('0')
   await b.page.getByRole('button', { name: 'Voltar a ouvir', exact: true }).click({ force: true })
+
+  // Rabiscos: B desenha e clica na tela de A; os traços chegam em A em 0..1 (a resolução não importa).
+  const inkLog = () => a.app.evaluate(() => globalThis.__resenhaInk)
+  const scribble = b.page.getByRole('button', { name: 'Rabiscar na tela', exact: true })
+  await b.page.locator('.stream').hover({ force: true })
+  const offered = await scribble.waitFor({ timeout: 10_000 }).then(() => true, () => false)
+  check(offered && (await inkLog()).started === 'TESTE-1', 'compartilhando o monitor inteiro, quem assiste pode rabiscar', `camada em ${(await inkLog()).started}`)
+  if (offered) {
+    await scribble.click({ force: true })
+    const inkBox = await b.page.locator('.ink-layer').boundingBox()
+    const view = await b.page.evaluate(() => {
+      const v = document.querySelector('.stream video')
+      const r = v.getBoundingClientRect()
+      const scale = Math.min(r.width / v.videoWidth, r.height / v.videoHeight)
+      return { left: r.left + (r.width - v.videoWidth * scale) / 2, top: r.top + (r.height - v.videoHeight * scale) / 2, w: v.videoWidth * scale, h: v.videoHeight * scale }
+    })
+    const at = (x, y) => [view.left + x * view.w, view.top + y * view.h]
+    await b.page.mouse.move(...at(0.25, 0.5))
+    await b.page.mouse.down()
+    await b.page.mouse.move(...at(0.75, 0.5), { steps: 20 })
+    await b.page.mouse.up()
+    await b.page.waitForTimeout(150)
+    await b.page.mouse.click(...at(0.5, 0.25))
+    await shot(b, '4c-rabiscando')
+    let events = []
+    for (let i = 0; i < 30; i++) {
+      events = (await inkLog()).events
+      if (events.some((e) => e.t === 'ping')) break
+      await a.page.waitForTimeout(100)
+    }
+    const strokes = events.filter((e) => e.t === 'stroke')
+    const points = strokes.flatMap((e) => e.points)
+    const xs = points.filter((_, i) => i % 2 === 0)
+    const ys = points.filter((_, i) => i % 2 === 1)
+    const near = (v, want) => Math.abs(v - want) < 0.03
+    const ping = events.find((e) => e.t === 'ping')
+    check(
+      !!inkBox && strokes.length > 0 && strokes.at(-1).end && near(Math.min(...xs), 0.25) && near(Math.max(...xs), 0.75) && ys.every((y) => near(y, 0.5)) && strokes[0].name === 'Duarte',
+      'traço de B chega em A na posição certa, com o nome de quem desenhou',
+      `${strokes.length} pedaços, x ${Math.min(...xs).toFixed(3)}..${Math.max(...xs).toFixed(3)}`,
+    )
+    check(!!ping && near(ping.x, 0.5) && near(ping.y, 0.25), 'clique rápido vira um aviso ("ping") no lugar certo', ping ? `${ping.x.toFixed(3)}, ${ping.y.toFixed(3)}` : 'não chegou')
+    await b.page.keyboard.press('Escape')
+    check((await b.page.locator('.ink-layer').count()) === 0, 'Esc sai do modo de rabiscar')
+    // Quem compartilha apaga tudo e desliga: quem assiste perde o botão na hora.
+    await livePanel()
+    await a.page.getByRole('button', { name: 'Limpar rabiscos', exact: true }).click({ force: true })
+    check((await inkLog()).events.at(-1)?.t === 'clear', 'quem compartilha apaga os rabiscos')
+    await a.page.locator('.share-panel input[role=switch]').click({ force: true })
+    await a.page.keyboard.press('Escape')
+    await b.page.locator('.stream').hover({ force: true })
+    const gone = await scribble.waitFor({ state: 'detached', timeout: 5000 }).then(() => true, () => false)
+    check(gone, 'desligar os rabiscos tira o botão de quem assiste')
+  }
 
   await b.page.locator('.stream').hover({ force: true })
   await shot(b, '4-assistindo')

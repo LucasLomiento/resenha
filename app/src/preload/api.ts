@@ -61,6 +61,17 @@ export interface CaptureSource {
   kind: 'screen' | 'window'
 }
 
+/** Um monitor onde os rabiscos de quem assiste podem aparecer. */
+export interface InkMonitor {
+  /** Conector (Linux/Wayland, ex.: DP-1) ou id do monitor (Windows/X11). */
+  connector: string
+  name: string
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
 export interface ResenhaApi {
   platform(): Promise<PlatformInfo>
   session: {
@@ -71,6 +82,16 @@ export interface ResenhaApi {
     sources(): Promise<CaptureSource[]>
     /** Avisa o principal o que entregar no próximo getDisplayMedia. */
     select(choice: { sourceId: string | null; audio: boolean }): Promise<void>
+  }
+  /** Rabiscos de quem assiste por cima do monitor que eu compartilho. */
+  ink: {
+    /** null: este sistema não tem como desenhar por cima da tela (falta o gtk4-layer-shell, GNOME...). */
+    monitors(): Promise<InkMonitor[] | null>
+    start(connector: string): Promise<{ ok: true } | { ok: false; error: string }>
+    event(event: Record<string, unknown>): void
+    stop(): void
+    /** A camada fechou sozinha (o ajudante do Linux caiu). */
+    onClosed(callback: () => void): void
   }
   screenAudio: {
     /** Apps tocando som agora (Linux), pro seletor do áudio da tela. */

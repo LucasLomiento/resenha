@@ -43,6 +43,14 @@ Cada servidor tem um mapa: quem abre vê o mesmo lugar que os outros, os cursore
 - **A última vista** fica na memória e vai pra tabela `meta` (`map_view`) no máximo a cada 5 s, e na hora quando o último sai: quem abre depois começa nela.
 - **Marcadores** ficam na tabela `map_pins` do servidor (até 200). Qualquer membro marca; apaga quem marcou ou quem pode apagar mensagens.
 
+## Rabiscos na tela de quem compartilha
+Quem assiste uma transmissão desenha por cima dela, e quem compartilha vê os rabiscos no próprio monitor (como nas calls do Slack). Só vale compartilhando o monitor inteiro.
+- **Nada passa pelo servidor.** Os traços vão pelo canal de dados `ink` (negociado, id 2) da mesma RTCPeerConnection da call (`app/src/renderer/lib/peer.ts`). Quem compartilha avisa com `ink.policy` se dá pra rabiscar; quem assiste manda `ink.stroke` (pedaços de traço a cada ~33 ms) e `ink.ping` (um clique rápido). As posições vão de 0 a 1 em relação à imagem, então a resolução de cada um não importa. Quem compartilha confere tudo (`cleanInk`) e limita a 90 mensagens por segundo por pessoa.
+- **A camada por cima do monitor** fica em `app/src/main/ink.ts`. No Wayland (Hyprland, KDE) é um ajudante em Python, `app/resources/ink-overlay.py` (GTK4 + gtk4-layer-shell): uma camada `overlay`, transparente e com região de entrada vazia, então não pega clique e fica por cima até de jogo em tela cheia. O Electron sozinho não cria esse tipo de janela. O ajudante lê um JSON por linha no stdin e fecha quando o stdin fecha (o app saindo ou caindo leva ele junto). No Windows e no X11 é uma janela transparente do próprio Electron, sempre por cima e sem pegar clique. O GNOME não tem layer-shell: lá aparece "não dá pra desenhar".
+- **Qual monitor:** o app lista os monitores (`ink-overlay.py --list`) e escolhe o único, ou o único com o mesmo formato da transmissão, ou o último escolhido. Se ainda ficar em dúvida, pergunta no painel da transmissão. O portal do Wayland não diz qual monitor foi escolhido.
+- **Ninguém vê os rabiscos duas vezes:** como a camada está no monitor transmitido, os rabiscos entram na própria transmissão. Quem desenha só tem um eco curtinho do próprio traço, pra resposta ser na hora.
+- **No e2e** (`RESENHA_INK_DRY=1`), a camada não abre: o processo principal só guarda o que chegou em `globalThis.__resenhaInk`, e o teste confere as posições.
+
 ## Segurança (regras do servidor)
 - Token de sessão: 32 bytes aleatórios, guardado só como SHA-256. Vai no header `Authorization` (HTTP) ou na primeira mensagem do WebSocket (`auth`), nunca na URL.
 - Sessões expiram após 30 dias sem uso; lista de aparelhos; derrubar um ou todos; trocar a senha derruba os outros.

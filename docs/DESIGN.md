@@ -201,6 +201,12 @@ Tudo passa por um reverb curto e um compressor. O volume de cada som foi medido 
 - **Marcador:** gota na cor escolhida (as seis cores das pessoas), nome aparece no hover. Clicar abre o cartão (quem marcou, quando, Google Maps, Apagar). Botão direito no mapa também marca.
 - **Escuro** do OpenFreeMap puxado pro tom do painel; "Claro" e "Colorido" pra quem quiser (cada um escolhe o seu).
 
+### Rabiscos na transmissão
+
+- **Quem assiste:** lápis na barra do player (só aparece quando quem compartilha deixa). Rabiscando, aparece no topo uma pílula de vidro: "Rabiscando na tela de Fulano", Laser | Caneta e fechar (Esc também sai). O cursor vira mira. O próprio traço deixa só um eco curto na cor da pessoa; o resto chega pela transmissão.
+- **No monitor de quem compartilha:** traço na cor da pessoa com contorno escuro fino (aparece em fundo claro e escuro), etiqueta com o nome na ponta enquanto desenha. Laser some em 0,7 s; caneta fica 6 s e esmaece. Clique rápido vira um anel que abre, com o nome. Tudo escala com a altura do monitor (base 1080p).
+- **Painel da transmissão:** "Rabiscos de quem assiste" com interruptor; com mais de um monitor, Esquerda | Direita (pela posição, porque o nome do modelo pode repetir); "Limpar rabiscos"; e uma linha cinza explicando quando não dá (janela em vez de monitor, sistema sem layer-shell).
+
 ## Telas que vão chegar (protótipos)
 
 Cada uma tem um protótipo estático com dados de exemplo em `ui/proto`. Os nomes de campo dos exemplos (`proto/data.ts`) seguem o protocolo novo (`shared/protocol.ts` da 0.6+), então ligar nos dados é trocar `data.ts` pelo store.

@@ -1,9 +1,10 @@
 <script lang="ts">
-  import { formatBitrate } from '../lib/format'
+  import { formatBitrate, userColor } from '../lib/format'
   import type { VideoStats } from '../lib/peer'
   import { settings } from '../lib/settings.svelte'
   import { client } from '../lib/client.svelte'
   import { Avatar, Badge, Icon, IconButton, Slider, Spinner } from './kit'
+  import InkLayer from './InkLayer.svelte'
 
   let { full }: { full: boolean } = $props()
 
@@ -19,6 +20,13 @@
   let fullscreen = $state(false)
   let nativePip = $state(false)
   let stats = $state<{ inbound: VideoStats | null; outbound: { userId: string; stats: VideoStats }[] } | null>(null)
+
+  /** Quem compartilha deixa rabiscar (monitor inteiro e camada aberta lá do outro lado). */
+  const canInk = $derived(!self && !!call.watching && !!call.inkAllowed[call.watching] && !!stream)
+  let inking = $state(false)
+  $effect(() => {
+    if (!canInk) inking = false
+  })
 
   $effect(() => {
     if (!video || video.srcObject === stream) return
@@ -140,7 +148,15 @@
 </script>
 
 <svelte:document onfullscreenchange={() => (fullscreen = !!document.fullscreenElement)} />
-<svelte:window onresize={() => (pip = clamp(pip))} />
+<svelte:window
+  onresize={() => (pip = clamp(pip))}
+  onkeydown={(e) => {
+    if (inking && e.key === 'Escape') {
+      e.preventDefault()
+      inking = false
+    }
+  }}
+/>
 
 <div
   class="stream"
@@ -158,6 +174,23 @@
     <div class="waiting"><Spinner size={18} /> Conectando à transmissão…</div>
   {:else if nativePip}
     <div class="waiting"><Icon name="pip" size={18} /> Na janela flutuante</div>
+  {/if}
+
+  {#if inking && video && call.watching}
+    {@const target = call.watching}
+    <InkLayer {video} tool={settings.inkTool} color={userColor(client.me?.id ?? '')} onsend={(msg) => call.sendInk(target, msg)} />
+    <div class="ink-bar">
+      <span class="ink-title">Rabiscando na tela de {user?.name ?? 'alguém'}</span>
+      <div class="ink-tools" role="radiogroup" aria-label="Ferramenta">
+        <button role="radio" aria-checked={settings.inkTool === 'laser'} class:on={settings.inkTool === 'laser'} onclick={() => (settings.inkTool = 'laser')}>
+          <Icon name="laser" size={14} /> Laser
+        </button>
+        <button role="radio" aria-checked={settings.inkTool === 'pen'} class:on={settings.inkTool === 'pen'} onclick={() => (settings.inkTool = 'pen')}>
+          <Icon name="pen" size={14} /> Caneta
+        </button>
+      </div>
+      <IconButton variant="glass" size="sm" icon="x" label="Parar de rabiscar (Esc)" onclick={() => (inking = false)} />
+    </div>
   {/if}
 
   {#if !full}
@@ -198,6 +231,9 @@
         active={settings.showStats}
         onclick={() => (settings.showStats = !settings.showStats)}
       />
+    {/if}
+    {#if canInk}
+      <IconButton variant="glass" icon="pen" label={inking ? 'Parar de rabiscar' : 'Rabiscar na tela'} active={inking} onclick={() => (inking = !inking)} />
     {/if}
     <IconButton variant="glass" icon="pip" label="Janela flutuante" active={nativePip} onclick={togglePip} />
     {#if full}
@@ -317,6 +353,7 @@
 
   .controls {
     position: absolute;
+    z-index: 4;
     left: 50%;
     bottom: 16px;
     display: flex;
@@ -380,6 +417,67 @@
 
   .mini:hover .resize {
     opacity: 1;
+  }
+
+  .ink-bar {
+    position: absolute;
+    top: 12px;
+    left: 50%;
+    z-index: 4;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 4px 4px 4px 14px;
+    border-radius: var(--r-full);
+    background: rgb(12 12 17 / 0.78);
+    backdrop-filter: blur(16px);
+    box-shadow:
+      0 0 0 1px rgb(255 255 255 / 0.09),
+      var(--shadow-md);
+    color: #f4f4f8;
+    font-size: var(--text-sm);
+    font-weight: 600;
+    white-space: nowrap;
+    translate: -50% 0;
+    animation: rs-pop-in var(--t-slow) var(--ease);
+  }
+
+  .mini .ink-bar {
+    top: 8px;
+    padding-left: 4px;
+  }
+
+  .mini .ink-title {
+    display: none;
+  }
+
+  .ink-tools {
+    display: flex;
+    gap: 2px;
+    padding: 2px;
+    border-radius: var(--r-full);
+    background: rgb(255 255 255 / 0.06);
+  }
+
+  .ink-tools button {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    height: 26px;
+    padding: 0 10px;
+    border-radius: var(--r-full);
+    color: #b8b8c4;
+    font-size: var(--text-xs);
+    font-weight: 600;
+  }
+
+  .ink-tools button:hover {
+    color: #f4f4f8;
+  }
+
+  .ink-tools button.on {
+    background: rgb(255 255 255 / 0.14);
+    color: #fff;
   }
 
   .stats {

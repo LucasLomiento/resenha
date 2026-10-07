@@ -93,10 +93,11 @@ class Client implements GuildHost, HomeHost {
   private openWhenJoined: string | null = null
   private lastAction: Partial<Record<ShortcutAction, number>> = {}
 
-  readonly call = new Call({
+  readonly call: Call = new Call({
     api: () => this.api,
     platform: () => this.platform,
     toast: (text, kind) => this.toast(text, kind),
+    name: (userId): string => this.user(userId, this.call.guildId)?.name ?? 'Alguém',
   })
 
   constructor() {

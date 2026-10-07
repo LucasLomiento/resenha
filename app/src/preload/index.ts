@@ -11,6 +11,15 @@ const api: ResenhaApi = {
     sources: () => ipcRenderer.invoke('share:sources'),
     select: (choice) => ipcRenderer.invoke('share:select', choice),
   },
+  ink: {
+    monitors: () => ipcRenderer.invoke('ink:monitors'),
+    start: (connector) => ipcRenderer.invoke('ink:start', connector),
+    event: (event) => ipcRenderer.send('ink:event', event),
+    stop: () => ipcRenderer.send('ink:stop'),
+    onClosed: (callback) => {
+      ipcRenderer.on('ink:closed', () => callback())
+    },
+  },
   screenAudio: {
     apps: () => ipcRenderer.invoke('screen-audio:apps'),
     start: (options) => ipcRenderer.invoke('screen-audio:start', options),

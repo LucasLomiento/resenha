@@ -1,6 +1,8 @@
 import type { SignalData, VoiceMember } from '../../../../shared/protocol'
 import type { PlatformInfo } from '../../preload/api'
 import type { Api } from './api'
+import { userColor } from './format'
+import { InkShare, cleanInk, type InkMessage } from './ink.svelte'
 import { captureScreen, getCameraStream, getMicTrack, stopCapture } from './media'
 import { MicPipeline } from './mic'
 import { Peer, type LinkStats, type VideoStats } from './peer'
@@ -11,6 +13,8 @@ interface CallDeps {
   api(): Api | null
   platform(): PlatformInfo | null
   toast(text: string, kind?: 'error' | 'info'): void
+  /** Nome de exibição de alguém (pros rabiscos na minha tela). */
+  name(userId: string): string
 }
 
 /**
@@ -90,6 +94,10 @@ export class Call {
   private mutedBeforeDeafen = false
   /** Quem estava na call no último voice.state (connId -> transmitindo), pros sons. */
   private known: Map<string, boolean> | null = null
+  /** Rabiscos de quem assiste na minha tela (só compartilhando o monitor inteiro). */
+  readonly ink = new InkShare(() => this.broadcastInkPolicy())
+  /** connId de quem compartilha -> deixa rabiscar na tela dele agora. */
+  inkAllowed = $state<Record<string, boolean>>({})
 
   constructor(private deps: CallDeps) {}
 
@@ -395,8 +403,13 @@ export class Call {
       camera: (stream) => {
         this.cameras = { ...this.cameras, [member.connId]: stream }
       },
+      ink: (data) => this.onInk(member.connId, member.userId, data),
+      inkOpen: () => {
+        if (this.localScreen) peer.sendInk({ t: 'ink.policy', allowed: this.ink.allowed } satisfies InkMessage)
+      },
       watchRequest: (watching) => {
         if (peer.closed) return
+        if (watching && this.localScreen) peer.sendInk({ t: 'ink.policy', allowed: this.ink.allowed } satisfies InkMessage)
         const before = !!this.watchers[member.connId]
         this.watchers[member.connId] = watching
         // Alguém começou ou parou de assistir a minha tela (pedido repetido depois de reconectar não toca).
@@ -415,6 +428,7 @@ export class Call {
   }
 
   private removePeer(connId: string) {
+    delete this.inkAllowed[connId]
     clearTimeout(this.leaving.get(connId))
     this.leaving.delete(connId)
     delete this.away[connId]
@@ -478,6 +492,10 @@ export class Call {
     this.localScreen = stream
     this.sharing = true
     this.sendState()
+    void this.ink.begin(stream.getVideoTracks()[0]).then(() => {
+      if (this.ink.status === 'choose')
+        this.deps.toast('Pra deixar rabiscarem na sua tela, escolha qual monitor você está compartilhando no botão "Ao vivo".', 'info')
+    })
     const options = this.videoOptions()
     await Promise.all(
       this.peerList.filter((p) => this.watchers[p.connId]).map((p) => p.sendScreen(stream, options)),
@@ -505,12 +523,37 @@ export class Call {
     const stream = this.localScreen
     this.localScreen = null
     this.sharing = false
+    this.ink.end()
     stopCapture(stream)
     // Quem assistia precisa clicar de novo numa próxima transmissão.
     this.watchers = {}
     for (const peer of this.peers.values()) peer.sendScreen(null, null)
     if (this.watching === this.connId()) this.watching = null
     if (notify) this.sendState()
+  }
+
+  // ---------- Rabiscos na tela ----------
+
+  /** Avisa quem assiste se dá pra rabiscar na minha tela agora. */
+  private broadcastInkPolicy() {
+    const msg: InkMessage = { t: 'ink.policy', allowed: this.ink.allowed }
+    for (const peer of this.peers.values()) peer.sendInk(msg)
+  }
+
+  private onInk(connId: string, userId: string, raw: unknown) {
+    const msg = cleanInk(raw)
+    if (!msg) return
+    if (msg.t === 'ink.policy') {
+      this.inkAllowed[connId] = msg.allowed
+      return
+    }
+    // Rabisco pra mim: só vale se eu estiver compartilhando e deixando (o InkShare confere).
+    this.ink.receive(connId, this.deps.name(userId), userColor(userId), msg)
+  }
+
+  /** Rabisco meu na tela de quem eu assisto. */
+  sendInk(target: string, msg: InkMessage) {
+    this.peers.get(target)?.sendInk(msg)
   }
 
   // ---------- Câmera ----------

@@ -71,6 +71,9 @@
   import Palette from '@lucide/svelte/icons/palette'
   import Paperclip from '@lucide/svelte/icons/paperclip'
   import Pencil from '@lucide/svelte/icons/pencil'
+  import PenLine from '@lucide/svelte/icons/pen-line'
+  import Eraser from '@lucide/svelte/icons/eraser'
+  import WandSparkles from '@lucide/svelte/icons/wand-sparkles'
   import PhoneOff from '@lucide/svelte/icons/phone-off'
   import Phone from '@lucide/svelte/icons/phone'
   import PictureInPicture from '@lucide/svelte/icons/picture-in-picture-2'
@@ -172,6 +175,9 @@
     palette: Palette,
     paperclip: Paperclip,
     pencil: Pencil,
+    pen: PenLine,
+    eraser: Eraser,
+    laser: WandSparkles,
     photo: Camera,
     pin: Pin,
     'pin-off': PinOff,

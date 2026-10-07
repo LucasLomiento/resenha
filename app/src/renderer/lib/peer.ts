@@ -13,6 +13,10 @@ export interface PeerEvents {
   camera(stream: MediaStream): void
   /** A outra pessoa pediu (true) ou largou (false) a minha tela. */
   watchRequest(watching: boolean): void
+  /** Chegou algo pelo canal dos rabiscos (sem conferir: quem recebe confere). */
+  ink(data: unknown): void
+  /** O canal dos rabiscos abriu (dá pra mandar a permissão). */
+  inkOpen(): void
 }
 
 export interface VideoSendOptions {
@@ -65,6 +69,8 @@ export class Peer {
   closed = false
   /** Quando mandei a última oferta (pra reenviar se a resposta se perder). */
   private offerSentAt = 0
+  /** Canal dos rabiscos na tela (direto entre os dois, sem passar pelo servidor). */
+  private inkChannel: RTCDataChannel
 
   private makingOffer = false
   private ignoreOffer = false
@@ -97,6 +103,18 @@ export class Peer {
 
     this.localStreams[micStream.id] = 'mic'
     this.micSender = this.pc.addTrack(micStream.getAudioTracks()[0], micStream)
+
+    // Combinado dos dois lados (mesmo id): não depende de quem fez a oferta.
+    this.inkChannel = this.pc.createDataChannel('ink', { negotiated: true, id: 2, ordered: true })
+    this.inkChannel.onopen = () => this.events.inkOpen()
+    this.inkChannel.onmessage = (event) => {
+      if (typeof event.data !== 'string' || event.data.length > 64_000) return
+      try {
+        this.events.ink(JSON.parse(event.data))
+      } catch {
+        // mensagem quebrada
+      }
+    }
 
     this.pc.onnegotiationneeded = async () => {
       try {
@@ -165,6 +183,13 @@ export class Peer {
     if (this.closed || this.pc.signalingState !== 'have-local-offer') return
     if (!force && Date.now() - this.offerSentAt < 5000) return
     this.sendDescription()
+  }
+
+  /** Manda pelo canal dos rabiscos (se ainda não abriu, perde: o traço seguinte vai). */
+  sendInk(data: unknown): boolean {
+    if (this.closed || this.inkChannel.readyState !== 'open') return false
+    this.inkChannel.send(JSON.stringify(data))
+    return true
   }
 
   /** Pede (ou larga) a tela dessa pessoa. */

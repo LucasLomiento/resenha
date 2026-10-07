@@ -29,6 +29,12 @@ export interface Settings {
   streamVolume: number
   /** Som da transmissão tirado pelo botão (o volume continua guardado pra quando voltar). */
   streamMuted: boolean
+  /** Quem assiste a minha tela pode rabiscar nela. */
+  inkAllowed: boolean
+  /** Monitor dos rabiscos da última vez (conector, ex.: DP-1), quando tem mais de um igual. */
+  inkMonitor: string | null
+  /** Ferramenta pra rabiscar na tela dos outros. */
+  inkTool: 'laser' | 'pen'
   showStats: boolean
   sounds: boolean
   /** 0..1 */
@@ -58,6 +64,9 @@ const defaults: Settings = {
   userVolumes: {},
   streamVolume: 1,
   streamMuted: false,
+  inkAllowed: true,
+  inkMonitor: null,
+  inkTool: 'laser',
   showStats: false,
   sounds: true,
   soundVolume: 0.6,

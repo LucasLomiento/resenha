@@ -16,6 +16,7 @@ import { release } from 'node:os'
 import { dirname, join } from 'node:path'
 import type { CallState, CaptureSource, DesktopPrefs, PlatformInfo, SavedSession, ShortcutAction } from '../preload/api'
 import { appIcon, hasTray, registerShortcuts, setAutostart, setTray, showCallState } from './desktop'
+import { inkEvent, inkMonitors, inkStart, inkStop, onInkClosed } from './ink'
 import { isHyprland, loadPrefs, savePrefs } from './prefs'
 import {
   listPlayingApps,
@@ -140,6 +141,8 @@ function createWindow() {
   })
 
   win.webContents.on('will-attach-webview', (event) => event.preventDefault())
+  // Recarregou: a camada dos rabiscos era da transmissão de antes.
+  win.webContents.on('did-start-loading', () => inkStop())
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https?:\/\//.test(url)) shell.openExternal(url)
     return { action: 'deny' }
@@ -246,6 +249,14 @@ handle('share:sources', async (): Promise<CaptureSource[]> => {
 handle('share:select', (_event, choice: { sourceId: string | null; audio: boolean }) => {
   pendingShare = choice
 })
+
+handle('ink:monitors', () => inkMonitors())
+handle('ink:start', (_event, connector: unknown) => inkStart(String(connector)))
+listen('ink:event', (_event, event: unknown) => {
+  if (event && typeof event === 'object') inkEvent(event)
+})
+listen('ink:stop', () => inkStop())
+onInkClosed(() => win?.webContents.send('ink:closed'))
 
 handle('screen-audio:apps', () => listPlayingApps())
 handle('screen-audio:start', (_event, options: ScreenAudioOptions) => startScreenAudio(options))
@@ -419,6 +430,7 @@ app.on('before-quit', () => {
 
 app.on('will-quit', () => {
   stopScreenAudio()
+  inkStop()
 })
 
 app.on('window-all-closed', () => {

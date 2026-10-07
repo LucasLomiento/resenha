@@ -4,7 +4,7 @@
 </script>
 
 <script lang="ts">
-  import { untrack } from 'svelte'
+  import { tick, untrack } from 'svelte'
   import { MAX_MESSAGE_LENGTH, MAX_UPLOAD_BYTES, type Attachment, type Message } from '../../../../../shared/protocol'
   import { client } from '../../lib/client.svelte'
   import { searchEmoji } from '../../lib/emoji'
@@ -108,7 +108,8 @@
     const start = input.selectionStart ?? text.length
     const end = input.selectionEnd ?? text.length
     text = text.slice(0, start) + value + text.slice(end)
-    requestAnimationFrame(() => {
+    // Logo que o texto novo chega na caixa (com rAF, quem digita rápido escrevia antes do cursor pular).
+    void tick().then(() => {
       input?.focus()
       input?.setSelectionRange(start + value.length, start + value.length)
       resize()
@@ -310,7 +311,7 @@
     if (s.raw) tokens.set(s.insert, s.raw)
     const position = t.start + value.length
     caret = position
-    requestAnimationFrame(() => {
+    void tick().then(() => {
       input?.focus()
       input?.setSelectionRange(position, position)
       resize()
