@@ -51,6 +51,7 @@ import {
 } from '../../shared/permissions'
 import { aggregate, samePresence } from './presence'
 import { directory } from './stubs'
+import { parseStyle, styleText } from './style'
 import { unfurlAll } from './unfurl'
 import { cleanLine, cleanText, color } from './validate'
 
@@ -137,6 +138,8 @@ interface ProfileRow {
   bio: string
   accent: number | null
   deleted: number
+  /** Personalização do perfil (JSON, ver style.ts). */
+  style: string | null
   [key: string]: SqlStorageValue
 }
 
@@ -273,6 +276,8 @@ export class Guild extends DurableObject<Env> {
       accent INTEGER,
       deleted INTEGER NOT NULL DEFAULT 0
     )`)
+    // 1.1: personalização do perfil (coluna nova; perfil antigo fica com NULL até o Directory mandar de novo).
+    if (!columns(this.sql, 'profiles').has('style')) this.sql.exec('ALTER TABLE profiles ADD COLUMN style TEXT')
     this.sql.exec(`CREATE TABLE IF NOT EXISTS members (
       user_id TEXT PRIMARY KEY,
       nick TEXT,
@@ -367,6 +372,7 @@ export class Guild extends DurableObject<Env> {
   }
 
   private toUser(row: ProfileRow): User {
+    const style = row.deleted ? undefined : parseStyle(row.style)
     return {
       id: row.user_id,
       username: row.username,
@@ -376,6 +382,7 @@ export class Guild extends DurableObject<Env> {
       accent: row.accent,
       admin: this.isAdmin(row.user_id),
       ...(row.deleted ? { deleted: true } : {}),
+      ...(style ? { style } : {}),
     }
   }
 
@@ -395,6 +402,7 @@ export class Guild extends DurableObject<Env> {
   private saveProfile(user: User): boolean {
     const old = this.profile(user.id)
     const deleted = user.deleted ? 1 : 0
+    const style = styleText(user.style)
     if (
       old &&
       old.username === user.username &&
@@ -402,14 +410,15 @@ export class Guild extends DurableObject<Env> {
       old.avatar === user.avatar &&
       old.bio === user.bio &&
       old.accent === user.accent &&
-      old.deleted === deleted
+      old.deleted === deleted &&
+      old.style === style
     ) {
       return false
     }
     this.sql.exec(
-      `INSERT INTO profiles (user_id, username, name, avatar, bio, accent, deleted) VALUES (?, ?, ?, ?, ?, ?, ?)
+      `INSERT INTO profiles (user_id, username, name, avatar, bio, accent, deleted, style) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT (user_id) DO UPDATE SET username = excluded.username, name = excluded.name, avatar = excluded.avatar,
-       bio = excluded.bio, accent = excluded.accent, deleted = excluded.deleted`,
+       bio = excluded.bio, accent = excluded.accent, deleted = excluded.deleted, style = excluded.style`,
       user.id,
       user.username,
       user.name,
@@ -417,6 +426,7 @@ export class Guild extends DurableObject<Env> {
       user.bio,
       user.accent,
       deleted,
+      style,
     )
     return true
   }

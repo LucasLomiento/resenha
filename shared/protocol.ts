@@ -83,7 +83,48 @@ export interface User {
   admin: boolean
   /** Conta excluída: aparece como "Usuário excluído". */
   deleted?: boolean
+  /** Personalização do perfil (só vem quando tem alguma coisa). */
+  style?: ProfileStyle
 }
+
+/**
+ * Personalização do perfil. Campo ausente = padrão. As molduras, efeitos e
+ * fontes são embutidos no app: aqui vai só o id de cada um.
+ */
+export interface ProfileStyle {
+  /** Imagem do topo do cartão (id em /media). Muda só por /api/me/banner. */
+  banner?: string
+  /** Quadro parado da foto animada (id em /media), pras listas. Muda junto com a foto. */
+  avatarStill?: string
+  /** Tema do cartão: [principal, destaque], 0xRRGGBB (sempre duas). */
+  theme?: number[]
+  pronouns?: string
+  decoration?: Decoration
+  effect?: ProfileEffect
+  nameFont?: NameFont
+  nameEffect?: NameEffect
+}
+
+export const DECORATIONS = ['neon', 'aurora', 'headset', 'stars', 'flames', 'flowers', 'crown', 'cat'] as const
+export type Decoration = (typeof DECORATIONS)[number]
+export const PROFILE_EFFECTS = ['confetti', 'snow', 'sparkles', 'hearts', 'bubbles', 'fireflies'] as const
+export type ProfileEffect = (typeof PROFILE_EFFECTS)[number]
+export const NAME_FONTS = ['serif', 'rounded', 'script', 'pixel'] as const
+export type NameFont = (typeof NAME_FONTS)[number]
+export const NAME_EFFECTS = ['gradient', 'neon'] as const
+export type NameEffect = (typeof NAME_EFFECTS)[number]
+
+/** O que o app manda no PATCH /api/me: null (ou texto vazio) volta pro padrão. */
+export type ProfileStylePatch = {
+  [K in 'theme' | 'pronouns' | 'decoration' | 'effect' | 'nameFont' | 'nameEffect']?: ProfileStyle[K] | null
+}
+
+export const MAX_PRONOUNS = 40
+/** Foto parada (WebP 256 px que o app gera). */
+export const MAX_AVATAR_BYTES = 512 * 1024
+/** Foto animada (GIF/WebP) e banner: uma linha do SQLite do DO aguenta até 2 MB. */
+export const MAX_ANIMATED_BYTES = 1536 * 1024
+export const MAX_BANNER_BYTES = 1536 * 1024
 
 /** O dono da conta vê mais coisas sobre si. */
 export interface Me extends User {

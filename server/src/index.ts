@@ -1,4 +1,12 @@
-import { dmMembers, type ApiError, type InvitePreview, type StatusResponse } from '../../shared/protocol'
+import {
+  MAX_ANIMATED_BYTES,
+  MAX_AVATAR_BYTES,
+  MAX_BANNER_BYTES,
+  dmMembers,
+  type ApiError,
+  type InvitePreview,
+  type StatusResponse,
+} from '../../shared/protocol'
 import { hashIp, verifyFileSignature, verifyLegacyFileSignature, verifyProxyUrl } from './auth'
 import type { AuthContext, ClientInfo, Result } from './directory'
 import { LEGACY_HEADER, USER_HEADER } from './guild'
@@ -22,7 +30,7 @@ const CORS = {
 /** Cabeçalhos que só o Worker põe: o que vier de fora com eles é descartado. */
 const INTERNAL_HEADERS = [USER_HEADER, LEGACY_HEADER, HOME_HEADER]
 const MAX_JSON = 64 * 1024
-const MAX_IMAGE = 512 * 1024
+const MAX_IMAGE = MAX_AVATAR_BYTES
 const MAX_PROXY = 8 * 1024 * 1024
 
 function json(data: unknown, status = 200): Response {
@@ -74,11 +82,34 @@ async function readJson(request: Request): Promise<Record<string, unknown>> {
   }
 }
 
-/** Corpo binário pequeno (foto, ícone), com teto. */
-async function readImage(request: Request): Promise<ArrayBuffer | null> {
-  if (Number(request.headers.get('Content-Length') ?? 0) > MAX_IMAGE) return null
-  const bytes = await readLimited(request.body, MAX_IMAGE)
+/** Corpo binário pequeno (foto, ícone, banner), com teto. */
+async function readImage(request: Request, max = MAX_IMAGE): Promise<ArrayBuffer | null> {
+  if (Number(request.headers.get('Content-Length') ?? 0) > max) return null
+  const bytes = await readLimited(request.body, max)
   return bytes && bytes.byteLength > 0 ? (bytes.buffer as ArrayBuffer) : null
+}
+
+/**
+ * Foto de perfil: o corpo é a imagem, ou (foto animada) um formulário com a
+ * imagem (`image`) e o quadro parado (`still`).
+ */
+async function readAvatar(request: Request): Promise<{ image: ArrayBuffer; still: ArrayBuffer | null } | null> {
+  const type = request.headers.get('Content-Type') ?? ''
+  if (!type.startsWith('multipart/form-data')) {
+    const image = await readImage(request, MAX_ANIMATED_BYTES)
+    return image ? { image, still: null } : null
+  }
+  const bytes = await readImage(request, MAX_ANIMATED_BYTES + MAX_AVATAR_BYTES + 4096)
+  if (!bytes) return null
+  try {
+    const form = await new Response(bytes, { headers: { 'Content-Type': type } }).formData()
+    const image = form.get('image')
+    const still = form.get('still')
+    if (!(image instanceof File) || image.size === 0) return null
+    return { image: await image.arrayBuffer(), still: still instanceof File && still.size > 0 ? await still.arrayBuffer() : null }
+  } catch {
+    return null
+  }
 }
 
 /**
@@ -343,13 +374,20 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
   if (pathname === '/api/me' && method === 'GET') return json(auth.me)
   if (pathname === '/api/me' && method === 'PATCH') {
     const body = await readJson(request)
-    return fromResult(await dir.updateProfile(me, { name: body.name, bio: body.bio, accent: body.accent, dmPolicy: body.dmPolicy }))
+    return fromResult(
+      await dir.updateProfile(me, { name: body.name, bio: body.bio, accent: body.accent, dmPolicy: body.dmPolicy, style: body.style }),
+    )
   }
   if (pathname === '/api/me/avatar' && method === 'PUT') {
-    const image = await readImage(request)
-    return image ? fromResult(await dir.setAvatar(me, image)) : error(413, 'A imagem pode ter até 512 KB.')
+    const avatar = await readAvatar(request)
+    return avatar ? fromResult(await dir.setAvatar(me, avatar.image, avatar.still)) : error(413, 'A foto pode ter até 512 KB (animada, até 1,5 MB).')
   }
   if (pathname === '/api/me/avatar' && method === 'DELETE') return fromResult(await dir.clearAvatar(me))
+  if (pathname === '/api/me/banner' && method === 'PUT') {
+    const image = await readImage(request, MAX_BANNER_BYTES)
+    return image ? fromResult(await dir.setBanner(me, image)) : error(413, 'O banner pode ter até 1,5 MB.')
+  }
+  if (pathname === '/api/me/banner' && method === 'DELETE') return fromResult(await dir.clearBanner(me))
   if (pathname === '/api/me/password' && method === 'POST') {
     const body = await readJson(request)
     return fromResult(await dir.changePassword(me, auth.sessionId, body.current, body.next))
