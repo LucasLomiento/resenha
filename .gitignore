@@ -8,3 +8,4 @@ out/
 # Notas locais do Claude e config de MCP (têm detalhes do ambiente do dono; repo é público)
 CLAUDE.md
 .mcp.json
+__pycache__/
