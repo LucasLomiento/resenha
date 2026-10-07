@@ -146,9 +146,11 @@ class Scene:
                 self.draw_pen(cr, s, width, height, now, unit)
         for p in self.pings:
             self.draw_ping(cr, p, width, height, now, unit)
+        # O nome fica parado no começo do traço: quem desenha cobre a cópia que volta pelo
+        # vídeo com o próprio eco (InkLayer.svelte), e uma etiqueta andando não dá pra cobrir.
         for s in self.strokes.values():
             if s['points'] and now - s['updated'] < NAME_LIFE and s['name']:
-                x, y, _ = s['points'][-1]
+                x, y, _ = s['points'][0]
                 alpha = 1.0 if s['tool'] == 'pen' or s['ended'] is None else max(0.0, 1 - (now - s['ended']) / LASER_TRAIL)
                 self.draw_name(cr, s['name'], s['color'], x * width, y * height, unit, alpha)
 
@@ -192,9 +194,10 @@ class Scene:
                 cr.move_to(x0 * width, y0 * height)
                 cr.line_to(x1 * width, y1 * height)
                 cr.stroke()
+        # Ponta branca mais fina que o traço (o eco de quem desenha cobre ela).
         x, y, _ = live[-1]
         cr.set_source_rgba(1, 1, 1, 0.95)
-        cr.arc(x * width, y * height, 3.4 * unit, 0, 2 * math.pi)
+        cr.arc(x * width, y * height, 2.4 * unit, 0, 2 * math.pi)
         cr.fill()
 
     def draw_ping(self, cr, p, width, height, now, unit):

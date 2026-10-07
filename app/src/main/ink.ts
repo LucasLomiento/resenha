@@ -261,7 +261,8 @@ function draw() {
       for (const [w, c, ca] of [[8, '#000', 0.45], [4.8, s.color, 1]]) { cr.globalAlpha = ca * a; cr.strokeStyle = c; cr.lineWidth = w * u; cr.beginPath(); s.points.forEach((p, i) => (i ? cr.lineTo(p[0] * W, p[1] * H) : cr.moveTo(p[0] * W, p[1] * H))); cr.stroke() }
     }
     cr.globalAlpha = 1
-    const p = s.points[s.points.length - 1]
+    // Nome parado no começo do traço (como no ink-overlay.py).
+    const p = s.points[0]
     if (p && t - s.updated < NAME) label(s.name, s.color, p[0] * W, p[1] * H, u, 1)
   }
   pings = pings.filter((p) => t - p.at < PING)

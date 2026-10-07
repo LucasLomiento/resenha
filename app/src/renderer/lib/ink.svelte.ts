@@ -12,13 +12,28 @@ import { settings } from './settings.svelte'
 
 export type InkTool = 'laser' | 'pen'
 
+/** Por que não dá pra rabiscar agora (vai pra quem assiste, pra explicar o lápis apagado). */
+export type InkBlocked = 'disabled' | 'window' | 'unsupported' | 'choose' | 'starting' | 'failed'
+
+/** Tamanho do monitor de quem compartilha (pra quem desenha imitar a grossura do traço de lá). */
+export interface InkScreen {
+  width: number
+  height: number
+}
+
 /** O que vai pelo canal de dados entre quem assiste e quem compartilha. */
 export type InkMessage =
   /** Quem compartilha avisa se dá pra rabiscar (monitor inteiro, camada aberta, permitido). */
-  | { t: 'ink.policy'; allowed: boolean }
+  | { t: 'ink.policy'; allowed: boolean; reason?: InkBlocked; screen?: InkScreen }
   /** Pedaço de um traço: pontos novos (x, y, x, y...) desde o último pedaço. */
   | { t: 'ink.stroke'; id: string; tool: InkTool; points: number[]; end?: boolean }
   | { t: 'ink.ping'; x: number; y: number }
+  /** Quem compartilha apagou tudo (quem desenha apaga o próprio eco também). */
+  | { t: 'ink.clear' }
+
+export type InkPolicy = Omit<Extract<InkMessage, { t: 'ink.policy' }>, 't'>
+
+const BLOCKED: InkBlocked[] = ['disabled', 'window', 'unsupported', 'choose', 'starting', 'failed']
 
 /** Situação dos rabiscos pra quem compartilha. */
 export type InkStatus =
@@ -53,7 +68,20 @@ const unit = (value: unknown): number | null =>
 export function cleanInk(raw: unknown): InkMessage | null {
   if (!raw || typeof raw !== 'object') return null
   const msg = raw as Record<string, unknown>
-  if (msg.t === 'ink.policy') return { t: 'ink.policy', allowed: msg.allowed === true }
+  if (msg.t === 'ink.policy') {
+    const reason = BLOCKED.find((r) => r === msg.reason)
+    const screen = msg.screen as Record<string, unknown> | undefined
+    const size = (v: unknown) => (typeof v === 'number' && v >= 100 && v <= 20_000 ? v : null)
+    const width = size(screen?.width)
+    const height = size(screen?.height)
+    return {
+      t: 'ink.policy',
+      allowed: msg.allowed === true,
+      ...(reason ? { reason } : {}),
+      ...(width && height ? { screen: { width, height } } : {}),
+    }
+  }
+  if (msg.t === 'ink.clear') return { t: 'ink.clear' }
   if (msg.t === 'ink.ping') {
     const x = unit(msg.x)
     const y = unit(msg.y)
@@ -83,8 +111,8 @@ export class InkShare {
   private track: MediaStreamTrack | null = null
   private rate = new Map<string, number[]>()
 
-  /** `changed`: a permissão mudou (avisa quem assiste). */
-  constructor(private changed: () => void) {
+  /** `emit`: manda pra todo mundo que assiste (permissão mudou, apagou tudo). */
+  constructor(private emit: (msg: InkMessage) => void) {
     window.resenha?.ink.onClosed(() => {
       if (this.status === 'on') this.set('failed')
     })
@@ -93,6 +121,16 @@ export class InkShare {
   /** Dá pra rabiscar agora (vai pra quem assiste no `ink.policy`). */
   get allowed(): boolean {
     return this.status === 'on'
+  }
+
+  /** O que quem assiste precisa saber: pode ou não (e por quê), e o tamanho do monitor. */
+  policy(): InkMessage {
+    const status = this.status
+    if (status === 'on') {
+      const m = this.monitor
+      return { t: 'ink.policy', allowed: true, ...(m ? { screen: { width: m.width, height: m.height } } : {}) }
+    }
+    return { t: 'ink.policy', allowed: false, ...(status !== 'off' ? { reason: status } : {}) }
   }
 
   /**
@@ -223,12 +261,14 @@ export class InkShare {
 
   /** Apaga tudo (botão de quem compartilha). */
   clear() {
-    if (this.status === 'on') window.resenha.ink.event({ t: 'clear' })
+    if (this.status !== 'on') return
+    window.resenha.ink.event({ t: 'clear' })
+    this.emit({ t: 'ink.clear' })
   }
 
   /** Traço ou ping de alguém que assiste (`connId`), já conferido. */
   receive(connId: string, name: string, color: string, msg: InkMessage) {
-    if (this.status !== 'on' || msg.t === 'ink.policy' || !this.within(connId)) return
+    if (this.status !== 'on' || msg.t === 'ink.policy' || msg.t === 'ink.clear' || !this.within(connId)) return
     if (msg.t === 'ink.ping') {
       window.resenha.ink.event({ t: 'ping', x: msg.x, y: msg.y, name, color })
       return
@@ -255,9 +295,9 @@ export class InkShare {
   }
 
   private set(status: InkStatus) {
-    const before = this.allowed
+    if (this.status === status) return
     this.status = status
-    if (this.allowed !== before) this.changed()
+    this.emit(this.policy())
   }
 }
 

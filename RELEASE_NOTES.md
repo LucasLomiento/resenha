@@ -1,12 +1,9 @@
-## 1.2.2: busca nas configurações e atualização que não falha
+## 1.2.3: rabisco sem ver dobrado e opção de permitir
 
-- **Busca nas configurações:** campo no topo da lista (ou Ctrl+F). Digite do seu jeito, sem acento, com erro ou com o nome que você conhece do Discord ("avatar", "webcam", "dm", "zoom", "ruido"…), e Enter leva direto pra opção, que pisca na tela.
-- **Configurações no Ctrl+K também:** "eco", "bandeja", "senha" e o app abre direto na opção.
-- **Aviso de versão nova:** o app procura atualização a cada 30 minutos, baixa sozinho (só fora de call, pra não engasgar a transmissão) e mostra um aviso no canto quando dá pra reiniciar e atualizar. "Novidades" abre o que mudou.
-- **Correção (Linux):** às vezes, ao clicar em "Reiniciar e atualizar", o app fechava sem instalar, e às vezes nem abria de novo. Era sempre quando ele tinha sido reaberto pela atualização anterior: o Linux deixava esse app sem permissão de pedir a senha de administrador. Agora a instalação e a reabertura passam pelo systemd, sem essa trava.
-
-**Atenção nesta atualização:** a correção vale a partir da próxima. Se o app fechar sem atualizar desta vez, abra de novo e clique em atualizar, que funciona.
+- **Sem rabisco dobrado:** quem rabisca não vê mais o próprio traço duas vezes (o seu, na hora, e o que voltava atrasado pela transmissão). O app desenha o seu traço exatamente por cima da cópia que chega pelo vídeo, então você só vê o seu, sem atraso. Quem assiste junto continua vendo os seus rabiscos pela transmissão.
+- **Quem compartilha decide se deixa rabiscar:** a opção "Deixar quem assiste rabiscar" agora aparece também na hora de compartilhar e em Configurações → Voz e vídeo (além do painel "Ao vivo"). Desligado, quem assiste vê o lápis apagado, dizendo que você não deixou.
+- **Detalhes:** o nome de quem desenha fica parado no começo do traço; "Limpar rabiscos" apaga também na tela de quem desenhou; o clique rápido (pra apontar) aparece só pela transmissão.
 
 ## Como atualizar
 
-Clique no botão de download no pé da coluna de servidores, à esquerda (ou Configurações → Aplicativo → Procurar atualização).
+Clique no botão de download no pé da coluna de servidores, à esquerda (ou Configurações → Aplicativo → Procurar atualização). Pro rabisco sem dobrar, quem rabisca e quem compartilha precisam estar na 1.2.3.

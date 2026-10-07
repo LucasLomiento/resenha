@@ -23,6 +23,8 @@ test('acha pelas palavras-chave (sinônimos, inglês, Discord)', () => {
   assert.equal(first('bandeja'), 'app.tray')
   assert.equal(first('h264'), 'voice.codec')
   assert.equal(first('fone'), 'voice.output')
+  assert.equal(first('rabisco'), 'voice.ink')
+  assert.equal(first('desenhar na tela'), 'voice.ink')
 })
 
 test('aguenta erro de digitação e palavra pela metade', () => {

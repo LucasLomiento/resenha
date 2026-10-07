@@ -131,11 +131,47 @@ async function fakeScreen(page, stereo = false) {
     let frame = 0
     setInterval(() => {
       frame++
-      g.fillStyle = `hsl(${frame % 360} 50% 35%)`
-      g.fillRect(0, 0, 2560, 1440)
-      for (let i = 0; i < 24; i++) {
-        g.fillStyle = `hsl(${(frame * 7 + i * 30) % 360} 80% 60%)`
-        g.fillRect((frame * 17 + i * 113) % 2400, 80 + ((i * 61) % 1300), 160, 100)
+      if (window.__staticScreen) {
+        // Fundo liso: o teste dos rabiscos compara pixel a pixel.
+        g.fillStyle = '#202028'
+        g.fillRect(0, 0, 2560, 1440)
+      } else {
+        g.fillStyle = `hsl(${frame % 360} 50% 35%)`
+        g.fillRect(0, 0, 2560, 1440)
+        for (let i = 0; i < 24; i++) {
+          g.fillStyle = `hsl(${(frame * 7 + i * 30) % 360} 80% 60%)`
+          g.fillRect((frame * 17 + i * 113) % 2400, 80 + ((i * 61) % 1300), 160, 100)
+        }
+      }
+      // Traços de caneta como a camada de lá desenha (ink-overlay.py), com o nome no começo.
+      const u = 1440 / 1080
+      for (const s of window.__inkStrokes?.values() ?? []) {
+        if (s.points.length < 2) continue
+        g.lineCap = 'round'
+        g.lineJoin = 'round'
+        for (const [width, style, alpha] of [[8 * u, '#000', 0.45], [4.8 * u, s.color, 1]]) {
+          g.globalAlpha = alpha
+          g.strokeStyle = style
+          g.lineWidth = width
+          g.beginPath()
+          s.points.forEach(([x, y], i) => (i ? g.lineTo(x * 2560, y * 1440) : g.moveTo(x * 2560, y * 1440)))
+          g.stroke()
+        }
+        if (performance.now() - s.updated < 1600) {
+          g.font = `bold ${13 * u}px sans-serif`
+          const [x, y] = [s.points[0][0] * 2560 + 12 * u, s.points[0][1] * 1440 + 12 * u]
+          const w = g.measureText(s.name).width + 14 * u
+          const h = 21 * u
+          g.globalAlpha = 0.95
+          g.fillStyle = s.color
+          g.beginPath()
+          g.roundRect(x, y, w, h, h / 2)
+          g.fill()
+          g.globalAlpha = 0.9
+          g.fillStyle = '#0d0b17'
+          g.fillText(s.name, x + 7 * u, y + 4 * u + 13 * u * 0.8)
+        }
+        g.globalAlpha = 1
       }
       const t = Date.now()
       for (let b = 0; b < 48; b++) {
@@ -782,7 +818,7 @@ try {
   await a.page.waitForTimeout(300)
   await shot(a, '3-compartilhar')
   await a.page.locator('.segmented button', { hasText: full ? '1440p' : '720p' }).click({ force: true })
-  const audioBox = a.page.locator('.modal input[type=checkbox]')
+  const audioBox = a.page.locator('.modal #share-audio')
   if ((await audioBox.isChecked()) !== withAudio) await audioBox.click({ force: true })
   // A "tela" é o monitor TESTE-2 (o da direita): o quadradinho só aparece na captura quando a camada está lá.
   let probing = true
@@ -943,8 +979,96 @@ try {
       `${strokes.length} pedaços, x ${Math.min(...xs).toFixed(3)}..${Math.max(...xs).toFixed(3)}`,
     )
     check(!!ping && near(ping.x, 0.5) && near(ping.y, 0.25), 'clique rápido vira um aviso ("ping") no lugar certo', ping ? `${ping.x.toFixed(3)}, ${ping.y.toFixed(3)}` : 'não chegou')
+
+    // Sem rabisco dobrado: o traço de B volta pelo vídeo (a "tela" de A desenha o que chega,
+    // como a camada de verdade), e o eco de B tem que cobrir essa cópia inteira.
+    await a.page.evaluate(() => {
+      window.__staticScreen = true
+      window.__inkStrokes = new Map()
+    })
+    let bridging = true
+    let seen = (await inkLog()).events.length
+    const bridge = (async () => {
+      while (bridging) {
+        const events = (await inkLog()).events
+        const fresh = events.slice(seen)
+        seen = events.length
+        if (fresh.length)
+          await a.page.evaluate((list) => {
+            for (const e of list) {
+              if (e.t !== 'stroke') continue
+              const s = window.__inkStrokes.get(e.id) ?? { color: e.color, name: e.name, points: [], updated: 0 }
+              for (let i = 0; i + 1 < e.points.length; i += 2) s.points.push([e.points[i], e.points[i + 1]])
+              s.updated = performance.now()
+              window.__inkStrokes.set(e.id, s)
+            }
+          }, fresh)
+        await a.page.waitForTimeout(16)
+      }
+    })()
+    await b.page.getByRole('radio', { name: 'Caneta' }).click({ force: true })
+    await b.page.waitForTimeout(400)
+    const wave = (k) => at(0.3 + 0.4 * k, 0.62 + 0.12 * Math.sin(k * Math.PI * 2))
+    await b.page.mouse.move(...wave(0))
+    await b.page.mouse.down()
+    for (let k = 1; k <= 20; k++) await b.page.mouse.move(...wave(k / 40))
+    await shot(b, '4d-rabiscando-no-meio')
+    for (let k = 21; k <= 40; k++) await b.page.mouse.move(...wave(k / 40))
+    await b.page.mouse.up()
+    const coverage = () =>
+      b.page.evaluate(() => {
+        const video = document.querySelector('.stream video')
+        const echo = document.querySelector('.ink-layer')
+        const er = echo.getBoundingClientRect()
+        const vr = video.getBoundingClientRect()
+        const scale = Math.min(vr.width / video.videoWidth, vr.height / video.videoHeight)
+        const [bw, bh] = [video.videoWidth * scale, video.videoHeight * scale]
+        const [bl, bt] = [vr.left + (vr.width - bw) / 2 - er.left, vr.top + (vr.height - bh) / 2 - er.top]
+        const [W, H] = [Math.round(er.width), Math.round(er.height)]
+        const frame = Object.assign(document.createElement('canvas'), { width: W, height: H })
+        const fg = frame.getContext('2d')
+        fg.drawImage(video, bl, bt, bw, bh)
+        const vid = fg.getImageData(0, 0, W, H).data
+        const ratio = echo.width / er.width
+        const ech = echo.getContext('2d').getImageData(0, 0, echo.width, echo.height).data
+        let copy = 0
+        let uncovered = 0
+        // Pula a faixa de cima (os blocos do relógio) e a borda.
+        for (let y = Math.ceil(bt + bh * 0.1); y < bt + bh - 2; y++)
+          for (let x = Math.ceil(bl + 2); x < bl + bw - 2; x++) {
+            const i = (y * W + x) * 4
+            if (Math.abs(vid[i] - 0x20) + Math.abs(vid[i + 1] - 0x20) + Math.abs(vid[i + 2] - 0x28) < 40) continue
+            copy++
+            if (ech[(Math.floor(y * ratio) * echo.width + Math.floor(x * ratio)) * 4 + 3] === 0) uncovered++
+          }
+        return { copy, uncovered }
+      })
+    let cover = { copy: 0, uncovered: 0 }
+    for (let i = 0; i < 30 && cover.copy < 400; i++) {
+      await b.page.waitForTimeout(100)
+      cover = await coverage()
+    }
+    await b.page.waitForTimeout(300)
+    cover = await coverage()
+    await shot(b, '4e-rabisco-sem-dobro')
+    await b.page.evaluate(() => (document.querySelector('.ink-layer').style.visibility = 'hidden'))
+    await shot(b, '4f-so-a-copia-do-video')
+    await b.page.evaluate(() => (document.querySelector('.ink-layer').style.visibility = ''))
+    check(
+      cover.copy > 400 && cover.uncovered / cover.copy < 0.04,
+      'quem rabisca não vê o próprio traço dobrado: o eco cobre a cópia que volta pelo vídeo',
+      `${cover.copy} px da cópia no vídeo, ${cover.uncovered} de fora do eco (${((100 * cover.uncovered) / Math.max(1, cover.copy)).toFixed(1)}%)`,
+    )
+    bridging = false
+    await bridge
+    await a.page.evaluate(() => {
+      window.__staticScreen = false
+      window.__inkStrokes = new Map()
+    })
+    await b.page.getByRole('radio', { name: 'Laser' }).click({ force: true })
+
     await b.page.keyboard.press('Escape')
-    check((await b.page.locator('.ink-layer').count()) === 0, 'Esc sai do modo de rabiscar')
+    check((await b.page.locator('.ink-layer.active').count()) === 0, 'Esc sai do modo de rabiscar')
     // Quem compartilha apaga tudo e desliga: quem assiste perde o botão na hora.
     await livePanel()
     await a.page.getByRole('button', { name: 'Limpar rabiscos', exact: true }).click({ force: true })
@@ -953,7 +1077,8 @@ try {
     await a.page.keyboard.press('Escape')
     await b.page.locator('.stream').hover({ force: true })
     const gone = await scribble.waitFor({ state: 'detached', timeout: 5000 }).then(() => true, () => false)
-    check(gone, 'desligar os rabiscos tira o botão de quem assiste')
+    const blocked = await b.page.getByRole('button', { name: 'Lucas não deixou rabiscar', exact: true }).waitFor({ timeout: 3000 }).then(() => true, () => false)
+    check(gone && blocked, 'desligar os rabiscos tira o lápis de quem assiste (fica apagado, dizendo por quê)')
   }
 
   await b.page.locator('.stream').hover({ force: true })

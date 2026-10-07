@@ -69,6 +69,7 @@ export const SETTINGS: SettingEntry[] = [
   { id: 'voice.gate', page: 'voice', section: 'Áudio', label: 'Só transmitir quando eu falar', keywords: ['detecção de voz', 'ativação por voz', 'sensibilidade', 'limiar', 'gate', 'voice activity', 'silêncio'] },
   { id: 'voice.camera', page: 'voice', section: 'Câmera', label: 'Câmera', keywords: ['webcam', 'vídeo', 'dispositivo de vídeo', 'camera'] },
   { id: 'voice.preview', page: 'voice', section: 'Câmera', label: 'Prévia da câmera', keywords: ['testar câmera', 'ver câmera', 'espelho', 'preview'] },
+  { id: 'voice.ink', page: 'voice', section: 'Transmissão', label: 'Quem assiste pode rabiscar na minha tela', keywords: ['rabisco', 'rabiscar', 'desenhar', 'anotar', 'caneta', 'laser', 'slack', 'permitir', 'bloquear rabisco', 'tela'] },
   { id: 'voice.echo', page: 'voice', section: 'Avançado', label: 'Cancelamento de eco', keywords: ['eco', 'echo', 'caixa de som', 'microfonia'] },
   { id: 'voice.agc', page: 'voice', section: 'Avançado', label: 'Ganho automático', keywords: ['agc', 'volume automático', 'ganho', 'gain'] },
   { id: 'voice.codec', page: 'voice', section: 'Avançado', label: 'Codec da transmissão', keywords: ['vp9', 'vp8', 'h264', 'av1', 'qualidade', 'tela', 'stream', 'cpu', 'compartilhar tela'] },

@@ -224,6 +224,17 @@
   {/if}
 </Section>
 
+<Section title="Transmissão">
+  <Row
+    label="Quem assiste pode rabiscar na minha tela"
+    for="voice-ink"
+    setting="voice.ink"
+    description="Desenham por cima da transmissão e você vê no seu monitor. Só com a tela inteira."
+  >
+    <Switch id="voice-ink" checked={settings.inkAllowed} onchange={(e) => call.ink.setEnabled(e.currentTarget.checked)} />
+  </Row>
+</Section>
+
 <section class="advanced">
   <button class="advanced-toggle" aria-expanded={advanced} onclick={() => (advanced = !advanced)}>
     <Icon name="chevron-right" size={16} />

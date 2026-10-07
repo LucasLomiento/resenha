@@ -22,7 +22,17 @@
   let stats = $state<{ inbound: VideoStats | null; outbound: { userId: string; stats: VideoStats }[] } | null>(null)
 
   /** Quem compartilha deixa rabiscar (monitor inteiro e camada aberta lá do outro lado). */
-  const canInk = $derived(!self && !!call.watching && !!call.inkAllowed[call.watching] && !!stream)
+  const inkPolicy = $derived(call.watching ? call.inkPolicy[call.watching] : undefined)
+  const canInk = $derived(!self && !!inkPolicy?.allowed && !!stream)
+  /** Lápis apagado, com o motivo: quem compartilha desligou, ou é janela em vez de monitor. */
+  const inkBlocked = $derived.by(() => {
+    if (self || !stream || !inkPolicy || inkPolicy.allowed) return null
+    const who = user?.name ?? 'Quem compartilha'
+    if (inkPolicy.reason === 'disabled') return `${who} não deixou rabiscar`
+    if (inkPolicy.reason === 'window') return `Só dá pra rabiscar quando ${who} compartilha a tela inteira`
+    return null
+  })
+  const myName = $derived(client.me ? (client.user(client.me.id, call.guildId)?.name ?? client.me.name) : '')
   let inking = $state(false)
   $effect(() => {
     if (!canInk) inking = false
@@ -176,9 +186,22 @@
     <div class="waiting"><Icon name="pip" size={18} /> Na janela flutuante</div>
   {/if}
 
-  {#if inking && video && call.watching}
+  {#if !self && video && call.watching}
     {@const target = call.watching}
-    <InkLayer {video} tool={settings.inkTool} color={userColor(client.me?.id ?? '')} onsend={(msg) => call.sendInk(target, msg)} />
+    {#key target}
+      <InkLayer
+        {video}
+        active={inking}
+        tool={settings.inkTool}
+        color={userColor(client.me?.id ?? '')}
+        name={myName}
+        screen={inkPolicy?.screen}
+        cleared={call.inkCleared[target] ?? 0}
+        onsend={(msg) => call.sendInk(target, msg)}
+      />
+    {/key}
+  {/if}
+  {#if inking}
     <div class="ink-bar">
       <span class="ink-title">Rabiscando na tela de {user?.name ?? 'alguém'}</span>
       <div class="ink-tools" role="radiogroup" aria-label="Ferramenta">
@@ -234,6 +257,8 @@
     {/if}
     {#if canInk}
       <IconButton variant="glass" icon="pen" label={inking ? 'Parar de rabiscar' : 'Rabiscar na tela'} active={inking} onclick={() => (inking = !inking)} />
+    {:else if inkBlocked}
+      <IconButton variant="glass" icon="pen" label={inkBlocked} class="ink-blocked" onclick={() => client.toast(inkBlocked, 'info')} />
     {/if}
     <IconButton variant="glass" icon="pip" label="Janela flutuante" active={nativePip} onclick={togglePip} />
     {#if full}
@@ -417,6 +442,10 @@
 
   .mini:hover .resize {
     opacity: 1;
+  }
+
+  .controls :global(.ink-blocked) {
+    opacity: 0.4;
   }
 
   .ink-bar {

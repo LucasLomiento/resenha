@@ -180,6 +180,17 @@
     {/if}
   </div>
 
+  <div class="audio ink">
+    <div class="audio-row">
+      <span class="audio-icon"><Icon name="pen" size={18} /></span>
+      <label for="share-ink" class="audio-text">
+        <span class="audio-title">Deixar quem assiste rabiscar</span>
+        <span class="audio-note">Os rabiscos aparecem no seu monitor. Só com a tela inteira.</span>
+      </label>
+      <Switch id="share-ink" bind:checked={settings.inkAllowed} />
+    </div>
+  </div>
+
   {#snippet footer()}
     <Button variant="ghost" onclick={() => (ui.share = false)}>Cancelar</Button>
     <Button
@@ -314,6 +325,10 @@
     border-radius: var(--r-lg);
     background: rgb(255 255 255 / 0.035);
     box-shadow: inset 0 0 0 1px var(--line);
+  }
+
+  .audio.ink {
+    margin-top: 10px;
   }
 
   .audio.off {

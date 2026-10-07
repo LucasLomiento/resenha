@@ -2,7 +2,7 @@ import type { SignalData, VoiceMember } from '../../../../shared/protocol'
 import type { PlatformInfo } from '../../preload/api'
 import type { Api } from './api'
 import { userColor } from './format'
-import { InkShare, cleanInk, type InkMessage } from './ink.svelte'
+import { InkShare, cleanInk, type InkMessage, type InkPolicy } from './ink.svelte'
 import { captureScreen, getCameraStream, getMicTrack, stopCapture } from './media'
 import { MicPipeline } from './mic'
 import { Peer, type LinkStats, type VideoStats } from './peer'
@@ -95,9 +95,11 @@ export class Call {
   /** Quem estava na call no último voice.state (connId -> transmitindo), pros sons. */
   private known: Map<string, boolean> | null = null
   /** Rabiscos de quem assiste na minha tela (só compartilhando o monitor inteiro). */
-  readonly ink = new InkShare(() => this.broadcastInkPolicy())
-  /** connId de quem compartilha -> deixa rabiscar na tela dele agora. */
-  inkAllowed = $state<Record<string, boolean>>({})
+  readonly ink = new InkShare((msg) => this.broadcastInk(msg))
+  /** connId de quem compartilha -> se deixa rabiscar na tela dele agora (e o tamanho do monitor). */
+  inkPolicy = $state<Record<string, InkPolicy>>({})
+  /** connId de quem compartilha -> quantas vezes os rabiscos de lá foram apagados (quem desenha apaga o eco junto). */
+  inkCleared = $state<Record<string, number>>({})
 
   constructor(private deps: CallDeps) {}
 
@@ -405,11 +407,11 @@ export class Call {
       },
       ink: (data) => this.onInk(member.connId, member.userId, data),
       inkOpen: () => {
-        if (this.localScreen) peer.sendInk({ t: 'ink.policy', allowed: this.ink.allowed } satisfies InkMessage)
+        if (this.localScreen) peer.sendInk(this.ink.policy())
       },
       watchRequest: (watching) => {
         if (peer.closed) return
-        if (watching && this.localScreen) peer.sendInk({ t: 'ink.policy', allowed: this.ink.allowed } satisfies InkMessage)
+        if (watching && this.localScreen) peer.sendInk(this.ink.policy())
         const before = !!this.watchers[member.connId]
         this.watchers[member.connId] = watching
         // Alguém começou ou parou de assistir a minha tela (pedido repetido depois de reconectar não toca).
@@ -428,7 +430,8 @@ export class Call {
   }
 
   private removePeer(connId: string) {
-    delete this.inkAllowed[connId]
+    delete this.inkPolicy[connId]
+    delete this.inkCleared[connId]
     clearTimeout(this.leaving.get(connId))
     this.leaving.delete(connId)
     delete this.away[connId]
@@ -534,9 +537,8 @@ export class Call {
 
   // ---------- Rabiscos na tela ----------
 
-  /** Avisa quem assiste se dá pra rabiscar na minha tela agora. */
-  private broadcastInkPolicy() {
-    const msg: InkMessage = { t: 'ink.policy', allowed: this.ink.allowed }
+  /** Avisa quem assiste (se dá pra rabiscar na minha tela agora, que apaguei tudo). */
+  private broadcastInk(msg: InkMessage) {
     for (const peer of this.peers.values()) peer.sendInk(msg)
   }
 
@@ -544,7 +546,14 @@ export class Call {
     const msg = cleanInk(raw)
     if (!msg) return
     if (msg.t === 'ink.policy') {
-      this.inkAllowed[connId] = msg.allowed
+      const { t: _, ...policy } = msg
+      this.inkPolicy[connId] = policy
+      // Desligou ou parou: a camada de lá fechou, então o meu eco some também.
+      if (!msg.allowed) this.inkCleared[connId] = (this.inkCleared[connId] ?? 0) + 1
+      return
+    }
+    if (msg.t === 'ink.clear') {
+      this.inkCleared[connId] = (this.inkCleared[connId] ?? 0) + 1
       return
     }
     // Rabisco pra mim: só vale se eu estiver compartilhando e deixando (o InkShare confere).
