@@ -50,7 +50,7 @@
   }
 </script>
 
-<Modal title="Atalhos" size="lg" onclose={() => (ui.shortcutsHelp = false)}>
+<Modal title="Atalhos" size="xl" onclose={() => (ui.shortcutsHelp = false)}>
   <div class="groups">
     {#each GROUPS as group (group.title)}
       <section>
