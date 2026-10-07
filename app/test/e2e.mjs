@@ -794,6 +794,11 @@ try {
     await a.page.waitForTimeout(300)
     await shot(a, '9b-janela-minima-configuracoes')
     await a.page.keyboard.press('Escape')
+    await a.app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1280, 820))
+    await a.page.keyboard.press('Control+/')
+    await a.page.locator('.modal').waitFor({ timeout: 5000 })
+    await shot(a, '9c-atalhos')
+    await a.page.keyboard.press('Escape')
   }
 
   // Fechar o app sai da call na hora (não fica "esperando voltar" como numa queda de rede).

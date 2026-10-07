@@ -4,7 +4,7 @@
   import { ACTIONS, acceleratorFrom, describeAccelerator } from '../../lib/shortcuts'
   import { client } from '../../lib/client.svelte'
   import { ui } from '../../lib/ui.svelte'
-  import { Icon, IconButton, Kbd, PageHeader, Row, Section } from '../kit'
+  import { Button, Icon, IconButton, Kbd, PageHeader, Row, Section } from '../kit'
 
   /** Nomes curtos: o atalho alterna (aperta de novo, desfaz). */
   const LABELS: Record<ShortcutAction, string> = {
@@ -60,7 +60,11 @@
 
 <svelte:window onkeydowncapture={onRecordKey} />
 
-<PageHeader title="Atalhos" description="Funcionam mesmo com o Resenha minimizado." />
+<PageHeader title="Atalhos" description="Funcionam mesmo com o Resenha minimizado.">
+  {#snippet actions()}
+    <Button size="sm" variant="secondary" icon="keyboard" onclick={() => (ui.shortcutsHelp = true)}>Todos os atalhos</Button>
+  {/snippet}
+</PageHeader>
 
 {#if client.desktop}
   <Section>

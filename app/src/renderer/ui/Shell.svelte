@@ -23,6 +23,7 @@
   import ServerSettings from './server/ServerSettings.svelte'
   import Settings from './settings/Settings.svelte'
   import ShareDialog from './ShareDialog.svelte'
+  import ShortcutsHelp from './ShortcutsHelp.svelte'
   import StreamView from './StreamView.svelte'
 
   const guild = $derived(client.guild)
@@ -63,6 +64,12 @@
     if ((event.ctrlKey || event.metaKey) && !event.altKey && event.key.toLowerCase() === 'k') {
       event.preventDefault()
       ui.switcher = !ui.switcher
+      return
+    }
+    // Ctrl+/: lista de atalhos.
+    if ((event.ctrlKey || event.metaKey) && !event.altKey && event.key === '/') {
+      event.preventDefault()
+      ui.shortcutsHelp = !ui.shortcutsHelp
       return
     }
     // Alt + ↑/↓: canal anterior/seguinte no servidor aberto.
@@ -140,6 +147,7 @@
 {#if client.incomingCall}<IncomingCall />{/if}
 {#if ui.profile}<ProfileCard />{/if}
 {#if ui.switcher}<QuickSwitcher />{/if}
+{#if ui.shortcutsHelp}<ShortcutsHelp />{/if}
 {#if ui.addServer}<AddServer />{/if}
 {#if ui.invite}<InviteModal />{/if}
 {#if ui.createChannel}<CreateChannel />{/if}

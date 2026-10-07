@@ -34,6 +34,8 @@ export const ui = $state<{
   profile: { userId: string; guildId: string | null; anchor: Anchor } | null
   /** Ctrl+K: pular pra canal, conversa ou servidor. */
   switcher: boolean
+  /** Ctrl+/: lista de atalhos. */
+  shortcutsHelp: boolean
   /** Lista de membros à direita (nos servidores). */
   members: boolean
   share: boolean
@@ -53,6 +55,7 @@ export const ui = $state<{
   addServer: null,
   profile: null,
   switcher: false,
+  shortcutsHelp: false,
   members: loadMembersPref(),
   share: false,
   sharePanel: false,
