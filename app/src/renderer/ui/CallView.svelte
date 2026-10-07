@@ -41,6 +41,9 @@
                 name={user?.name ?? '?'}
                 size={cols === 1 ? 112 : 88}
                 src={client.avatarOf(member.userId, call.guildId)}
+                animated={client.animatedAvatarOf(member.userId, call.guildId)}
+                decoration={user?.style?.decoration ?? null}
+                play
               />
             </div>
           {/if}

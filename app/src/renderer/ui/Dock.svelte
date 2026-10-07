@@ -19,6 +19,8 @@
   let dock = $state<HTMLDivElement>()
   let meButton = $state<HTMLButtonElement>()
   let statusOpen = $state(false)
+  /** Mouse em cima de você: a foto animada e a moldura se mexem. */
+  let meHover = $state(false)
 
   async function toggleCamera() {
     const turningOn = !call.camera
@@ -126,12 +128,17 @@
         aria-label="Status: {STATUS_LABEL[client.presenceOf(client.me.id).status]}"
         aria-expanded={statusOpen}
         onclick={() => (statusOpen = !statusOpen)}
+        onmouseenter={() => (meHover = true)}
+        onmouseleave={() => (meHover = false)}
       >
         <Avatar
           id={client.me.id}
           name={client.me.name}
           size={32}
           src={client.avatarOf(client.me.id)}
+          animated={client.animatedAvatarOf(client.me.id)}
+          decoration={client.me.style?.decoration ?? null}
+          play={meHover}
           cutout="var(--bg-raised)"
           status={client.presenceOf(client.me.id).status}
           speaking={!!client.callConnId && call.speaking[client.callConnId]}

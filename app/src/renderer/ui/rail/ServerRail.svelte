@@ -83,7 +83,7 @@
         use:tooltip={{ text: dm.user.name, placement: 'right' }}
         onclick={() => client.navigate({ kind: 'dm', channelId: dm.id })}
       >
-        <Avatar id={dm.user.id} name={dm.user.name} size={44} src={client.api?.media(dm.user.avatar) ?? null} />
+        <Avatar id={dm.user.id} name={dm.user.name} size={44} src={client.api?.avatar(dm.user) ?? null} />
       </button>
       <span class="mentions">{dm.unread > 99 ? '99+' : dm.unread}</span>
     </div>
