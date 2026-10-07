@@ -24,7 +24,7 @@
     notified = update.version
     if (document.hasFocus()) return
     new Notification('Atualização do Resenha', { body: `A versão ${update.version} está pronta pra instalar.`, silent: true }).onclick = () =>
-      window.resenha.attention()
+      window.resenha.showWindow()
   })
 </script>
 

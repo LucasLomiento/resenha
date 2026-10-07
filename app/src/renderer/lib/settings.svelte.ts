@@ -31,7 +31,7 @@ export interface Settings {
   streamMuted: boolean
   /** Quem assiste a minha tela pode rabiscar nela. */
   inkAllowed: boolean
-  /** Monitor dos rabiscos da última vez (conector, ex.: DP-1), quando tem mais de um igual. */
+  /** Último monitor achado pros rabiscos (conector, ex.: DP-1): é o primeiro a ser testado. */
   inkMonitor: string | null
   /** Ferramenta pra rabiscar na tela dos outros. */
   inkTool: 'laser' | 'pen'

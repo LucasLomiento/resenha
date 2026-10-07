@@ -495,10 +495,7 @@ export class Call {
     this.localScreen = stream
     this.sharing = true
     this.sendState()
-    void this.ink.begin(stream.getVideoTracks()[0]).then(() => {
-      if (this.ink.status === 'choose')
-        this.deps.toast('Pra deixar rabiscarem na sua tela, escolha qual monitor você está compartilhando no botão "Ao vivo".', 'info')
-    })
+    void this.ink.begin(stream.getVideoTracks()[0])
     const options = this.videoOptions()
     await Promise.all(
       this.peerList.filter((p) => this.watchers[p.connId]).map((p) => p.sendScreen(stream, options)),

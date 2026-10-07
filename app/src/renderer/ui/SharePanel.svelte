@@ -24,18 +24,10 @@
   ]
 
   const ink = call.ink
-  /** Os monitores pela posição (esquerda pra direita), que o nome do modelo às vezes repete. */
-  const monitorOptions = $derived(
-    ink.monitors.map((m, i, all) => ({
-      value: m.connector,
-      label: all.length === 2 ? (i === 0 ? 'Esquerda' : 'Direita') : `Monitor ${i + 1}`,
-    })),
-  )
   const inkNote: Partial<Record<typeof ink.status, string>> = {
     window: 'Só funciona compartilhando a tela inteira.',
     unsupported: 'Seu sistema não deixa desenhar por cima da tela (falta o gtk4-layer-shell, ou é GNOME).',
-    failed: 'Não deu pra abrir a camada dos rabiscos.',
-    choose: 'Qual monitor você está compartilhando?',
+    failed: 'Não deu pra achar o monitor transmitido: os rabiscos ficam desligados nesta transmissão.',
   }
 
   function close() {
@@ -79,9 +71,6 @@
       {#if settings.inkAllowed && ink.status !== 'off'}
         {#if inkNote[ink.status]}<span class="note">{inkNote[ink.status]}</span>{/if}
         {#if ink.status === 'starting'}<span class="note"><Spinner size={12} /> Abrindo…</span>{/if}
-        {#if monitorOptions.length > 1 && (ink.status === 'on' || ink.status === 'choose' || ink.status === 'starting')}
-          <Segmented size="sm" label="Monitor" options={monitorOptions} value={ink.monitor?.connector ?? ''} onchange={(c) => ink.choose(c)} />
-        {/if}
         {#if ink.status === 'on'}
           <Button size="sm" variant="secondary" icon="eraser" full onclick={() => ink.clear()}>Limpar rabiscos</Button>
         {/if}

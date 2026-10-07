@@ -13,7 +13,7 @@ import { settings } from './settings.svelte'
 export type InkTool = 'laser' | 'pen'
 
 /** Por que não dá pra rabiscar agora (vai pra quem assiste, pra explicar o lápis apagado). */
-export type InkBlocked = 'disabled' | 'window' | 'unsupported' | 'choose' | 'starting' | 'failed'
+export type InkBlocked = 'disabled' | 'window' | 'unsupported' | 'starting' | 'failed'
 
 /** Tamanho do monitor de quem compartilha (pra quem desenha imitar a grossura do traço de lá). */
 export interface InkScreen {
@@ -33,7 +33,7 @@ export type InkMessage =
 
 export type InkPolicy = Omit<Extract<InkMessage, { t: 'ink.policy' }>, 't'>
 
-const BLOCKED: InkBlocked[] = ['disabled', 'window', 'unsupported', 'choose', 'starting', 'failed']
+const BLOCKED: InkBlocked[] = ['disabled', 'window', 'unsupported', 'starting', 'failed']
 
 /** Situação dos rabiscos pra quem compartilha. */
 export type InkStatus =
@@ -45,8 +45,6 @@ export type InkStatus =
   | 'window'
   /** O sistema não tem como desenhar por cima da tela (GNOME, falta o gtk4-layer-shell). */
   | 'unsupported'
-  /** Mais de um monitor possível: pergunta em qual. */
-  | 'choose'
   | 'starting'
   | 'on'
   | 'failed'
@@ -140,7 +138,8 @@ export class InkShare {
    * inteiro (o portal não conta o que foi escolhido). Então vale o formato da imagem:
    * igual ao de um monitor, é esse monitor (ou uma janela em tela cheia nele, que dá no
    * mesmo). Com mais de um monitor desse formato, a camada pisca um quadradinho no canto
-   * de cada um até ele aparecer na captura.
+   * de cada um até ele aparecer na captura. Os rabiscos só aparecem no monitor que está
+   * sendo transmitido: sem achar ele, ficam desligados (nada de chutar ou perguntar).
    */
   async begin(track: MediaStreamTrack) {
     this.track = track
@@ -159,21 +158,23 @@ export class InkShare {
       const candidates = this.candidates(surface, size)
       if (candidates.length === 0) return this.set('window')
       if (candidates.length === 1) return await this.open(candidates[0])
-      const remembered = candidates.find((m) => m.connector === settings.inkMonitor)
       if (size) {
-        const ordered = remembered ? [remembered, ...candidates.filter((m) => m !== remembered)] : candidates
-        for (const monitor of ordered) {
-          const result = await this.probe(reader, monitor, track)
-          if (this.track !== track || result === 'found' || result === 'stop') return
+        // O último monitor achado primeiro: quase sempre é ele, e o quadradinho não pisca nos outros.
+        const last = candidates.find((m) => m.connector === settings.inkMonitor)
+        const ordered = last ? [last, ...candidates.filter((m) => m !== last)] : candidates
+        // Duas voltas: no começo da transmissão a captura às vezes ainda não manda quadro novo.
+        for (let round = 0; round < 2; round++) {
+          if (round) await new Promise((r) => setTimeout(r, 1000))
+          for (const monitor of ordered) {
+            const result = await this.probe(reader, monitor, track)
+            if (this.track !== track || result === 'found' || result === 'stop') return
+          }
         }
         window.resenha.ink.stop()
       }
-      // Não deu pra descobrir (a captura não mostra a camada?): o último escolhido, ou pergunta.
-      if (remembered) await this.open(remembered)
-      else {
-        this.monitor = null
-        this.set('choose')
-      }
+      console.warn('rabiscos: não achei o monitor transmitido; ficam desligados nesta transmissão')
+      this.monitor = null
+      this.set('failed')
     } finally {
       reader.close()
     }
@@ -217,14 +218,6 @@ export class InkShare {
     settings.inkMonitor = monitor.connector
     this.set('on')
     return 'found'
-  }
-
-  /** Escolheu (ou trocou) o monitor no painel da transmissão. */
-  async choose(connector: string) {
-    const monitor = this.monitors.find((m) => m.connector === connector)
-    if (!monitor || !this.track) return
-    settings.inkMonitor = connector
-    await this.open(monitor)
   }
 
   private async open(monitor: InkMonitor) {

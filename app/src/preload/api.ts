@@ -101,6 +101,8 @@ export interface ResenhaApi {
     stop(): Promise<void>
   }
   attention(): void
+  /** Traz a janela pra frente (clique num aviso do sistema). */
+  showWindow(): void
   /** Convite aberto por um link resenha:// antes de o app terminar de abrir. */
   pendingInvite(): Promise<string | null>
   /** Convite aberto por um link resenha:// com o app já aberto. */

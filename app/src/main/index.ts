@@ -273,6 +273,7 @@ handle('platform:info', (): PlatformInfo => {
 listen('attention', () => {
   if (win && !win.isFocused()) win.flashFrame(true)
 })
+listen('show-window', () => showWindow())
 
 listen('download', (_event, url: string) => {
   if (/^https?:\/\//.test(url)) win?.webContents.downloadURL(url)

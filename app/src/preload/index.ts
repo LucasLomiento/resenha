@@ -27,6 +27,7 @@ const api: ResenhaApi = {
     stop: () => ipcRenderer.invoke('screen-audio:stop'),
   },
   attention: () => ipcRenderer.send('attention'),
+  showWindow: () => ipcRenderer.send('show-window'),
   pendingInvite: () => ipcRenderer.invoke('invite:pending'),
   onInvite: (callback) => {
     ipcRenderer.on('invite', (_event, code: string) => callback(code))

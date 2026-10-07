@@ -231,7 +231,7 @@ Tudo passa por um reverb curto e um compressor. O volume de cada som foi medido 
 - **No monitor de quem compartilha:** traço na cor da pessoa com contorno escuro fino (aparece em fundo claro e escuro), etiqueta com o nome parada no começo do traço enquanto desenha (parada pra quem desenha conseguir cobrir a cópia). Laser some em 0,7 s; caneta fica 6 s e esmaece. Clique rápido vira um anel que abre, com o nome. Tudo escala com a altura do monitor (base 1080p).
 - **Achar o monitor:** com dois monitores do mesmo formato, um quadradinho rosa (48 px) pisca no canto de cima à esquerda por um instante ao começar a transmitir. É o jeito de saber qual monitor está na captura.
 - **Permitir:** interruptor "Deixar quem assiste rabiscar" no diálogo de compartilhar (antes de começar), "Rabiscos de quem assiste" no painel "Ao vivo" (durante) e "Quem assiste pode rabiscar na minha tela" em Voz e vídeo → Transmissão. É a mesma opção nos três.
-- **Painel da transmissão:** "Rabiscos de quem assiste" com interruptor; com mais de um monitor, Esquerda | Direita (pela posição, porque o nome do modelo pode repetir); "Limpar rabiscos"; e uma linha cinza explicando quando não dá (janela em vez de monitor, sistema sem layer-shell).
+- **Painel da transmissão:** "Rabiscos de quem assiste" com interruptor; "Limpar rabiscos"; e uma linha cinza explicando quando não dá (janela em vez de monitor, sistema sem layer-shell, monitor transmitido não encontrado). Não tem escolha de monitor: os rabiscos vão sempre pro monitor que está sendo transmitido.
 
 ## Telas que vão chegar (protótipos)
 

@@ -528,8 +528,10 @@ class Client implements GuildHost, HomeHost {
     this.ringTimer = setInterval(() => playSound('ring'), 2600)
     if (!document.hasFocus()) {
       const name = this.home?.dm(channelId)?.user.name ?? 'Alguém'
-      new Notification(`${name} está te ligando`, { body: 'Clique pra abrir o Resenha.', silent: true }).onclick = () =>
+      new Notification(`${name} está te ligando`, { body: 'Clique pra abrir o Resenha.', silent: true }).onclick = () => {
+        window.resenha.showWindow()
         this.navigate({ kind: 'dm', channelId })
+      }
       window.resenha.attention()
     }
   }
@@ -579,7 +581,10 @@ class Client implements GuildHost, HomeHost {
     const body = message.content || (message.attachments.length ? `📎 ${message.attachments[0].name}` : '')
     // Com "esconder o texto", a notificação só diz que chegou mensagem (bom com a tela compartilhada).
     const notification = new Notification(title, { body: settings.notifyContent ? body.slice(0, 200) : 'Nova mensagem', silent: true })
-    notification.onclick = open
+    notification.onclick = () => {
+      window.resenha.showWindow()
+      open()
+    }
     window.resenha.attention()
   }
 
