@@ -80,16 +80,16 @@ Rótulos de seção em caixa normal (não em CAIXA ALTA), 12 px, peso 500, `--fg
 │      │ 248        │ │                               │ membros ││
 │      │ (no fundo  │ │ mensagens                     │ 248     ││
 │      │ da janela) │ │                               │         ││
-│      │ ┌ dock ──┐ │ │ compositor                    │         ││
-│      │ └────────┘ │ └───────────────────────────────┴─────────┘│
-└──────┴────────────┴──────────────────────────────────────────┘
+│┌ dock (trilho + barra) ┐│ │ compositor                │         ││
+│└───────────────────────┘│ └───────────────────────────┴─────────┘│
+└─────────────────────────┴──────────────────────────────────────┘
 ```
 
-- Hoje não existe o trilho (é um grupo só); ele chega com os vários servidores.
 - **Barra lateral e trilho direto no fundo** da janela; só o conteúdo é um painel. Menos caixas, cara de app novo.
 - O cabeçalho da barra lateral e o do painel têm a mesma altura (52) e o mesmo centro (y = 34), e o dock termina na mesma linha do painel (8 px da borda).
-- **Dock** (rodapé da barra lateral): um cartão só com a call em cima (status, sinal, sair; Câmera e Tela) e você embaixo (avatar com status, nome, mutar, ensurdecer, configurações). A call aparece por cima sem mexer na sua linha.
+- **Dock** (rodapé do trilho e da barra lateral, de ponta a ponta): um cartão só com a call em cima (status, sinal, sair; Câmera e Tela) e você embaixo (avatar com status, nome, mutar, ensurdecer, configurações). A call aparece por cima sem mexer na sua linha.
 - **Janela mínima (940 × 560):** tudo cabe. Nos protótipos, abaixo de ~780 px de painel a lista de membros e o tópico do canal saem (container query) e a coluna "Agora" do início some.
+- **Tela da call:** blocos 16:9 que crescem até ocupar a área toda (pela largura ou pela altura), sempre centralizados; foto de cada um quando não tem câmera.
 - **Configurações em tela cheia:** navegação à esquerda (236), página à direita (até 660), fechar no canto com "Esc". A navegação e o título nunca mudam de lugar entre páginas (o e2e confere).
 
 ## Componentes (`ui/kit`)
@@ -126,6 +126,23 @@ Tudo exportado por `ui/kit/index.ts`. Nenhum componente do kit importa o store: 
 | `Spinner` | Carregando. | Só onde a espera passa de ~300 ms. |
 
 **Camadas e Esc:** modal, menu, popover, configurações e visualizador de imagem entram numa pilha (`kit/layers.ts`). O Esc fecha só a de cima. Campo que usa o Esc pra si (editar mensagem, renomear canal) marca `data-own-escape`.
+
+## Sons
+
+Sintetizados na hora (`lib/sounds.ts`), um timbre por família, pra dar pra saber o que aconteceu sem olhar:
+
+| Família | Timbre | Sons |
+|---|---|---|
+| Você na call | marimba, arpejo de 4 notas (sobe ao entrar, desce ao sair) | `self-join`, `self-leave` |
+| Os outros na call | gota (sobe/desce) | `join`, `leave` |
+| Microfone | clique com glissando (desce ao mutar) | `mute`, `unmute` |
+| Fone | clique grave duplo | `deafen`, `undeafen` |
+| Transmissão | brilho (sinos em arpejo) | `live`, `stream-end` |
+| Quem assiste a sua tela | sopro + sininho | `viewer-join`, `viewer-leave` |
+| Conversa | sino de vidro (menção: duas notas, mais brilhante) | `message`, `mention` |
+| Ligação | frase de sinos (tocando) e o "tuuu" de 425 Hz (chamando) | `ring`, `ringback` |
+
+Tudo passa por um reverb curto e um compressor. O volume de cada som foi medido (RMS em janelas de 50 ms, renderizando offline) e acertado na tabela `LEVEL`: avisos de atenção (ligação, menção) um pouco acima, cliques frequentes um pouco abaixo. Som novo: meça antes de pôr.
 
 ## Ícones
 
