@@ -9,6 +9,7 @@
   const members = $derived(client.callMembers)
   // Até 1 pessoa: bloco grande; até 4: 2 colunas; mais que isso: 3.
   const cols = $derived(members.length <= 1 ? 1 : members.length <= 4 ? 2 : 3)
+  const rows = $derived(Math.max(1, Math.ceil(members.length / cols)))
 
   function watch(connId: string) {
     call.watch(connId)
@@ -25,7 +26,7 @@
   </header>
 
   <div class="stage">
-    <div class="grid" style:--cols={cols}>
+    <div class="grid" style:--cols={cols} style:--rows={rows}>
       {#each members as member (member.connId)}
         {@const self = member.connId === client.callConnId}
         {@const user = client.user(member.userId, call.guildId)}
@@ -35,7 +36,12 @@
             <VideoTile {stream} mirror={self} />
           {:else}
             <div class="face">
-              <Avatar id={member.userId} name={user?.name ?? '?'} size={cols === 1 ? 96 : 80} />
+              <Avatar
+                id={member.userId}
+                name={user?.name ?? '?'}
+                size={cols === 1 ? 112 : 88}
+                src={client.avatarOf(member.userId, call.guildId)}
+              />
             </div>
           {/if}
 
@@ -101,15 +107,17 @@
     display: flex;
     overflow-y: auto;
     padding: 20px;
+    container-type: size;
   }
 
+  /* Os blocos (16:9) crescem até ocupar a área toda, pela largura ou pela altura, o que acabar primeiro. */
   .grid {
     display: grid;
     grid-template-columns: repeat(var(--cols), minmax(0, 1fr));
     align-content: center;
     gap: 12px;
     width: 100%;
-    max-width: calc(var(--cols) * 560px);
+    max-width: calc((100cqh - (var(--rows) - 1) * 12px) / var(--rows) * 16 / 9 * var(--cols) + (var(--cols) - 1) * 12px);
     margin: auto;
   }
 

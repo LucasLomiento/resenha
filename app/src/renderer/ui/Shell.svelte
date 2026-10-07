@@ -111,8 +111,9 @@
     {:else}
       <HomeSidebar />
     {/if}
-    <Dock />
   </aside>
+  <!-- O painel de baixo vai de ponta a ponta: embaixo do trilho de servidores e da lista. -->
+  <div class="dock-area"><Dock /></div>
   <main class="panel">
     <div class="content" class:hidden={streamFull || callOpen}>
       {#if client.route.kind === 'home'}
@@ -154,23 +155,37 @@
     height: 100%;
     display: grid;
     grid-template-columns: 72px 248px minmax(0, 1fr);
-    /* Sem isso a linha cresce com o conteúdo e o chat nunca ganha barra de rolagem. */
-    grid-template-rows: minmax(0, 1fr);
+    /* Sem o minmax a linha cresce com o conteúdo e o chat nunca ganha barra de rolagem. */
+    grid-template-rows: minmax(0, 1fr) auto;
+    grid-template-areas:
+      'rail sidebar panel'
+      'dock dock panel';
     background:
       radial-gradient(520px 360px at 0% 0%, rgb(111 125 255 / 0.07), transparent 70%),
       var(--bg-canvas);
   }
 
-  /* Barra lateral direto no fundo da janela: a lista em cima, o dock embaixo. */
+  .shell > :global(.rail) {
+    grid-area: rail;
+  }
+
+  /* Barra lateral direto no fundo da janela. */
   .sidebar {
+    grid-area: sidebar;
     min-width: 0;
     min-height: 0;
     display: flex;
     flex-direction: column;
   }
 
+  .dock-area {
+    grid-area: dock;
+    min-width: 0;
+  }
+
   /* O conteúdo é um painel solto sobre a janela. */
   .panel {
+    grid-area: panel;
     position: relative;
     min-width: 0;
     min-height: 0;

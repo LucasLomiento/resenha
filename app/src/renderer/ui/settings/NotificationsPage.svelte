@@ -1,7 +1,7 @@
 <script lang="ts">
   import { settings } from '../../lib/settings.svelte'
-  import { playSound } from '../../lib/sounds'
-  import { IconButton, PageHeader, Row, Section, Slider, Switch } from '../kit'
+  import { SOUND_LABELS, playSound } from '../../lib/sounds'
+  import { Button, IconButton, PageHeader, Row, Section, Slider, Switch } from '../kit'
 </script>
 
 <PageHeader title="Notificações" />
@@ -19,6 +19,13 @@
   <Row label="Mensagem nova" for="notify-message" indent disabled={!settings.sounds}>
     <Switch id="notify-message" bind:checked={settings.messageSound} disabled={!settings.sounds} />
   </Row>
+  <Row label="Ouvir cada som" stack disabled={!settings.sounds}>
+    <div class="sounds">
+      {#each SOUND_LABELS as [name, label] (name)}
+        <Button size="sm" variant="secondary" icon="play" disabled={!settings.sounds} onclick={() => playSound(name, true)}>{label}</Button>
+      {/each}
+    </div>
+  </Row>
 </Section>
 
 <Section title="Avisos do sistema">
@@ -28,6 +35,12 @@
 </Section>
 
 <style>
+  .sounds {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
   .volume {
     display: flex;
     align-items: center;

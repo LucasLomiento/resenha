@@ -149,7 +149,7 @@
 
   {#if user && sharer}
     <div class="who">
-      <Avatar id={sharer.userId} name={user.name} size={20} />
+      <Avatar id={sharer.userId} name={user.name} size={20} src={client.avatarOf(sharer.userId, call.guildId)} />
       <span>{self ? 'Sua tela' : user.name}</span>
       <Badge tone="live">AO VIVO</Badge>
     </div>

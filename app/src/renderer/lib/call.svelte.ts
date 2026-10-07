@@ -335,6 +335,7 @@ export class Call {
     if (watched && watched !== me && others.some((m) => m.connId === watched && !m.sharing)) {
       this.watching = null
       this.dropScreen(watched)
+      playSound('stream-end')
     }
   }
 
@@ -396,7 +397,10 @@ export class Call {
       },
       watchRequest: (watching) => {
         if (peer.closed) return
+        const before = !!this.watchers[member.connId]
         this.watchers[member.connId] = watching
+        // Alguém começou ou parou de assistir a minha tela (pedido repetido depois de reconectar não toca).
+        if (this.localScreen && watching !== before) playSound(watching ? 'viewer-join' : 'viewer-leave')
         peer.sendScreen(watching && this.localScreen ? this.localScreen : null, watching ? this.videoOptions() : null)
       },
     })
@@ -431,7 +435,16 @@ export class Call {
   private away = $state<Record<string, true>>({})
 
   get viewerCount(): number {
-    return Object.entries(this.watchers).filter(([connId, on]) => on && !this.away[connId]).length
+    return this.viewerIds.length
+  }
+
+  /** Quem está assistindo a minha tela agora (ids das pessoas, sem repetir). */
+  get viewerIds(): string[] {
+    const ids = Object.entries(this.watchers)
+      .filter(([connId, on]) => on && !this.away[connId])
+      .map(([connId]) => this.peers.get(connId)?.userId)
+      .filter((id): id is string => !!id)
+    return [...new Set(ids)]
   }
 
   private videoOptions() {

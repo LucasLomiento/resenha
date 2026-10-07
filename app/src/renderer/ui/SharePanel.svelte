@@ -3,13 +3,15 @@
   import { settings, type ScreenMode, type ScreenPreset } from '../lib/settings.svelte'
   import { client } from '../lib/client.svelte'
   import { ui } from '../lib/ui.svelte'
-  import { Button, Popover, Segmented } from './kit'
+  import { Avatar, Button, Popover, Segmented, tooltip } from './kit'
 
   /** O dock: o painel abre logo acima dele, com a mesma largura. */
   let { anchor }: { anchor?: HTMLElement } = $props()
 
   const call = client.call
   const width = $derived(anchor?.offsetWidth ?? 232)
+  const viewers = $derived(call.viewerIds)
+  const viewerNames = $derived(viewers.map((id) => client.user(id, call.guildId)?.name ?? 'Alguém').join(', '))
 
   const qualities: { value: ScreenPreset; label: string }[] = [
     { value: '720p', label: '720p' },
@@ -32,7 +34,14 @@
     <div class="head">
       <span class="live-dot"></span>
       <span class="title">Ao vivo</span>
-      <span class="viewers">
+      {#if viewers.length}
+        <span class="faces" use:tooltip={viewerNames}>
+          {#each viewers.slice(0, 4) as id (id)}
+            <Avatar {id} name={client.user(id, call.guildId)?.name ?? '?'} size={20} src={client.avatarOf(id, call.guildId)} cutout="var(--bg-raised)" />
+          {/each}
+        </span>
+      {/if}
+      <span class="viewers" class:with-faces={viewers.length > 0}>
         {call.viewerCount === 0 ? 'ninguém assistindo' : plural(call.viewerCount, 'pessoa assistindo', 'pessoas assistindo')}
       </span>
     </div>
@@ -95,6 +104,22 @@
 
   .title {
     font-weight: 600;
+  }
+
+  .faces {
+    display: flex;
+    margin-left: auto;
+    padding-left: 6px;
+  }
+
+  .faces > :global(*) {
+    margin-left: -6px;
+    border-radius: 50%;
+    box-shadow: 0 0 0 2px var(--bg-raised);
+  }
+
+  .viewers.with-faces {
+    margin-left: 4px;
   }
 
   .viewers {

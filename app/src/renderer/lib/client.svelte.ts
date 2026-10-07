@@ -529,7 +529,7 @@ class Client implements GuildHost, HomeHost {
     if (level === 'none' || (level === 'mentions' && !guild.mentionsMe(message))) return
     const focused = document.hasFocus()
     if (focused && this.viewing(guild.id, message.channelId)) return
-    playSound('message')
+    playSound(guild.mentionsMe(message) ? 'mention' : 'message')
     if (focused) return
     const channel = guild.channel(message.channelId)?.name ?? ''
     this.notify(`${guild.displayName(message.authorId)} em #${channel} · ${guild.info.name}`, message, () =>
