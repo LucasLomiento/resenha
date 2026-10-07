@@ -8,6 +8,7 @@ import {
   type ChannelKind,
   type ClientMessage,
   type GuildInfo,
+  type ImportedStructure,
   type Invite,
   type Member,
   type Message,
@@ -696,6 +697,11 @@ export class GuildState {
 
   createChannel(name: string, kind: ChannelKind, parentId: string | null = null, overwrites?: Overwrite[]) {
     this.send({ t: 'channel.create', name, kind, parentId, ...(overwrites ? { overwrites } : {}) })
+  }
+
+  /** Cria de uma vez os canais lidos de um print do Discord (já conferidos). */
+  importChannels(structure: ImportedStructure) {
+    return this.send({ t: 'channel.import', structure })
   }
 
   updateChannel(id: string, patch: Omit<Extract<ClientMessage, { t: 'channel.update' }>, 't' | 'id'>) {

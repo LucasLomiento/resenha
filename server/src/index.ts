@@ -9,6 +9,7 @@ import {
 } from '../../shared/protocol'
 import { hashIp, verifyFileSignature, verifyLegacyFileSignature, verifyProxyUrl } from './auth'
 import type { AuthContext, ClientInfo, Result } from './directory'
+import { readDiscordPrint } from './discord-import'
 import { LEGACY_HEADER, USER_HEADER } from './guild'
 import { HOME_HEADER } from './home'
 import { conversation, directory, guild, home } from './stubs'
@@ -83,6 +84,9 @@ async function readJson(request: Request): Promise<Record<string, unknown>> {
 }
 
 /** Corpo binário pequeno (foto, ícone, banner), com teto. */
+/** Print pra importar canais do Discord (o app já manda comprimido). */
+const MAX_IMPORT_IMAGE = 1_500_000
+
 async function readImage(request: Request, max = MAX_IMAGE): Promise<ArrayBuffer | null> {
   if (Number(request.headers.get('Content-Length') ?? 0) > max) return null
   const bytes = await readLimited(request.body, max)
@@ -441,6 +445,25 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
     return fromResult(await dir.deleteGuild(m[1], me, body.name))
   }
   if ((m = pathname.match(/^\/api\/invites\/([\w-]{4,32})$/)) && method === 'POST') return fromResult(await dir.joinByInvite(me, m[1]))
+
+  // Importar do Discord: lê o print da lista de canais. Só lê; quem cria os canais
+  // é o app, depois de a pessoa conferir (channel.import no servidor).
+  if (pathname === '/api/import/discord' && method === 'POST') {
+    if (!env.AI) return error(503, 'Ler print não está disponível neste servidor.')
+    if (await limited(env.IMPORT_LIMITER, `import:${me}`)) return error(429, 'Muitos prints seguidos. Espere um minuto.')
+    const image = await readImage(request, MAX_IMPORT_IMAGE)
+    if (!image) return error(413, 'O print pode ter até 1,5 MB.')
+    try {
+      const structure = await readDiscordPrint(env.AI, image)
+      if (!structure || structure.categories.length + structure.channels.length === 0) {
+        return error(422, 'Não achei canais nesse print. Tire o print só da lista de canais do Discord.')
+      }
+      return json(structure)
+    } catch (err) {
+      console.error('importar do Discord: o modelo falhou', err)
+      return error(502, 'Não deu pra ler o print agora. Tente de novo daqui a pouco.')
+    }
+  }
 
   // Anexos (o DO de destino confere se a pessoa pode mandar ali)
   if (pathname === '/api/files' && method === 'POST') {

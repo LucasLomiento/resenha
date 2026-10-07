@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { ShortcutAction } from '../../preload/api'
   import { client } from '../lib/client.svelte'
+  import { settings } from '../lib/settings.svelte'
   import { acceleratorFrom } from '../lib/shortcuts'
   import { ui } from '../lib/ui.svelte'
   import CallView from './CallView.svelte'
@@ -20,6 +21,7 @@
   import AddServer from './server/AddServer.svelte'
   import ChannelSettings from './server/ChannelSettings.svelte'
   import CreateChannel from './server/CreateChannel.svelte'
+  import DiscordImport from './server/DiscordImport.svelte'
   import InviteModal from './server/InviteModal.svelte'
   import ServerSettings from './server/ServerSettings.svelte'
   import Settings from './settings/Settings.svelte'
@@ -29,6 +31,47 @@
   import UpdateNotice from './UpdateNotice.svelte'
 
   const guild = $derived(client.guild)
+
+  // ---------- Largura da lista de canais (arrastar a borda) ----------
+
+  const SIDEBAR = { min: 216, max: 420, default: 248 }
+  let sidebarEl = $state<HTMLElement>()
+  let resizing = $state(false)
+  const clampWidth = (w: number) => Math.round(Math.min(SIDEBAR.max, Math.max(SIDEBAR.min, w)))
+
+  function startResize(event: PointerEvent) {
+    if (event.button !== 0 || !sidebarEl) return
+    event.preventDefault()
+    const handle = event.currentTarget as HTMLElement
+    handle.setPointerCapture(event.pointerId)
+    const startX = event.clientX
+    // Parte da largura de verdade (numa janela estreita ela é menor que a guardada).
+    const startWidth = sidebarEl.getBoundingClientRect().width
+    resizing = true
+    const move = (e: PointerEvent) => (settings.sidebarWidth = clampWidth(startWidth + e.clientX - startX))
+    const up = () => {
+      resizing = false
+      handle.removeEventListener('pointermove', move)
+      handle.removeEventListener('pointerup', up)
+      handle.removeEventListener('pointercancel', up)
+    }
+    handle.addEventListener('pointermove', move)
+    handle.addEventListener('pointerup', up)
+    handle.addEventListener('pointercancel', up)
+  }
+
+  function resizeKey(event: KeyboardEvent) {
+    const step = event.shiftKey ? 48 : 16
+    const next =
+      event.key === 'ArrowLeft' ? settings.sidebarWidth - step
+      : event.key === 'ArrowRight' ? settings.sidebarWidth + step
+      : event.key === 'Home' ? SIDEBAR.min
+      : event.key === 'End' ? SIDEBAR.max
+      : null
+    if (next === null) return
+    event.preventDefault()
+    settings.sidebarWidth = clampWidth(next)
+  }
   const streamFull = $derived(client.view === 'stream' && !!client.call.watching)
   const callOpen = $derived(client.view === 'call' && !!client.call.channelId)
   const mapOpen = $derived(client.view === 'map' && !!guild)
@@ -111,9 +154,25 @@
 
 <svelte:window onkeydown={onKeydown} onfocus={() => client.focused()} />
 
-<div class="shell" data-status={client.connection}>
+<div class="shell" class:resizing data-status={client.connection} style:--sidebar-w="{clampWidth(settings.sidebarWidth)}px">
   <ServerRail />
-  <aside class="sidebar">
+  <aside class="sidebar" bind:this={sidebarEl}>
+    <!-- Borda arrastável: alarga ou estreita a lista de canais (duplo clique volta ao normal). -->
+    <!-- Um separador focável é o "divisor de janela" do ARIA (interativo), que o lint do Svelte não conhece. -->
+    <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
+    <div
+      class="sidebar-resize"
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="Largura da lista de canais"
+      aria-valuemin={SIDEBAR.min}
+      aria-valuemax={SIDEBAR.max}
+      aria-valuenow={clampWidth(settings.sidebarWidth)}
+      tabindex="0"
+      onpointerdown={startResize}
+      ondblclick={() => (settings.sidebarWidth = SIDEBAR.default)}
+      onkeydown={resizeKey}
+    ></div>
     {#if guild}
       {#key guild.id}
         <GuildSidebar {guild} />
@@ -158,6 +217,7 @@
 {#if ui.shortcutsHelp}<ShortcutsHelp />{/if}
 {#if ui.addServer}<AddServer />{/if}
 {#if ui.invite}<InviteModal />{/if}
+{#if ui.discordImport}<DiscordImport />{/if}
 {#if ui.createChannel}<CreateChannel />{/if}
 {#if ui.channelSettings}<ChannelSettings />{/if}
 {#if ui.guildSettings}<ServerSettings />{/if}
@@ -170,7 +230,8 @@
   .shell {
     height: 100%;
     display: grid;
-    grid-template-columns: 72px 248px minmax(0, 1fr);
+    /* A lista de canais tem a largura escolhida, mas cede numa janela estreita pro chat caber. */
+    grid-template-columns: 72px clamp(216px, var(--sidebar-w, 248px), max(216px, 100vw - 600px)) minmax(0, 1fr);
     /* Sem o minmax a linha cresce com o conteúdo e o chat nunca ganha barra de rolagem. */
     grid-template-rows: minmax(0, 1fr) auto;
     grid-template-areas:
@@ -188,10 +249,53 @@
   /* Barra lateral direto no fundo da janela. */
   .sidebar {
     grid-area: sidebar;
+    position: relative;
     min-width: 0;
     min-height: 0;
     display: flex;
     flex-direction: column;
+  }
+
+  /* A alça fica no vão entre a lista e o painel; a linha aparece ao passar o mouse. */
+  .sidebar-resize {
+    position: absolute;
+    top: 8px;
+    right: -6px;
+    bottom: 8px;
+    z-index: 5;
+    width: 10px;
+    cursor: col-resize;
+    touch-action: none;
+  }
+
+  .sidebar-resize::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 4px;
+    width: 2px;
+    border-radius: 2px;
+    background: var(--accent-line);
+    opacity: 0;
+    transition: opacity var(--t) var(--ease);
+  }
+
+  .sidebar-resize:hover::after,
+  .sidebar-resize:focus-visible::after,
+  .resizing .sidebar-resize::after {
+    opacity: 1;
+    transition-delay: 80ms;
+  }
+
+  .sidebar-resize:focus-visible {
+    outline: none;
+  }
+
+  /* Arrastando: o cursor fica de redimensionar em qualquer lugar e nada é selecionado. */
+  .resizing {
+    cursor: col-resize;
+    user-select: none;
   }
 
   .dock-area {

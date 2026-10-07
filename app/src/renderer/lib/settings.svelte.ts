@@ -37,6 +37,8 @@ export interface Settings {
   inkTool: 'laser' | 'pen'
   /** Versão nova cujo aviso a pessoa fechou ("Depois"). */
   updateDismissed: string | null
+  /** Largura da lista de canais (arrastando a borda dela). */
+  sidebarWidth: number
   showStats: boolean
   sounds: boolean
   /** 0..1 */
@@ -70,6 +72,7 @@ const defaults: Settings = {
   inkMonitor: null,
   inkTool: 'laser',
   updateDismissed: null,
+  sidebarWidth: 248,
   showStats: false,
   sounds: true,
   soundVolume: 0.6,

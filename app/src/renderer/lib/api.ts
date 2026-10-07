@@ -4,6 +4,7 @@ import type {
   AuthResponse,
   Friend,
   GuildInfo,
+  ImportedStructure,
   InvitePreview,
   Me,
   ProfileStylePatch,
@@ -202,6 +203,11 @@ export class Api {
 
   createGuild(name: string) {
     return this.request<GuildInfo>('/api/guilds', { method: 'POST', json: { name } })
+  }
+
+  /** Lê a lista de canais de um print do Discord (o servidor manda pro modelo de visão). */
+  importDiscord(image: Blob) {
+    return this.request<ImportedStructure>('/api/import/discord', { method: 'POST', body: image, headers: { 'Content-Type': image.type } })
   }
 
   uploadGuildIcon(image: Blob) {

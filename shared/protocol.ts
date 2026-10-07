@@ -184,6 +184,20 @@ export interface Member {
 
 export type ChannelKind = 'text' | 'voice' | 'category'
 
+/** Canal lido de um print do Discord (importar a estrutura). */
+export interface ImportedChannel {
+  name: string
+  kind: 'text' | 'voice'
+}
+
+/** Estrutura lida de um print do Discord: canais sem categoria e as categorias, na ordem. */
+export interface ImportedStructure {
+  /** Nome do servidor no print (pra sugerir o nome de um servidor novo). */
+  server: string | null
+  channels: ImportedChannel[]
+  categories: { name: string; channels: ImportedChannel[] }[]
+}
+
 export interface Overwrite {
   /** Id do cargo ou da pessoa. */
   id: string
@@ -509,6 +523,8 @@ export type ClientMessage =
     }
   /** Nova ordem: lista completa de [id, posição, categoria]. */
   | { t: 'channel.reorder'; order: { id: string; position: number; parentId: string | null }[] }
+  /** Cria de uma vez a estrutura lida de um print do Discord (depois de a pessoa conferir). */
+  | { t: 'channel.import'; structure: ImportedStructure }
   | { t: 'channel.delete'; id: string }
   | { t: 'guild.update'; name?: string; icon?: string | null }
   /** Só o dono: passa o servidor pra outra pessoa. */

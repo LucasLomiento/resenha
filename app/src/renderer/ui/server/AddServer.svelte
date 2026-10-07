@@ -171,6 +171,21 @@
           </span>
           <Icon name="chevron-right" size={18} />
         </button>
+        <button
+          type="button"
+          class="choice"
+          onclick={() => {
+            close()
+            ui.discordImport = { newServer: true }
+          }}
+        >
+          <span class="choice-icon import"><Icon name="image-plus" size={22} /></span>
+          <span class="choice-text">
+            <span class="choice-title">Trazer do Discord</span>
+            <span class="choice-sub">Mande um print da lista de canais e a gente monta igual.</span>
+          </span>
+          <Icon name="chevron-right" size={18} />
+        </button>
         <button type="button" class="choice" onclick={() => go('join')}>
           <span class="choice-icon join"><Icon name="link" size={22} /></span>
           <span class="choice-text">
@@ -297,6 +312,10 @@
 
   .choice-icon.join {
     background: linear-gradient(135deg, #36d6ad, #36a9dd);
+  }
+
+  .choice-icon.import {
+    background: linear-gradient(135deg, #ff7a93, #ffa070);
   }
 
   .choice-text {

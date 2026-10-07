@@ -58,6 +58,8 @@ As etapas 0.6 a 0.9 saíram juntas na 1.0 (uma atualização em vez de quatro).
 - [x] Rabiscos na tela de quem compartilha (como no Slack): quem assiste desenha ou aponta, e quem compartilha vê no próprio monitor
 - [x] Busca nas configurações (e no Ctrl+K), com palavras-chave em cada opção
 - [x] Aviso de versão nova, com download sozinho fora de call
+- [x] Lista de canais com largura ajustável (arrastando a borda)
+- [x] Importar canais do Discord por um print (ou criar o servidor inteiro a partir dele)
 - [ ] Modo privado (tudo via TURN, esconde o IP até dos amigos): precisa da chave TURN
 - [ ] Arrastar servidores no trilho pra reordenar
 - [ ] Emojis próprios de cada servidor

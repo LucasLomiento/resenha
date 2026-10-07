@@ -23,6 +23,8 @@ Esta política vale para quem usa um servidor do Resenha. Quem cuida do servidor
 - **Prévias de link** são buscadas pelo servidor, e as imagens delas passam por ele. Assim o site do link nunca vê o IP de quem está lendo a conversa.
 - **O mapa** (de cada servidor) é baixado direto do [OpenFreeMap](https://openfreemap.org), e a busca de endereço vai direto pro [Nominatim](https://nominatim.org) (OpenStreetMap). Como em qualquer site, esses serviços veem o seu IP e, na busca, o que você procurou. Só quando você abre o mapa ou busca algo. Onde você está olhando no mapa e o seu cursor vão só pra quem está com o mapa do mesmo servidor aberto, e não ficam guardados (a não ser o último lugar que o mapa mostrou). **O Street View** é o do Google, incorporado: quando você abre, o Google vê o seu IP e o lugar que você está vendo, como em qualquer site com mapa do Google; quem está no mapa do servidor vê onde você abriu.
 
+**O print que você manda pra importar canais do Discord** vai pro servidor do Resenha e de lá pra um modelo de inteligência artificial da própria Cloudflare (Workers AI), que lê os nomes dos canais. O print não fica guardado: depois de lido, só a lista de canais volta pro app, e nada é criado antes de você conferir.
+
 **Os rabiscos** que você faz na transmissão de alguém vão direto pra pessoa que está compartilhando (P2P, como a voz), aparecem por alguns segundos no monitor dela e não ficam guardados em lugar nenhum. Quem compartilha pode desligar os rabiscos no painel da transmissão.
 
 Por ser P2P, quem está na mesma call que você vê o seu endereço IP (é assim que a ligação direta funciona). Se isso for um problema, não entre em call com quem você não conhece.

@@ -201,6 +201,17 @@ Tudo passa por um reverb curto e um compressor. O volume de cada som foi medido 
 - **Marcador:** gota na cor escolhida (as seis cores das pessoas), nome aparece no hover. Clicar abre o cartão (quem marcou, quando, Google Maps, Apagar). Botão direito no mapa também marca.
 - **Escuro** do OpenFreeMap puxado pro tom do painel; "Claro" e "Colorido" pra quem quiser (cada um escolhe o seu).
 
+### Lista de canais com largura ajustável
+
+- A borda direita da lista de canais (o vão até o painel) é uma alça: o cursor vira de redimensionar e aparece uma linha violeta fina. Arrastar alarga ou estreita (216 a 420 px); duplo clique volta aos 248 px; com o foco nela, as setas mudam de 16 em 16 (Shift: 48). A largura fica guardada. Numa janela estreita a lista cede pro chat continuar cabendo.
+
+### Importar do Discord
+
+- **Entradas:** "Importar canais do Discord" no menu do servidor (pra quem gerencia canais) e "Trazer do Discord" no "+" do trilho (cria um servidor novo).
+- **Passo 1:** área grande pra colar (Ctrl+V), arrastar ou escolher o print, com três dicas curtas (print só da lista de canais; abrir categorias fechadas; nada é criado antes de conferir).
+- **Passo 2:** o print com uma faixa de luz violeta passando, e "Lendo os canais do print… leva uns 10 segundos".
+- **Passo 3 (conferir):** o print à esquerda e a lista à direita, editável: o ícone (# ou alto-falante) troca o tipo, o nome é um campo direto, o X tira. Categoria em caixa normal (o Discord mostra em CAIXA ALTA). Interruptor "Manter os emojis". Resumo no topo ("2 categorias, 3 canais de texto e 2 canais de voz"). No servidor novo, o nome vem do print (sem o ✨ do fim).
+
 ### Busca nas configurações
 
 - **Campo no topo da navegação** das configurações (Ctrl+F foca). Com texto, a navegação vira a lista de resultados: ícone da página, nome da opção e "Página · Seção" embaixo. Setas escolhem, Enter abre, Esc limpa (com o campo vazio, fecha as configurações).

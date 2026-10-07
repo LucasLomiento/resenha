@@ -13,7 +13,7 @@
 // Uso: npm run dev:server (em outro terminal) e depois npm -w app run e2e
 
 import { execFileSync, spawn } from 'node:child_process'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import electronPath from 'electron'
@@ -325,7 +325,7 @@ async function startServer() {
   let proc = null
   let log = ''
   const up = async () => {
-    proc = spawn('npx', ['wrangler', 'dev', '--port', String(PORT), '--ip', '127.0.0.1', '--persist-to', state], {
+    proc = spawn('npx', ['wrangler', 'dev', '--local', '--port', String(PORT), '--ip', '127.0.0.1', '--persist-to', state], {
       cwd: new URL('../../server', import.meta.url).pathname,
       stdio: ['ignore', 'pipe', 'pipe'],
       detached: true,
@@ -1166,6 +1166,82 @@ try {
     await shot(a, '9c-atalhos')
     await a.page.keyboard.press('Escape')
   }
+
+  // Lista de canais mais larga: arrasta a borda; duplo clique volta ao normal.
+  await a.page.getByRole('navigation', { name: 'Servidores' }).getByRole('button', { name: 'Turma', exact: true }).click({ force: true })
+  const sidebarWidth = () => a.page.evaluate(() => Math.round(document.querySelector('.shell > .sidebar').getBoundingClientRect().width))
+  const widthBefore = await sidebarWidth()
+  const grip = await a.page.locator('.sidebar-resize').boundingBox()
+  await a.page.mouse.move(grip.x + grip.width / 2, grip.y + 200)
+  await a.page.mouse.down()
+  await a.page.mouse.move(grip.x + grip.width / 2 + 100, grip.y + 200, { steps: 8 })
+  await a.page.mouse.up()
+  const widthWide = await sidebarWidth()
+  await a.page.locator('.sidebar-resize').dblclick({ force: true })
+  const widthReset = await sidebarWidth()
+  check(widthBefore === 248 && widthWide === 348 && widthReset === 248, 'lista de canais alarga arrastando a borda (e o duplo clique volta)', `${widthBefore} → ${widthWide} → ${widthReset}`)
+
+  // Importar do Discord por print. Quem lê o print é o Workers AI (fora do teste): aqui a
+  // resposta é a que o modelo deu de verdade pro print de exemplo (test/fixtures).
+  const READ = {
+    server: 'Resenha dos Amigos ✨',
+    channels: [{ name: '📜┃regras', kind: 'text' }],
+    categories: [
+      { name: 'BATE-PAPO', channels: [{ name: '💬┃geral', kind: 'text' }, { name: '😂┃memes', kind: 'text' }] },
+      { name: 'CALLS', channels: [{ name: '🎮 Jogatina', kind: 'voice' }, { name: '💤 AFK', kind: 'voice' }] },
+    ],
+  }
+  let prints = 0
+  await a.page.route('**/api/import/discord', (route) => {
+    const cors = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': '*', 'Access-Control-Allow-Methods': 'POST' }
+    if (route.request().method() === 'OPTIONS') return route.fulfill({ status: 204, headers: cors })
+    prints++
+    return route.fulfill({ status: 200, headers: { ...cors, 'Content-Type': 'application/json' }, body: JSON.stringify(READ) })
+  })
+  const printFile = { name: 'discord.png', mimeType: 'image/png', buffer: readFileSync(new URL('./fixtures/discord-print.png', import.meta.url)) }
+  // Num servidor que existe: menu do servidor → importar; tira os emojis e cria.
+  await a.page.locator('aside header button.server').click({ force: true })
+  await a.page.getByRole('menuitem', { name: 'Importar canais do Discord' }).click({ force: true })
+  await a.page.locator('.modal input[type=file]').setInputFiles(printFile)
+  await a.page.locator('.modal .tree').waitFor({ timeout: 10_000 })
+  await shot(a, '10-importar-discord')
+  await a.page.locator('.modal .emoji input[role=switch]').click({ force: true })
+  const names = await a.page.locator('.modal .tree input').evaluateAll((inputs) => inputs.map((i) => i.value))
+  check(
+    prints === 1 && names.join('|') === 'regras|Bate-papo|geral|memes|Calls|Jogatina|AFK',
+    'print do Discord vira a lista pra conferir (categoria em caixa normal, sem emoji se quiser)',
+    names.join(' · '),
+  )
+  await a.page.locator('.modal').getByRole('button', { name: /^Criar \d+ canais$/ }).click({ force: true })
+  const imported = await b.page
+    .locator('nav .category', { hasText: 'Calls' })
+    .waitFor({ timeout: 10_000 })
+    .then(() => b.page.locator('nav button.channel', { hasText: 'Jogatina' }).count())
+    .catch(() => 0)
+  check(imported === 1, 'canais importados aparecem pra todo mundo do servidor, nas categorias certas')
+
+  // Servidor novo direto do print: nome do print e só os canais importados.
+  await a.page.getByRole('button', { name: 'Criar ou entrar num servidor', exact: true }).click({ force: true })
+  await a.page.getByRole('button', { name: /Trazer do Discord/ }).click({ force: true })
+  await a.page.locator('.modal input[type=file]').setInputFiles(printFile)
+  await a.page.locator('.modal .tree').waitFor({ timeout: 10_000 })
+  const suggested = await a.page.getByLabel('Nome do servidor').inputValue()
+  await a.page.locator('.modal').getByRole('button', { name: 'Criar servidor', exact: true }).click({ force: true })
+  const fresh = await a.page
+    .getByRole('navigation', { name: 'Servidores' })
+    .getByRole('button', { name: 'Resenha dos Amigos', exact: true })
+    .waitFor({ timeout: 15_000 })
+    .then(async () => {
+      for (let i = 0; i < 50; i++) {
+        const list = (await a.page.locator('nav .category-toggle, nav button.channel').allInnerTexts()).map((t) => t.trim().split('\n')[0])
+        if (list.join('|') === '📜┃regras|Bate-papo|💬┃geral|😂┃memes|Calls|🎮 Jogatina|💤 AFK') return true
+        await a.page.waitForTimeout(100)
+      }
+      return (await a.page.locator('nav .category-toggle, nav button.channel').allInnerTexts()).join(' · ')
+    })
+    .catch(() => false)
+  check(suggested === 'Resenha dos Amigos' && fresh === true, '"Trazer do Discord" cria o servidor com o nome e só os canais do print', `${suggested} · ${fresh}`)
+  await shot(a, '10b-servidor-do-discord')
 
   // Fechar o app sai da call na hora (não fica "esperando voltar" como numa queda de rede).
   closedA = true

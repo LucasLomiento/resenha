@@ -5,6 +5,8 @@ export default defineConfig({
   plugins: [
     cloudflareTest({
       wrangler: { configPath: './wrangler.jsonc' },
+      // Sem o Workers AI de verdade (pediria login e internet): a rota do print responde 503.
+      remoteBindings: false,
       miniflare: {
         bindings: { FILE_SECRET: 'segredo-de-teste', RESUME_GRACE_MS: '400' },
       },

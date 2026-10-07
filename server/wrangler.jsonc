@@ -22,8 +22,12 @@
   "ratelimits": [
     { "name": "IP_LIMITER", "namespace_id": "4101", "simple": { "limit": 300, "period": 60 } },
     { "name": "AUTH_LIMITER", "namespace_id": "4102", "simple": { "limit": 20, "period": 60 } },
-    { "name": "USER_LIMITER", "namespace_id": "4103", "simple": { "limit": 20, "period": 60 } }
+    { "name": "USER_LIMITER", "namespace_id": "4103", "simple": { "limit": 20, "period": 60 } },
+    // Ler print do Discord (Workers AI): poucos por minuto por pessoa.
+    { "name": "IMPORT_LIMITER", "namespace_id": "4104", "simple": { "limit": 6, "period": 60 } }
   ],
+  // Modelo de visão pra importar canais de um print do Discord (src/discord-import.ts).
+  "ai": { "binding": "AI" },
   "vars": {
     // Chave pública do Turnstile (anti-robô do cadastro aberto). Vazia = cadastro aberto desligado.
     "TURNSTILE_SITE_KEY": ""

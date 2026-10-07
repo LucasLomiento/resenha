@@ -28,6 +28,8 @@ export const ui = $state<{
   channelSettings: { guildId: string; channelId: string } | null
   /** Criar canal (ou categoria) num servidor. */
   createChannel: { guildId: string; kind: 'text' | 'voice' | 'category'; parentId: string | null } | null
+  /** Importar canais de um print do Discord: num servidor que existe, ou criando um novo. */
+  discordImport: { guildId: string } | { newServer: true } | null
   /** Convidar pessoas pra um servidor. */
   invite: { guildId: string } | null
   /** Criar ou entrar num servidor. `join` já pode vir com o código (link de convite). */
@@ -54,6 +56,7 @@ export const ui = $state<{
   guildSettings: null,
   channelSettings: null,
   createChannel: null,
+  discordImport: null,
   invite: null,
   addServer: null,
   profile: null,

@@ -60,6 +60,7 @@
     if (manageChannels) {
       items.push({ label: 'Criar canal', icon: 'plus', onselect: () => (ui.createChannel = { guildId: guild.id, kind: 'text', parentId: null }) })
       items.push({ label: 'Criar categoria', icon: 'plus', onselect: () => (ui.createChannel = { guildId: guild.id, kind: 'category', parentId: null }) })
+      items.push({ label: 'Importar canais do Discord', icon: 'image-plus', onselect: () => (ui.discordImport = { guildId: guild.id }) })
     }
     if (items.length) items.push({ kind: 'separator' })
     items.push({ kind: 'label', label: 'Notificações' })
@@ -262,7 +263,7 @@
     class="server"
     class:open={!!menu && menu.anchor === headerButton}
     aria-haspopup="menu"
-    onclick={() => headerButton && (menu = { items: guildMenu(), anchor: headerButton, width: 248 })}
+    onclick={() => headerButton && (menu = { items: guildMenu(), anchor: headerButton, width: Math.max(248, headerButton.offsetWidth) })}
   >
     <span class="server-name">{guild.info.name}</span>
     <Icon name="chevron-down" size={16} />

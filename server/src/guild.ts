@@ -33,6 +33,7 @@ import {
   type VoiceMember,
 } from '../../shared/protocol'
 import type { LegacyExport } from './directory'
+import { cleanStructure } from './discord-import'
 import { newId } from './ids'
 import { cleanPoint, cleanStreet, cleanView, parseView } from './map'
 import { CONN_KEY, GHOST_QUEUE, connIdFor, graceFor, unexpectedClose } from './resume'
@@ -1452,6 +1453,9 @@ export class Guild extends DurableObject<Env> {
       case 'channel.reorder':
         return this.reorderChannels(ws, userId, msg)
 
+      case 'channel.import':
+        return this.importChannels(ws, userId, msg)
+
       case 'channel.delete':
         return this.deleteChannel(ws, userId, msg)
 
@@ -1720,6 +1724,37 @@ export class Guild extends DurableObject<Env> {
     )
     this.audit(userId, 'channel.create', id, `${msg.kind === 'category' ? 'Categoria' : msg.kind === 'voice' ? 'Voz' : 'Texto'}: ${name}`)
     this.pushAccess(before, { changed: [id] })
+  }
+
+  /**
+   * Estrutura lida de um print do Discord (discord-import.ts), já conferida pela
+   * pessoa no app: os canais sem categoria e as categorias entram no fim da lista,
+   * na ordem do print. Tudo de uma vez, com um registro só na auditoria.
+   */
+  private async importChannels(ws: WebSocket, userId: string, msg: Extract<ClientMessage, { t: 'channel.import' }>) {
+    if (!has(this.guildPerms(userId), P.MANAGE_CHANNELS)) return this.error(ws, 'Você não pode criar canais aqui.')
+    const structure = cleanStructure(msg.structure)
+    if (!structure) return
+    const count = structure.channels.length + structure.categories.reduce((n, c) => n + 1 + c.channels.length, 0)
+    if (count === 0) return
+    if (this.channels().size + count > MAX_CHANNELS) return this.error(ws, `O limite é de ${MAX_CHANNELS} canais por servidor.`)
+    let position = this.sql.exec<{ p: number }>('SELECT COALESCE(MAX(position), -1) + 1 AS p FROM channels WHERE parent_id IS NULL').one().p
+    const before = this.snapshot()
+    const ids: string[] = []
+    const insert = (name: string, kind: ChannelKind, at: number, parentId: string | null) => {
+      const id = newId()
+      this.sql.exec('INSERT INTO channels (id, name, kind, position, parent_id, overwrites) VALUES (?, ?, ?, ?, ?, ?)', id, name, kind, at, parentId, '[]')
+      ids.push(id)
+      return id
+    }
+    for (const channel of structure.channels) insert(channel.name, channel.kind, position++, null)
+    for (const category of structure.categories) {
+      const parent = insert(category.name, 'category', position++, null)
+      category.channels.forEach((channel, i) => insert(channel.name, channel.kind, i, parent))
+    }
+    const channels = count - structure.categories.length
+    this.audit(userId, 'channel.create', null, `Importou de um print do Discord: ${structure.categories.length} categorias e ${channels} canais`)
+    this.pushAccess(before, { changed: ids })
   }
 
   /**
