@@ -12,6 +12,8 @@ export const HISTORY_PAGE = 50
 export const MAX_REACTIONS_PER_MESSAGE = 20
 export const MAX_PINS_PER_CHANNEL = 50
 export const MAX_GUILDS_PER_USER = 100
+export const MAX_MAP_PINS = 200
+export const MAX_MAP_PIN_LABEL = 60
 
 // ---------- Permissões (bits) ----------
 
@@ -308,6 +310,35 @@ export interface VoiceMember {
   serverDeafened?: boolean
 }
 
+// ---------- Mapa compartilhado (um por servidor) ----------
+
+/** O lugar que todo mundo vê: centro em graus, zoom, rotação e inclinação (graus). */
+export interface MapView {
+  lng: number
+  lat: number
+  zoom: number
+  bearing: number
+  pitch: number
+}
+
+/** Uma conexão (instância do app) com o mapa aberto. */
+export interface MapViewer {
+  connId: string
+  userId: string
+}
+
+/** Marcador que fica no mapa até alguém apagar. */
+export interface MapPin {
+  id: string
+  authorId: string
+  lng: number
+  lat: number
+  label: string
+  /** 0xRRGGBB */
+  color: number
+  createdAt: number
+}
+
 // ---------- Sinalização WebRTC (repassada pelo servidor sem olhar) ----------
 
 // Cópias mínimas dos tipos do DOM, porque o servidor não tem os tipos de WebRTC.
@@ -469,6 +500,15 @@ export type ClientMessage =
   | { t: 'voice.leave' }
   | { t: 'voice.update'; muted: boolean; deafened: boolean; sharing: boolean; camera?: boolean }
   | { t: 'rtc.signal'; to: string; data: SignalData }
+  /** Abriu o mapa: passa a receber a vista, os cursores e os marcadores (responde com `map.state`). */
+  | { t: 'map.join' }
+  | { t: 'map.leave' }
+  /** Mexeu no mapa: todo mundo que está nele vai junto. */
+  | { t: 'map.view'; view: MapView }
+  /** Onde está o mouse no mapa (null: saiu de cima dele). */
+  | { t: 'map.cursor'; lng: number | null; lat: number | null }
+  | { t: 'map.pin.add'; lng: number; lat: number; label: string; color: number }
+  | { t: 'map.pin.remove'; id: string }
 
 // ---------- WebSocket do servidor (Guild): servidor -> app ----------
 
@@ -496,6 +536,8 @@ export type ServerMessage =
       notify?: NotifySettings
       /** A conexão anterior (mesma chave) ainda estava na call: voltou nela sem ninguém perceber. */
       resumed?: boolean
+      /** Quem está com o mapa do servidor aberto agora. */
+      mapViewers?: MapViewer[]
     }
   | { t: 'chat.message'; message: Message; nonce?: string }
   | { t: 'chat.edited'; message: Message }
@@ -532,6 +574,15 @@ export type ServerMessage =
   | { t: 'bans.list'; reqId: string; bans: Ban[] }
   | { t: 'audit.list'; reqId: string; entries: AuditEntry[]; hasMore: boolean }
   | { t: 'notify.settings'; settings: NotifySettings }
+  /** Resposta ao `map.join`: a última vista do servidor (null: ninguém mexeu ainda), os marcadores e quem está lá. */
+  | { t: 'map.state'; view: MapView | null; pins: MapPin[]; viewers: MapViewer[] }
+  /** Pra todo mundo do servidor (a lista de canais mostra quem está no mapa). */
+  | { t: 'map.viewers'; viewers: MapViewer[] }
+  /** Só pra quem está no mapa, daqui pra baixo. */
+  | { t: 'map.view'; view: MapView; connId: string; userId: string }
+  | { t: 'map.cursor'; connId: string; userId: string; lng: number | null; lat: number | null }
+  | { t: 'map.pin'; pin: MapPin }
+  | { t: 'map.pin.removed'; id: string }
   /** `nonce`: o erro é de uma mensagem enviada (o app devolve o texto pro campo). */
   | { t: 'error'; message: string; nonce?: string }
 
