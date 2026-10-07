@@ -4,8 +4,9 @@
   import { formatDay } from '../../lib/format'
   import { confirmAction, ui } from '../../lib/ui.svelte'
   import { canModerate, memberMenu } from '../guild/memberMenu'
+  import { nameStyle } from '../../lib/profile'
   import { Avatar, Badge, Button, Icon, IconButton, Menu, STATUS_LABEL, tooltip, type MenuItem } from '../kit'
-  import { userGradient } from '../../lib/format'
+  import ProfileShell from './ProfileShell.svelte'
 
   /**
    * Corpo do perfil: no cartão (popover) e no painel ao lado da conversa
@@ -19,7 +20,8 @@
   const member = $derived(guild?.members[userId] ?? null)
   const self = $derived(userId === client.me?.id)
   const hex = (color: number | null) => (color === null ? null : `#${color.toString(16).padStart(6, '0')}`)
-  const accent = $derived(profile?.accent != null ? hex(profile.accent) : null)
+  const style = $derived(profile?.deleted ? undefined : profile?.style)
+  const styledName = $derived(nameStyle(profile))
   const ownRoles = $derived(guild ? guild.rolesOf(userId).filter((r) => r.id !== guild.id) : [])
   /** Servidores que vocês dois estão (entre os que eu vejo). */
   const mutual = $derived(self ? [] : client.guildList.filter((g) => !!g.members[userId]))
@@ -122,19 +124,17 @@
 </script>
 
 {#if profile}
-  <div class="card" class:flat>
-    <div
-      class="banner"
-      style:background={accent ? `linear-gradient(135deg, ${accent}, color-mix(in srgb, ${accent} 45%, #0b0b10))` : userGradient(profile.id)}
-    ></div>
+  <ProfileShell user={profile} banner={client.api?.media(style?.banner ?? null) ?? null} variant={flat ? 'flat' : 'card'}>
     <div class="top">
       <Avatar
         id={profile.id}
         name={profile.name}
         size={80}
         src={client.api?.media(profile.avatar) ?? null}
+        decoration={style?.decoration}
+        play
         status={profile.deleted ? null : presence.status}
-        cutout={flat ? 'var(--bg-panel)' : 'var(--bg-raised)'}
+        cutout="var(--card-cut)"
       />
       {#if !profile.deleted}
         <div class="top-actions">
@@ -168,7 +168,7 @@
         />
       {:else}
         <h2>
-          {guild ? guild.displayName(userId) : profile.name}
+          <span class={styledName.class} style={styledName.style}>{guild ? guild.displayName(userId) : profile.name}</span>
           {#if canEditNick}
             <button class="nick-edit" aria-label="Mudar apelido" use:tooltip={'Apelido neste servidor'} onclick={() => ((nick = member?.nick ?? ''), (editingNick = true))}>
               <Icon name="pencil" size={13} />
@@ -176,7 +176,11 @@
           {/if}
         </h2>
       {/if}
-      <p class="username">{profile.deleted ? 'Conta excluída' : `@${profile.username}`}{#if member?.nick}<span> · {profile.name}</span>{/if}</p>
+      <p class="username">
+        {profile.deleted ? 'Conta excluída' : `@${profile.username}`}{#if member?.nick}<span> · {profile.name}</span>{/if}{#if style?.pronouns}<span
+            class="pronouns">{style.pronouns}</span
+          >{/if}
+      </p>
       {#if !profile.deleted}
         {#if presence.text}
           <p class="custom"><span class="bubble">{presence.text}</span></p>
@@ -241,7 +245,7 @@
         </div>
       {/if}
     </div>
-  </div>
+  </ProfileShell>
 {/if}
 
 {#if menu}
@@ -258,30 +262,6 @@
 </script>
 
 <style>
-  .card {
-    width: 320px;
-    border-radius: var(--r-2xl);
-    background: var(--bg-raised);
-    overflow: hidden;
-  }
-
-  .card.flat {
-    width: 100%;
-    height: 100%;
-    border-radius: 0;
-    background: transparent;
-    overflow-y: auto;
-  }
-
-  .flat .top :global(.avatar) {
-    box-shadow: 0 0 0 6px var(--bg-panel);
-  }
-
-  .banner {
-    height: 96px;
-    opacity: 0.75;
-  }
-
   .top {
     display: flex;
     align-items: flex-end;
@@ -292,7 +272,7 @@
 
   .top :global(.avatar) {
     border-radius: 50%;
-    box-shadow: 0 0 0 6px var(--bg-raised);
+    box-shadow: 0 0 0 6px var(--card-cut);
   }
 
   .top-actions {
@@ -311,6 +291,11 @@
     font-weight: 650;
     letter-spacing: -0.015em;
     overflow-wrap: anywhere;
+  }
+
+  /* No cartão o nome pode quebrar linha: volta pro espaçamento normal. */
+  h2 :global(.styled-name) {
+    line-height: inherit;
   }
 
   .nick-edit {
@@ -355,6 +340,16 @@
 
   .username span {
     color: var(--fg-3);
+  }
+
+  .username .pronouns {
+    margin-left: 8px;
+    padding: 1px 7px;
+    border-radius: var(--r-full);
+    background: rgb(255 255 255 / 0.07);
+    color: var(--fg-2);
+    font-size: var(--text-xs);
+    white-space: nowrap;
   }
 
   .custom {

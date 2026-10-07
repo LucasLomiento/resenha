@@ -53,6 +53,7 @@ As etapas 0.6 a 0.9 saíram juntas na 1.0 (uma atualização em vez de quatro).
 - [x] Documentação de operação: deploy, backup, logs e limites do plano grátis ([OPERACAO.md](OPERACAO.md))
 
 ## Depois da 1.0
+- [x] Perfil personalizado, pra todo mundo: banner e foto animados, tema do cartão em duas cores, pronomes, moldura do avatar, efeito no cartão, fonte e efeito do nome
 - [ ] Modo privado (tudo via TURN, esconde o IP até dos amigos): precisa da chave TURN
 - [ ] Arrastar servidores no trilho pra reordenar
 - [ ] Emojis próprios de cada servidor

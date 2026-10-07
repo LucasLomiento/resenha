@@ -2,8 +2,10 @@
 // nada importa o store, então serve tanto pro app quanto pros protótipos.
 
 export { default as Avatar } from './Avatar.svelte'
+export { default as AvatarDecoration } from './AvatarDecoration.svelte'
 export { default as Badge } from './Badge.svelte'
 export { default as Button } from './Button.svelte'
+export { default as ColorPicker } from './ColorPicker.svelte'
 export { default as EmptyState } from './EmptyState.svelte'
 export { default as Icon, type IconName } from './Icon.svelte'
 export { default as IconButton } from './IconButton.svelte'

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { client } from '../../lib/client.svelte'
   import type { GuildState } from '../../lib/guild.svelte'
+  import { nameStyle } from '../../lib/profile'
   import { openProfile, ui } from '../../lib/ui.svelte'
   import { Avatar, Icon, Menu, tooltip, type MenuItem } from '../kit'
   import { memberMenu } from './memberMenu'
@@ -11,6 +12,8 @@
   const selected = $derived(ui.profile?.guildId === guild.id ? ui.profile.userId : null)
 
   let menu = $state<{ items: MenuItem[]; anchor: { x: number; y: number } } | null>(null)
+  /** Linha com o mouse em cima: a foto animada e a moldura dela se mexem. */
+  let hovered = $state<string | null>(null)
 
   /** Embaixo do nome: na call, senão o status personalizado. */
   function activity(userId: string) {
@@ -34,10 +37,13 @@
       {@const presence = guild.presences[userId]}
       {@const off = !presence || presence.status === 'offline'}
       {@const now = activity(userId)}
+      {@const styled = nameStyle(user)}
       <button
         class="member"
         class:off
         class:selected={selected === userId}
+        onpointerenter={() => (hovered = userId)}
+        onpointerleave={() => hovered === userId && (hovered = null)}
         onclick={(e) => openProfile(userId, guild.id, e.currentTarget)}
         oncontextmenu={(e) => {
           e.preventDefault()
@@ -49,12 +55,17 @@
           name={user?.name ?? '?'}
           size={32}
           src={client.avatarOf(userId, guild.id)}
+          animated={client.animatedAvatarOf(userId, guild.id)}
+          decoration={user?.deleted ? null : user?.style?.decoration}
+          play={hovered === userId}
           status={off ? null : presence.status}
           cutout={selected === userId ? '#1e1e26' : 'var(--bg-panel)'}
         />
         <span class="text">
           <span class="name-row">
-            <span class="name" style:color={off ? null : hex(guild.colorOf(userId))}>{guild.displayName(userId)}</span>
+            <span class="name" class:styled={!!styled.class} style:color={off ? null : hex(guild.colorOf(userId))}
+              ><span class={styled.class} style={styled.style}>{guild.displayName(userId)}</span></span
+            >
             {#if userId === guild.info.ownerId}<span class="crown" use:tooltip={'Dono do servidor'}><Icon name="crown" size={13} /></span>{/if}
             {#if timedOut(userId)}<span class="timeout" use:tooltip={'De castigo'}><Icon name="clock" size={13} /></span>{/if}
           </span>
@@ -143,6 +154,12 @@
     color: var(--fg-2);
     font-size: var(--text-md);
     font-weight: 500;
+  }
+
+  /* Fonte com mais sobra em cima e embaixo (cursiva): a caixa do corte cresce sem mexer na linha. */
+  .name.styled {
+    margin-block: -3px;
+    padding-block: 3px;
   }
 
   .crown {

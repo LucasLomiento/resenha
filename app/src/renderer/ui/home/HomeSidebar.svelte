@@ -63,7 +63,7 @@
           menu = { dm, anchor: { x: e.clientX, y: e.clientY } }
         }}
       >
-        <Avatar id={dm.user.id} name={dm.user.name} size={32} src={client.api?.media(dm.user.avatar) ?? null} status={presence.status} cutout="var(--row-bg)" />
+        <Avatar id={dm.user.id} name={dm.user.name} size={32} src={client.api?.avatar(dm.user) ?? null} status={presence.status} cutout="var(--row-bg)" />
         <span class="dm-text">
           <span class="dm-name">{dm.user.name}</span>
           {#if sub}<span class="dm-sub">{sub}</span>{/if}

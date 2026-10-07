@@ -1,4 +1,15 @@
-import type { GuildInfo, Me, Message, Presence, SignalData, Status, User, VisibleStatus, VoiceMember } from '../../../../shared/protocol'
+import type {
+  GuildInfo,
+  Me,
+  Message,
+  Presence,
+  ProfileStyle,
+  SignalData,
+  Status,
+  User,
+  VisibleStatus,
+  VoiceMember,
+} from '../../../../shared/protocol'
 import type { DesktopPrefs, PlatformInfo, SavedSession, ShortcutAction, UpdateState } from '../../preload/api'
 import { Api, HttpError } from './api'
 import { Call, type CallTransport } from './call.svelte'
@@ -204,9 +215,22 @@ class Client implements GuildHost, HomeHost {
     return nick || this.user(userId, guildId)?.name || 'Alguém'
   }
 
-  /** Foto de alguém (URL completa), ou null pro degradê com iniciais. */
+  /** Foto de alguém (URL completa), ou null pro degradê com iniciais. Foto animada vem parada (o primeiro quadro). */
   avatarOf(userId: string, guildId?: string | null): string | null {
-    return this.api?.media(this.user(userId, guildId)?.avatar ?? null) ?? null
+    const user = this.user(userId, guildId)
+    return this.api?.media(user?.style?.avatarStill ?? user?.avatar ?? null) ?? null
+  }
+
+  /** A foto animada de alguém (só se for animada), pro cartão de perfil e o hover. */
+  animatedAvatarOf(userId: string, guildId?: string | null): string | null {
+    const user = this.user(userId, guildId)
+    return user?.style?.avatarStill ? (this.api?.media(user.avatar) ?? null) : null
+  }
+
+  /** Personalização do perfil de alguém (moldura, nome…). */
+  styleOf(userId: string, guildId?: string | null): ProfileStyle | undefined {
+    const user = this.user(userId, guildId)
+    return user?.deleted ? undefined : user?.style
   }
 
   /** Status visível de alguém (de algum servidor em comum, ou dos amigos). Eu: o meu de agora. */

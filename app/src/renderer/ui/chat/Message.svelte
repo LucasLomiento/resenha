@@ -3,6 +3,7 @@
   import { client } from '../../lib/client.svelte'
   import { formatFull, formatSize, formatStamp, formatTime } from '../../lib/format'
   import { plainText } from '../../lib/markdown'
+  import { nameStyle } from '../../lib/profile'
   import { confirmAction, openProfile, ui } from '../../lib/ui.svelte'
   import { memberMenu } from '../guild/memberMenu'
   import { Avatar, Icon, IconButton, Kbd, Menu, tooltip, type MenuItem } from '../kit'
@@ -32,6 +33,10 @@
   const mine = $derived(message.authorId === meId)
   const name = $derived(target.displayName(message.authorId))
   const color = $derived(target.color(message.authorId))
+  const author = $derived(target.profile(message.authorId))
+  const authorName = $derived(nameStyle(author))
+  /** Mouse em cima: a foto animada e a moldura se mexem (paradas no resto do tempo). */
+  let hovered = $state(false)
   const mentioned = $derived(!mine && target.mentionsMe(message))
   const canDelete = $derived(mine || target.canManage)
 
@@ -166,6 +171,8 @@
   class:has-reply={!!message.replyTo}
   data-message-id={message.id}
   oncontextmenu={messageMenu}
+  onpointerenter={() => (hovered = true)}
+  onpointerleave={() => (hovered = false)}
 >
   {#if message.replyTo}
     {@const ref = message.replyTo}
@@ -189,7 +196,16 @@
         <time class="time-hover tabular" use:tooltip={formatFull(message.createdAt)}>{formatTime(message.createdAt)}</time>
       {:else}
         <button class="avatar-button" aria-label="Perfil de {name}" onclick={(e) => openAuthor(e.currentTarget)} oncontextmenu={authorMenu}>
-          <Avatar id={message.authorId} {name} size={36} src={target.avatar(message.authorId)} cutout="var(--bg-panel)" />
+          <Avatar
+            id={message.authorId}
+            {name}
+            size={36}
+            src={target.avatar(message.authorId)}
+            animated={target.animatedAvatar(message.authorId)}
+            decoration={author?.deleted ? null : author?.style?.decoration}
+            play={hovered}
+            cutout="var(--bg-panel)"
+          />
         </button>
       {/if}
     </div>
@@ -197,7 +213,9 @@
     <div class="body">
       {#if !grouped}
         <div class="head">
-          <button class="author" style:color onclick={(e) => openAuthor(e.currentTarget)} oncontextmenu={authorMenu}>{name}</button>
+          <button class="author" style:color onclick={(e) => openAuthor(e.currentTarget)} oncontextmenu={authorMenu}
+            ><span class={authorName.class} style={authorName.style}>{name}</span></button
+          >
           <time class="stamp" use:tooltip={formatFull(message.createdAt)}>{formatStamp(message.createdAt)}</time>
           {#if message.pinned}<span class="pin" use:tooltip={'Fixada'}><Icon name="pin" size={12} /></span>{/if}
         </div>

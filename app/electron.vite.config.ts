@@ -49,5 +49,7 @@ export default defineConfig({
     // O processador do microfone roda num AudioWorklet, que carrega módulo ES e
     // não tem `self`: o formato padrão de worker (iife) quebraria o import.meta.url.
     worker: { format: 'es' },
+    // Fonte pequena viraria data: URL, que o CSP (font-src 'self') bloqueia: sai sempre como arquivo.
+    build: { assetsInlineLimit: (file) => (/\.(woff2?|ttf|otf)$/.test(file) ? false : undefined) },
   },
 })

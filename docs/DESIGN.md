@@ -110,7 +110,8 @@ Tudo exportado por `ui/kit/index.ts`. Nenhum componente do kit importa o store: 
 | `Tabs` | Filtros de uma lista (Amigos: Online, Todos, Pendentes). | Pílulas; `count` e `alert` (contador vermelho). |
 | `Slider` | Volume. | Trilho preenchido com o acento. |
 | `Meter` | Nível do microfone. | Com `threshold`, a própria barra vira o controle do limiar (marca branca arrastável). |
-| `Avatar` | Pessoa ou servidor. | Foto ou degradê com iniciais (sem "de/da/do"), `status`, `speaking` (anel verde), `square` (servidor), `cutout` = cor do fundo atrás. |
+| `Avatar` | Pessoa ou servidor. | Foto ou degradê com iniciais (sem "de/da/do"), `status`, `speaking` (anel verde), `square` (servidor), `cutout` = cor do fundo atrás. `decoration` (moldura do perfil), `animated` (a foto animada) e `play` (anima os dois: no cartão sempre, nas listas só no hover). |
+| `ColorPicker` | Cor livre (tema do perfil). | Quadro de saturação/brilho, matiz e código; avisa a cada movimento, pra prévia acompanhar. Vai dentro de um `Popover`. |
 | `StatusDot` | Status. | Forma além da cor: bolinha (online), lua (ausente), menos (não perturbe), anel (offline). |
 | `Badge` | Selos. | neutral/accent/success/warning/danger, `count` (menções), `live` (AO VIVO com pulso), `dot` (cor de cargo). |
 | `Kbd` | Atalhos. | "Ctrl + Shift + M" vira três teclas. |
@@ -277,6 +278,17 @@ Cada uma tem um protótipo estático com dados de exemplo em `ui/proto`. Os nome
 
 ### Kit — `#proto/kit`
 Galeria de todos os componentes e tokens, pra conferir de olho quando mudar algo no kit.
+
+## Personalização do perfil
+
+O "Nitro" do Resenha, pra todo mundo. Tudo opcional; sem nada, o perfil fica como sempre foi.
+
+- **Cartão** (`ui/profile/ProfileShell.svelte`): tema em duas cores vira o fundo em degradê, escurecido (40% da cor sobre o fundo) pro texto branco continuar legível; a principal vai até o avatar e a de destaque embaixo. Banner (imagem 5:2, pode ser GIF) no topo; sem banner, a cor do perfil, senão a principal do tema. `--card-cut` é a cor atrás do avatar, pro recorte acompanhar o tema.
+- **Foto animada**: no cartão e na prévia ela anima; nas listas (mensagens, membros, conversas, dock) aparece o primeiro quadro, que o app gera e manda junto. Passar o mouse na mensagem ou no membro anima a foto e a moldura.
+- **Molduras** (`kit/AvatarDecoration.svelte`): SVG/CSS próprios, 25% maiores que o avatar (neon, aurora, fones, estrelinhas, chamas, flores, coroa, gatinho). No cartão animam sempre, devagar; nas listas, só no hover.
+- **Efeitos** (`ui/profile/ProfileEffect.svelte`): partículas leves só de CSS por cima do cartão (confete, neve, brilhos, corações, bolhas, vaga-lumes). Somem com `prefers-reduced-motion`.
+- **Nome**: fonte (Clássica = Fraunces, Redonda = Fredoka, Cursiva = Pacifico, Pixel = Silkscreen, todas OFL e empacotadas) e efeito (degradê com as cores do perfil, neon). As cores são clareadas até dar contraste no fundo escuro, e o `line-height: 1` do nome estilizado não muda a altura da linha no chat (`.styled-name` no `app.css`).
+- **Onde aparece**: cartão de perfil, painel da conversa privada, prévia nas configurações, mensagens e lista de membros. A galeria `#proto/profile-style` mostra tudo com dados de exemplo.
 
 ## Acessibilidade
 

@@ -1,4 +1,4 @@
-import { P, has, type Channel, type DmChannel, type Message } from '../../../../../shared/protocol'
+import { P, has, type Channel, type DmChannel, type Message, type User } from '../../../../../shared/protocol'
 import { client } from '../../lib/client.svelte'
 import type { GuildState } from '../../lib/guild.svelte'
 import type { HomeState } from '../../lib/home.svelte'
@@ -42,6 +42,10 @@ export interface ChatTarget {
   displayName(userId: string): string
   color(userId: string): string | null
   avatar(userId: string): string | null
+  /** Foto animada (só se for), pro hover. */
+  animatedAvatar(userId: string): string | null
+  /** Perfil (pra moldura e nome com estilo). */
+  profile(userId: string): User | undefined
   mentionsMe(message: Message): boolean
   typing(now: number): string[]
   send(content: string, attachmentIds: string[], replyTo: string | null): Promise<void>
@@ -127,6 +131,8 @@ export function channelTarget(guild: GuildState, channel: Channel): ChatTarget {
     displayName: (userId) => guild.displayName(userId),
     color: (userId) => hex(guild.colorOf(userId)),
     avatar: (userId) => client.avatarOf(userId, guild.id),
+    animatedAvatar: (userId) => client.animatedAvatarOf(userId, guild.id),
+    profile: (userId) => client.user(userId, guild.id),
     mentionsMe: (message) => guild.mentionsMe(message),
     typing: (now) => guild.typingIn(id, now),
     send: (content, attachmentIds, replyTo) => guild.sendMessage(id, content, attachmentIds, replyTo),
@@ -193,6 +199,8 @@ export function dmTarget(home: HomeState, dm: DmChannel): ChatTarget {
     displayName: (userId) => client.displayName(userId),
     color: () => null,
     avatar: (userId) => client.avatarOf(userId),
+    animatedAvatar: (userId) => client.animatedAvatarOf(userId),
+    profile: (userId) => client.user(userId),
     mentionsMe: () => false,
     typing: (now) => home.typingIn(id, now),
     send: (content, attachmentIds, replyTo) => home.sendMessage(id, content, attachmentIds, replyTo),

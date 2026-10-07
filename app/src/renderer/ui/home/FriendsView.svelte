@@ -195,7 +195,7 @@
 
 {#snippet who(user: User, sub: string, status: VisibleStatus | null, call = false)}
   <button type="button" class="who" aria-label={describe(user, sub, status)} onclick={(e) => openProfile(user.id, null, e.currentTarget)}>
-    <Avatar id={user.id} name={user.name} size={36} src={client.api?.media(user.avatar) ?? null} {status} cutout="var(--row-bg)" />
+    <Avatar id={user.id} name={user.name} size={36} src={client.api?.avatar(user) ?? null} {status} cutout="var(--row-bg)" />
     <span class="text">
       <span class="name">{user.name} <span class="username">{user.username}</span></span>
       <span class="sub" class:call>

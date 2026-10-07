@@ -27,6 +27,7 @@
     { id: 'account-devices', label: 'Aparelhos', group: 'Conta' },
     { id: 'account-password', label: 'Senha', group: 'Conta' },
     { id: 'account-privacy', label: 'Privacidade', group: 'Conta' },
+    { id: 'profile-style', label: 'Personalização do perfil', group: 'Conta' },
     { id: 'kit', label: 'Kit de componentes', group: 'Sistema' },
   ] as const
 
@@ -44,6 +45,7 @@
   import KitGallery from './KitGallery.svelte'
   import MemberList from './MemberList.svelte'
   import PinsPopover from './PinsPopover.svelte'
+  import ProfileStyleGallery from './ProfileStyleGallery.svelte'
   import ProfileCard from './ProfileCard.svelte'
   import ProtoFrame from './ProtoFrame.svelte'
   import QuickSwitcher from './QuickSwitcher.svelte'
@@ -139,6 +141,8 @@
     {#key id}<AccountSettings page={accountPage[id as keyof typeof accountPage]} />{/key}
   {:else if id === 'kit'}
     <KitGallery />
+  {:else if id === 'profile-style'}
+    <ProfileStyleGallery />
   {:else if id === 'home' || id === 'home-pending' || id === 'home-add' || id === 'create-server' || id === 'create-server-form' || id === 'join-server'}
     <ProtoFrame rail="home">
       {#snippet sidebar()}<HomeSidebar active="friends" />{/snippet}

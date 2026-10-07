@@ -50,7 +50,7 @@
           name: dm.user.name,
           hint: `@${dm.user.username}`,
           unread: dm.unread > 0,
-          avatar: { id: dm.user.id, name: dm.user.name, src: client.api?.media(dm.user.avatar) ?? null, status: client.presenceOf(dm.user.id).status },
+          avatar: { id: dm.user.id, name: dm.user.name, src: client.api?.avatar(dm.user) ?? null, status: client.presenceOf(dm.user.id).status },
           score: 1,
           open: () => client.navigate({ kind: 'dm', channelId: dm.id }),
         })
@@ -94,7 +94,7 @@
           group: 'Pessoas',
           name: person.name,
           hint: `@${person.username}`,
-          avatar: { id: person.id, name: person.name, src: client.api?.media(person.avatar) ?? null, status: client.presenceOf(person.id).status },
+          avatar: { id: person.id, name: person.name, src: client.api?.avatar(person) ?? null, status: client.presenceOf(person.id).status },
           score: s,
           open: () => client.openDm(person.id),
         })

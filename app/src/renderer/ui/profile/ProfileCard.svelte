@@ -19,3 +19,10 @@
     </Popover>
   {/key}
 {/if}
+
+<style>
+  /* Mesmo raio do cartão: com tema, o fundo do popover não aparece nos cantos. */
+  :global(.popover.profile-pop) {
+    border-radius: var(--r-2xl);
+  }
+</style>
