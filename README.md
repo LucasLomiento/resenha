@@ -1,6 +1,8 @@
 # Resenha
 
-> **Só quer instalar e usar?** Baixe em [Releases](https://github.com/LucasLomiento/resenha/releases/latest) e siga o [INSTALAR.md](INSTALAR.md).
+> **Só quer instalar e usar?** Veja o site, com as novidades e os downloads: **[lucaslomiento.github.io/resenha](https://lucaslomiento.github.io/resenha/)**. Ou baixe em [Releases](https://github.com/LucasLomiento/resenha/releases/latest) e siga o [INSTALAR.md](INSTALAR.md).
+
+O site fica em `site/` (`node site/build.mjs` gera em `site/dist`) e é publicado pelo `.github/workflows/site.yml` a cada mudança e depois de cada release.
 
 Um app no estilo do Discord: vários servidores com canais, cargos e moderação, mensagens privadas, amigos, chat com imagens e arquivos, call de voz, câmera e compartilhamento de tela até 1440p a 60 fps com áudio, e um mapa compartilhado em cada servidor. O áudio da tela **não leva junto a voz da call**. Voz e tela vão direto entre os PCs (P2P), e o Cloudflare só cuida das contas, do chat e de apresentar as pessoas umas às outras.
 

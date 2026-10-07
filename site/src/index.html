@@ -1,0 +1,257 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Resenha</title>
+  <meta name="description" content="Voz, chat e tela até 1440p a 60 fps pro seu grupo, direto de um PC pro outro. Com rabisco na tela do amigo, mapa junto e perfil do seu jeito.">
+  <meta name="theme-color" content="#0b0b10">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Resenha">
+  <meta property="og:description" content="Voz, chat e tela pro seu grupo, direto de um PC pro outro.">
+  <meta property="og:image" content="https://lucaslomiento.github.io/resenha/assets/icon-512.png">
+  <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+  <link rel="preload" href="assets/fonts/geist-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="style.css">
+  <script src="main.js" defer></script>
+</head>
+<body>
+  <a class="skip" href="#recursos">Pular pro conteúdo</a>
+
+  <nav class="top" aria-label="Seções">
+    <a class="brand" href="#topo"><img src="assets/icon.svg" alt="" width="28" height="28">Resenha</a>
+    <div class="channels">
+      <a href="#recursos"><span>#</span>recursos</a>
+      <a href="#novidades"><span>#</span>novidades</a>
+      <a href="#baixar"><span>#</span>baixar</a>
+    </div>
+    <div class="top-end">
+      <a class="icon-link" href="https://github.com/LucasLomiento/resenha" aria-label="Código no GitHub">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3 0 6-2 6-5.5.08-1.25-.27-2.48-1-3.5.28-1.15.28-2.35 0-3.5 0 0-1 0-3 1.5-2.64-.5-5.36-.5-8 0C6 2 5 2 5 2c-.3 1.15-.3 2.35 0 3.5A5.4 5.4 0 0 0 4 9c0 3.5 3 5.5 6 5.5-.39.49-.68 1.05-.85 1.65-.17.6-.22 1.23-.15 1.85v4"/><path d="M9 18c-4.51 2-5-2-7-2"/></svg>
+      </a>
+      <a class="btn small primary" href="#baixar">Baixar</a>
+    </div>
+  </nav>
+
+  <header class="hero" id="topo">
+    <canvas class="scribble" aria-hidden="true"></canvas>
+    <div class="hero-inner">
+      <a class="live-pill" href="#novidades"><span class="live-dot"></span><span class="live-label">Ao vivo</span><span class="live-sep"></span>versão {{VERSION}}</a>
+      <h1>Chama a <span class="circle-me">galera</span>.</h1>
+      <p class="lede">Voz, chat e tela pro seu grupo, direto de um PC pro outro. Transmissão até 1440p a 60 fps, com o som do jogo e sem a voz da call.</p>
+      <div class="cta">
+        <a class="btn primary big" href="#baixar">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V3"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/></svg>
+          <span data-cta>Baixar o Resenha</span>
+        </a>
+        <a class="btn ghost big" href="#recursos">Ver como é</a>
+      </div>
+    </div>
+    <p class="hint" aria-hidden="true">
+      <svg viewBox="0 0 24 24"><path d="M13 21h8"/><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/></svg>
+      Arrasta o mouse aqui. É assim que se rabisca na tela do amigo.
+    </p>
+  </header>
+
+  <main>
+    <!-- Uma call que muda de cena enquanto você rola: a janela fica parada e o texto passa. -->
+    <section class="story" id="recursos" aria-label="Recursos">
+      <div class="steps">
+        <article class="step" data-scene="call">
+          <span class="tag"># call</span>
+          <h2>Entrou, falou.</h2>
+          <p>A voz vai direto de um PC pro outro, sem servidor no meio. Com redução de ruído, detecção de voz e o volume de cada um do seu jeito.</p>
+        </article>
+        <article class="step" data-scene="tela">
+          <span class="tag"># tela</span>
+          <h2>1440p, 60 quadros e o som do jogo.</h2>
+          <p>Compartilha o monitor ou uma janela. O som vai em estéreo e a voz da call fica de fora: ninguém se escuta em dobro.</p>
+        </article>
+        <article class="step" data-scene="rabisco">
+          <span class="tag"># rabiscos</span>
+          <h2>Rabisca na tela do amigo.</h2>
+          <p>Quem assiste desenha por cima, e o rabisco aparece no monitor de quem está compartilhando. Laser pra apontar, caneta pra marcar.</p>
+        </article>
+        <article class="step" data-scene="mapa">
+          <span class="tag"># mapa</span>
+          <h2>Todo mundo no mesmo mapa.</h2>
+          <p>Arrastou, a galera vai junto. Cursores ao vivo, marcadores que ficam salvos no servidor e Street View.</p>
+        </article>
+        <article class="step" data-scene="perfil">
+          <span class="tag"># perfil</span>
+          <h2>O perfil é todo seu.</h2>
+          <p>Banner e foto animados, moldura, efeito no cartão e nome com fonte e brilho. Pra todo mundo, sem pagar nada.</p>
+        </article>
+        <article class="step" data-scene="queda">
+          <span class="tag"># conexão</span>
+          <h2>Caiu a internet? A call segue.</h2>
+          <p>Voltou em até 30 segundos, ninguém sai da sala e a tela continua. E o app se atualiza sozinho, sem atrapalhar a call.</p>
+        </article>
+      </div>
+
+      <div class="stage" aria-hidden="true">
+        <div class="window" data-scene="call">
+          <div class="win-head">
+            <svg viewBox="0 0 24 24"><path d="M11 4.702a.705.705 0 0 0-1.203-.498L6.413 7.587A1.4 1.4 0 0 1 5.416 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.416a1.4 1.4 0 0 1 .997.413l3.383 3.384A.705.705 0 0 0 11 19.298z"/><path d="M16 9a5 5 0 0 1 0 6"/><path d="M19.364 18.364a9 9 0 0 0 0-12.728"/></svg>
+            <span class="win-channel">Geral</span>
+            <span class="win-scene-name"></span>
+            <span class="faces"><i class="c1">B</i><i class="c2">T</i><i class="c3">G</i><i class="c4">R</i></span>
+          </div>
+
+          <div class="scenes">
+            <div class="scene scene-call">
+              <div class="tile talk-1"><span class="avatar c1">B</span><span class="name">Bia</span></div>
+              <div class="tile talk-2"><span class="avatar c2">T</span><span class="name">Thiago</span></div>
+              <div class="tile talk-3"><span class="avatar c3">G</span><span class="name">Gabi</span></div>
+              <div class="tile talk-4"><span class="avatar c4">R</span><span class="name muted">Rafa</span></div>
+            </div>
+
+            <div class="scene scene-tela">
+              <div class="game">
+                <div class="sun"></div><div class="hills back"></div><div class="hills front"></div>
+                <span class="badge-live">Ao vivo</span>
+                <span class="who"><i class="c2">T</i>Thiago</span>
+                <span class="stats">2560×1440 · 60 fps · VP9</span>
+                <span class="meters"><i class="l"></i><i class="r"></i><b>E</b><b>D</b></span>
+              </div>
+            </div>
+
+            <div class="scene scene-rabisco">
+              <div class="game dim">
+                <div class="sun"></div><div class="hills back"></div><div class="hills front"></div>
+                <span class="badge-live">Ao vivo</span>
+                <span class="who"><i class="c2">T</i>Thiago</span>
+                <canvas class="ink"></canvas>
+                <span class="ink-pill"><i>Laser</i><i>Caneta</i></span>
+              </div>
+            </div>
+
+            <div class="scene scene-mapa">
+              <svg class="streets" viewBox="0 0 400 300" preserveAspectRatio="xMidYMid slice">
+                <path class="water" d="M-10 220 C 60 190, 120 250, 190 230 S 330 180, 420 210 L 420 320 L -10 320 Z"/>
+                <path class="park" d="M250 40 h70 a10 10 0 0 1 10 10 v40 a10 10 0 0 1-10 10 h-70 a10 10 0 0 1-10-10 v-40 a10 10 0 0 1 10-10z"/>
+                <g class="roads">
+                  <path d="M-10 70 C 80 60, 160 90, 230 80 S 360 60, 420 75"/>
+                  <path d="M-10 150 C 90 140, 170 160, 260 150 S 360 140, 420 145"/>
+                  <path d="M80 -10 C 70 80, 100 160, 90 320"/>
+                  <path d="M210 -10 C 220 90, 200 170, 215 320"/>
+                  <path d="M330 -10 C 320 100, 345 190, 330 320"/>
+                </g>
+                <g class="alleys">
+                  <path d="M-10 110 H 420"/><path d="M-10 30 H 420"/><path d="M150 -10 V 320"/><path d="M270 -10 V 320"/><path d="M30 -10 V 320"/>
+                </g>
+              </svg>
+              <span class="pin"><i></i><b>Pizzaria</b></span>
+              <span class="cursor walk-1"><svg viewBox="0 0 24 24"><path d="M4 3l16 7-7 2-2 7z"/></svg><b class="c3">Gabi</b></span>
+              <span class="cursor walk-2"><svg viewBox="0 0 24 24"><path d="M4 3l16 7-7 2-2 7z"/></svg><b class="c4">Rafa</b></span>
+              <span class="map-moving"><i class="c3"></i>Gabi está movendo o mapa</span>
+              <span class="map-chip">Street View</span>
+            </div>
+
+            <div class="scene scene-perfil">
+              <div class="card">
+                <div class="banner"></div>
+                <div class="card-avatar"><span class="ring"></span><span class="avatar c3">G</span></div>
+                <div class="card-body">
+                  <strong class="fancy">Gabi</strong>
+                  <span class="handle">@gabi · ela/dela</span>
+                  <p>Mestre do RPG de quinta. Não me chama antes das 10.</p>
+                </div>
+                <span class="spark s1">✦</span><span class="spark s2">✦</span><span class="spark s3">✦</span><span class="spark s4">✦</span>
+              </div>
+            </div>
+
+            <div class="scene scene-queda">
+              <span class="net"><i class="spin"></i><span class="net-off">Sem conexão. Tentando de novo…</span><span class="net-on">De volta. Ninguém saiu da call.</span></span>
+              <div class="tile wide">
+                <div class="game mini"><div class="sun"></div><div class="hills back"></div><div class="hills front"></div></div>
+                <span class="frames">quadro <b data-frames>0</b></span>
+              </div>
+              <div class="tile"><span class="avatar c1">B</span><span class="name">Bia</span></div>
+              <div class="tile"><span class="avatar c3">G</span><span class="name">Gabi</span></div>
+            </div>
+          </div>
+
+          <div class="win-dock">
+            <span class="key k-mic"><svg viewBox="0 0 24 24"><path d="M12 19v3"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><rect x="9" y="2" width="6" height="13" rx="3"/></svg></span>
+            <span class="key k-ear"><svg viewBox="0 0 24 24"><path d="M3 14h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a9 9 0 0 1 18 0v7a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3"/></svg></span>
+            <span class="key k-screen"><svg viewBox="0 0 24 24"><path d="m9 10 3-3 3 3"/><path d="M12 13V7"/><rect width="20" height="14" x="2" y="3" rx="2"/><path d="M12 17v4"/><path d="M8 21h8"/></svg></span>
+            <span class="key k-pen"><svg viewBox="0 0 24 24"><path d="M13 21h8"/><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/></svg></span>
+            <span class="key k-map"><svg viewBox="0 0 24 24"><path d="M14.106 5.553a2 2 0 0 0 1.788 0l3.659-1.83A1 1 0 0 1 21 4.619v12.764a1 1 0 0 1-.553.894l-4.553 2.277a2 2 0 0 1-1.788 0l-4.212-2.106a2 2 0 0 0-1.788 0l-3.659 1.83A1 1 0 0 1 3 19.381V6.618a1 1 0 0 1 .553-.894l4.553-2.277a2 2 0 0 1 1.788 0z"/><path d="M15 5.764v15"/><path d="M9 3.236v15"/></svg></span>
+            <span class="dock-gap"></span>
+            <span class="key leave"><svg viewBox="0 0 24 24"><path d="M10.1 13.9a14 14 0 0 0 3.732 2.668 1 1 0 0 0 1.213-.303l.355-.465A2 2 0 0 1 17 15h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2A18 18 0 0 1 7.272 16.728"/><path d="M22 2 2 22"/><path d="M4.76 13.582A18 18 0 0 1 2 4a2 2 0 0 1 2-2h3a2 2 0 0 1 2 2v3a2 2 0 0 1-.8 1.6l-.468.351a1 1 0 0 0-.292 1.233 14 14 0 0 0 .244.473"/></svg></span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="rest" aria-label="E mais">
+      <p class="rest-title">E o resto que uma boa call precisa:</p>
+      <ul class="chips">
+        <li>Servidores e canais</li><li>Cargos e moderação</li><li>Mensagem privada e ligação</li><li>Câmera</li>
+        <li>@menções e reações</li><li>Busca sem acento</li><li>Ctrl+K pra qualquer lugar</li><li>Atalhos globais</li>
+        <li>Ícone na bandeja</li><li>Imagens e arquivos</li><li>Funciona no Hyprland</li><li>Código aberto</li>
+      </ul>
+    </section>
+
+    <section class="changelog" id="novidades">
+      <div class="section-head">
+        <span class="tag"># novidades</span>
+        <h2>O que mudou</h2>
+        <p>{{COUNT}} versões desde {{FIRST_DATE}}. O app avisa sozinho quando sai a próxima.</p>
+      </div>
+      <div class="channel">
+        <div class="channel-head">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><line x1="4" x2="20" y1="9" y2="9"/><line x1="4" x2="20" y1="15" y2="15"/><line x1="10" x2="8" y1="3" y2="21"/><line x1="16" x2="14" y1="3" y2="21"/></svg>
+          <strong>novidades</strong><span class="topic">Tudo que mudou no Resenha, da versão mais nova pra mais antiga.</span>
+        </div>
+        <div class="channel-log">
+{{CHANGELOG}}
+        </div>
+      </div>
+    </section>
+
+    <section class="download" id="baixar">
+      <div class="section-head">
+        <span class="tag"># baixar</span>
+        <h2>Baixar</h2>
+        <p>Versão {{VERSION}}, de {{VERSION_DATE}}. Depois de instalado, ele se atualiza sozinho.</p>
+      </div>
+      <div class="dl-grid">
+        <div class="dl" data-os="arch">
+          <span class="dl-os">Arch, CachyOS, Omarchy</span>
+          <strong class="dl-kind">Pacote .pacman</strong>
+          <span class="dl-size">{{PACMAN_SIZE}}</span>
+          <a class="btn primary" href="{{PACMAN_URL}}">Baixar</a>
+          <div class="cmd"><code>sudo pacman -U {{PACMAN_NAME}}</code><button type="button" class="copy" aria-label="Copiar o comando"><svg viewBox="0 0 24 24"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg></button></div>
+        </div>
+        <div class="dl" data-os="linux">
+          <span class="dl-os">Outras distros Linux</span>
+          <strong class="dl-kind">AppImage</strong>
+          <span class="dl-size">{{APPIMAGE_SIZE}}</span>
+          <a class="btn secondary" href="{{APPIMAGE_URL}}">Baixar</a>
+          <div class="cmd"><code>chmod +x {{APPIMAGE_NAME}}</code><button type="button" class="copy" aria-label="Copiar o comando"><svg viewBox="0 0 24 24"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg></button></div>
+        </div>
+        <div class="dl" data-os="windows">
+          <span class="dl-os">Windows 10 e 11</span>
+          <strong class="dl-kind">Instalador</strong>
+          <span class="dl-size">{{SETUP_SIZE}}</span>
+          <a class="btn secondary" href="{{SETUP_URL}}">Baixar</a>
+          <p class="dl-alt">Ou o <a href="{{ZIP_URL}}">.zip</a>, sem instalar (esse não se atualiza).</p>
+        </div>
+      </div>
+      <p class="invite">Pra entrar, você precisa de um convite de alguém do grupo.</p>
+    </section>
+  </main>
+
+  <footer class="foot">
+    <a class="brand" href="#topo"><img src="assets/icon.svg" alt="" width="24" height="24">Resenha</a>
+    <span class="foot-note">Feito pela resenha, pra resenha.</span>
+    <nav class="foot-links" aria-label="Links">
+      <a href="https://github.com/LucasLomiento/resenha">Código</a>
+      <a href="https://github.com/LucasLomiento/resenha/blob/main/docs/PRIVACIDADE.md">Privacidade</a>
+      <a href="https://github.com/LucasLomiento/resenha/blob/main/docs/TERMOS.md">Termos</a>
+    </nav>
+  </footer>
+</body>
+</html>

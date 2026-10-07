@@ -58,7 +58,13 @@ jobs:
   publish:
     needs: build
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: write
     steps:
       - uses: actions/checkout@v5
       - name: Publica a release (é aqui que os apps instalados enxergam a versão nova)
         run: gh release edit "$GITHUB_REF_NAME" --draft=false --latest
+      # O site mostra as novidades e os links da versão nova (roda pela main).
+      - name: Atualiza o site
+        run: gh workflow run site.yml --ref main

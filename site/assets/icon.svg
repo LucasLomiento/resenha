@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!-- Resenha: balão de fala rindo (XD) de headset, sobre squircle escuro com as cores do app -->
+  <defs>
+    <linearGradient id="fundo" x1="0" y1="31" x2="0" y2="481" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#1e1e2a"/>
+      <stop offset="1" stop-color="#0b0b10"/>
+    </linearGradient>
+    <radialGradient id="brilho" cx="256" cy="262" r="236" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#6a5cf6" stop-opacity=".5"/>
+      <stop offset=".5" stop-color="#6a5cf6" stop-opacity=".16"/>
+      <stop offset="1" stop-color="#6a5cf6" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="fone" x1="0" y1="140" x2="0" y2="410" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#8f84ff"/>
+      <stop offset="1" stop-color="#6a5cf6"/>
+    </linearGradient>
+    <clipPath id="forma"><path d="M481 256C481 479.9 479.9 481 256 481C32.1 481 31 479.9 31 256C31 32.1 32.1 31 256 31C479.9 31 481 32.1 481 256Z"/></clipPath>
+  </defs>
+
+  <!-- squircle (superelipse n=5), margem de 31px: escuro, com o brilho violeta do app e uma borda de luz -->
+  <path fill="url(#fundo)" d="M481 256C481 479.9 479.9 481 256 481C32.1 481 31 479.9 31 256C31 32.1 32.1 31 256 31C479.9 31 481 32.1 481 256Z"/>
+  <path fill="url(#brilho)" d="M481 256C481 479.9 479.9 481 256 481C32.1 481 31 479.9 31 256C31 32.1 32.1 31 256 31C479.9 31 481 32.1 481 256Z"/>
+  <path fill="none" stroke="#fff" stroke-opacity=".1" stroke-width="6" clip-path="url(#forma)" d="M481 256C481 479.9 479.9 481 256 481C32.1 481 31 479.9 31 256C31 32.1 32.1 31 256 31C479.9 31 481 32.1 481 256Z"/>
+
+  <g transform="translate(0 -16)">
+    <!-- sombra -->
+    <g fill="#000" opacity=".35" transform="translate(0 14)">
+      <path d="M164.6 349.4A116 116 0 1 1 239.9 392.9Q200 414 116 424Q164 400 164.6 349.4Z"/>
+      <rect x="102" y="226" width="58" height="106" rx="27"/>
+      <rect x="352" y="226" width="58" height="106" rx="27"/>
+    </g>
+
+    <!-- arco do headset -->
+    <path d="M126 270A130 130 0 0 1 386 270" fill="none" stroke="url(#fone)" stroke-width="28" stroke-linecap="round"/>
+
+    <!-- balão: base lilás (rabinho e lado da sombra) + luz branca -->
+    <path fill="#d6d1f2" d="M164.6 349.4A116 116 0 1 1 239.9 392.9Q200 414 116 424Q164 400 164.6 349.4Z"/>
+    <path fill="#ffffff" d="M155.4 335.7A116 116 0 0 1 328.4 187.4A114 114 0 1 1 155.4 335.7Z"/>
+
+    <!-- conchas do fone -->
+    <g fill="url(#fone)">
+      <rect x="102" y="226" width="58" height="106" rx="27"/>
+      <rect x="352" y="226" width="58" height="106" rx="27"/>
+    </g>
+    <g fill="#fff" opacity=".28">
+      <rect x="114" y="244" width="12" height="70" rx="6"/>
+      <rect x="386" y="244" width="12" height="70" rx="6"/>
+    </g>
+
+    <!-- olhos > < -->
+    <g fill="none" stroke="#14121c" stroke-width="18" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M194 224L227 245L194 266"/>
+      <path d="M318 224L285 245L318 266"/>
+    </g>
+
+    <!-- boca rindo + língua -->
+    <path fill="#14121c" d="M196 292H316A60 60 0 0 1 196 292Z"/>
+    <path fill="#ff7a93" d="M228.05 345.09A30 30 0 0 1 283.95 345.09A60 60 0 0 1 228.05 345.09Z"/>
+
+    <!-- microfone do headset -->
+    <path d="M384 328Q384 388 326 392" fill="none" stroke="#6a5cf6" stroke-width="16" stroke-linecap="round"/>
+    <rect x="296" y="377" width="44" height="30" rx="15" fill="#6a5cf6"/>
+  </g>
+</svg>

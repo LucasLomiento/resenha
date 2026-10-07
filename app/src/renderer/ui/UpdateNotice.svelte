@@ -8,7 +8,7 @@
    * baixa sozinho fora de call) ou quando ela saiu e está esperando a call acabar.
    * "Depois" esconde até a próxima versão; o botão no pé do trilho continua lá.
    */
-  const RELEASES = 'https://github.com/LucasLomiento/resenha/releases/tag/v'
+  const RELEASES = 'https://lucaslomiento.github.io/resenha/#v'
 
   const update = $derived(client.update)
   const version = $derived('version' in update ? update.version : null)
