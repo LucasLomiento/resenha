@@ -25,6 +25,9 @@ if (dry) (globalThis as Record<string, unknown>).__resenhaInk = dryLog
 
 let helper: ChildProcessWithoutNullStreams | null = null
 let overlay: BrowserWindow | null = null
+/** Esconde a janela transparente quando os rabiscos acabam (a caneta dura 6,8 s depois de soltar). */
+let overlayIdle: ReturnType<typeof setTimeout> | null = null
+const OVERLAY_LINGER = 8000
 let closed: () => void = () => {}
 
 /** Chamado quando a camada fecha sozinha (o ajudante caiu), pra parar de oferecer os rabiscos. */
@@ -165,11 +168,11 @@ function startWindow(connector: string): Promise<{ ok: true } | { ok: false; err
   // Pronta só depois de carregar a página: antes disso, o que chega pra ela se perde.
   return new Promise((resolve) => {
     const timer = setTimeout(() => resolve({ ok: false, error: 'timeout' }), 8000)
+    // Fica escondida até chegar rabisco: janela por cima do jogo, mesmo transparente,
+    // tira o jogo do modo de tela cheia exclusiva e custa desempenho.
     win.once('ready-to-show', () => {
       clearTimeout(timer)
-      if (win.isDestroyed()) return resolve({ ok: false, error: 'closed' })
-      win.showInactive()
-      resolve({ ok: true })
+      resolve(win.isDestroyed() ? { ok: false, error: 'closed' } : { ok: true })
     })
     win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(OVERLAY_PAGE)}`).catch(() => {})
   })
@@ -182,7 +185,16 @@ export function inkEvent(event: unknown) {
   }
   const line = JSON.stringify(event)
   if (helper) helper.stdin.write(`${line}\n`)
-  else if (overlay && !overlay.isDestroyed()) overlay.webContents.executeJavaScript(`window.ink(${line})`).catch(() => {})
+  else if (overlay && !overlay.isDestroyed()) {
+    const win = overlay
+    const kind = (event as { t?: string; on?: boolean }).t
+    const done = kind === 'clear' || (kind === 'probe' && (event as { on?: boolean }).on !== true)
+    if (!done && !win.isVisible()) win.showInactive()
+    win.webContents.executeJavaScript(`window.ink(${line})`).catch(() => {})
+    if (overlayIdle) clearTimeout(overlayIdle)
+    // Quadradinho de teste: fica até desligar. O resto some sozinho; depois disso, esconde.
+    overlayIdle = kind === 'probe' && !done ? null : setTimeout(() => win.isDestroyed() || win.hide(), done ? 300 : OVERLAY_LINGER)
+  }
 }
 
 export function inkStop() {
@@ -200,6 +212,8 @@ export function inkStop() {
     }
     setTimeout(() => child.kill(), 1500).unref?.()
   }
+  if (overlayIdle) clearTimeout(overlayIdle)
+  overlayIdle = null
   if (overlay && !overlay.isDestroyed()) overlay.destroy()
   overlay = null
 }

@@ -1,7 +1,6 @@
-## 1.3.2: moldura de fone por cima da cabeça e ping só passando o mouse
+## 1.3.3: transmitir não pesa mais no jogo
 
-- **Moldura "Fones":** o arco do fone agora passa por cima da foto, em volta da cabeça, em vez de cortar a foto no meio.
-- **Lista da call mais limpa:** o ícone de conexão de cada pessoa só aparece quando você passa o mouse em cima dela. O de mudo e de ensurdecido continuam sempre à vista, no mesmo lugar.
+- **Correção de desempenho:** desde a 1.2, só de compartilhar a tela a camada dos rabiscos ficava aberta por cima do monitor o tempo todo, mesmo sem ninguém rabiscar. Com uma camada por cima do jogo, o Hyprland perde o modo de jogo (tearing e quadro direto pra tela) e passa a compor tudo a cada quadro, o que custava desempenho. Agora a camada só aparece enquanto tem rabisco na tela e some sozinha logo depois. O mesmo vale pro Windows.
 
 ## Como atualizar
 

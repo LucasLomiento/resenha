@@ -287,7 +287,7 @@ def run(connector):
 
     scene = Scene()
     app = Gtk.Application(flags=Gio.ApplicationFlags.NON_UNIQUE)
-    state = {'tick': None, 'area': None}
+    state = {'tick': None, 'area': None, 'window': None}
 
     def now():
         return time.monotonic()
@@ -297,10 +297,18 @@ def run(connector):
         state['area'].queue_draw()
         if not scene.busy:
             state['tick'] = None
+            # Nada pra desenhar: a camada sai da tela. Uma camada por cima do jogo, mesmo
+            # transparente, tira o modo de jogo do compositor (tearing, quadro direto pra
+            # tela) e obriga ele a compor tudo a cada quadro.
+            state['window'].set_visible(False)
             return GLib.SOURCE_REMOVE
         return GLib.SOURCE_CONTINUE
 
     def wake():
+        window = state['window']
+        if window is not None and not window.get_visible():
+            window.present()
+            click_through(window)
         if state['tick'] is None and state['area'] is not None:
             state['tick'] = state['area'].add_tick_callback(on_tick)
 
@@ -353,12 +361,13 @@ def run(connector):
         area.set_can_target(False)
         window.set_child(area)
         state['area'] = area
+        state['window'] = window
 
         # Clique e teclado passam direto pro que está embaixo (o jogo, o desktop).
         window.connect('realize', lambda w: click_through(w))
         window.connect('map', lambda w: click_through(w))
-        window.present()
-        click_through(window)
+        # A camada só aparece quando chega algo pra desenhar (wake), e some quando acaba.
+        window.realize()
         surface = window.get_surface()
         if surface is not None:
             surface.connect('layout', lambda *_: click_through(window))
@@ -383,7 +392,8 @@ def run(connector):
                     application.quit()
                     return
                 scene.handle(event, now())
-                wake()
+                if scene.busy:
+                    wake()
             source.read_line_async(GLib.PRIORITY_DEFAULT, None, on_line)
 
         stream.read_line_async(GLib.PRIORITY_DEFAULT, None, on_line)
