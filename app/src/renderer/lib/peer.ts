@@ -17,6 +17,17 @@ export interface PeerEvents {
   ink(data: unknown): void
   /** O canal dos rabiscos abriu (dá pra mandar a permissão). */
   inkOpen(): void
+  /** Quem compartilha passou a tela pro SFU (null: voltou pra conexão direta). */
+  screenSfu(info: SfuScreen | null): void
+  /** Quem assiste conseguiu puxar do SFU (a cópia direta pode parar) ou não. */
+  screenSfuReply(ok: boolean): void
+}
+
+/** Onde puxar a tela no SFU do Cloudflare: sessão de quem publicou e os nomes das faixas. */
+export interface SfuScreen {
+  session: string
+  video: string
+  audio: string | null
 }
 
 export interface VideoSendOptions {
@@ -28,6 +39,8 @@ export interface VideoSendOptions {
 export interface LinkStats {
   rtt: number | null
   route: 'direto' | 'relay' | null
+  /** Bytes que passaram pelo TURN do Cloudflare (enviados + recebidos), pra cota do mês. */
+  relayBytes?: number
 }
 
 export interface VideoStats {
@@ -48,6 +61,74 @@ export function codecOrder(preferred: VideoCodec): RTCRtpCodec[] {
   const codecs = RTCRtpReceiver.getCapabilities('video')?.codecs ?? []
   const wanted = `video/${preferred}`.toLowerCase()
   return [...codecs.filter((c) => c.mimeType.toLowerCase() === wanted), ...codecs.filter((c) => c.mimeType.toLowerCase() !== wanted)]
+}
+
+/**
+ * Bitrate, 60 fps e o que sacrificar quando a rede apertar: em "movimento"
+ * cai a resolução e mantém os 60 fps; em "nitidez" é o contrário. Vale pra
+ * conexão direta e pro SFU.
+ */
+export async function applyVideoParameters(sender: RTCRtpSender, options: VideoSendOptions) {
+  const build = (withCodec: boolean) => {
+    const params = sender.getParameters() as RTCRtpSendParameters & { degradationPreference?: string }
+    if (!params.encodings?.length) return null
+    params.degradationPreference = options.mode === 'motion' ? 'maintain-framerate' : 'maintain-resolution'
+    const encoding = params.encodings[0] as RTCRtpEncodingParameters & { codec?: RTCRtpCodec }
+    encoding.maxBitrate = options.bitrate
+    encoding.maxFramerate = 60
+    encoding.scaleResolutionDownBy = 1
+    encoding.priority = 'high'
+    encoding.networkPriority = 'high'
+    if (withCodec) {
+      const preferred = params.codecs?.find((c) => c.mimeType.toLowerCase() === `video/${options.codec}`.toLowerCase())
+      if (preferred) encoding.codec = preferred
+    }
+    return params
+  }
+  for (const withCodec of [true, false]) {
+    const params = build(withCodec)
+    if (!params) return
+    try {
+      await sender.setParameters(params)
+      return
+    } catch (err) {
+      if (!withCodec) console.warn('[rtc] setParameters falhou', err)
+    }
+  }
+}
+
+/** Leitura anterior, pra bitrate e jitter buffer serem do último intervalo (não da sessão toda). */
+export interface StatsMark {
+  bytes: number
+  at: number
+  jbDelay: number
+  jbCount: number
+}
+
+export function videoStatsFrom(report: RTCStatsReport, direction: 'inbound' | 'outbound', last: StatsMark): VideoStats | null {
+  let rtp: any
+  report.forEach((s) => {
+    if (s.type === `${direction}-rtp` && s.kind === 'video') rtp = s
+  })
+  if (!rtp) return null
+  const bytes = direction === 'inbound' ? rtp.bytesReceived : rtp.bytesSent
+  const elapsed = rtp.timestamp - last.at
+  const bitrate = last.at && elapsed > 0 ? ((bytes - last.bytes) * 8 * 1000) / elapsed : 0
+  const jbCount = (rtp.jitterBufferEmittedCount ?? 0) - last.jbCount
+  const jbDelay = (rtp.jitterBufferDelay ?? 0) - last.jbDelay
+  Object.assign(last, { bytes, at: rtp.timestamp, jbDelay: rtp.jitterBufferDelay ?? 0, jbCount: rtp.jitterBufferEmittedCount ?? 0 })
+  const codec = report.get(rtp.codecId)
+  return {
+    width: rtp.frameWidth ?? 0,
+    height: rtp.frameHeight ?? 0,
+    fps: Math.round(rtp.framesPerSecond ?? 0),
+    bitrate,
+    codec: codec?.mimeType?.replace('video/', '') ?? '?',
+    implementation: (direction === 'inbound' ? rtp.decoderImplementation : rtp.encoderImplementation) ?? '?',
+    jitterBuffer: direction === 'inbound' && jbCount > 0 ? Math.round((jbDelay / jbCount) * 1000) : undefined,
+    limitation: direction === 'outbound' ? rtp.qualityLimitationReason : undefined,
+    dropped: direction === 'inbound' ? rtp.framesDropped : undefined,
+  }
 }
 
 /**
@@ -192,6 +273,16 @@ export class Peer {
     return true
   }
 
+  /** Conta pra quem assiste de onde puxar a minha tela no SFU (null: voltou pra conexão direta). */
+  sendSfuScreen(info: SfuScreen | null) {
+    if (!this.closed) this.emit({ kind: 'screen-sfu', session: info?.session ?? null, video: info?.video, audio: info?.audio ?? null })
+  }
+
+  /** Respondo se consegui puxar a tela do SFU. */
+  replySfu(ok: boolean) {
+    if (!this.closed) this.emit({ kind: 'screen-sfu-reply', ok })
+  }
+
   /** Pede (ou larga) a tela dessa pessoa. */
   requestScreen(watching: boolean) {
     if (!this.closed) this.emit({ kind: watching ? 'watch' : 'unwatch' })
@@ -249,6 +340,12 @@ export class Peer {
         return this.events.watchRequest(true)
       case 'unwatch':
         return this.events.watchRequest(false)
+      case 'screen-sfu':
+        return this.events.screenSfu(
+          data.session && typeof data.video === 'string' ? { session: data.session, video: data.video, audio: data.audio ?? null } : null,
+        )
+      case 'screen-sfu-reply':
+        return this.events.screenSfuReply(data.ok === true)
     }
   }
 
@@ -381,43 +478,10 @@ export class Peer {
     await this.applyVideoParameters()
   }
 
-  /**
-   * Bitrate, 60 fps e o que sacrificar quando a rede apertar: em "movimento"
-   * cai a resolução e mantém os 60 fps; em "nitidez" é o contrário.
-   */
   private async applyVideoParameters() {
     const sender = this.screenVideo?.sender
-    const options = this.videoOptions
-    if (!sender?.track || !options) return
-    const build = (withCodec: boolean) => {
-      const params = sender.getParameters() as RTCRtpSendParameters & { degradationPreference?: string }
-      if (!params.encodings?.length) return null
-      params.degradationPreference = options.mode === 'motion' ? 'maintain-framerate' : 'maintain-resolution'
-      const encoding = params.encodings[0] as RTCRtpEncodingParameters & { codec?: RTCRtpCodec }
-      encoding.maxBitrate = options.bitrate
-      encoding.maxFramerate = 60
-      encoding.scaleResolutionDownBy = 1
-      encoding.priority = 'high'
-      encoding.networkPriority = 'high'
-      if (withCodec) {
-        const preferred = params.codecs?.find((c) => c.mimeType.toLowerCase() === `video/${options.codec}`.toLowerCase())
-        if (preferred) encoding.codec = preferred
-      }
-      return params
-    }
-    for (const withCodec of [true, false]) {
-      const params = build(withCodec)
-      if (!params) return
-      try {
-        await sender.setParameters(params)
-        return
-      } catch (err) {
-        if (!withCodec) console.warn('[rtc] setParameters falhou', err)
-      }
-    }
+    if (sender?.track && this.videoOptions) await applyVideoParameters(sender, this.videoOptions)
   }
-
-  // ---------- Estatísticas ----------
 
   async linkStats(): Promise<LinkStats> {
     const report = await this.pc.getStats()
@@ -437,43 +501,13 @@ export class Peer {
     return {
       rtt: pair.currentRoundTripTime != null ? Math.round(pair.currentRoundTripTime * 1000) : null,
       route: relay ? 'relay' : 'direto',
+      // O TURN cobra o que sai dele: nos dois sentidos, quando o meu lado passa por ele.
+      relayBytes: local?.candidateType === 'relay' ? (pair.bytesSent ?? 0) + (pair.bytesReceived ?? 0) : 0,
     }
   }
 
   async videoStats(direction: 'inbound' | 'outbound'): Promise<VideoStats | null> {
-    const report = await this.pc.getStats()
-    let rtp: any
-    report.forEach((s) => {
-      if (s.type === `${direction}-rtp` && s.kind === 'video') rtp = s
-    })
-    if (!rtp) return null
-
-    // Bitrate e jitter buffer pela diferença desde a última leitura, não pela média da sessão.
-    const last = direction === 'inbound' ? this.lastIn : this.lastOut
-    const bytes = direction === 'inbound' ? rtp.bytesReceived : rtp.bytesSent
-    const elapsed = rtp.timestamp - last.at
-    const bitrate = last.at && elapsed > 0 ? ((bytes - last.bytes) * 8 * 1000) / elapsed : 0
-    const jbCount = (rtp.jitterBufferEmittedCount ?? 0) - last.jbCount
-    const jbDelay = (rtp.jitterBufferDelay ?? 0) - last.jbDelay
-    Object.assign(last, {
-      bytes,
-      at: rtp.timestamp,
-      jbDelay: rtp.jitterBufferDelay ?? 0,
-      jbCount: rtp.jitterBufferEmittedCount ?? 0,
-    })
-
-    const codec = report.get(rtp.codecId)
-    return {
-      width: rtp.frameWidth ?? 0,
-      height: rtp.frameHeight ?? 0,
-      fps: Math.round(rtp.framesPerSecond ?? 0),
-      bitrate,
-      codec: codec?.mimeType?.replace('video/', '') ?? '?',
-      implementation: (direction === 'inbound' ? rtp.decoderImplementation : rtp.encoderImplementation) ?? '?',
-      jitterBuffer: direction === 'inbound' && jbCount > 0 ? Math.round((jbDelay / jbCount) * 1000) : undefined,
-      limitation: direction === 'outbound' ? rtp.qualityLimitationReason : undefined,
-      dropped: direction === 'inbound' ? rtp.framesDropped : undefined,
-    }
+    return videoStatsFrom(await this.pc.getStats(), direction, direction === 'inbound' ? this.lastIn : this.lastOut)
   }
 
   close() {

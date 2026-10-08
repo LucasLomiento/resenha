@@ -20,10 +20,11 @@
   let panelError = $state<string | null>(null)
   let signupError = $state<string | null>(null)
 
-  const used = $derived(panel ? Math.min(1, panel.storageUsed / Math.max(1, panel.storageLimit)) : 0)
-  const percent = $derived(Math.round(used * 100))
+  const fraction = (used: number, limit: number) => Math.min(1, used / Math.max(1, limit))
   /** Cor do medidor pelo quanto falta: violeta, amarelo perto do fim, vermelho cheio. */
-  const storageTone = $derived(used >= 1 ? 'full' : used >= 0.9 ? 'warn' : 'ok')
+  const tone = (part: number) => (part >= 1 ? 'full' : part >= 0.9 ? 'warn' : 'ok')
+  const storage = $derived(panel ? fraction(panel.storageUsed, panel.storageLimit) : 0)
+  const media = $derived(panel ? fraction(panel.mediaUsed ?? 0, panel.mediaLimit ?? 1) : 0)
 
   async function loadPanel() {
     const api = client.api
@@ -120,31 +121,34 @@
       <span class="stat-label">Servidores</span>
       <span class="stat-value">{count.format(panel.guilds)}</span>
     </div>
-    <div class="stat storage" data-setting="platform.storage">
+    <div class="stat" data-setting="platform.storage">
       <span class="stat-label">Espaço usado</span>
       <span class="stat-value">{bytes(panel.storageUsed)} <small>de {bytes(panel.storageLimit)}</small></span>
-      <div
-        class="meter tone-{storageTone}"
-        role="meter"
-        aria-label="Espaço usado"
-        aria-valuemin={0}
-        aria-valuemax={100}
-        aria-valuenow={percent}
-        aria-valuetext="{percent}%"
-      >
-        <div class="fill" style:width="{used * 100}%"></div>
-      </div>
-      {#if storageTone !== 'ok'}
-        <span class="stat-note tone-{storageTone}">
-          {#if storageTone === 'full'}
-            <Icon name="circle-alert" size={14} />Cheio: anexos novos não sobem.
-          {:else}
-            <Icon name="triangle-alert" size={14} />Quase cheio ({percent}%).
-          {/if}
-        </span>
+      {@render meter('Espaço usado', storage)}
+      {#if tone(storage) === 'full'}
+        <span class="stat-note tone-full"><Icon name="circle-alert" size={14} />Cheio: anexos novos não sobem.</span>
+      {:else if tone(storage) === 'warn'}
+        <span class="stat-note tone-warn"><Icon name="triangle-alert" size={14} />Quase cheio ({Math.round(storage * 100)}%).</span>
+      {/if}
+    </div>
+    <div class="stat wide" data-setting="platform.media">
+      <span class="stat-label">Mídia pelo Cloudflare neste mês</span>
+      <span class="stat-value">{bytes(panel.mediaUsed ?? 0)} <small>de {bytes(panel.mediaLimit ?? 0)}</small></span>
+      {@render meter('Mídia pelo Cloudflare neste mês', media)}
+      {#if tone(media) === 'full'}
+        <span class="stat-note tone-full"><Icon name="circle-alert" size={14} />Acabou a cota do mês: tela e calls ficam só diretas até o mês virar.</span>
+      {:else}
+        <span class="stat-note tone-{tone(media)}">Tela com 2 ou mais assistindo e conexões que não fecham direto. O grátis é 1.000 GB; o Resenha para antes.</span>
       {/if}
     </div>
   </div>
+
+  {#snippet meter(label: string, part: number)}
+    {@const percent = Math.round(part * 100)}
+    <div class="meter tone-{tone(part)}" role="meter" aria-label={label} aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent} aria-valuetext="{percent}%">
+      <div class="fill" style:width="{part * 100}%"></div>
+    </div>
+  {/snippet}
 
   <Section title="Cadastro" setting="platform.signup">
     <RadioGroup
@@ -211,6 +215,10 @@
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 2fr);
     gap: 12px;
     margin-bottom: var(--s-8);
+  }
+
+  .stat.wide {
+    grid-column: 1 / -1;
   }
 
   .stat {

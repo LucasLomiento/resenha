@@ -60,6 +60,7 @@ As etapas 0.6 a 0.9 saíram juntas na 1.0 (uma atualização em vez de quatro).
 - [x] Aviso de versão nova, com download sozinho fora de call
 - [x] Lista de canais com largura ajustável (arrastando a borda)
 - [x] Importar canais do Discord por um print (ou criar o servidor inteiro a partir dele)
+- [x] Tela pelo SFU do Cloudflare com 2 ou mais assistindo (uma codificação só), TURN de reserva e cota de mídia do mês
 - [ ] Modo privado (tudo via TURN, esconde o IP até dos amigos): precisa da chave TURN
 - [ ] Arrastar servidores no trilho pra reordenar
 - [ ] Emojis próprios de cada servidor

@@ -20,6 +20,7 @@ import { columns } from './messages'
 import { conversation as conversationStub, guild as guildStub, home as homeStub } from './stubs'
 import { applyStylePatch, isAnimated, parseStyle, styleText } from './style'
 import { cleanLine, cleanText, color, passwordProblem, slugUsername, username as validUsername } from './validate'
+import { MAX_USAGE_REPORT, MEASURE_EVERY, MEDIA_BUDGET, analyticsConfig, measuredUsage, usageMonth } from './media'
 
 // O Directory é o cadastro central: contas, sessões, limites de tentativa,
 // fotos de perfil, a lista de servidores e quem é membro de qual, convites,
@@ -245,6 +246,53 @@ export class Directory extends DurableObject<Env> {
     this.sql.exec('CREATE TABLE IF NOT EXISTS aliases (alias TEXT PRIMARY KEY, user_id TEXT NOT NULL)')
     // Espaço de anexos usado por servidor/conversa ("g:<id>" ou "c:<id>").
     this.sql.exec('CREATE TABLE IF NOT EXISTS storage (scope TEXT PRIMARY KEY, bytes INTEGER NOT NULL)')
+    // GB de mídia que passaram pelo Cloudflare (SFU e TURN) por mês: contados pelos
+    // apps (bytes) e medidos pelo próprio Cloudflare (measured, conferido de hora em hora).
+    this.sql.exec('CREATE TABLE IF NOT EXISTS media_usage (month TEXT PRIMARY KEY, bytes INTEGER NOT NULL, measured INTEGER NOT NULL DEFAULT 0)')
+  }
+
+  // ---------- Mídia pelo Cloudflare (media.ts) ----------
+
+  /** Quanto já passou pelo Cloudflare neste mês (o maior entre a conta dos apps e a medida), e se ainda cabe no grátis. */
+  mediaUsage(): { month: string; bytes: number; allowed: boolean } {
+    const month = usageMonth()
+    const row = this.sql.exec<{ bytes: number; measured: number }>('SELECT bytes, measured FROM media_usage WHERE month = ?', month).toArray()[0]
+    const bytes = Math.max(row?.bytes ?? 0, row?.measured ?? 0)
+    this.ctx.waitUntil(this.measureMedia())
+    return { month, bytes, allowed: bytes < MEDIA_BUDGET }
+  }
+
+  private measuring: Promise<void> | null = null
+
+  /** Confere o que o Cloudflare mediu no mês (no máximo de hora em hora; sem o token, nada). */
+  measureMedia(now = Date.now()): Promise<void> {
+    const config = analyticsConfig(this.env)
+    if (!config || this.measuring || now - Number(this.meta('media_measured_at') ?? 0) < MEASURE_EVERY) return this.measuring ?? Promise.resolve()
+    this.setMeta('media_measured_at', String(now))
+    this.measuring = measuredUsage(config, now)
+      .then((measured) => {
+        this.sql.exec(
+          'INSERT INTO media_usage (month, bytes, measured) VALUES (?, 0, ?) ON CONFLICT (month) DO UPDATE SET measured = excluded.measured',
+          usageMonth(now),
+          measured,
+        )
+      })
+      .catch((err) => console.error('[mídia] não deu pra conferir o uso no Cloudflare:', (err as Error).message))
+      .finally(() => (this.measuring = null))
+    return this.measuring
+  }
+
+  /** O app conta o que recebeu pelo SFU e o que passou pelo TURN (a cada minuto). */
+  addMediaUsage(bytes: number): { month: string; bytes: number; allowed: boolean } {
+    const amount = Math.min(MAX_USAGE_REPORT, Math.max(0, Math.round(Number.isFinite(bytes) ? bytes : 0)))
+    if (amount > 0) {
+      this.sql.exec(
+        'INSERT INTO media_usage (month, bytes) VALUES (?, ?) ON CONFLICT (month) DO UPDATE SET bytes = bytes + excluded.bytes',
+        usageMonth(),
+        amount,
+      )
+    }
+    return this.mediaUsage()
   }
 
   private meta(key: string): string | null {
@@ -1303,13 +1351,23 @@ export class Directory extends DurableObject<Env> {
     return !!row && (row.flags & FLAG_STAFF) !== 0
   }
 
-  adminSettings(staffId: string): Result<{ signup: 'invite' | 'open'; users: number; guilds: number; storageUsed: number; storageLimit: number }> {
+  adminSettings(staffId: string): Result<{
+    signup: 'invite' | 'open'
+    users: number
+    guilds: number
+    storageUsed: number
+    storageLimit: number
+    mediaUsed: number
+    mediaLimit: number
+  }> {
     if (!this.isStaff(staffId)) return fail(403, 'Só o dono da plataforma.')
     return ok({
       ...this.status(),
       guilds: this.sql.exec<{ n: number }>('SELECT COUNT(*) AS n FROM guilds').one().n,
       storageUsed: this.storageUsed(),
       storageLimit: STORAGE_LIMIT,
+      mediaUsed: this.mediaUsage().bytes,
+      mediaLimit: MEDIA_BUDGET,
     })
   }
 

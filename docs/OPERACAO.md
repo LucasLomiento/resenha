@@ -53,8 +53,21 @@ O painel da dona da plataforma (no app: Configurações → Plataforma) mostra c
 | Armazenamento dos Durable Objects | 5 GB na conta | Anexos param em 4 GB (2 GB por servidor, 1 GB por conversa, 500 MB por pessoa por dia) |
 | Pedidos aos Durable Objects | 100 mil por dia | WebSocket com hibernação: conexão parada não conta |
 | Linhas escritas no SQLite | 100 mil por dia | Limites de mensagens (5 a cada 5 s), reações, edições e leitura agrupada |
+| Mídia pelo Cloudflare Realtime (SFU + TURN) | 1.000 GB por mês | Só tela com 2+ assistindo (SFU) e conexão direta que falhou (TURN). Os apps contam o que passa, o servidor confere com o que o Cloudflare mediu (de hora em hora) e para de oferecer os dois em 850 GB; aí tudo volta a ser P2P até o mês virar. O dono vê o total em Configurações → Plataforma |
 
 Se o grupo crescer muito, o plano pago (US$ 5/mês) multiplica tudo isso; nada no código precisa mudar.
+
+## Mídia pelo Cloudflare (SFU e TURN)
+
+As chaves saem do painel do Cloudflare (o login do wrangler não tem permissão pro Realtime):
+1. **Realtime → Serverless SFU → Create**: dá o App ID e o App Token.
+2. **Realtime → TURN Server → Create**: dá o Key ID e o API Token.
+3. **My Profile → API Tokens → Create Token → Custom token**, com a permissão *Account → Account Analytics → Read*: o servidor confere de hora em hora quanto o Cloudflare mediu (SFU e TURN) e usa o maior entre isso e a conta dos apps.
+4. `bash server/scripts/realtime-keys.sh`: pede os valores sem mostrar na tela, confere cada um no Cloudflare e guarda como secrets do Worker (`REALTIME_APP_ID`, `REALTIME_APP_SECRET`, `TURN_KEY_ID`, `TURN_KEY_API_TOKEN`, `CF_ANALYTICS_TOKEN` e `CF_ACCOUNT_ID`, que ele tira do `wrangler whoami`). As do SFU e das análises também vão pro `server/.dev.vars`, pro e2e com `RESENHA_E2E_SFU=1` (os testes do servidor apagam essas no `vitest.config.ts`).
+
+A conta tem cartão (o Realtime pede pra ativar): o que passar de 1.000 GB no mês seria cobrado (US$ 0,05/GB). Por isso a trava em 850 GB olha as duas contagens. Vale também um alerta de gasto em *Manage Account → Billing → Billable Usage → Create budget alert* (US$ 1, por e-mail; ele só avisa, não corta).
+
+Sem as chaves, tudo funciona como antes, só P2P.
 
 ## Voltar no tempo (backup)
 

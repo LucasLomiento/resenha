@@ -19,7 +19,7 @@
   let container = $state<HTMLDivElement>()
   let fullscreen = $state(false)
   let nativePip = $state(false)
-  let stats = $state<{ inbound: VideoStats | null; outbound: { userId: string; stats: VideoStats }[] } | null>(null)
+  let stats = $state<{ inbound: VideoStats | null; outbound: { userId: string; label?: string; stats: VideoStats }[] } | null>(null)
 
   /** Quem compartilha deixa rabiscar (monitor inteiro e camada aberta lá do outro lado). */
   const inkPolicy = $derived(call.watching ? call.inkPolicy[call.watching] : undefined)
@@ -284,11 +284,11 @@
           buffer {stats.inbound.jitterBuffer ?? 0} ms
           {#if stats.inbound.dropped}· {stats.inbound.dropped} quadros perdidos{/if}
         </div>
-        {#if link?.rtt != null}<div>ping {link.rtt} ms · {link.route}</div>{/if}
+        {#if call.viaSfu}<div>tela via Cloudflare (SFU)</div>{:else if link?.rtt != null}<div>ping {link.rtt} ms · {link.route}</div>{/if}
       {/if}
       {#each stats.outbound as out (out.userId)}
         <div>
-          → {client.displayName(out.userId, call.guildId)}: {describe(out.stats)}{out.stats.implementation !== '?' ? ` · ${out.stats.implementation}` : ''}
+          → {out.label ?? client.displayName(out.userId, call.guildId)}: {describe(out.stats)}{out.stats.implementation !== '?' ? ` · ${out.stats.implementation}` : ''}
           {#if out.stats.limitation && out.stats.limitation !== 'none'}· limitado por {out.stats.limitation}{/if}
         </div>
       {/each}

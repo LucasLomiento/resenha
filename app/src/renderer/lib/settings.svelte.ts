@@ -39,6 +39,8 @@ export interface Settings {
   updateDismissed: string | null
   /** Largura da lista de canais (arrastando a borda dela). */
   sidebarWidth: number
+  /** Quantas pessoas assistindo pra tela ir pelo SFU (sem opção na tela; o e2e usa 1). */
+  sfuMinViewers?: number
   showStats: boolean
   sounds: boolean
   /** 0..1 */

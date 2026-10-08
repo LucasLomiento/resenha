@@ -10,6 +10,7 @@ import {
 import { hashIp, verifyFileSignature, verifyLegacyFileSignature, verifyProxyUrl } from './auth'
 import type { AuthContext, ClientInfo, Result } from './directory'
 import { readDiscordPrint } from './discord-import'
+import { MEDIA_BUDGET, Sfu, SfuError, cleanLocalTracks, cleanRemoteTracks, cleanSdp, sessionToken, sfuConfig, validToken } from './media'
 import { LEGACY_HEADER, USER_HEADER } from './guild'
 import { HOME_HEADER } from './home'
 import { conversation, directory, guild, home } from './stubs'
@@ -265,6 +266,74 @@ async function proxyImage(request: Request, url: URL, env: Env, ctx: ExecutionCo
   return out
 }
 
+interface MediaUsage {
+  month: string
+  bytes: number
+  allowed: boolean
+}
+
+/**
+ * Rotas do SFU e da cota de mídia. O app só chega aqui logado; cada sessão do SFU
+ * vem com um token que prova que é dessa pessoa.
+ */
+async function mediaRoute(
+  request: Request,
+  env: Env,
+  pathname: string,
+  method: string,
+  me: string,
+  dir: { mediaUsage(): Promise<MediaUsage>; addMediaUsage(bytes: number): Promise<MediaUsage> },
+): Promise<Response> {
+  const config = sfuConfig(env)
+  if (pathname === '/api/media' && method === 'GET') {
+    const usage = await dir.mediaUsage()
+    return json({ sfu: !!config && usage.allowed, turn: !!env.TURN_KEY_ID && usage.allowed, used: usage.bytes, limit: MEDIA_BUDGET })
+  }
+  if (pathname === '/api/media/usage' && method === 'POST') {
+    const body = await readJson(request)
+    const usage = await dir.addMediaUsage(Number(body.bytes))
+    return json({ allowed: usage.allowed })
+  }
+  if (!config) return error(503, 'O servidor não tem o SFU configurado.')
+  if (!(await dir.mediaUsage()).allowed) return error(503, 'A cota de mídia do mês acabou: a tela vai direto (P2P).')
+  const sfu = new Sfu(config)
+  try {
+    if (pathname === '/api/media/sessions' && method === 'POST') {
+      if (await limited(env.USER_LIMITER, `sfu:${me}`)) return error(429, 'Muitos pedidos. Espere um pouco.')
+      const sessionId = await sfu.newSession()
+      return json({ sessionId, token: await sessionToken(env.FILE_SECRET, me, sessionId) })
+    }
+    const m = pathname.match(/^\/api\/media\/sessions\/([\w-]{1,128})\/(push|pull|renegotiate|close)$/)
+    if (!m || method !== 'POST') return error(404, 'Rota não existe.')
+    const [, sessionId, action] = m
+    const body = await readJson(request)
+    if (!(await validToken(env.FILE_SECRET, me, sessionId, body.token))) return error(403, 'Sessão de outra pessoa.')
+    if (action === 'push') {
+      const sdp = cleanSdp(body.sdp)
+      const tracks = cleanLocalTracks(body.tracks)
+      if (!sdp || !tracks) return error(400, 'Pedido inválido.')
+      return json(await sfu.push(sessionId, sdp, tracks))
+    }
+    if (action === 'pull') {
+      const tracks = cleanRemoteTracks(body.tracks)
+      if (!tracks) return error(400, 'Pedido inválido.')
+      return json(await sfu.pull(sessionId, tracks))
+    }
+    if (action === 'renegotiate') {
+      const sdp = cleanSdp(body.sdp)
+      if (!sdp) return error(400, 'Pedido inválido.')
+      await sfu.renegotiate(sessionId, sdp)
+      return json({ ok: true })
+    }
+    const mids = Array.isArray(body.mids) ? body.mids.filter((x: unknown): x is string => typeof x === 'string' && x.length <= 16).slice(0, 4) : []
+    if (mids.length) await sfu.close(sessionId, mids)
+    return json({ ok: true })
+  } catch (err) {
+    if (err instanceof SfuError) return error(err.status, err.message)
+    throw err
+  }
+}
+
 async function route(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
   const url = new URL(request.url)
   const { pathname } = url
@@ -371,8 +440,13 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
   if (pathname === '/api/ice' && method === 'GET') {
     // Cada pedido gera credencial do TURN (que custa banda): poucos por pessoa.
     if (await limited(env.USER_LIMITER, `ice:${me}`)) return error(429, 'Muitos pedidos. Espere um pouco.')
-    return json({ iceServers: await getIceServers(env) })
+    // Passou da cota de mídia do mês: só STUN (tudo P2P).
+    const usage = await dir.mediaUsage()
+    return json({ iceServers: await getIceServers(usage.allowed ? env : { ...env, TURN_KEY_ID: undefined }) })
   }
+
+  // Mídia pelo Cloudflare (media.ts): SFU pra tela com várias pessoas assistindo.
+  if (pathname.startsWith('/api/media')) return mediaRoute(request, env, pathname, method, me, dir)
 
   // Conta
   if (pathname === '/api/me' && method === 'GET') return json(auth.me)

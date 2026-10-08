@@ -5,8 +5,9 @@ import { userColor } from './format'
 import { InkShare, cleanInk, type InkMessage, type InkPolicy } from './ink.svelte'
 import { captureScreen, getCameraStream, getMicTrack, stopCapture } from './media'
 import { MicPipeline } from './mic'
-import { Peer, type LinkStats, type VideoStats } from './peer'
+import { Peer, type LinkStats, type SfuScreen, type VideoStats } from './peer'
 import { PRESETS, settings } from './settings.svelte'
+import { SfuPublisher, SfuViewer } from './sfu'
 import { playSound } from './sounds'
 
 interface CallDeps {
@@ -39,6 +40,12 @@ export interface CallTransport {
 
 const SPEAKING_REMOTE = 0.03
 const ICE_TTL = 6 * 60 * 60 * 1000
+/** De quanto em quanto tempo pergunta de novo se o SFU está disponível (a cota pode acabar). */
+const MEDIA_TTL = 5 * 60 * 1000
+/** Quem assiste não respondeu ao "a tela está no SFU" (app antigo?): manda a cópia direta. */
+const SFU_REPLY_WAIT = 6000
+/** De quanto em quanto tempo o app conta pro servidor o que passou pelo Cloudflare. */
+const USAGE_EVERY = 60_000
 /**
  * Quem some da call ainda tem um tempo pra voltar antes de a conexão P2P com
  * ele fechar (o servidor reiniciando derruba todo mundo por um instante).
@@ -94,6 +101,28 @@ export class Call {
   private mutedBeforeDeafen = false
   /** Quem estava na call no último voice.state (connId -> transmitindo), pros sons. */
   private known: Map<string, boolean> | null = null
+  // ---------- Tela pelo SFU do Cloudflare (lib/sfu.ts) ----------
+  // Com 2 ou mais pessoas assistindo, a minha tela vai uma vez pro SFU e ele
+  // distribui (uma codificação e um upload só). Com uma pessoa, continua direta.
+
+  /** O servidor oferece o SFU agora (tem a chave e a cota do mês não acabou). */
+  private media: { sfu: boolean; at: number } | null = null
+  /** Minha tela publicada no SFU. */
+  private sfuShare: SfuPublisher | null = null
+  private sfuStarting = false
+  /** O SFU falhou nesta transmissão: não tenta de novo até a próxima. */
+  private sfuGaveUp = false
+  /** connId -> quem assiste puxa do SFU (a cópia direta pra essa pessoa parou). */
+  private sfuViewers: Record<string, boolean> = {}
+  /** connId -> esperando quem assiste responder se conseguiu puxar do SFU. */
+  private sfuWaiting = new Map<string, ReturnType<typeof setTimeout>>()
+  /** A tela que eu assisto pelo SFU. */
+  private sfuWatch: { connId: string; viewer: SfuViewer } | null = null
+  /** Bytes que passaram pelo Cloudflare (TURN e SFU) e ainda não foram contados no servidor. */
+  private mediaBytes = 0
+  private mediaReportAt = 0
+  private relaySeen = new Map<string, number>()
+
   /** Rabiscos de quem assiste na minha tela (só compartilhando o monitor inteiro). */
   readonly ink = new InkShare((msg) => this.broadcastInk(msg))
   /** connId de quem compartilha -> se deixa rabiscar na tela dele agora (e o tamanho do monitor). */
@@ -198,9 +227,12 @@ export class Call {
     playSound('self-leave')
     if (notify) this.transport.leave()
     this.transport = null
+    void this.reportMedia(true)
     for (const connId of [...this.peers.keys()]) this.removePeer(connId)
     this.outbox = []
     this.stopShare(false)
+    this.stopSfuWatch()
+    this.relaySeen.clear()
     this.stopCamera(false)
     this.cameras = {}
     this.watching = null
@@ -400,6 +432,8 @@ export class Call {
     const peer = new Peer(member.connId, member.userId, me > member.connId, this.ice.servers, this.micStream, settings.codec, {
       signal: (data) => this.sendSignal(member.connId, data),
       screen: (stream) => {
+        // Puxando a tela dele pelo SFU: a cópia direta (que para logo) não substitui.
+        if (this.sfuWatch?.connId === member.connId) return
         this.screens = { ...this.screens, [member.connId]: stream! }
       },
       camera: (stream) => {
@@ -416,8 +450,19 @@ export class Call {
         this.watchers[member.connId] = watching
         // Alguém começou ou parou de assistir a minha tela (pedido repetido depois de reconectar não toca).
         if (this.localScreen && watching !== before) playSound(watching ? 'viewer-join' : 'viewer-leave')
-        peer.sendScreen(watching && this.localScreen ? this.localScreen : null, watching ? this.videoOptions() : null)
+        if (!watching || !this.localScreen) {
+          this.forgetSfuViewer(member.connId)
+          this.sfuIdle()
+          void peer.sendScreen(null, null)
+          return
+        }
+        // Já no SFU: quem chega puxa de lá (sem a cópia direta, que pesaria na CPU).
+        if (this.sfuShare) return this.offerSfu(peer)
+        void peer.sendScreen(this.localScreen, this.videoOptions())
+        void this.maybeSfu()
       },
+      screenSfu: (info) => void this.onScreenSfu(member.connId, peer, info),
+      screenSfuReply: (ok) => this.onSfuReply(member.connId, peer, ok),
     })
     peer.setVolume(this.volumeOf(member.connId, member.userId))
     peer.setDeafened(this.deafened || this.serverDeafened)
@@ -438,6 +483,10 @@ export class Call {
     this.peers.get(connId)?.close()
     this.peers.delete(connId)
     delete this.watchers[connId]
+    this.forgetSfuViewer(connId)
+    this.sfuIdle()
+    if (this.sfuWatch?.connId === connId) this.stopSfuWatch()
+    this.relaySeen.delete(connId)
     this.dropScreen(connId)
     this.dropCamera(connId)
     if (connId in this.links) delete this.links[connId]
@@ -472,6 +521,7 @@ export class Call {
     const platform = this.deps.platform()
     if (!this.channelId || !platform) return
     if (this.sharing) this.stopShare(false)
+    this.sfuGaveUp = false
     let capture
     try {
       capture = await captureScreen({
@@ -516,6 +566,8 @@ export class Call {
     }
     const options = this.videoOptions()
     await Promise.all(this.peerList.filter((p) => this.watchers[p.connId]).map((p) => p.updateVideo(options)))
+    // No SFU vale a qualidade e a prioridade; o codec fica o do começo da transmissão.
+    await this.sfuShare?.updateVideo(options)
   }
 
   stopShare(notify = true) {
@@ -525,6 +577,7 @@ export class Call {
     this.sharing = false
     this.ink.end()
     stopCapture(stream)
+    this.stopSfuShare()
     // Quem assistia precisa clicar de novo numa próxima transmissão.
     this.watchers = {}
     for (const peer of this.peers.values()) peer.sendScreen(null, null)
@@ -632,6 +685,7 @@ export class Call {
     if (!current) return
     this.watching = null
     if (current !== this.connId()) {
+      if (this.sfuWatch?.connId === current) this.stopSfuWatch()
       this.peers.get(current)?.requestScreen(false)
       this.dropScreen(current)
     }
@@ -654,16 +708,185 @@ export class Call {
   async videoStats(): Promise<{ inbound: VideoStats | null; outbound: { userId: string; stats: VideoStats }[] }> {
     const me = this.connId()
     let inbound: VideoStats | null = null
-    if (this.watching && this.watching !== me) inbound = (await this.peers.get(this.watching)?.videoStats('inbound')) ?? null
-    const outbound: { userId: string; stats: VideoStats }[] = []
+    if (this.watching && this.watching !== me) {
+      inbound = this.viaSfu
+        ? ((await this.sfuWatch?.viewer.videoStats()) ?? null)
+        : ((await this.peers.get(this.watching)?.videoStats('inbound')) ?? null)
+    }
+    const outbound: { userId: string; label?: string; stats: VideoStats }[] = []
     if (this.sharing) {
+      const sfu = await this.sfuShare?.videoStats()
+      const onSfu = Object.keys(this.sfuViewers).length
+      if (sfu) outbound.push({ userId: '', label: `Cloudflare (${onSfu} ${onSfu === 1 ? 'pessoa' : 'pessoas'})`, stats: sfu })
       for (const peer of this.peers.values()) {
-        if (!this.watchers[peer.connId]) continue
+        if (!this.watchers[peer.connId] || this.sfuViewers[peer.connId]) continue
         const stats = await peer.videoStats('outbound')
         if (stats) outbound.push({ userId: peer.userId, stats })
       }
     }
     return { inbound, outbound }
+  }
+
+  /** A tela que eu assisto chega pelo SFU do Cloudflare (não direto). */
+  get viaSfu(): boolean {
+    return !!this.sfuWatch && this.sfuWatch.connId === this.watching
+  }
+
+  // ---------- Tela pelo SFU ----------
+
+  private sfuMinViewers(): number {
+    return Math.max(1, settings.sfuMinViewers ?? 2)
+  }
+
+  /** Conexões assistindo a minha tela agora. */
+  private watcherIds(): string[] {
+    return Object.entries(this.watchers)
+      .filter(([connId, on]) => on && !this.away[connId])
+      .map(([connId]) => connId)
+  }
+
+  /** O servidor oferece o SFU? (pergunta de novo de tempos em tempos: a cota pode acabar) */
+  private async sfuAvailable(api: Api): Promise<boolean> {
+    if (!this.media || Date.now() - this.media.at > MEDIA_TTL) {
+      const status = await api.mediaStatus().catch(() => null)
+      this.media = { sfu: !!status?.sfu, at: Date.now() }
+    }
+    return this.media.sfu
+  }
+
+  /** 2 ou mais assistindo: publica a tela no SFU e avisa quem assiste. */
+  private async maybeSfu() {
+    const stream = this.localScreen
+    const api = this.deps.api()
+    if (!stream || !api || !this.ice || this.sfuShare || this.sfuStarting || this.sfuGaveUp) return
+    if (this.watcherIds().length < this.sfuMinViewers()) return
+    this.sfuStarting = true
+    try {
+      if (!(await this.sfuAvailable(api)) || this.localScreen !== stream) return
+      const publisher = await SfuPublisher.start(api, stream, this.videoOptions(), this.ice.servers)
+      if (this.localScreen !== stream || !this.anyWatcher()) return publisher.close()
+      this.sfuShare = publisher
+      // Quem já assiste continua com a cópia direta até confirmar que puxou do SFU.
+      for (const connId of this.watcherIds()) this.peers.get(connId)?.sendSfuScreen(publisher.info)
+    } catch (err) {
+      console.warn('[sfu] não deu pra publicar a tela; segue direta', err)
+      this.sfuGaveUp = true
+    } finally {
+      this.sfuStarting = false
+    }
+  }
+
+  /** Quem chegou depois puxa do SFU; sem resposta (app antigo), vai a cópia direta. */
+  private offerSfu(peer: Peer) {
+    if (!this.sfuShare) return
+    peer.sendSfuScreen(this.sfuShare.info)
+    clearTimeout(this.sfuWaiting.get(peer.connId))
+    this.sfuWaiting.set(
+      peer.connId,
+      setTimeout(() => {
+        this.sfuWaiting.delete(peer.connId)
+        if (this.watchers[peer.connId] && !this.sfuViewers[peer.connId] && this.localScreen) void peer.sendScreen(this.localScreen, this.videoOptions())
+      }, SFU_REPLY_WAIT),
+    )
+  }
+
+  private onSfuReply(connId: string, peer: Peer, ok: boolean) {
+    clearTimeout(this.sfuWaiting.get(connId))
+    this.sfuWaiting.delete(connId)
+    if (!this.localScreen || !this.watchers[connId]) return
+    if (ok && this.sfuShare) {
+      this.sfuViewers[connId] = true
+      void peer.sendScreen(null, null)
+    } else {
+      delete this.sfuViewers[connId]
+      void peer.sendScreen(this.localScreen, this.videoOptions())
+    }
+  }
+
+  /** Alguém assiste a minha tela (quem caiu por um instante conta: a tela segue pelo SFU). */
+  private anyWatcher(): boolean {
+    return Object.values(this.watchers).some(Boolean)
+  }
+
+  /** Ninguém mais assiste: fecha a publicação no SFU, que codificaria a tela pra ninguém. Com 2 de novo, abre outra. */
+  private sfuIdle() {
+    if (this.sfuShare && !this.anyWatcher()) this.stopSfuShare()
+  }
+
+  private forgetSfuViewer(connId: string) {
+    clearTimeout(this.sfuWaiting.get(connId))
+    this.sfuWaiting.delete(connId)
+    delete this.sfuViewers[connId]
+  }
+
+  /** O SFU caiu ou a cota acabou no meio: todo mundo volta pra cópia direta. */
+  private leaveSfu(reason: string) {
+    if (!this.sfuShare) return
+    console.warn('[sfu] voltando pra conexão direta:', reason)
+    const stream = this.localScreen
+    for (const connId of this.watcherIds()) {
+      const peer = this.peers.get(connId)
+      peer?.sendSfuScreen(null)
+      if (stream && this.sfuViewers[connId]) void peer?.sendScreen(stream, this.videoOptions())
+    }
+    this.sfuGaveUp = true
+    this.stopSfuShare()
+  }
+
+  private stopSfuShare() {
+    for (const timer of this.sfuWaiting.values()) clearTimeout(timer)
+    this.sfuWaiting.clear()
+    this.sfuViewers = {}
+    this.sfuShare?.close()
+    this.sfuShare = null
+  }
+
+  /** Quem eu assisto passou a tela pro SFU (ou voltou pra direta, com null). */
+  private async onScreenSfu(connId: string, peer: Peer, info: SfuScreen | null) {
+    if (!info) {
+      if (this.sfuWatch?.connId === connId) this.stopSfuWatch()
+      return
+    }
+    const api = this.deps.api()
+    if (this.watching !== connId || !api || !this.ice) return peer.replySfu(false)
+    if (this.sfuWatch?.connId === connId) return peer.replySfu(true)
+    try {
+      const viewer = await SfuViewer.start(api, info, this.ice.servers)
+      if (this.watching !== connId) return viewer.close()
+      this.stopSfuWatch()
+      this.sfuWatch = { connId, viewer }
+      this.screens = { ...this.screens, [connId]: viewer.stream }
+      peer.replySfu(true)
+    } catch (err) {
+      console.warn('[sfu] não deu pra puxar a tela; segue direta', err)
+      peer.replySfu(false)
+    }
+  }
+
+  private stopSfuWatch() {
+    const current = this.sfuWatch
+    if (!current) return
+    this.sfuWatch = null
+    current.viewer.close()
+    if (this.screens[current.connId] === current.viewer.stream) this.dropScreen(current.connId)
+  }
+
+  /** Conta pro servidor o que passou pelo Cloudflare (a cada minuto, e ao sair). */
+  private async reportMedia(now = false) {
+    const api = this.deps.api()
+    if (!api || this.mediaBytes <= 0 || (!now && Date.now() - this.mediaReportAt < USAGE_EVERY)) return
+    const bytes = this.mediaBytes
+    this.mediaBytes = 0
+    this.mediaReportAt = Date.now()
+    try {
+      const { allowed } = await api.mediaUsage(bytes)
+      if (!allowed) {
+        this.media = { sfu: false, at: Date.now() }
+        this.leaveSfu('a cota de mídia do mês acabou')
+      }
+    } catch {
+      this.mediaBytes += bytes
+    }
   }
 
   // ---------- Indicadores ----------
@@ -690,7 +913,21 @@ export class Call {
         const stats = await peer.linkStats()
         const prev = this.links[peer.connId]
         if (!prev || prev.rtt !== stats.rtt || prev.route !== stats.route) this.links[peer.connId] = stats
+        const relay = stats.relayBytes ?? 0
+        this.mediaBytes += Math.max(0, relay - (this.relaySeen.get(peer.connId) ?? 0))
+        this.relaySeen.set(peer.connId, relay)
       }
+      if (this.sfuWatch) {
+        this.mediaBytes += await this.sfuWatch.viewer.newBytes()
+        // O SFU caiu: volta pra cópia direta.
+        if (this.sfuWatch?.viewer.failed) {
+          const { connId } = this.sfuWatch
+          this.stopSfuWatch()
+          this.peers.get(connId)?.replySfu(false)
+        }
+      }
+      if (this.sfuShare?.failed) this.leaveSfu('a conexão com o SFU caiu')
+      void this.reportMedia()
     }, 2000)
   }
 }

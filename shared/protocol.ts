@@ -429,6 +429,13 @@ export type SignalData = (
   | { kind: 'candidate'; candidate: IceCandidate | null }
   | { kind: 'watch' }
   | { kind: 'unwatch' }
+  /**
+   * Quem compartilha passou a tela pelo SFU do Cloudflare (2 ou mais assistindo):
+   * de onde puxar. `session: null` = voltou pra conexão direta.
+   */
+  | { kind: 'screen-sfu'; session: string | null; video?: string; audio?: string | null }
+  /** Quem assiste conseguiu (ou não) puxar a tela do SFU: se sim, a cópia direta pode parar. */
+  | { kind: 'screen-sfu-reply'; ok: boolean }
 ) & {
   /**
    * Id da RTCPeerConnection de quem manda e o da de quem recebe, até onde quem

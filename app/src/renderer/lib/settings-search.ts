@@ -103,6 +103,7 @@ export const SETTINGS: SettingEntry[] = [
   { id: 'platform.signup', page: 'platform', label: 'Cadastro', keywords: ['convite', 'cadastro aberto', 'registro', 'criar conta', 'turnstile'], staff: true },
   { id: 'platform.accounts', page: 'platform', label: 'Contas', keywords: ['usuários', 'banir', 'moderação', 'pessoas'], staff: true },
   { id: 'platform.storage', page: 'platform', label: 'Espaço usado', keywords: ['armazenamento', 'anexos', 'disco', 'arquivos', 'storage'], staff: true },
+  { id: 'platform.media', page: 'platform', label: 'Mídia pelo Cloudflare', keywords: ['sfu', 'turn', 'cota', 'gb', 'banda', 'transmissão', 'tela', 'relay'], staff: true },
 ]
 
 /** Sem acento, minúsculo, só letras/números (o resto vira espaço). */

@@ -39,6 +39,9 @@ export interface AdminPanel {
   guilds: number
   storageUsed: number
   storageLimit: number
+  /** Mídia pelo Cloudflare (SFU + TURN) no mês, contada pelos apps. */
+  mediaUsed: number
+  mediaLimit: number
 }
 
 export interface Upload {
@@ -203,6 +206,41 @@ export class Api {
 
   createGuild(name: string) {
     return this.request<GuildInfo>('/api/guilds', { method: 'POST', json: { name } })
+  }
+
+  // ---------- Mídia pelo Cloudflare (SFU) ----------
+
+  /** O que o servidor oferece agora (o SFU e o TURN somem quando a cota do mês acaba). */
+  mediaStatus() {
+    return this.request<{ sfu: boolean; turn: boolean; used: number; limit: number }>('/api/media')
+  }
+
+  /** Conta o que passou pelo Cloudflare (SFU recebido e TURN), pra cota do mês. */
+  mediaUsage(bytes: number) {
+    return this.request<{ allowed: boolean }>('/api/media/usage', { method: 'POST', json: { bytes } })
+  }
+
+  sfuSession() {
+    return this.request<{ sessionId: string; token: string }>('/api/media/sessions', { method: 'POST', json: {} })
+  }
+
+  sfuPush(session: { sessionId: string; token: string }, sdp: string, tracks: { mid: string; trackName: string }[]) {
+    return this.request<{ sdp: string }>(`/api/media/sessions/${session.sessionId}/push`, { method: 'POST', json: { token: session.token, sdp, tracks } })
+  }
+
+  sfuPull(session: { sessionId: string; token: string }, tracks: { sessionId: string; trackName: string }[]) {
+    return this.request<{ sdp: string | null; tracks: { mid: string; trackName: string }[] }>(`/api/media/sessions/${session.sessionId}/pull`, {
+      method: 'POST',
+      json: { token: session.token, tracks },
+    })
+  }
+
+  sfuRenegotiate(session: { sessionId: string; token: string }, sdp: string) {
+    return this.request(`/api/media/sessions/${session.sessionId}/renegotiate`, { method: 'POST', json: { token: session.token, sdp } })
+  }
+
+  sfuClose(session: { sessionId: string; token: string }, mids: string[]) {
+    return this.request(`/api/media/sessions/${session.sessionId}/close`, { method: 'POST', json: { token: session.token, mids } })
   }
 
   /** Lê a lista de canais de um print do Discord (o servidor manda pro modelo de visão). */

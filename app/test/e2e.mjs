@@ -24,6 +24,12 @@ const SHOTS = process.env.RESENHA_SHOTS
 const APP_DIR = new URL('..', import.meta.url).pathname
 const withAudio = process.env.RESENHA_E2E_AUDIO === '1' && process.platform === 'linux'
 const full = process.env.RESENHA_E2E_FULL === '1'
+/**
+ * RESENHA_E2E_SFU=1: a tela vai pelo SFU do Cloudflare de verdade já com uma pessoa
+ * assistindo (precisa de REALTIME_APP_ID e REALTIME_APP_SECRET no server/.dev.vars).
+ * Todas as checagens da tela passam a valer pelo SFU.
+ */
+const viaSfu = process.env.RESENHA_E2E_SFU === '1'
 const targetWidth = full ? 2560 : 1280
 
 let failures = 0
@@ -61,12 +67,18 @@ async function launch(profile) {
   })
   // Sem sons do app durante o teste (nada toca na caixa de som de quem roda). Sem RNNoise
   // também: o microfone falso é um tom puro, e pro RNNoise apito não é voz.
-  await page.evaluate(() =>
-    localStorage.setItem('resenha.settings', JSON.stringify({ sounds: false, noiseReduction: 'off', streamVolume: 0 })),
+  await page.evaluate(
+    (sfu) =>
+      localStorage.setItem(
+        'resenha.settings',
+        JSON.stringify({ sounds: false, noiseReduction: 'off', streamVolume: 0, ...(sfu ? { sfuMinViewers: 1 } : {}) }),
+      ),
+    viaSfu,
   )
   await page.reload()
   page.on('console', (msg) => {
-    if (msg.type() !== 'error') return
+    // Erros, e os avisos do SFU (quando a tela desiste do Cloudflare e segue direta, o motivo aparece aqui).
+    if (msg.type() !== 'error' && !msg.text().startsWith('[sfu]')) return
     console.log(`   [${profile}] ${msg.text()}`)
     if (/processamento do microfone indisponível|RNNoise não carregou|processador do microfone parou/.test(msg.text())) {
       micFallbacks.push(profile)
@@ -480,6 +492,18 @@ async function mapCenter(page) {
   return text.split(',').map(Number)
 }
 
+/** Espera o mapa parar (o voo até um lugar leva alguns segundos) e devolve onde ficou. */
+async function settled(page, ms = 10_000) {
+  let last = await mapCenter(page)
+  for (const deadline = Date.now() + ms; Date.now() < deadline; ) {
+    await page.waitForTimeout(400)
+    const now = await mapCenter(page)
+    if (now.every((v, i) => Math.abs(v - last[i]) < 1e-6)) return now
+    last = now
+  }
+  return last
+}
+
 /** Espera o centro do mapa de quem acompanha chegar perto do de quem mexeu. */
 async function follows(page, [lng, lat, zoom], ms = 6000) {
   for (const deadline = Date.now() + ms; Date.now() < deadline; ) {
@@ -535,8 +559,7 @@ async function checkMap() {
   await a.page.locator('.results .result').first().waitFor({ timeout: 15_000 })
   await shot(a, '2d-mapa-busca')
   await a.page.locator('.results .result').first().click({ force: true })
-  await a.page.waitForTimeout(2500)
-  const found = await mapCenter(a.page)
+  const found = await settled(a.page)
   check(Math.abs(found[1] + 25.4) < 0.5 && (await follows(b.page, found)), 'busca leva A até o lugar e B vai junto', found.join(', '))
 
   // A marca um lugar e B vê o marcador (no mapa e na lista).
@@ -569,7 +592,8 @@ async function checkMap() {
     frameB ?? '',
   )
   for (const page of [a.page, b.page]) await page.getByRole('button', { name: 'Fechar o Street View', exact: true }).first().click({ force: true })
-  await a.page.locator('.map-walker').waitFor({ state: 'detached', timeout: 5000 })
+  // Os dois bonecos (o meu e o de quem estava) somem: espera até não sobrar nenhum.
+  await a.page.locator('.map-walker').first().waitFor({ state: 'detached', timeout: 5000 })
   await b.page.getByRole('button', { name: 'Marcadores', exact: true }).click({ force: true })
 }
 
@@ -842,6 +866,18 @@ try {
   await live.click({ force: true })
   await b.page.waitForFunction(() => document.querySelector('.stream video')?.videoWidth > 0, null, { timeout: 15_000 })
   check(true, 'B recebeu o vídeo da tela de A')
+  if (viaSfu) {
+    // Com uma pessoa assistindo (sfuMinViewers 1), A publica no SFU e B troca pra lá.
+    await b.page.getByRole('button', { name: 'Estatísticas', exact: true }).click({ force: true })
+    const started = Date.now()
+    const onSfu = await b.page
+      .waitForFunction(() => document.querySelector('.stats')?.textContent?.includes('via Cloudflare'), null, { timeout: 40_000 })
+      .then(() => true, () => false)
+    const seen = (await b.page.locator('.stats').innerText({ timeout: 1000 }).catch(() => '(sem estatísticas)')).replace(/\n/g, ' | ')
+    check(onSfu, 'tela troca pro SFU do Cloudflare (uma cópia só, distribuída por lá)', onSfu ? `${Date.now() - started} ms` : seen)
+    await b.page.waitForFunction(() => document.querySelector('.stream video')?.videoWidth > 0, null, { timeout: 15_000 })
+    await b.page.getByRole('button', { name: 'Estatísticas', exact: true }).click({ force: true })
+  }
 
   if (withAudio) {
     const audioPid = (side) => side.app.evaluate(({ app }) => app.getAppMetrics().find((p) => p.name === 'Audio Service')?.pid?.toString())
@@ -894,9 +930,11 @@ try {
   await a.page.getByRole('button', { name: 'Avançado', exact: true }).click({ force: true })
   await a.page.locator('.settings .segmented button', { hasText: 'H264' }).click({ force: true })
   await a.page.keyboard.press('Escape')
-  await b.page.waitForFunction(() => document.querySelector('.stats')?.textContent?.includes('H264'), null, { timeout: 20_000 })
-    .then(() => check(true, 'codec trocou pra H264 ao vivo'))
-    .catch(() => check(false, 'codec trocou pra H264 ao vivo', 'continuou o mesmo'))
+  // Pelo SFU o codec fica o do começo da transmissão (trocar exigiria renegociar com o Cloudflare).
+  if (!viaSfu)
+    await b.page.waitForFunction(() => document.querySelector('.stats')?.textContent?.includes('H264'), null, { timeout: 20_000 })
+      .then(() => check(true, 'codec trocou pra H264 ao vivo'))
+      .catch(() => check(false, 'codec trocou pra H264 ao vivo', 'continuou o mesmo'))
   await b.page.waitForFunction(() => document.querySelector('.stream video')?.videoWidth > 1280, null, { timeout: 30_000 })
     .then(() => check(true, 'resolução subiu de 720p pra 1080p ao vivo'))
     .catch(() => check(false, 'resolução subiu de 720p pra 1080p ao vivo'))
