@@ -1,7 +1,7 @@
 <script lang="ts">
   import { DECORATIONS, type Presence, type ProfileStyle } from '../../../../../shared/protocol'
-  import { DECORATION_LABEL, nameStyle } from '../../lib/profile'
-  import { Avatar } from '../kit'
+  import { DECORATION_LABEL, isFounder, nameStyle } from '../../lib/profile'
+  import { Avatar, FounderBadge } from '../kit'
   import ProfilePreview from '../settings/ProfilePreview.svelte'
 
   // Personalização do perfil com dados de exemplo: cartões, molduras e nomes,
@@ -13,6 +13,16 @@
 
   const online: Presence = { status: 'online', text: null }
   const cards: { id: string; name: string; username: string; bio: string; accent: number | null; banner?: string; style: ProfileStyle; presence: Presence }[] = [
+    {
+      id: 'u-lucas',
+      name: 'Lucas',
+      username: 'lucas',
+      bio: 'Fiz o Resenha.',
+      accent: null,
+      banner,
+      style: { theme: [0x6a5cf6, 0xff7ab6], effect: 'sparkles', decoration: 'founder', nameEffect: 'holo', pronouns: 'ele/dele', badge: 'founder' },
+      presence: { status: 'online', text: 'na call' },
+    },
     {
       id: 'u-bia',
       name: 'Bia',
@@ -130,6 +140,7 @@
           <div class="body">
             <div class="head">
               <span class="author"><span class={styled.class} style={styled.style}>{c.name}</span></span>
+              {#if isFounder(people[i])}<FounderBadge size={15} />{/if}
               <time>14:3{i}</time>
             </div>
             <p>{messages[i]}</p>
@@ -143,6 +154,7 @@
         <div class="member">
           <Avatar id={c.id} name={c.name} size={32} decoration={c.style.decoration} status={c.presence.status} cutout="var(--bg-panel)" />
           <span class="mname"><span class={styled.class} style={styled.style}>{c.name}</span></span>
+          {#if isFounder(people[i])}<FounderBadge size={14} />{/if}
         </div>
       {/each}
     </aside>

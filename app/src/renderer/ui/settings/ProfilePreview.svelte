@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { Presence, ProfileStyle } from '../../../../../shared/protocol'
-  import { nameStyle } from '../../lib/profile'
-  import { Avatar, Icon, STATUS_LABEL } from '../kit'
+  import { isFounder, nameStyle } from '../../lib/profile'
+  import { Avatar, FounderBadge, Icon, STATUS_LABEL } from '../kit'
   import ProfileShell from '../profile/ProfileShell.svelte'
 
   let {
@@ -47,7 +47,10 @@
   </div>
 
   <div class="body">
-    <h2><span class={styledName.class} style={styledName.style}>{name.trim() || username}</span></h2>
+    <h2 class="holo-play">
+      <span class={styledName.class} style={styledName.style}>{name.trim() || username}</span>
+      {#if isFounder(user)}<FounderBadge size={18} />{/if}
+    </h2>
     <p class="username">{username}{#if style?.pronouns}<span class="pronouns">{style.pronouns}</span>{/if}</p>
     {#if presence.text}
       <p class="custom"><span class="bubble">{presence.text}</span></p>
@@ -85,6 +88,9 @@
   }
 
   h2 {
+    display: flex;
+    align-items: center;
+    gap: 6px;
     font-size: var(--text-xl);
     font-weight: 650;
     letter-spacing: -0.015em;

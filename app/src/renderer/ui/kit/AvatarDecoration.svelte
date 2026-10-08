@@ -40,6 +40,11 @@
     [at(92, 52), 0.75, '#ffb4d4'],
     [at(-130, 51), 0.8, '#ff9fc6'],
   ]
+  /** Louros do Fundador: folhas dos dois lados, do medalhão (embaixo) subindo pelo anel. */
+  const LAURELS = [-1, 1].flatMap((side) =>
+    [102, 113, 124, 135, 146, 157].map((a, i) => ({ a: 90 + side * (a - 90), r: i % 2 ? 54.5 : 52.5, side, size: 1 - i * 0.07 })),
+  )
+
   /** Estrelinhas: [x, y, tamanho, atraso]. */
   const STARS: [number, number, number, number][] = [
     [101, 17, 1.15, 0],
@@ -173,6 +178,58 @@
             <g class="twinkle" style:--d="-0.4s" transform="translate(12 -16) scale(0.4)"><path d={SPARKLE} fill="#fff" /></g>
           </g>
         </g>
+      {:else if kind === 'founder'}
+        <!-- Só do dono do Resenha: anel nas cores do app, órbita dourada, brilhos e o medalhão da marca. -->
+        <defs>
+          <linearGradient id="{uid}-a" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stop-color="#8f84ff" />
+            <stop offset="0.5" stop-color="#6a5cf6" />
+            <stop offset="1" stop-color="#ff7ab6" />
+          </linearGradient>
+          <linearGradient id="{uid}-g" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="#fff3c4" />
+            <stop offset="0.5" stop-color="#ffd36b" />
+            <stop offset="1" stop-color="#e59a12" />
+          </linearGradient>
+          <filter id="{uid}-b" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="2.6" /></filter>
+        </defs>
+        <g class="founder-spin">
+          <circle cx="60" cy="60" r="52" fill="none" stroke="url(#{uid}-a)" stroke-width="6" filter="url(#{uid}-b)" opacity="0.75" />
+          <circle cx="60" cy="60" r="52" fill="none" stroke="url(#{uid}-a)" stroke-width="3.4" />
+        </g>
+        <circle cx="60" cy="60" r="49.4" fill="none" stroke="url(#{uid}-g)" stroke-width="0.9" opacity="0.85" />
+        {#each LAURELS as leaf, i (i)}
+          {@const [x, y] = at(leaf.a, leaf.r)}
+          <ellipse
+            cx={x}
+            cy={y}
+            rx={6 * leaf.size}
+            ry={2.5 * leaf.size}
+            transform="rotate({leaf.a + 90 + leaf.side * (i % 2 ? 32 : -32)} {x} {y})"
+            fill="url(#{uid}-g)"
+            stroke="#8a5600"
+            stroke-width="0.6"
+          />
+        {/each}
+        <circle cx="60" cy="60" r="56.5" fill="none" stroke="url(#{uid}-g)" stroke-width="1.3" stroke-dasharray="0.1 6.5" stroke-linecap="round" class="founder-orbit" />
+        <g class="founder-orbit">
+          {#each [-60, 60, 180] as angle, i (angle)}
+            {@const [x, y] = at(angle, 56.5)}
+            <g transform="translate({x} {y}) scale(0.55)">
+              <g class="twinkle" style:--d="{-i * 0.7}s">
+                <path d={SPARKLE} fill="#ffd36b" filter="url(#{uid}-b)" opacity="0.8" />
+                <path d={SPARKLE} fill="#fff6d6" />
+              </g>
+            </g>
+          {/each}
+        </g>
+        <g transform="translate(60 109)">
+          <circle r="11.2" fill="#1b1730" />
+          <circle r="9.8" fill="url(#{uid}-g)" />
+          <circle r="8.2" fill="url(#{uid}-a)" />
+          <path d="M-2.6 2.3A4.2 4.2 0 1 1 -0.8 3.4L-3.7 4.3Z" fill="#fff" />
+          <path d="M-0.9 -0.2Q0.6 1.4 2.1 -0.2" fill="none" stroke="#6a5cf6" stroke-width="1.1" stroke-linecap="round" />
+        </g>
       {:else if kind === 'cat'}
         {#each [-1, 1] as side (side)}
           <g transform="translate({60 + side * 30} 22) scale({side} 1)">
@@ -204,6 +261,17 @@
   /* Parado até `play` (nas listas, o hover liga). */
   .deco:not(.play) :global(*) {
     animation-play-state: paused !important;
+  }
+
+  /* ---------- Fundador ---------- */
+  .founder-spin {
+    transform-origin: 60px 60px;
+    animation: deco-spin 10s linear infinite;
+  }
+
+  .founder-orbit {
+    transform-origin: 60px 60px;
+    animation: deco-spin 24s linear infinite reverse;
   }
 
   /* ---------- Neon ---------- */

@@ -332,6 +332,39 @@ svg {
     0 0 14px color-mix(in srgb, var(--name-a) 45%, transparent);
 }
 
+/*
+ * Holográfico (só do dono do Resenha): um brilho que corre pelas letras. Parado
+ * nas listas e no chat (anima com o mouse em cima, como as molduras) e sempre
+ * no cartão de perfil (.holo-play): muita mensagem animando ao mesmo tempo pesaria.
+ */
+.name-fx-holo {
+  margin: -0.25em -0.12em;
+  padding: 0.25em 0.12em;
+  background: linear-gradient(100deg, var(--name-a) 0%, var(--name-b) 28%, #fff 42%, #b9f6ff 50%, var(--name-b) 62%, var(--name-a) 100%);
+  background-size: 260% 100%;
+  background-position: 70% 0;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  text-decoration-color: var(--name-a);
+  filter: drop-shadow(0 0 4px color-mix(in srgb, var(--name-a) 40%, transparent));
+  animation: name-holo 3.2s linear infinite paused;
+}
+
+:is(article, .member, .holo-play):hover .name-fx-holo,
+.holo-play .name-fx-holo {
+  animation-play-state: running;
+}
+
+@keyframes name-holo {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -160% 0;
+  }
+}
+
 /* ---------- Animações compartilhadas ---------- */
 
 @keyframes rs-fade-in {

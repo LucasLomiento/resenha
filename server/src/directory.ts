@@ -18,7 +18,7 @@ import { hashPassword, hashToken, randomToken, verifyPassword } from './auth'
 import { newId } from './ids'
 import { columns } from './messages'
 import { conversation as conversationStub, guild as guildStub, home as homeStub } from './stubs'
-import { applyStylePatch, isAnimated, parseStyle, styleText } from './style'
+import { applyStylePatch, isAnimated, parseStyle, publicStyle, styleText } from './style'
 import { cleanLine, cleanText, color, passwordProblem, slugUsername, username as validUsername } from './validate'
 import { MAX_USAGE_REPORT, MEASURE_EVERY, MEDIA_BUDGET, analyticsConfig, measuredUsage, usageMonth } from './media'
 
@@ -325,7 +325,7 @@ export class Directory extends DurableObject<Env> {
 
   private toUser(row: UserRow): User {
     const deleted = (row.flags & FLAG_DELETED) !== 0
-    const style = deleted ? undefined : parseStyle(row.style)
+    const style = deleted ? undefined : publicStyle(parseStyle(row.style), (row.flags & FLAG_STAFF) !== 0)
     return {
       id: row.id,
       username: row.username,
@@ -661,7 +661,7 @@ export class Directory extends DurableObject<Env> {
       args.push(patch.dmPolicy as string)
     }
     if (patch.style !== undefined) {
-      const style = applyStylePatch(parseStyle(row.style), patch.style)
+      const style = applyStylePatch(parseStyle(row.style), patch.style, (row.flags & FLAG_STAFF) !== 0)
       if (!style.ok) return fail(400, style.error)
       sets.push('style = ?')
       args.push(styleText(style.value))

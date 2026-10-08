@@ -16,6 +16,8 @@ export type SoundName =
   | 'self-leave'
   | 'join'
   | 'leave'
+  /** O dono do Resenha entra na call (no lugar do "alguém entra"; pra ele, no lugar do "você entra"). */
+  | 'founder-join'
   | 'mute'
   | 'unmute'
   | 'deafen'
@@ -41,6 +43,7 @@ export const SOUND_LABELS: [SoundName, string][] = [
   ['self-leave', 'Você sai'],
   ['join', 'Alguém entra'],
   ['leave', 'Alguém sai'],
+  ['founder-join', 'O dono do Resenha entra'],
   ['mute', 'Mutar'],
   ['unmute', 'Desmutar'],
   ['deafen', 'Ensurdecer'],
@@ -254,6 +257,15 @@ const SOUNDS: Record<SoundName, (bus: Bus, at: number) => void> = {
     drop(bus, NOTE.A5, at, { gain: 0.9, pan: -0.1 })
     drop(bus, NOTE.E6, at + 0.085, { gain: 0.8, pan: 0.1 })
   },
+  'founder-join': (bus, at) => {
+    // Fanfarra curta: arpejo de marimba subindo e um acorde de sinos com brilho por cima.
+    ;[NOTE.C5, NOTE.E5, NOTE.G5].forEach((f, i) => mallet(bus, f, at + i * 0.07, { gain: 0.7, pan: -0.2 + i * 0.2 }))
+    const top = at + 0.22
+    bell(bus, NOTE.C6, top, { gain: 0.5, decay: 0.95, pan: -0.15 })
+    bell(bus, NOTE.E6, top + 0.02, { gain: 0.42, decay: 0.95, pan: 0.15 })
+    bell(bus, NOTE.G6, top + 0.04, { gain: 0.32, decay: 1.05, ratio: 4.1 })
+    whoosh(bus, 2600, 9000, top - 0.06, { gain: 0.22, length: 0.5 })
+  },
   leave: (bus, at) => {
     drop(bus, NOTE.E6, at, { fall: true, gain: 0.75, pan: 0.1 })
     drop(bus, NOTE.A5, at + 0.09, { fall: true, gain: 0.7, pan: -0.1, decay: 0.26 })
@@ -320,6 +332,7 @@ const LEVEL: Record<SoundName, number> = {
   'self-leave': 0.62,
   join: 0.87,
   leave: 0.85,
+  'founder-join': 0.54,
   mute: 1.57,
   unmute: 1.6,
   deafen: 0.73,

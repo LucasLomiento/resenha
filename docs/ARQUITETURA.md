@@ -79,6 +79,7 @@ Quem assiste uma transmissão desenha por cima dela, e quem compartilha vê os r
 - Arquivos: URL assinada (HMAC) com validade; servidos com `Content-Security-Policy: sandbox` e `nosniff`.
 - Mídia de perfil (avatar, banner, ícone) tem id impossível de adivinhar e cache imutável. O tipo é conferido pelos bytes. Foto parada até 512 KB; animada (GIF/WebP) e banner até 1,5 MB (uma linha do SQLite do DO aguenta 2 MB). Foto animada só entra com o quadro parado junto.
 - Personalização do perfil (`server/src/style.ts`): uma coluna `style` (JSON) no Directory e na cópia dos perfis de cada Guild. Só ids da lista embutida, cores 0..0xFFFFFF e pronomes limpos; banner e quadro parado só mudam pelas rotas de imagem.
+- Fundador: o `Directory` põe `style.badge = 'founder'` no perfil público da conta dona da plataforma (`publicStyle`, calculado pelo flag de staff, nunca guardado) e esse perfil segue pro Guild e pros amigos pelo caminho normal. A moldura `founder` e o efeito de nome `holo` só passam no PATCH pra essa conta, e somem do perfil se ela deixar de ser a dona. Apps antigos ignoram o que não conhecem.
 
 ## Rotas
 - `GET /api/g/<servidor>/ws` e `GET /api/home/<pessoa>/ws`: WebSockets (o Worker confere antes se o servidor/a conta existe, pra ninguém criar DO à toa).

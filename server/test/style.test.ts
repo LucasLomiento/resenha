@@ -43,20 +43,23 @@ function avatarForm(image: Uint8Array, still?: Uint8Array) {
 
 const mediaStatus = async (id: string) => (await SELF.fetch(`${BASE}/media/${id}`)).status
 
+/** A primeira conta é a do dono do Resenha: o perfil dela sempre vem com o selo de fundador. */
+const FOUNDER = { badge: 'founder' } as const
+
 describe('personalização do perfil', () => {
   it('muda tema, pronomes, moldura, efeito e nome; null volta pro padrão', async () => {
     const me = await signup('lucas')
     const style = { theme: [0x7c6cff, 0xff7a93], pronouns: '  ele / dele ', decoration: 'aurora', effect: 'snow', nameFont: 'serif', nameEffect: 'gradient' }
     const res = await call('PATCH', '/api/me', { style }, me.token)
     expect(res.status, JSON.stringify(res.body)).toBe(200)
-    expect(res.body.style).toEqual({ ...style, pronouns: 'ele / dele' })
+    expect(res.body.style).toEqual({ ...style, pronouns: 'ele / dele', ...FOUNDER })
 
     // Só o que veio muda; null e texto vazio tiram.
     const next = await call('PATCH', '/api/me', { style: { effect: null, pronouns: '' } }, me.token)
-    expect(next.body.style).toEqual({ theme: [0x7c6cff, 0xff7a93], decoration: 'aurora', nameFont: 'serif', nameEffect: 'gradient' })
+    expect(next.body.style).toEqual({ theme: [0x7c6cff, 0xff7a93], decoration: 'aurora', nameFont: 'serif', nameEffect: 'gradient', ...FOUNDER })
     const empty = await call('PATCH', '/api/me', { style: { theme: null, decoration: null, nameFont: null, nameEffect: null } }, me.token)
-    expect(empty.body.style).toBeUndefined()
-    expect((await call('GET', '/api/me', undefined, me.token)).body.style).toBeUndefined()
+    expect(empty.body.style).toEqual(FOUNDER)
+    expect((await call('GET', '/api/me', undefined, me.token)).body.style).toEqual(FOUNDER)
   })
 
   it('recusa o que não é da lista embutida', async () => {
@@ -75,23 +78,48 @@ describe('personalização do perfil', () => {
     // Banner e quadro parado só mudam pelas rotas de imagem.
     const sneaky = await call('PATCH', '/api/me', { style: { banner: 'qualquer-coisa-1234', avatarStill: 'outra-coisa-1234', pronouns: 'ela' } }, me.token)
     expect(sneaky.status).toBe(200)
-    expect(sneaky.body.style).toEqual({ pronouns: 'ela' })
+    expect(sneaky.body.style).toEqual({ pronouns: 'ela', ...FOUNDER })
     // Nada mudou com as tentativas recusadas.
-    expect((await call('GET', '/api/me', undefined, me.token)).body.style).toEqual({ pronouns: 'ela' })
+    expect((await call('GET', '/api/me', undefined, me.token)).body.style).toEqual({ pronouns: 'ela', ...FOUNDER })
   })
 
   it('chega na hora pra quem está no servidor e fica guardada lá', async () => {
     const { owner, guild, b } = await world()
     await call('PATCH', '/api/me', { style: { decoration: 'headset', nameEffect: 'neon' } }, owner.token)
     const update = await b.next('member.upsert', (m) => m.user.id === owner.user.id)
-    expect(update.user.style).toEqual({ decoration: 'headset', nameEffect: 'neon' })
+    expect(update.user.style).toEqual({ decoration: 'headset', nameEffect: 'neon', ...FOUNDER })
 
     // Quem conecta depois recebe do próprio servidor (a cópia dos perfis tem a coluna nova).
     const again = await guildSocket(guild.id, owner.token)
     const ready = await again.next('ready')
-    expect(ready.users.find((u) => u.id === owner.user.id)?.style).toEqual({ decoration: 'headset', nameEffect: 'neon' })
+    expect(ready.users.find((u) => u.id === owner.user.id)?.style).toEqual({ decoration: 'headset', nameEffect: 'neon', ...FOUNDER })
     // Reconectar sem mudança não espalha nada.
     await b.nothing('member.upsert', (m) => (m as { user?: { id: string } }).user?.id === owner.user.id)
+  })
+
+  it('fundador: selo pra todo mundo ver; moldura e nome exclusivos só do dono', async () => {
+    const { owner, friend, b } = await world()
+    // Os outros não podem usar o exclusivo (nem o selo, que nem é do app).
+    const denied = await call('PATCH', '/api/me', { style: { decoration: 'founder' } }, friend.token)
+    expect(denied.status).toBe(400)
+    expect(denied.body.error).toContain('dono do Resenha')
+    expect((await call('PATCH', '/api/me', { style: { nameEffect: 'holo' } }, friend.token)).status).toBe(400)
+    const sneaky = await call('PATCH', '/api/me', { style: { badge: 'founder', pronouns: 'ele' } }, friend.token)
+    expect(sneaky.body.style).toEqual({ pronouns: 'ele' })
+
+    // O dono usa, e quem está no servidor recebe com o selo.
+    const mine = await call('PATCH', '/api/me', { style: { decoration: 'founder', nameEffect: 'holo' } }, owner.token)
+    expect(mine.status, JSON.stringify(mine.body)).toBe(200)
+    expect(mine.body.style).toEqual({ decoration: 'founder', nameEffect: 'holo', ...FOUNDER })
+    const update = await b.next('member.upsert', (m) => m.user.id === owner.user.id)
+    expect(update.user.style).toEqual({ decoration: 'founder', nameEffect: 'holo', ...FOUNDER })
+
+    // Se a conta deixar de ser a dona, o exclusivo some do perfil (e o selo também).
+    const dir = env.DIRECTORY.get(env.DIRECTORY.idFromName('directory'))
+    await runInDurableObject(dir, (_, state) => {
+      state.storage.sql.exec('UPDATE users SET flags = flags & ~1 WHERE id = ?', owner.user.id)
+    })
+    expect((await call('GET', '/api/me', undefined, owner.token)).body.style).toBeUndefined()
   })
 
   it('banner: só imagem, até 1,5 MB; trocar e remover apagam o anterior', async () => {
@@ -113,7 +141,7 @@ describe('personalização do perfil', () => {
     expect(await mediaStatus(second.body.style.banner)).toBe(200)
 
     const removed = await call('DELETE', '/api/me/banner', undefined, me.token)
-    expect(removed.body.style).toBeUndefined()
+    expect(removed.body.style).toEqual(FOUNDER)
     expect(await mediaStatus(second.body.style.banner)).toBe(404)
   })
 
@@ -140,7 +168,7 @@ describe('personalização do perfil', () => {
     // Voltando pra foto parada, o quadro parado sai junto.
     const still = webp.body.style.avatarStill
     const plain = await put('/api/me/avatar', me.token, PNG)
-    expect(plain.body.style).toBeUndefined()
+    expect(plain.body.style).toEqual(FOUNDER)
     expect(await mediaStatus(still)).toBe(404)
 
     // Animada grande demais.

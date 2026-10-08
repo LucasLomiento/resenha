@@ -2,6 +2,7 @@
   import { untrack } from 'svelte'
   import {
     DECORATIONS,
+    FOUNDER_DECORATIONS,
     MAX_PRONOUNS,
     NAME_FONTS,
     PROFILE_EFFECTS,
@@ -91,9 +92,13 @@
     if (draft.pronouns.trim()) style.pronouns = draft.pronouns.trim()
     if (draft.theme) style.theme = draft.theme
     for (const key of STYLE_FIELDS) if (draft[key]) (style as Record<string, unknown>)[key] = draft[key]
+    if (me?.style?.badge) style.badge = me.style.badge
     return style
   })
   const previewUser = $derived({ id: me?.id ?? '', accent: draft.accent, style: previewStyle })
+  /** Dono do Resenha: tem a moldura e o efeito de nome que só ele usa. */
+  const founder = $derived(!!me?.staff)
+  const decorations = $derived(DECORATIONS.filter((kind) => founder || !FOUNDER_DECORATIONS.includes(kind)))
 
   // Perfil mudou (salvo aqui ou em outro aparelho): sem nada pendente, o formulário acompanha.
   $effect(() => {
@@ -339,7 +344,7 @@
 
           <Row stack label="Moldura do avatar" setting="profile.decoration">
             <div class="tiles" role="radiogroup" aria-label="Moldura do avatar">
-              {#each [null, ...DECORATIONS] as kind (kind ?? 'none')}
+              {#each [null, ...decorations] as kind (kind ?? 'none')}
                 {@const on = draft.decoration === kind}
                 {@const label = kind ? DECORATION_LABEL[kind] : 'Nenhuma'}
                 <button
@@ -409,6 +414,7 @@
                 { value: 'none', label: 'Nenhum' },
                 { value: 'gradient', label: NAME_EFFECT_LABEL.gradient },
                 { value: 'neon', label: NAME_EFFECT_LABEL.neon },
+                ...(founder ? [{ value: 'holo', label: NAME_EFFECT_LABEL.holo }] : []),
               ]}
               value={draft.nameEffect ?? 'none'}
               onchange={(value) => (draft.nameEffect = value === 'none' ? null : (value as NameEffect))}

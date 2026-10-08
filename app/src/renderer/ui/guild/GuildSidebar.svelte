@@ -3,8 +3,9 @@
   import { client } from '../../lib/client.svelte'
   import type { GuildState } from '../../lib/guild.svelte'
   import { settings } from '../../lib/settings.svelte'
+  import { isFounder } from '../../lib/profile'
   import { confirmAction, ui, type Anchor } from '../../lib/ui.svelte'
-  import { Avatar, Icon, IconButton, Menu, NavItem, SignalBars, Slider, Spinner, tooltip, type MenuItem } from '../kit'
+  import { Avatar, FounderBadge, Icon, IconButton, Menu, NavItem, SignalBars, Slider, Spinner, tooltip, type MenuItem } from '../kit'
   import { memberMenu } from './memberMenu'
 
   let { guild }: { guild: GuildState } = $props()
@@ -148,6 +149,17 @@
   // ---------- Call ----------
 
   let volumeFor = $state<string | null>(null)
+
+  /**
+   * Chegada do dono do Resenha na call: o nome dele entra com um brilho. Só pra
+   * quem chega depois que a lista apareceu (abrir o servidor não anima quem já estava).
+   */
+  const shownAt = performance.now()
+  function arrival(node: HTMLElement, founder: boolean) {
+    if (!founder || performance.now() - shownAt < 1500) return
+    node.classList.add('arrive')
+    node.addEventListener('animationend', () => node.classList.remove('arrive'), { once: true })
+  }
 
   function watch(member: VoiceMember) {
     call.watch(member.connId)
@@ -406,7 +418,8 @@
                 {@const name = guild.displayName(member.userId)}
                 {@const self = member.connId === guild.connId}
                 {@const link = call.links[member.connId]}
-                <li class="member">
+                {@const founder = isFounder(client.user(member.userId, guild.id))}
+                <li class="member" use:arrival={founder}>
                   <button
                     class="member-main"
                     class:dim={!here}
@@ -423,6 +436,7 @@
                       speaking={here && call.speaking[member.connId]}
                     />
                     <span class="member-name">{name}</span>
+                    {#if founder}<FounderBadge size={13} />{/if}
                     <!-- Ping só passando o mouse (antes dos outros ícones: eles não saem do lugar). -->
                     {#if here && !self}<SignalBars class="ping" rtt={link?.rtt} route={link?.route} />{/if}
                     {#if member.camera}<Icon name="camera" size={14} class="soft" />{/if}
@@ -693,6 +707,45 @@
     align-items: center;
     gap: 6px;
     padding-left: 32px;
+  }
+
+  /* O dono do Resenha chegou: o nome surge com um brilho dourado e violeta que passa. */
+  .member:global(.arrive) {
+    position: relative;
+    animation: founder-arrive 1.6s var(--ease) both;
+  }
+
+  .member:global(.arrive)::after {
+    content: '';
+    position: absolute;
+    inset: 0 0 0 26px;
+    border-radius: var(--r-md);
+    background: linear-gradient(100deg, transparent 20%, rgb(255 211 107 / 0.35) 45%, rgb(143 132 255 / 0.4) 55%, transparent 80%);
+    background-size: 250% 100%;
+    pointer-events: none;
+    animation: founder-sweep 1.6s var(--ease) both;
+  }
+
+  @keyframes founder-arrive {
+    0% {
+      opacity: 0;
+      translate: -10px 0;
+    }
+    35% {
+      opacity: 1;
+      translate: 0 0;
+    }
+  }
+
+  @keyframes founder-sweep {
+    from {
+      background-position: 120% 0;
+      opacity: 1;
+    }
+    to {
+      background-position: -60% 0;
+      opacity: 0;
+    }
   }
 
   .member-main {

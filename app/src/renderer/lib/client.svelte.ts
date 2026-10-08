@@ -15,6 +15,7 @@ import { Api, HttpError } from './api'
 import { Call, type CallTransport } from './call.svelte'
 import { GuildState, type GuildHost } from './guild.svelte'
 import { HomeState, type HomeHost } from './home.svelte'
+import { isFounder } from './profile'
 import { settings } from './settings.svelte'
 import { playSound } from './sounds'
 import { ui } from './ui.svelte'
@@ -98,6 +99,7 @@ class Client implements GuildHost, HomeHost {
     platform: () => this.platform,
     toast: (text, kind) => this.toast(text, kind),
     name: (userId): string => this.user(userId, this.call.guildId)?.name ?? 'Alguém',
+    founder: (userId) => (userId ? isFounder(this.user(userId, this.call.guildId)) : isFounder(this.me)),
   })
 
   constructor() {

@@ -16,6 +16,8 @@ interface CallDeps {
   toast(text: string, kind?: 'error' | 'info'): void
   /** Nome de exibição de alguém (pros rabiscos na minha tela). */
   name(userId: string): string
+  /** É o dono do Resenha (entra com som próprio)? Sem `userId`, se sou eu. */
+  founder(userId?: string): boolean
 }
 
 /**
@@ -176,7 +178,7 @@ export class Call {
         return
       }
       this.startTickers()
-      playSound('self-join')
+      playSound(this.deps.founder() ? 'founder-join' : 'self-join')
     } catch (err) {
       console.error(err)
       this.deps.toast(
@@ -355,7 +357,8 @@ export class Call {
     // Sons: alguém entrou, saiu ou começou a transmitir (o primeiro estado só registra).
     if (this.known) {
       const before = this.known
-      if (others.some((m) => !before.has(m.connId))) playSound('join')
+      const arrived = others.filter((m) => !before.has(m.connId))
+      if (arrived.length) playSound(arrived.some((m) => this.deps.founder(m.userId)) ? 'founder-join' : 'join')
       else if ([...before.keys()].some((id) => !others.some((m) => m.connId === id))) playSound('leave')
       if (others.some((m) => m.sharing && before.get(m.connId) === false)) playSound('live')
     }

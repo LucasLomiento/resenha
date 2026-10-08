@@ -23,6 +23,7 @@ export const DECORATION_LABEL: Record<Decoration, string> = {
   flowers: 'Flores',
   crown: 'Coroa',
   cat: 'Gatinho',
+  founder: 'Fundador',
 }
 
 export const EFFECT_LABEL: Record<ProfileEffect, string> = {
@@ -44,7 +45,11 @@ export const NAME_FONT_LABEL: Record<NameFont, string> = {
 export const NAME_EFFECT_LABEL: Record<NameEffect, string> = {
   gradient: 'Degradê',
   neon: 'Neon',
+  holo: 'Holográfico',
 }
+
+/** O dono do Resenha (o servidor põe o selo no perfil; ninguém mais tem). */
+export const isFounder = (user: Styled | null | undefined) => !!user && !user.deleted && user.style?.badge === 'founder'
 
 /** Temas prontos: [principal, destaque]. */
 export const THEME_PRESETS: { name: string; colors: [number, number] }[] = [

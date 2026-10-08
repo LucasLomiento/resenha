@@ -346,6 +346,7 @@ O "Nitro" do Resenha, pra todo mundo. Tudo opcional; sem nada, o perfil fica com
 - **Efeitos** (`ui/profile/ProfileEffect.svelte`): partículas leves só de CSS por cima do cartão (confete, neve, brilhos, corações, bolhas, vaga-lumes). Somem com `prefers-reduced-motion`.
 - **Nome**: fonte (Clássica = Fraunces, Redonda = Fredoka, Cursiva = Pacifico, Pixel = Silkscreen, todas OFL e empacotadas) e efeito (degradê com as cores do perfil, neon). As cores são clareadas até dar contraste no fundo escuro, e o `line-height: 1` do nome estilizado não muda a altura da linha no chat (`.styled-name` no `app.css`).
 - **Onde aparece**: cartão de perfil, painel da conversa privada, prévia nas configurações, mensagens e lista de membros. A galeria `#proto/profile-style` mostra tudo com dados de exemplo.
+- **Fundador (só o dono do Resenha)**: selo (`kit/FounderBadge.svelte`: medalhão violeta e rosa com borda dourada e o balão da marca; brilha só no hover) ao lado do nome nas mensagens, na lista de membros, no cartão, na lista da call e nos quadros da call; moldura "Fundador" (anel nas cores do app, louros e órbita dourados, medalhão embaixo); nome "Holográfico" (brilho que corre pelas letras, parado nas listas e animado no hover e no cartão, `.holo-play`); som próprio ao entrar na call (`founder-join`, medido junto com os outros) e o nome dele entra com um brilho na lista da call. As opções exclusivas só aparecem pra ele nas configurações.
 
 ## Acessibilidade
 

@@ -1,5 +1,7 @@
 import {
   DECORATIONS,
+  FOUNDER_DECORATIONS,
+  FOUNDER_NAME_EFFECTS,
   MAX_PRONOUNS,
   NAME_EFFECTS,
   NAME_FONTS,
@@ -14,7 +16,7 @@ export { isAnimated } from '../../shared/media'
 // Directory e na cópia dos perfis de cada Guild). O texto sai sempre na mesma
 // ordem de chaves, então dá pra comparar texto com texto e saber se mudou.
 
-const KEYS = ['banner', 'avatarStill', 'theme', 'pronouns', 'decoration', 'effect', 'nameFont', 'nameEffect'] as const
+const KEYS = ['banner', 'avatarStill', 'theme', 'pronouns', 'decoration', 'effect', 'nameFont', 'nameEffect', 'badge'] as const
 
 const media = (value: unknown) => (typeof value === 'string' && /^[\w-]{8,64}$/.test(value) ? value : undefined)
 const oneOf = <T extends string>(list: readonly T[], value: unknown) => (list.includes(value as T) ? (value as T) : undefined)
@@ -56,6 +58,9 @@ export function normalizeStyle(input: unknown): ProfileStyle | undefined {
       case 'nameEffect':
         clean = oneOf(NAME_EFFECTS, value)
         break
+      case 'badge':
+        clean = value === 'founder' ? 'founder' : undefined
+        break
     }
     if (clean !== undefined) (out as Record<string, unknown>)[key] = clean
   }
@@ -92,6 +97,7 @@ const PATCHABLE: [keyof ProfileStyle, (value: unknown) => unknown, string][] = [
 export function applyStylePatch(
   current: ProfileStyle | undefined,
   patch: unknown,
+  founder = false,
 ): { ok: true; value: ProfileStyle | undefined } | { ok: false; error: string } {
   if (!patch || typeof patch !== 'object' || Array.isArray(patch)) return { ok: false, error: 'Personalização inválida.' }
   const input = patch as Record<string, unknown>
@@ -100,8 +106,32 @@ export function applyStylePatch(
     if (input[key] === undefined) continue
     const value = input[key] === null ? null : clean(input[key])
     if (value === undefined) return { ok: false, error }
+    if (!founder && isFounderOnly(key, value)) return { ok: false, error: 'Só o dono do Resenha pode usar essa.' }
     if (value === null || value === '') delete next[key]
     else next[key] = value
   }
   return { ok: true, value: normalizeStyle(next) }
 }
+
+/** Moldura ou efeito de nome exclusivo do dono do Resenha. */
+function isFounderOnly(key: keyof ProfileStyle, value: unknown): boolean {
+  if (key === 'decoration') return FOUNDER_DECORATIONS.includes(value as never)
+  if (key === 'nameEffect') return FOUNDER_NAME_EFFECTS.includes(value as never)
+  return false
+}
+
+/**
+ * O perfil como os outros veem: o dono do Resenha ganha o selo (que nunca fica
+ * guardado), e ninguém mais fica com o que é exclusivo dele.
+ */
+export function publicStyle(style: ProfileStyle | undefined, founder: boolean): ProfileStyle | undefined {
+  const out: Record<string, unknown> = { ...style }
+  delete out.badge
+  if (founder) out.badge = 'founder'
+  else {
+    if (out.decoration && isFounderOnly('decoration', out.decoration)) delete out.decoration
+    if (out.nameEffect && isFounderOnly('nameEffect', out.nameEffect)) delete out.nameEffect
+  }
+  return normalizeStyle(out)
+}
+

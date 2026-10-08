@@ -3,10 +3,10 @@
   import { client } from '../../lib/client.svelte'
   import { formatFull, formatSize, formatStamp, formatTime } from '../../lib/format'
   import { plainText } from '../../lib/markdown'
-  import { nameStyle } from '../../lib/profile'
+  import { isFounder, nameStyle } from '../../lib/profile'
   import { confirmAction, openProfile, ui } from '../../lib/ui.svelte'
   import { memberMenu } from '../guild/memberMenu'
-  import { Avatar, Icon, IconButton, Kbd, Menu, tooltip, type MenuItem } from '../kit'
+  import { Avatar, FounderBadge, Icon, IconButton, Kbd, Menu, tooltip, type MenuItem } from '../kit'
   import EmojiPicker from './EmojiPicker.svelte'
   import Markdown from './Markdown.svelte'
   import { toEditable, toRaw } from './mentions'
@@ -216,6 +216,7 @@
           <button class="author" style:color onclick={(e) => openAuthor(e.currentTarget)} oncontextmenu={authorMenu}
             ><span class={authorName.class} style={authorName.style}>{name}</span></button
           >
+          {#if isFounder(author)}<FounderBadge size={15} />{/if}
           <time class="stamp" use:tooltip={formatFull(message.createdAt)}>{formatStamp(message.createdAt)}</time>
           {#if message.pinned}<span class="pin" use:tooltip={'Fixada'}><Icon name="pin" size={12} /></span>{/if}
         </div>

@@ -612,6 +612,12 @@ const styled = await fetch(`${SERVER}/api/me`, {
   body: JSON.stringify({ style: { theme: [0x2e8bff, 0x2ad4b0], pronouns: 'ele/dele', decoration: 'headset', effect: 'sparkles', nameFont: 'rounded', nameEffect: 'gradient' } }),
 })
 if (!styled.ok) throw new Error(`personalização: ${(await styled.json()).error}`)
+// A primeira conta é a dona do Resenha: só ela usa a moldura e o nome exclusivos.
+const patchStyle = (token, style) =>
+  fetch(`${SERVER}/api/me`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ style }) })
+const founderStyle = await patchStyle(owner.token, { decoration: 'founder', nameEffect: 'holo' })
+const notFounder = await patchStyle(duarte.token, { decoration: 'founder' })
+check(founderStyle.ok && notFounder.status === 400, 'moldura e nome do Fundador: o dono usa, os outros levam recusa', `${founderStyle.status}/${notFounder.status}`)
 
 // Prefixo dos perfis: dá pra rodar dois e2e ao mesmo tempo (com RESENHA_E2E_PORT diferente também).
 const PROFILE = process.env.RESENHA_E2E_PROFILE ?? 'e2e'
@@ -752,6 +758,15 @@ try {
     a.page.locator('.members button.member', { hasText: 'Duarte' }).locator('.deco.headset').count(),
   ])
   check(personalized.every((n) => n === 1), 'A vê a personalização de B (tema, pronomes, moldura, efeito, nome) no cartão e na lista', personalized.join(','))
+  // O dono do Resenha (A) aparece pra B com o selo, a moldura e o nome holográfico.
+  const lucasForB = b.page.locator('.members button.member', { hasText: 'Lucas' })
+  const founder = await Promise.all([
+    lucasForB.locator('.founder-badge').count(),
+    lucasForB.locator('.deco.founder').count(),
+    lucasForB.locator('.name-fx-holo').count(),
+    b.page.locator('.members button.member', { hasText: 'Duarte' }).locator('.founder-badge').count(),
+  ])
+  check(founder.join(',') === '1,1,1,0', 'B vê o selo de Fundador, a moldura e o nome holográfico só no dono', founder.join(','))
   await a.page.getByRole('button', { name: 'Mensagem', exact: true }).click({ force: true })
   await a.page.getByPlaceholder('Mensagem pra Duarte').fill('oi no privado')
   await a.page.keyboard.press('Enter')
