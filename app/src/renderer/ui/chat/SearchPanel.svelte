@@ -5,6 +5,7 @@
   import { formatStamp } from '../../lib/format'
   import { plainText } from '../../lib/markdown'
   import { Avatar, Button, EmptyState, Icon, IconButton, Spinner } from '../kit'
+  import { attachmentLabel } from '../../lib/voice-note'
 
   let {
     guild,
@@ -117,7 +118,7 @@
         </span>
         <span class="hit-text">
           {#each parts(clean(hit.content)) as p, j (j)}{#if p.on}<mark>{p.t}</mark>{:else}{p.t}{/if}{/each}
-          {#if !hit.content && hit.attachments.length}<span class="file">📎 {hit.attachments[0].name}</span>{/if}
+          {#if !hit.content && hit.attachments.length}<span class="file">{attachmentLabel(hit.attachments[0])}</span>{/if}
         </span>
       </button>
     {/each}

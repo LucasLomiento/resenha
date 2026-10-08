@@ -47,7 +47,8 @@ const api: ResenhaApi = {
     state: () => ipcRenderer.invoke('update:state'),
     check: () => ipcRenderer.invoke('update:check'),
     download: () => ipcRenderer.invoke('update:download'),
-    install: () => ipcRenderer.invoke('update:install'),
+    install: (rejoin) => ipcRenderer.invoke('update:install', rejoin),
+    takeRejoin: () => ipcRenderer.invoke('update:take-rejoin'),
     onState: (callback) => {
       ipcRenderer.on('update:state', (_event, state: UpdateState) => callback(state))
     },

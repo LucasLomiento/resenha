@@ -9,6 +9,7 @@
   import { Avatar, FounderBadge, Icon, IconButton, Kbd, Menu, tooltip, type MenuItem } from '../kit'
   import EmojiPicker from './EmojiPicker.svelte'
   import Markdown from './Markdown.svelte'
+  import VoicePlayer from './VoicePlayer.svelte'
   import { toEditable, toRaw } from './mentions'
   import type { ChatTarget } from './target.svelte'
 
@@ -42,6 +43,7 @@
 
   const IMAGE = /^image\/(png|jpe?g|gif|webp|avif|bmp)$/
   const VIDEO = /^video\/(mp4|webm|ogg)$/
+  const AUDIO = /^audio\//
 
   /** Imagens que não abriram (arquivo estragado, link vencido): viram cartão de arquivo, ou somem na prévia de link. */
   let broken = $state<Record<string, boolean>>({})
@@ -246,6 +248,8 @@
           <button class="image" aria-label="Abrir {a.name}" onclick={() => openImage(a)} style:aspect-ratio={ratio(a)} style:width={fitWidth(a, 420, 320)}>
             <img src={url(a.url)} alt={a.name} loading="lazy" draggable="false" onerror={() => (broken[a.id] = true)} />
           </button>
+        {:else if AUDIO.test(a.type)}
+          <VoicePlayer id={a.id} name={a.name} size={a.size} src={url(a.url)} />
         {:else if VIDEO.test(a.type)}
           <!-- svelte-ignore a11y_media_has_caption -->
           <video class="video" src={url(a.url)} controls preload="metadata" style:aspect-ratio={ratio(a)} style:width={fitWidth(a, 480, 320)}></video>

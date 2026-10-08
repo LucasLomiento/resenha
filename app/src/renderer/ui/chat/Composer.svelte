@@ -10,6 +10,7 @@
   import { searchEmoji } from '../../lib/emoji'
   import { formatSize } from '../../lib/format'
   import { compressImage } from '../../lib/media'
+  import { VOICE_MAX_SECONDS, VoiceRecording, clock } from '../../lib/voice-note'
   import { Avatar, Icon, IconButton, Kbd, Spinner } from '../kit'
   import EmojiPicker from './EmojiPicker.svelte'
   import { toRaw } from './mentions'
@@ -54,11 +55,14 @@
   const canSend = $derived(target.canSend && !uploading && waiting === 0 && (text.trim().length > 0 || uploads.some((u) => u.attachment)))
   const length = $derived(text.length)
 
-  // Trocou de conversa: guarda o rascunho desta e traz o da outra.
+  // Trocou de conversa: guarda o rascunho desta e traz o da outra. Só quando o id muda de
+  // verdade: a conversa pode chegar como um objeto novo com o mesmo id (e aí não pode
+  // apagar o que está sendo anexado, nem a gravação de voz em andamento).
   let currentId = ''
   $effect(() => {
     const id = target.id
     untrack(() => {
+      if (id === currentId) return
       if (currentId) drafts.set(currentId, { text, tokens })
       const saved = drafts.get(id)
       text = saved?.text ?? ''
@@ -177,6 +181,101 @@
       if (u.preview) URL.revokeObjectURL(u.preview)
     }
     uploads = []
+    cancelVoice()
+  }
+
+  // ---------- Mensagem de voz ----------
+
+  /** Barrinhas de volume enquanto grava (a mais nova na direita). */
+  const LEVEL_BARS = 40
+  let recording = $state<VoiceRecording | null>(null)
+  let recordSeconds = $state(0)
+  let levels = $state<number[]>([])
+  /** Depois de parar: convertendo pra MP3, ou enviando. */
+  let voiceBusy = $state<'encoding' | 'uploading' | null>(null)
+  let voiceProgress = $state(0)
+  let voiceAbort: (() => void) | null = null
+  let starting = false
+
+  async function startVoice() {
+    if (recording || voiceBusy || starting || !client.api || !target.canAttach || !target.canSend) return
+    starting = true
+    emojiOpen = false
+    try {
+      recording = await VoiceRecording.start()
+      recordSeconds = 0
+      levels = []
+    } catch (err) {
+      console.error('[voz] não deu pra gravar', err)
+      const name = (err as Error).name
+      client.toast(name === 'NotAllowedError' || name === 'NotFoundError' ? 'Sem acesso ao microfone.' : `Não deu pra gravar: ${(err as Error).message}`)
+    } finally {
+      starting = false
+    }
+  }
+
+  // Gravando: o relógio e as barrinhas andam; no limite, envia sozinho.
+  $effect(() => {
+    const rec = recording
+    if (!rec) return
+    const timer = setInterval(() => {
+      recordSeconds = rec.seconds
+      levels = [...levels.slice(-(LEVEL_BARS - 1)), rec.level()]
+      if (rec.seconds >= VOICE_MAX_SECONDS) void sendVoice()
+    }, 80)
+    // Enter envia, Esc descarta (o campo de texto some enquanto grava).
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        cancelVoice()
+      } else if (event.key === 'Enter') {
+        event.preventDefault()
+        void sendVoice()
+      }
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => {
+      clearInterval(timer)
+      window.removeEventListener('keydown', onKey, true)
+    }
+  })
+
+  // Saiu da conversa (ou fechou o chat) no meio da gravação: descarta.
+  $effect(() => () => untrack(() => cancelVoice()))
+
+  function cancelVoice() {
+    recording?.cancel()
+    recording = null
+    voiceAbort?.()
+    voiceAbort = null
+  }
+
+  async function sendVoice() {
+    const rec = recording
+    if (!rec || voiceBusy || !client.api) return
+    if (waiting) return client.toast(`Modo lento: espere ${waiting}s.`)
+    recording = null
+    voiceBusy = 'encoding'
+    voiceProgress = 0
+    const reply = replyTo?.id ?? null
+    try {
+      const { file } = await rec.finish()
+      if (file.size > MAX_UPLOAD_BYTES) throw new Error(`O áudio passou de ${formatSize(MAX_UPLOAD_BYTES)}.`)
+      voiceBusy = 'uploading'
+      const job = client.api.upload(target.uploadPath, file, (fraction) => (voiceProgress = fraction), null)
+      voiceAbort = job.abort
+      const attachment = await job.promise
+      voiceAbort = null
+      replyTo = null
+      if (target.slowmode) waitUntil = Date.now() + target.slowmode * 1000
+      await target.send('', [attachment.id], reply)
+    } catch (err) {
+      if ((err as Error).name !== 'AbortError') client.toast((err as Error).message || 'A mensagem de voz não foi enviada.')
+    } finally {
+      voiceBusy = null
+      voiceAbort = null
+      void tick().then(() => input?.focus())
+    }
   }
 
   async function send() {
@@ -448,6 +547,24 @@
       </div>
     {/if}
 
+    {#if recording || voiceBusy}
+      <div class="input-row voice-row" role="group" aria-label="Mensagem de voz">
+        <IconButton icon="trash" label="Descartar (Esc)" disabled={!!voiceBusy} onclick={cancelVoice} />
+        <span class="rec-dot" class:busy={!!voiceBusy}></span>
+        <span class="rec-time tabular">{clock(recordSeconds)}</span>
+        {#if voiceBusy}
+          <span class="rec-status">{voiceBusy === 'encoding' ? 'Preparando o áudio…' : `Enviando ${Math.round(voiceProgress * 100)}%`}</span>
+          <Spinner size={16} />
+        {:else}
+          <div class="rec-bars" aria-hidden="true">
+            {#each Array.from({ length: LEVEL_BARS }, (_, i) => levels[levels.length - LEVEL_BARS + i] ?? 0) as level, i (i)}
+              <span style:height="{Math.max(10, Math.round(level * 100))}%"></span>
+            {/each}
+          </div>
+        {/if}
+        <IconButton icon="send" label="Enviar (Enter)" disabled={!!voiceBusy} onclick={() => void sendVoice()} />
+      </div>
+    {:else}
     <div class="input-row">
       {#if target.canAttach && target.canSend}
         <IconButton icon="paperclip" label="Anexar arquivo" onclick={() => picker?.click()} />
@@ -479,7 +596,11 @@
           <IconButton icon="emoji" label="Emoji" active={emojiOpen} onclick={() => (emojiOpen = !emojiOpen)} />
         </span>
       {/if}
+      {#if target.canAttach && target.canSend}
+        <IconButton icon="mic" label="Gravar mensagem de voz" onclick={() => void startVoice()} />
+      {/if}
     </div>
+    {/if}
   </div>
   <input
     bind:this={picker}
@@ -581,6 +702,62 @@
     gap: 4px;
     min-height: 48px;
     padding: 8px 8px 8px 8px;
+  }
+
+  /* ---------- Gravando mensagem de voz ---------- */
+  .voice-row {
+    align-items: center;
+    gap: 8px;
+  }
+
+  .rec-dot {
+    flex: none;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--red);
+    animation: rec-pulse 1.2s ease-in-out infinite;
+  }
+
+  .rec-dot.busy {
+    background: var(--fg-3);
+    animation: none;
+  }
+
+  @keyframes rec-pulse {
+    50% {
+      opacity: 0.35;
+    }
+  }
+
+  .rec-time {
+    flex: none;
+    min-width: 38px;
+    color: var(--fg);
+    font-weight: 500;
+  }
+
+  .rec-status {
+    flex: 1;
+    color: var(--fg-3);
+    font-size: var(--text-sm);
+  }
+
+  .rec-bars {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    height: 28px;
+    min-width: 0;
+  }
+
+  .rec-bars span {
+    flex: 1;
+    min-width: 2px;
+    border-radius: var(--r-full);
+    background: var(--accent-fg);
+    transition: height 80ms linear;
   }
 
   textarea {

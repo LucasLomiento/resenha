@@ -126,7 +126,10 @@ export interface ResenhaApi {
     state(): Promise<UpdateState>
     check(): Promise<void>
     download(): Promise<void>
-    install(): Promise<void>
+    /** `rejoin`: a call em que a pessoa está, pro app voltar pra ela ao reabrir (o processo principal grava em disco antes de fechar). */
+    install(rejoin?: unknown): Promise<void>
     onState(callback: (state: UpdateState) => void): void
+    /** A call gravada antes de reiniciar pra atualizar (lida uma vez só; depois some). */
+    takeRejoin(): Promise<unknown>
   }
 }

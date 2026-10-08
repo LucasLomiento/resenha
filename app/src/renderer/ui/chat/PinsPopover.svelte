@@ -5,6 +5,7 @@
   import { plainText } from '../../lib/markdown'
   import { Avatar, Button, EmptyState, IconButton, Popover, Spinner } from '../kit'
   import type { ChatTarget } from './target.svelte'
+  import { attachmentLabel } from '../../lib/voice-note'
 
   let {
     target,
@@ -74,7 +75,7 @@
               </span>
             </div>
             {#if message.content}<p>{text(message.content)}</p>{/if}
-            {#if message.attachments.length}<span class="attachment">{message.attachments[0].name}</span>{/if}
+            {#if message.attachments.length}<span class="attachment">{attachmentLabel(message.attachments[0]).replace(/^📎 /, '')}</span>{/if}
           </div>
         {/each}
       {/if}

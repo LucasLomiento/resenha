@@ -13,7 +13,7 @@
 // Uso: npm run dev:server (em outro terminal) e depois npm -w app run e2e
 
 import { execFileSync, spawn } from 'node:child_process'
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import electronPath from 'electron'
@@ -719,6 +719,44 @@ try {
   await img.waitFor({ timeout: 5000 })
   const loaded = await img.evaluate((el) => (el.complete ? el.naturalWidth : new Promise((r) => (el.onload = () => r(el.naturalWidth)))))
   check(loaded === 1, 'imagem enviada por B aparece em A (URL assinada)')
+
+  // Mensagem de voz: B grava (microfone falso, nunca o de verdade), envia, e A recebe um MP3 de verdade.
+  await fakeMic(b.page)
+  const micButton = b.page.getByRole('button', { name: 'Gravar mensagem de voz', exact: true })
+  await micButton.click({ force: true })
+  await b.page
+    .locator('.voice-row .rec-time', { hasText: '0:01' })
+    .waitFor({ timeout: 5000 })
+    .catch(async (err) => {
+      const debug = await micButton.evaluate((el) => {
+        const box = el.getBoundingClientRect()
+        const top = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2)
+        return { box: [box.x, box.y, box.width, box.height].map(Math.round), top: top?.outerHTML.slice(0, 200), toasts: document.querySelector('.toasts')?.textContent }
+      })
+      console.log('   gravação não começou:', JSON.stringify(debug))
+      throw err
+    })
+  await b.page.waitForTimeout(500)
+  await shot(b, '2a-gravando-voz')
+  await b.page.getByRole('button', { name: 'Enviar (Enter)', exact: true }).click({ force: true })
+  const voice = a.page.locator('article .voice').last()
+  await voice.waitFor({ timeout: 20_000 })
+  const voiceInfo = await voice.evaluate(async (el) => {
+    const audio = el.querySelector('audio')
+    if (!audio.duration) await new Promise((r) => audio.addEventListener('loadedmetadata', r, { once: true }))
+    const res = await fetch(audio.src)
+    const bytes = new Uint8Array(await res.arrayBuffer())
+    // Quadro de MP3 (MPEG-1 Layer III): começa com 0xFFFB/0xFFFA, ou com a etiqueta ID3.
+    const mp3 = (bytes[0] === 0xff && (bytes[1] & 0xe0) === 0xe0) || String.fromCharCode(...bytes.slice(0, 3)) === 'ID3'
+    return { type: res.headers.get('content-type'), mp3, seconds: Math.round(audio.duration * 10) / 10 }
+  })
+  const download = await voice.getByRole('button', { name: 'Baixar o áudio (.mp3)', exact: true }).count()
+  await shot(a, '2a-mensagem-de-voz')
+  check(
+    voiceInfo.type === 'audio/mpeg' && voiceInfo.mp3 && voiceInfo.seconds >= 1 && voiceInfo.seconds <= 4 && download === 1,
+    'mensagem de voz: B grava e envia, A recebe o player com um MP3 de verdade (e o botão de baixar)',
+    JSON.stringify(voiceInfo),
+  )
   await shot(a, '2-chat')
 
   // Rolagem do chat: com mensagem suficiente, a lista tem que rolar. Mensagens altas e com
@@ -1315,7 +1353,13 @@ try {
   const restartUpdate = a.page.getByRole('button', { name: 'Reiniciar pra atualizar', exact: true })
   await restartUpdate.waitFor({ timeout: 5000 })
   await restartUpdate.click({ force: true })
-  const savedCall = await a.page.evaluate(() => localStorage.getItem('resenha.rejoin'))
+  // O processo principal grava a call num arquivo, na hora (o app fecha logo depois pra instalar).
+  const rejoinFile = join(homedir(), '.config', `resenha-${PROFILE}-a`, 'rejoin.json')
+  let savedCall = null
+  for (let i = 0; i < 20 && !savedCall; i++) {
+    savedCall = existsSync(rejoinFile) ? readFileSync(rejoinFile, 'utf8') : null
+    if (!savedCall) await a.page.waitForTimeout(100)
+  }
   // O app volta pra call logo ao abrir: o microfone falso tem que estar lá antes dele (nunca o de verdade).
   await a.page.addInitScript(installFakeMic)
   await a.page.reload()

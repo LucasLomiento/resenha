@@ -26,7 +26,7 @@ import {
   unmuteScreenAudio,
   type ScreenAudioOptions,
 } from './screen-audio-linux'
-import { checkForUpdates, downloadUpdate, installUpdate, setUpdaterCall, setupUpdater, updateState } from './updater'
+import { checkForUpdates, downloadUpdate, installUpdate, setUpdaterCall, setupUpdater, takeRejoin, updateState } from './updater'
 
 // RESENHA_PROFILE=b roda uma segunda instância com outra conta no mesmo PC.
 const profile = process.env.RESENHA_PROFILE
@@ -370,7 +370,8 @@ listen('unread', (_event, count: number) => {
 handle('update:state', () => updateState())
 handle('update:check', () => checkForUpdates())
 handle('update:download', () => downloadUpdate())
-handle('update:install', () => installUpdate())
+handle('update:install', (_event, rejoin: unknown) => installUpdate(rejoin))
+handle('update:take-rejoin', () => takeRejoin())
 
 // ---------- Sessão salva (criptografada com o chaveiro do sistema quando dá) ----------
 

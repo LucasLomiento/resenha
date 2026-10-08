@@ -1,6 +1,7 @@
-## 1.5.1: atualizar no meio da call não te tira da sala
+## 1.6.0: mensagem de voz
 
-- **De volta pra sala depois de atualizar:** quem clica em "Reiniciar e atualizar" no meio de uma call volta sozinho pra mesma sala quando o app abre de novo, com o microfone e o som do jeito que estavam. Numa ligação privada, volta se a outra pessoa ainda estiver nela (nunca liga de novo sozinho). A tela e a câmera não voltam sozinhas: é só compartilhar de novo.
+- **Mensagem de voz:** o microfone no campo de mensagem grava (até 15 minutos). Enter ou o avião enviam, Esc ou a lixeira descartam. Vai como **.mp3**, então dá pra baixar e ouvir em qualquer lugar. No chat aparece um player com a onda do áudio (clique nela pra pular), o tempo, a velocidade (1×, 1,5× e 2×) e o botão de baixar. Qualquer arquivo de áudio enviado no chat ganha o mesmo player.
+- **Voltar pra sala depois de atualizar, mais garantido:** a sala em que você estava agora é gravada num arquivo antes de o app fechar pra instalar. Antes ela podia se perder quando o app fechava rápido demais. Funciona a partir da próxima atualização (quem clica em atualizar precisa já estar nesta versão).
 
 ## Como atualizar
 

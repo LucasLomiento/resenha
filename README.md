@@ -4,7 +4,7 @@
 
 O site fica em `site/` (`node site/build.mjs` gera em `site/dist`) e é publicado pelo `.github/workflows/site.yml` a cada mudança e depois de cada release.
 
-Um app no estilo do Discord: vários servidores com canais, cargos e moderação, mensagens privadas, amigos, chat com imagens e arquivos, call de voz, câmera e compartilhamento de tela até 1440p a 60 fps com áudio, e um mapa compartilhado em cada servidor. O áudio da tela **não leva junto a voz da call**. Voz e tela vão direto entre os PCs (P2P), e o Cloudflare só cuida das contas, do chat e de apresentar as pessoas umas às outras.
+Um app no estilo do Discord: vários servidores com canais, cargos e moderação, mensagens privadas, amigos, chat com imagens, arquivos e mensagens de voz (MP3), call de voz, câmera e compartilhamento de tela até 1440p a 60 fps com áudio, e um mapa compartilhado em cada servidor. O áudio da tela **não leva junto a voz da call**. Voz e tela vão direto entre os PCs (P2P), e o Cloudflare só cuida das contas, do chat e de apresentar as pessoas umas às outras.
 
 ## Como funciona
 
@@ -25,6 +25,7 @@ Os detalhes (e as regras de segurança do servidor) estão em [docs/ARQUITETURA.
 - **Mensagens**: resposta, menções (pessoa, cargo, @everyone), reações, fixadas, busca sem acento (FTS5), contagem de não lidas e menções, e prévia de link buscada pelo servidor (quem lê nunca acessa o site do link).
 - **Perfil personalizado** (o "Nitro" de graça): banner e foto que podem ser animados, tema do cartão em duas cores, pronomes, moldura do avatar, efeito no cartão e nome com fonte e efeito. Molduras, efeitos e fontes vêm embutidos no app; o servidor guarda só os ids (`server/src/style.ts`).
 - **Anexos** (`server/src/files.ts`): ficam no SQLite do servidor/conversa, em pedaços de 1 MB, até 25 MB por arquivo, com teto de espaço pra plataforma inteira.
+- **Mensagem de voz** (`app/src/renderer/lib/voice-note.ts`): o app grava com o MediaRecorder (WebM/Opus, leve enquanto grava), no fim decodifica e converte pra MP3 mono a 64 kbps num worker (LAME em JavaScript, `@breezystack/lamejs`, LGPL-3.0) e manda como anexo comum (`audio/mpeg`, nome `mensagem-de-voz-…mp3`). O servidor não sabe que é voz. A onda do player é calculada no app, só quando o áudio aparece na tela.
 - **Mapa** (`app/src/renderer/ui/map`): um por servidor, com a mesma vista pra todo mundo, cursores e marcadores ao vivo. Desenhado com o [MapLibre GL](https://maplibre.org) e os mapas grátis do [OpenFreeMap](https://openfreemap.org) (© OpenMapTiles, dados do © OpenStreetMap); a busca de endereço é do Nominatim (OpenStreetMap). Sem chave de API. Pra satélite e Street View, "Abrir no Google Maps".
 - **app/**: Electron + Svelte 5. Cada pessoa da call tem uma `RTCPeerConnection` própria (`src/renderer/lib/peer.ts`, com "perfect negotiation"); a mesma call serve pro canal de voz e pra chamada privada. A tela só é enviada pra quem clica em **Assistir**.
 - **shared/**: os tipos das mensagens trocadas entre o app e o servidor, e o cálculo de permissões.
@@ -104,7 +105,7 @@ Formatos que se atualizam pelo app:
 
 O `.zip` do Windows não se atualiza.
 
-O app procura versão nova ao abrir e a cada 30 minutos, baixa sozinho quando não está em call e mostra um aviso no canto (e um aviso do sistema, se a janela estiver fora de foco) quando dá pra reiniciar e atualizar. Quem reinicia pra atualizar no meio de uma call volta sozinho pra mesma sala ao abrir, com o mesmo mudo/ensurdecido (`client.installUpdate` grava a sala em `resenha.rejoin`, que vale 10 minutos; ligação privada só volta se a outra pessoa continua nela). Tela e câmera não voltam: o seletor de tela precisa de clique.
+O app procura versão nova ao abrir e a cada 30 minutos, baixa sozinho quando não está em call e mostra um aviso no canto (e um aviso do sistema, se a janela estiver fora de foco) quando dá pra reiniciar e atualizar. Quem reinicia pra atualizar no meio de uma call volta sozinho pra mesma sala ao abrir, com o mesmo mudo/ensurdecido (`client.installUpdate` manda a sala pro processo principal, que grava `rejoin.json` na pasta do app na hora, antes de fechar pra instalar; vale 10 minutos e uma vez só; ligação privada só volta se a outra pessoa continua nela). Tela e câmera não voltam: o seletor de tela precisa de clique.
 
 Pra gerar localmente:
 

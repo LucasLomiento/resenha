@@ -142,6 +142,7 @@ Sintetizados na hora (`lib/sounds.ts`), um timbre por família, pra dar pra sabe
 | Quem assiste a sua tela | sopro + sininho | `viewer-join`, `viewer-leave` |
 | Conversa | sino de vidro (menção: duas notas, mais brilhante) | `message`, `mention` |
 | Ligação | frase de sinos (tocando) e o "tuuu" de 425 Hz (chamando) | `ring`, `ringback` |
+| O dono do Resenha entra | fanfarra: marimba subindo e acorde de sinos com brilho (no lugar de `join`, e de `self-join` pra ele) | `founder-join` |
 
 Tudo passa por um reverb curto e um compressor. O volume de cada som foi medido (RMS em janelas de 50 ms, renderizando offline) e acertado na tabela `LEVEL`: avisos de atenção (ligação, menção) um pouco acima, cliques frequentes um pouco abaixo. Som novo: meça antes de pôr.
 
@@ -232,6 +233,12 @@ Tudo passa por um reverb curto e um compressor. O volume de cada som foi medido 
 - **Achar o monitor:** com dois monitores do mesmo formato, um quadradinho rosa (48 px) pisca no canto de cima à esquerda por um instante ao começar a transmitir. É o jeito de saber qual monitor está na captura.
 - **Permitir:** interruptor "Deixar quem assiste rabiscar" no diálogo de compartilhar (antes de começar), "Rabiscos de quem assiste" no painel "Ao vivo" (durante) e "Quem assiste pode rabiscar na minha tela" em Voz e vídeo → Transmissão. É a mesma opção nos três.
 - **Painel da transmissão:** "Rabiscos de quem assiste" com interruptor; "Limpar rabiscos"; e uma linha cinza explicando quando não dá (janela em vez de monitor, sistema sem layer-shell, monitor transmitido não encontrado). Não tem escolha de monitor: os rabiscos vão sempre pro monitor que está sendo transmitido.
+
+### Mensagem de voz
+
+- **Gravar:** microfone no campo de mensagem (ao lado do emoji). Gravando, a linha vira: descartar (lixeira, ou Esc), ponto vermelho pulsando, o tempo, barrinhas do volume andando da direita pra esquerda e enviar (avião, ou Enter). Depois de parar: "Preparando o áudio…" (virando MP3) e "Enviando N%". Até 15 minutos; no limite, envia sozinho. Responde a mensagem que estiver marcada.
+- **No chat** (`ui/chat/VoicePlayer.svelte`, também pra qualquer anexo de áudio): play/pausa redondo na cor de destaque, a onda (barras cinza que ficam violeta conforme toca; clicar ou setas pulam), o tempo (total parado, corrido tocando), velocidade 1× / 1,5× / 2× e baixar (o .mp3). Arquivo de áudio que não é mensagem de voz mostra o nome em cima da onda. Um toca por vez, pela saída de som escolhida.
+- **Nos resumos** (aviso do sistema, busca, fixadas): "🎤 Mensagem de voz".
 
 ## Telas que vão chegar (protótipos)
 

@@ -60,6 +60,8 @@
   import Minimize from '@lucide/svelte/icons/minimize-2'
   import Minus from '@lucide/svelte/icons/minus'
   import Play from '@lucide/svelte/icons/play'
+  import Pause from '@lucide/svelte/icons/pause'
+  import SendHorizontal from '@lucide/svelte/icons/send-horizontal'
   import ImagePlus from '@lucide/svelte/icons/image-plus'
   import Hammer from '@lucide/svelte/icons/hammer'
   import ArrowRightLeft from '@lucide/svelte/icons/arrow-right-left'
@@ -167,6 +169,8 @@
     minus: Minus,
     monitor: Monitor,
     play: Play,
+    pause: Pause,
+    send: SendHorizontal,
     'image-plus': ImagePlus,
     hammer: Hammer,
     move: ArrowRightLeft,

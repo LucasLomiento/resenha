@@ -19,7 +19,7 @@
 // mesmo que este processo tenha (os que foram reabertos pela 1.2.1 ou antes).
 
 import { spawn, spawnSync } from 'node:child_process'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { app } from 'electron'
 import { autoUpdater } from 'electron-updater'
@@ -35,8 +35,42 @@ let inCall = false
 const CHECK_EVERY = 30 * 60 * 1000
 
 function set(next: UpdateState) {
+  // A instalação não aconteceu (senha cancelada, erro): o app continua aberto, a volta pra call não vale.
+  if (state.status === 'installing' && next.status !== 'installing') forgetRejoin()
   state = next
   notify(state)
+}
+
+// ---------- Voltar pra call depois de atualizar ----------
+
+const rejoinFile = () => join(app.getPath('userData'), 'rejoin.json')
+
+/**
+ * Grava em disco, na hora (síncrono), a call em que a pessoa está: o app fecha logo
+ * depois pra instalar, e o armazenamento da página nem sempre chega a ser salvo.
+ */
+function saveRejoin(rejoin: unknown) {
+  try {
+    if (rejoin && typeof rejoin === 'object') writeFileSync(rejoinFile(), JSON.stringify(rejoin))
+    else forgetRejoin()
+  } catch (err) {
+    console.warn('atualização: não deu pra gravar a call pra voltar', err)
+  }
+}
+
+function forgetRejoin() {
+  rmSync(rejoinFile(), { force: true })
+}
+
+/** A call gravada antes de reiniciar (uma vez só). */
+export function takeRejoin(): unknown {
+  try {
+    const saved = JSON.parse(readFileSync(rejoinFile(), 'utf8')) as unknown
+    forgetRejoin()
+    return saved
+  } catch {
+    return null
+  }
 }
 
 function packageType(): string | null {
@@ -108,7 +142,9 @@ export async function downloadUpdate() {
   }
 }
 
-export async function installUpdate() {
+export async function installUpdate(rejoin?: unknown) {
+  // Antes de tudo (e antes do app fechar): a call pra voltar quando o app abrir de novo.
+  saveRejoin(rejoin)
   if (state.status !== 'ready') return
   const version = state.version
   set({ status: 'installing', version })

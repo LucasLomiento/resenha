@@ -16,6 +16,7 @@ import { Call, type CallTransport } from './call.svelte'
 import { GuildState, type GuildHost } from './guild.svelte'
 import { HomeState, type HomeHost } from './home.svelte'
 import { isFounder } from './profile'
+import { attachmentLabel } from './voice-note'
 import { settings } from './settings.svelte'
 import { playSound } from './sounds'
 import { ui } from './ui.svelte'
@@ -39,8 +40,6 @@ export type Route =
 /** Sem mexer no PC esse tempo, o status vira "ausente" sozinho. */
 const IDLE_AFTER = 10 * 60_000
 const LAST_CHANNEL_KEY = 'resenha.lastChannel'
-/** A call em que a pessoa estava quando reiniciou pra atualizar (o app volta pra ela ao abrir). */
-const REJOIN_KEY = 'resenha.rejoin'
 /** Depois disso a volta não vale mais (a atualização pelo terminal, com senha, pode demorar uns minutos). */
 const REJOIN_TTL = 10 * 60 * 1000
 
@@ -55,13 +54,15 @@ interface Rejoin {
   at: number
 }
 
-/** Lê (e apaga: vale uma vez só) a call pra voltar depois de atualizar. */
-function takeRejoin(): Rejoin | null {
+/**
+ * A call pra voltar depois de atualizar. Fica num arquivo do processo principal
+ * (gravado na hora, antes de o app fechar pra instalar); lê uma vez só.
+ */
+async function takeRejoin(): Promise<Rejoin | null> {
   try {
-    const raw = localStorage.getItem(REJOIN_KEY)
-    localStorage.removeItem(REJOIN_KEY)
-    const saved = raw ? (JSON.parse(raw) as Rejoin) : null
-    return saved && Date.now() - saved.at < REJOIN_TTL ? saved : null
+    const saved = (await window.resenha.update.takeRejoin()) as Rejoin | null
+    const fresh = saved && typeof saved.channelId === 'string' && (saved.kind === 'guild' || saved.kind === 'dm') && Date.now() - saved.at < REJOIN_TTL
+    return fresh ? saved : null
   } catch {
     return null
   }
@@ -156,19 +157,9 @@ class Client implements GuildHost, HomeHost {
     const os = this.platform.platform === 'win32' ? 'Windows' : this.platform.platform === 'darwin' ? 'macOS' : 'Linux'
     Api.device = `App no ${os}`
     this.desktop = await window.resenha.desktop.get()
-    this.rejoin = takeRejoin()
+    this.rejoin = await takeRejoin()
     this.update = await window.resenha.update.state()
-    window.resenha.update.onState((state) => {
-      // A instalação não aconteceu (senha cancelada, erro): o app continua aberto, e a volta pra call não vale.
-      if (this.update.status === 'installing' && state.status !== 'installing') {
-        try {
-          localStorage.removeItem(REJOIN_KEY)
-        } catch {
-          // sem armazenamento
-        }
-      }
-      this.update = state
-    })
+    window.resenha.update.onState((state) => (this.update = state))
     window.resenha.onAction((action) => this.runAction(action))
     window.resenha.onInvite((code) => (this.pendingInvite = code))
     this.pendingInvite = await window.resenha.pendingInvite()
@@ -424,13 +415,7 @@ class Client implements GuildHost, HomeHost {
   installUpdate() {
     const { guildId, dmId, channelId, muted, deafened } = this.call
     const target = guildId && channelId ? { kind: 'guild', guildId, channelId } : dmId ? { kind: 'dm', channelId: dmId } : null
-    try {
-      if (target) localStorage.setItem(REJOIN_KEY, JSON.stringify({ ...target, muted, deafened, at: Date.now() }))
-      else localStorage.removeItem(REJOIN_KEY)
-    } catch {
-      // sem armazenamento: atualiza do mesmo jeito, só não volta pra call
-    }
-    void window.resenha.update.install()
+    void window.resenha.update.install(target ? { ...target, muted, deafened, at: Date.now() } : null)
   }
 
   /** Voltando de uma atualização: entra de novo na call em que estava, com o mesmo mudo/ensurdecido. */
@@ -658,7 +643,7 @@ class Client implements GuildHost, HomeHost {
   }
 
   private notify(title: string, message: Message, open: () => void) {
-    const body = message.content || (message.attachments.length ? `📎 ${message.attachments[0].name}` : '')
+    const body = message.content || (message.attachments.length ? attachmentLabel(message.attachments[0]) : '')
     // Com "esconder o texto", a notificação só diz que chegou mensagem (bom com a tela compartilhada).
     const notification = new Notification(title, { body: settings.notifyContent ? body.slice(0, 200) : 'Nova mensagem', silent: true })
     notification.onclick = () => {
