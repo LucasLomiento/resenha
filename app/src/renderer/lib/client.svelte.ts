@@ -39,6 +39,33 @@ export type Route =
 /** Sem mexer no PC esse tempo, o status vira "ausente" sozinho. */
 const IDLE_AFTER = 10 * 60_000
 const LAST_CHANNEL_KEY = 'resenha.lastChannel'
+/** A call em que a pessoa estava quando reiniciou pra atualizar (o app volta pra ela ao abrir). */
+const REJOIN_KEY = 'resenha.rejoin'
+/** Depois disso a volta não vale mais (a atualização pelo terminal, com senha, pode demorar uns minutos). */
+const REJOIN_TTL = 10 * 60 * 1000
+
+interface Rejoin {
+  kind: 'guild' | 'dm'
+  /** Servidor (só na call de servidor). */
+  guildId?: string
+  /** Canal de voz, ou a conversa da ligação privada. */
+  channelId: string
+  muted: boolean
+  deafened: boolean
+  at: number
+}
+
+/** Lê (e apaga: vale uma vez só) a call pra voltar depois de atualizar. */
+function takeRejoin(): Rejoin | null {
+  try {
+    const raw = localStorage.getItem(REJOIN_KEY)
+    localStorage.removeItem(REJOIN_KEY)
+    const saved = raw ? (JSON.parse(raw) as Rejoin) : null
+    return saved && Date.now() - saved.at < REJOIN_TTL ? saved : null
+  } catch {
+    return null
+  }
+}
 
 let toastId = 0
 
@@ -92,6 +119,8 @@ class Client implements GuildHost, HomeHost {
   private ringbackTimer: ReturnType<typeof setInterval> | null = null
   /** Servidor que acabei de criar/entrar: abre quando a conexão pessoal confirmar. */
   private openWhenJoined: string | null = null
+  /** Call pra voltar assim que o servidor (ou a conexão pessoal) abrir: o app reiniciou pra atualizar no meio dela. */
+  private rejoin: Rejoin | null = null
   private lastAction: Partial<Record<ShortcutAction, number>> = {}
 
   readonly call: Call = new Call({
@@ -127,8 +156,19 @@ class Client implements GuildHost, HomeHost {
     const os = this.platform.platform === 'win32' ? 'Windows' : this.platform.platform === 'darwin' ? 'macOS' : 'Linux'
     Api.device = `App no ${os}`
     this.desktop = await window.resenha.desktop.get()
+    this.rejoin = takeRejoin()
     this.update = await window.resenha.update.state()
-    window.resenha.update.onState((state) => (this.update = state))
+    window.resenha.update.onState((state) => {
+      // A instalação não aconteceu (senha cancelada, erro): o app continua aberto, e a volta pra call não vale.
+      if (this.update.status === 'installing' && state.status !== 'installing') {
+        try {
+          localStorage.removeItem(REJOIN_KEY)
+        } catch {
+          // sem armazenamento
+        }
+      }
+      this.update = state
+    })
     window.resenha.onAction((action) => this.runAction(action))
     window.resenha.onInvite((code) => (this.pendingInvite = code))
     this.pendingInvite = await window.resenha.pendingInvite()
@@ -380,7 +420,45 @@ class Client implements GuildHost, HomeHost {
     this.pushPresence()
   }
 
+  /** Reinicia pra instalar a versão nova; estando numa call, o app volta pra ela quando abrir. */
+  installUpdate() {
+    const { guildId, dmId, channelId, muted, deafened } = this.call
+    const target = guildId && channelId ? { kind: 'guild', guildId, channelId } : dmId ? { kind: 'dm', channelId: dmId } : null
+    try {
+      if (target) localStorage.setItem(REJOIN_KEY, JSON.stringify({ ...target, muted, deafened, at: Date.now() }))
+      else localStorage.removeItem(REJOIN_KEY)
+    } catch {
+      // sem armazenamento: atualiza do mesmo jeito, só não volta pra call
+    }
+    void window.resenha.update.install()
+  }
+
+  /** Voltando de uma atualização: entra de novo na call em que estava, com o mesmo mudo/ensurdecido. */
+  private resumeAfterUpdate(target: HomeState | GuildState) {
+    const saved = this.rejoin
+    if (!saved || this.call.channelId) return
+    if (saved.kind === 'guild') {
+      if (!(target instanceof GuildState) || target.id !== saved.guildId) return
+      this.rejoin = null
+      if (target.channel(saved.channelId)?.kind !== 'voice') return
+      this.call.muted = saved.muted || saved.deafened
+      this.call.deafened = saved.deafened
+      this.joinVoice(target.id, saved.channelId)
+      this.toast('De volta à call depois da atualização.', 'info')
+      return
+    }
+    if (!(target instanceof HomeState)) return
+    this.rejoin = null
+    // Ligação privada: só volta se a outra pessoa continua nela (nunca liga de novo sozinho).
+    if (!target.calls[saved.channelId]?.members.some((m) => m.userId !== this.meId())) return
+    this.call.muted = saved.muted || saved.deafened
+    this.call.deafened = saved.deafened
+    void this.startDmCall(saved.channelId)
+    this.toast('De volta à ligação depois da atualização.', 'info')
+  }
+
   ready(target: HomeState | GuildState, reconnected: boolean, resumed: boolean) {
+    if (!reconnected) this.resumeAfterUpdate(target)
     if (target instanceof HomeState) return this.homeReady(reconnected, resumed)
     const guild = target
     if (this.call.guildId === guild.id) {

@@ -1,10 +1,6 @@
-## 1.5.0: o dono do Resenha tem cara de dono
+## 1.5.1: atualizar no meio da call não te tira da sala
 
-- **Selo de Fundador:** um medalhão com a marca do Resenha ao lado do nome do dono em todo lugar (mensagens, lista de membros, cartão de perfil, lista da call). Só existe um, e quem decide é o servidor.
-- **Moldura "Fundador":** anel nas cores do Resenha com louros dourados e o medalhão da marca embaixo. Só o dono pode usar.
-- **Nome holográfico:** um brilho que corre pelas letras do nome. Também só do dono.
-- **Entrada na call:** quando o dono entra numa call, toca uma fanfarra curta no lugar do som de sempre e o nome dele entra com um brilho na lista.
-- A moldura e o nome ficam parados nas listas e no chat e só animam com o mouse em cima, pra não pesar.
+- **De volta pra sala depois de atualizar:** quem clica em "Reiniciar e atualizar" no meio de uma call volta sozinho pra mesma sala quando o app abre de novo, com o microfone e o som do jeito que estavam. Numa ligação privada, volta se a outra pessoa ainda estiver nela (nunca liga de novo sozinho). A tela e a câmera não voltam sozinhas: é só compartilhar de novo.
 
 ## Como atualizar
 

@@ -48,7 +48,7 @@
 
   function updateClick() {
     if (update.status === 'available') window.resenha.update.download()
-    else if (update.status === 'ready') window.resenha.update.install()
+    else if (update.status === 'ready') client.installUpdate()
   }
 
   const updateTip = $derived(

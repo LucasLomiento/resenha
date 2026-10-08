@@ -79,7 +79,7 @@
     {#if update.status === 'available'}
       <Button variant="primary" icon="download" onclick={() => window.resenha.update.download()}>Baixar</Button>
     {:else if update.status === 'ready'}
-      <Button variant="primary" icon="restart" onclick={() => window.resenha.update.install()}>Reiniciar e atualizar</Button>
+      <Button variant="primary" icon="restart" onclick={() => client.installUpdate()}>Reiniciar e atualizar</Button>
     {:else if update.status !== 'unsupported'}
       <Button
         loading={update.status === 'checking' || update.status === 'downloading' || update.status === 'installing'}

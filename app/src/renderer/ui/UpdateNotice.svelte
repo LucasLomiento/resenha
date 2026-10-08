@@ -51,7 +51,7 @@
         {#if update.status === 'available'}
           <Button size="sm" variant="primary" icon="download" onclick={() => window.resenha.update.download()}>Baixar agora</Button>
         {:else if update.status === 'ready'}
-          <Button size="sm" variant="primary" icon="restart" onclick={() => window.resenha.update.install()}>Reiniciar e atualizar</Button>
+          <Button size="sm" variant="primary" icon="restart" onclick={() => client.installUpdate()}>Reiniciar e atualizar</Button>
         {:else}
           <Button size="sm" variant="primary" loading>Aguarde</Button>
         {/if}

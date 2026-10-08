@@ -99,7 +99,12 @@ async function launch(profile) {
 
 /** Microfone falso (oscilador) no lugar do real; o microfone virtual do venmic passa direto. */
 async function fakeMic(page) {
-  await page.evaluate(() => {
+  await page.evaluate(installFakeMic)
+}
+
+/** Roda na página (também antes do app carregar, num recarregamento: `page.addInitScript`). */
+function installFakeMic() {
+  {
     const ctx = new AudioContext()
     const osc = ctx.createOscillator()
     osc.frequency.value = 440
@@ -126,7 +131,7 @@ async function fakeMic(page) {
       if (constraints?.audio?.deviceId?.exact) return real(constraints)
       return new MediaStream([dest.stream.getAudioTracks()[0].clone()])
     }
-  })
+  }
 }
 
 /**
@@ -1301,6 +1306,30 @@ try {
     .catch(() => false)
   check(suggested === 'Resenha dos Amigos' && fresh === true, '"Trazer do Discord" cria o servidor com o nome e só os canais do print', `${suggested} · ${fresh}`)
   await shot(a, '10b-servidor-do-discord')
+
+  // Atualizar no meio da call: o app grava a sala ao reiniciar e, ao abrir de novo, volta sozinho
+  // pra ela, mutado como estava. (Sem atualização de verdade aqui: o processo principal não instala
+  // nada, e recarregar a página faz o papel do app reabrindo.)
+  await a.page.getByRole('button', { name: 'Mutar', exact: true }).click({ force: true })
+  await a.app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.send('update:state', { status: 'ready', version: '9.9.9' }))
+  const restartUpdate = a.page.getByRole('button', { name: 'Reiniciar pra atualizar', exact: true })
+  await restartUpdate.waitFor({ timeout: 5000 })
+  await restartUpdate.click({ force: true })
+  const savedCall = await a.page.evaluate(() => localStorage.getItem('resenha.rejoin'))
+  // O app volta pra call logo ao abrir: o microfone falso tem que estar lá antes dele (nunca o de verdade).
+  await a.page.addInitScript(installFakeMic)
+  await a.page.reload()
+  // Entrar na call leva um instante (microfone, conexão): espera o "Sair da call" ficar ativo.
+  const rejoined = await a.page
+    .waitForFunction(() => {
+      const leave = document.querySelector('button[aria-label="Sair da call"]')
+      return !!leave && !leave.disabled && !!document.querySelector('button[aria-label="Desmutar"]')
+    }, null, { timeout: 20_000 })
+    .then(() => true, () => false)
+  const callName = await a.page.locator('.dock').innerText().catch(() => '')
+  if (!rejoined) console.log('   tela de A depois de reabrir:', (await a.page.locator('body').innerText()).replace(/\n+/g, ' | ').slice(0, 400))
+  check(!!savedCall && rejoined && callName.includes('Geral'), 'reiniciar pra atualizar no meio da call: o app volta sozinho pra mesma sala, mutado', savedCall ?? 'nada gravado')
+  await a.page.getByRole('button', { name: 'Desmutar', exact: true }).click({ force: true })
 
   // Fechar o app sai da call na hora (não fica "esperando voltar" como numa queda de rede).
   closedA = true
