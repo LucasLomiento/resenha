@@ -1,7 +1,7 @@
-## 1.3.1: rabisco sempre na tela que está sendo transmitida
+## 1.3.2: moldura de fone por cima da cabeça e ping só passando o mouse
 
-- **Sem escolher monitor:** os rabiscos vão sempre pro monitor que você está compartilhando. Saiu o "Esquerda | Direita" do painel "Ao vivo" e o aviso pedindo pra escolher. O app acha sozinho o monitor certo; se não conseguir, os rabiscos ficam desligados naquela transmissão (em vez de aparecer na tela errada).
-- **Avisos do sistema abrem o Resenha:** clicar no aviso de mensagem, de ligação ou de atualização agora traz a janela pra frente, mesmo com o app escondido na bandeja.
+- **Moldura "Fones":** o arco do fone agora passa por cima da foto, em volta da cabeça, em vez de cortar a foto no meio.
+- **Lista da call mais limpa:** o ícone de conexão de cada pessoa só aparece quando você passa o mouse em cima dela. O de mudo e de ensurdecido continuam sempre à vista, no mesmo lugar.
 
 ## Como atualizar
 

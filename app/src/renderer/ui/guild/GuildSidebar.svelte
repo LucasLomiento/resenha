@@ -423,6 +423,8 @@
                       speaking={here && call.speaking[member.connId]}
                     />
                     <span class="member-name">{name}</span>
+                    <!-- Ping só passando o mouse (antes dos outros ícones: eles não saem do lugar). -->
+                    {#if here && !self}<SignalBars class="ping" rtt={link?.rtt} route={link?.route} />{/if}
                     {#if member.camera}<Icon name="camera" size={14} class="soft" />{/if}
                     {#if member.serverDeafened || member.deafened}
                       <span class="state" use:tooltip={member.serverDeafened ? 'Ensurdecido por um moderador' : 'Ensurdecido'}>
@@ -433,7 +435,6 @@
                         <Icon name="mic-off" size={14} />
                       </span>
                     {/if}
-                    {#if here && !self}<SignalBars class="ping" rtt={link?.rtt} route={link?.route} />{/if}
                   </button>
                   {#if member.sharing}
                     <button
@@ -712,6 +713,15 @@
   .member-main:hover {
     background: var(--hover);
     color: var(--fg);
+  }
+
+  .member-main :global(.ping) {
+    display: none;
+  }
+
+  .member-main:hover :global(.ping),
+  .member-main:focus-visible :global(.ping) {
+    display: inline-flex;
   }
 
   .member-main.dim {

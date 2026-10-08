@@ -79,9 +79,10 @@
             <stop offset="1" stop-color="#4436d0" />
           </linearGradient>
         </defs>
-        <path d="M13 64C13 22 107 22 107 64" fill="none" stroke="#1b1730" stroke-width="10" stroke-linecap="round" />
-        <path d="M13 64C13 22 107 22 107 64" fill="none" stroke="url(#{uid}-a)" stroke-width="6.5" stroke-linecap="round" />
-        <path d="M22 40C34 22 86 22 98 40" fill="none" stroke="#fff" stroke-width="1.4" stroke-linecap="round" opacity="0.45" />
+        <!-- Arco por cima da cabeça: fora da foto (raio 48), entrando nas conchas dos lados. -->
+        <path d="M7 66V60A53 53 0 0 1 113 60V66" fill="none" stroke="#1b1730" stroke-width="10" stroke-linecap="round" />
+        <path d="M7 66V60A53 53 0 0 1 113 60V66" fill="none" stroke="url(#{uid}-a)" stroke-width="6.5" stroke-linecap="round" />
+        <path d="M24 21.1A53 53 0 0 1 96 21.1" fill="none" stroke="#fff" stroke-width="1.4" stroke-linecap="round" opacity="0.45" />
         <path d="M14 82C16 100 30 108 46 106" fill="none" stroke="#1b1730" stroke-width="5" stroke-linecap="round" />
         <path d="M14 82C16 100 30 108 46 106" fill="none" stroke="#8f84ff" stroke-width="2.6" stroke-linecap="round" />
         <circle cx="49" cy="105.5" r="5" fill="#1b1730" />

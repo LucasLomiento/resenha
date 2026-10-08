@@ -769,10 +769,16 @@ try {
   check(micBefore === micAfter, 'mutar/ensurdecer/configurações não mudam de lugar ao entrar na call', `${micBefore} → ${micAfter}`)
   // As barras do sinal aparecem já medindo; o ping (em texto pra leitor de tela) chega em seguida.
   const ping = a.page.locator('.member .ping').first()
-  await ping.waitFor({ timeout: 15_000 })
+  await ping.waitFor({ state: 'attached', timeout: 15_000 })
   await a.page.waitForFunction(() => /\d+ ms/.test(document.querySelector('.member .ping')?.textContent ?? ''), null, { timeout: 15_000 })
   const pingText = await ping.textContent()
   check(!pingText.includes('relay'), 'A e B conectados direto (P2P)', pingText.trim())
+  // O ícone de conexão de cada um só aparece passando o mouse na pessoa.
+  const pingAtRest = await ping.isVisible()
+  await a.page.locator('.member-main', { hasText: 'Duarte' }).hover({ force: true })
+  const pingOnHover = await ping.isVisible()
+  await a.page.mouse.move(0, 0)
+  check(!pingAtRest && pingOnHover, 'ícone de conexão de cada um só aparece passando o mouse')
 
   // Volume de cada um pro outro em 0 (nada sai na caixa de som) e o tom liga.
   for (const [page, other] of [
