@@ -3,9 +3,9 @@
   import { client } from '../../lib/client.svelte'
   import type { GuildState } from '../../lib/guild.svelte'
   import { settings } from '../../lib/settings.svelte'
-  import { isFounder } from '../../lib/profile'
+  import { badgeOf } from '../../lib/profile'
   import { confirmAction, ui, type Anchor } from '../../lib/ui.svelte'
-  import { Avatar, FounderBadge, Icon, IconButton, Menu, NavItem, SignalBars, Slider, Spinner, tooltip, type MenuItem } from '../kit'
+  import { Avatar, Icon, IconButton, Menu, NavItem, SignalBars, Slider, Spinner, UserBadge, tooltip, type MenuItem } from '../kit'
   import { memberMenu } from './memberMenu'
 
   let { guild }: { guild: GuildState } = $props()
@@ -151,14 +151,15 @@
   let volumeFor = $state<string | null>(null)
 
   /**
-   * Chegada do dono do Resenha na call: o nome dele entra com um brilho. Só pra
-   * quem chega depois que a lista apareceu (abrir o servidor não anima quem já estava).
+   * Chegada de quem tem selo (Fundador, Pioneiro) na call: o nome entra com um brilho
+   * nas cores do selo. Só pra quem chega depois que a lista apareceu (abrir o servidor
+   * não anima quem já estava).
    */
   const shownAt = performance.now()
-  function arrival(node: HTMLElement, founder: boolean) {
-    if (!founder || performance.now() - shownAt < 1500) return
-    node.classList.add('arrive')
-    node.addEventListener('animationend', () => node.classList.remove('arrive'), { once: true })
+  function arrival(node: HTMLElement, badge: string | null) {
+    if (!badge || performance.now() - shownAt < 1500) return
+    node.classList.add('arrive', `arrive-${badge}`)
+    node.addEventListener('animationend', () => node.classList.remove('arrive', `arrive-${badge}`), { once: true })
   }
 
   function watch(member: VoiceMember) {
@@ -418,8 +419,8 @@
                 {@const name = guild.displayName(member.userId)}
                 {@const self = member.connId === guild.connId}
                 {@const link = call.links[member.connId]}
-                {@const founder = isFounder(client.user(member.userId, guild.id))}
-                <li class="member" use:arrival={founder}>
+                {@const badge = badgeOf(client.user(member.userId, guild.id))}
+                <li class="member" use:arrival={badge}>
                   <button
                     class="member-main"
                     class:dim={!here}
@@ -436,7 +437,7 @@
                       speaking={here && call.speaking[member.connId]}
                     />
                     <span class="member-name">{name}</span>
-                    {#if founder}<FounderBadge size={13} />{/if}
+                    <UserBadge {badge} size={13} />
                     <!-- Ping só passando o mouse (antes dos outros ícones: eles não saem do lugar). -->
                     {#if here && !self}<SignalBars class="ping" rtt={link?.rtt} route={link?.route} />{/if}
                     {#if member.camera}<Icon name="camera" size={14} class="soft" />{/if}
@@ -709,10 +710,21 @@
     padding-left: 32px;
   }
 
-  /* O dono do Resenha chegou: o nome surge com um brilho dourado e violeta que passa. */
+  /* Quem tem selo chegou: o nome surge com um brilho que passa (dourado e violeta pro
+     Fundador, prata e azul pro Pioneiro). */
+  .member:global(.arrive-founder) {
+    --arrive-a: rgb(255 211 107 / 0.35);
+    --arrive-b: rgb(143 132 255 / 0.4);
+  }
+
+  .member:global(.arrive-pioneer) {
+    --arrive-a: rgb(217 226 236 / 0.3);
+    --arrive-b: rgb(46 139 255 / 0.4);
+  }
+
   .member:global(.arrive) {
     position: relative;
-    animation: founder-arrive 1.6s var(--ease) both;
+    animation: badge-arrive 1.6s var(--ease) both;
   }
 
   .member:global(.arrive)::after {
@@ -720,13 +732,13 @@
     position: absolute;
     inset: 0 0 0 26px;
     border-radius: var(--r-md);
-    background: linear-gradient(100deg, transparent 20%, rgb(255 211 107 / 0.35) 45%, rgb(143 132 255 / 0.4) 55%, transparent 80%);
+    background: linear-gradient(100deg, transparent 20%, var(--arrive-a) 45%, var(--arrive-b) 55%, transparent 80%);
     background-size: 250% 100%;
     pointer-events: none;
-    animation: founder-sweep 1.6s var(--ease) both;
+    animation: badge-sweep 1.6s var(--ease) both;
   }
 
-  @keyframes founder-arrive {
+  @keyframes badge-arrive {
     0% {
       opacity: 0;
       translate: -10px 0;
@@ -737,7 +749,7 @@
     }
   }
 
-  @keyframes founder-sweep {
+  @keyframes badge-sweep {
     from {
       background-position: 120% 0;
       opacity: 1;

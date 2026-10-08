@@ -1,9 +1,9 @@
 <script lang="ts">
   import { client } from '../../lib/client.svelte'
   import type { GuildState } from '../../lib/guild.svelte'
-  import { isFounder, nameStyle } from '../../lib/profile'
+  import { badgeOf, nameStyle } from '../../lib/profile'
   import { openProfile, ui } from '../../lib/ui.svelte'
-  import { Avatar, FounderBadge, Icon, Menu, tooltip, type MenuItem } from '../kit'
+  import { Avatar, UserBadge, Icon, Menu, tooltip, type MenuItem } from '../kit'
   import { memberMenu } from './memberMenu'
 
   let { guild }: { guild: GuildState } = $props()
@@ -66,7 +66,7 @@
             <span class="name" class:styled={!!styled.class} style:color={off ? null : hex(guild.colorOf(userId))}
               ><span class={styled.class} style={styled.style}>{guild.displayName(userId)}</span></span
             >
-            {#if isFounder(user)}<FounderBadge size={14} />{/if}
+            <UserBadge badge={badgeOf(user)} size={14} />
             {#if userId === guild.info.ownerId}<span class="crown" use:tooltip={'Dono do servidor'}><Icon name="crown" size={13} /></span>{/if}
             {#if timedOut(userId)}<span class="timeout" use:tooltip={'De castigo'}><Icon name="clock" size={13} /></span>{/if}
           </span>

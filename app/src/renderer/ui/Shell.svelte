@@ -29,6 +29,7 @@
   import ShortcutsHelp from './ShortcutsHelp.svelte'
   import StreamView from './StreamView.svelte'
   import UpdateNotice from './UpdateNotice.svelte'
+  import RejoinBanner from './RejoinBanner.svelte'
 
   const guild = $derived(client.guild)
 
@@ -202,6 +203,7 @@
     {#if client.call.watching}
       <StreamView full={streamFull} />
     {/if}
+    <RejoinBanner />
     {#if client.connection !== 'open'}
       <div class="offline" role="status">
         <Spinner size={14} />

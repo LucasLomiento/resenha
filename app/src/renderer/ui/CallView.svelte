@@ -1,8 +1,8 @@
 <script lang="ts">
   import { plural, userColor } from '../lib/format'
   import { client } from '../lib/client.svelte'
-  import { isFounder } from '../lib/profile'
-  import { Avatar, Badge, Button, FounderBadge, Icon } from './kit'
+  import { badgeOf } from '../lib/profile'
+  import { Avatar, Badge, Button, UserBadge, Icon } from './kit'
   import VideoTile from './VideoTile.svelte'
 
   const call = client.call
@@ -53,7 +53,7 @@
             {#if member.deafened}<Icon name="headphones-off" size={14} class="state" />
             {:else if member.muted}<Icon name="mic-off" size={14} class="state" />{/if}
             <span>{user?.name ?? '?'}</span>
-            {#if isFounder(user)}<FounderBadge size={14} />{/if}
+            <UserBadge badge={badgeOf(user)} size={14} />
             {#if self}<span class="you">você</span>{/if}
           </div>
 

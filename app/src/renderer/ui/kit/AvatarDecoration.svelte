@@ -230,6 +230,42 @@
           <path d="M-2.6 2.3A4.2 4.2 0 1 1 -0.8 3.4L-3.7 4.3Z" fill="#fff" />
           <path d="M-0.9 -0.2Q0.6 1.4 2.1 -0.2" fill="none" stroke="#6a5cf6" stroke-width="1.1" stroke-linecap="round" />
         </g>
+      {:else if kind === 'pioneer'}
+        <!-- Só do Pioneiro (a primeira pessoa que chegou): anel do mar, um cometa em volta e a bandeira fincada. -->
+        <defs>
+          <linearGradient id="{uid}-a" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stop-color="#5ab8ff" />
+            <stop offset="0.5" stop-color="#2e8bff" />
+            <stop offset="1" stop-color="#2ad4b0" />
+          </linearGradient>
+          <linearGradient id="{uid}-s" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="#ffffff" />
+            <stop offset="1" stop-color="#b8c7d9" />
+          </linearGradient>
+          <filter id="{uid}-b" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="2.4" /></filter>
+        </defs>
+        <circle cx="60" cy="60" r="52" fill="none" stroke="url(#{uid}-a)" stroke-width="6" filter="url(#{uid}-b)" opacity="0.7" />
+        <circle cx="60" cy="60" r="52" fill="none" stroke="url(#{uid}-a)" stroke-width="3.4" />
+        <circle cx="60" cy="60" r="49.4" fill="none" stroke="url(#{uid}-s)" stroke-width="0.8" opacity="0.7" />
+        <g class="comet">
+          {#each [0, 1, 2, 3, 4, 5, 6] as k (k)}
+            {@const [x, y] = at(-90 - k * 5.5, 56)}
+            <circle cx={x} cy={y} r={3.2 - k * 0.42} fill={k ? '#9fd4ff' : '#ffffff'} opacity={1 - k * 0.13} />
+          {/each}
+          <circle cx="60" cy="4" r="5" fill="#5ab8ff" filter="url(#{uid}-b)" opacity="0.9" />
+        </g>
+        {#each [[22, 98, 0.6, 0], [12, 50, 0.45, -0.8], [104, 92, 0.5, -1.5]] as [x, y, s, d], i (i)}
+          <g transform="translate({x} {y}) scale({s})">
+            <g class="twinkle" style:--d="{d}s"><path d={SPARKLE} fill="#d6ecff" /></g>
+          </g>
+        {/each}
+        <!-- A bandeira, fincada no alto do anel à direita. -->
+        <path d="M96.8 23.2V-5" stroke="#1b1730" stroke-width="4" stroke-linecap="round" />
+        <path d="M96.8 23.2V-5" stroke="url(#{uid}-s)" stroke-width="2.2" stroke-linecap="round" />
+        <g class="flag">
+          <path d="M98 -4.2Q106.4 -7.6 116.4 -2.8Q109.6 2 116.4 8Q106.6 4.6 98 8.8Z" fill="url(#{uid}-a)" stroke="#1b1730" stroke-width="1.3" stroke-linejoin="round" />
+          <path d="M101.6 -0.6L105.8 2L101.6 4.6Z" fill="#fff" />
+        </g>
       {:else if kind === 'cat'}
         {#each [-1, 1] as side (side)}
           <g transform="translate({60 + side * 30} 22) scale({side} 1)">
@@ -272,6 +308,27 @@
   .founder-orbit {
     transform-origin: 60px 60px;
     animation: deco-spin 24s linear infinite reverse;
+  }
+
+  /* ---------- Pioneiro ---------- */
+  .comet {
+    transform-origin: 60px 60px;
+    animation: deco-spin 7s linear infinite;
+  }
+
+  .flag {
+    transform-origin: 98px 2.3px;
+    animation: flag-wave 1.6s ease-in-out infinite;
+  }
+
+  @keyframes flag-wave {
+    0%,
+    100% {
+      transform: skewY(0deg) scaleX(1);
+    }
+    50% {
+      transform: skewY(-6deg) scaleX(0.92);
+    }
   }
 
   /* ---------- Neon ---------- */

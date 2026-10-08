@@ -5,6 +5,7 @@ import {
   MAX_BANNER_BYTES,
   MAX_GUILDS_PER_USER,
   type AuthResponse,
+  type Badge,
   type DmPolicy,
   type Friend,
   type GuildInfo,
@@ -325,7 +326,7 @@ export class Directory extends DurableObject<Env> {
 
   private toUser(row: UserRow): User {
     const deleted = (row.flags & FLAG_DELETED) !== 0
-    const style = deleted ? undefined : publicStyle(parseStyle(row.style), (row.flags & FLAG_STAFF) !== 0)
+    const style = deleted ? undefined : publicStyle(parseStyle(row.style), this.badgeOf(row))
     return {
       id: row.id,
       username: row.username,
@@ -337,6 +338,29 @@ export class Directory extends DurableObject<Env> {
       ...(deleted ? { deleted: true } : {}),
       ...(style ? { style } : {}),
     }
+  }
+
+  /** Selo da conta: o dono do Resenha é o Fundador; a primeira pessoa que chegou depois, o Pioneiro. */
+  private badgeOf(row: UserRow): Badge | null {
+    if (row.flags & FLAG_STAFF) return 'founder'
+    return row.id === this.pioneerId() ? 'pioneer' : null
+  }
+
+  /**
+   * O Pioneiro: quem o dono escolheu (Plataforma), senão a conta mais antiga que não
+   * é a dona (nem excluída). Contas são poucas: a consulta é barata.
+   */
+  private pioneerId(): string | null {
+    const chosen = this.meta('pioneer_id')
+    if (chosen) {
+      const row = this.user(chosen)
+      if (row && !(row.flags & (FLAG_DELETED | FLAG_STAFF))) return chosen
+    }
+    return (
+      this.sql
+        .exec<{ id: string }>('SELECT id FROM users WHERE (flags & ?) = 0 ORDER BY created_at, rowid LIMIT 1', FLAG_DELETED | FLAG_STAFF)
+        .toArray()[0]?.id ?? null
+    )
   }
 
   private toMe(row: UserRow): Me {
@@ -661,7 +685,7 @@ export class Directory extends DurableObject<Env> {
       args.push(patch.dmPolicy as string)
     }
     if (patch.style !== undefined) {
-      const style = applyStylePatch(parseStyle(row.style), patch.style, (row.flags & FLAG_STAFF) !== 0)
+      const style = applyStylePatch(parseStyle(row.style), patch.style, this.badgeOf(row))
       if (!style.ok) return fail(400, style.error)
       sets.push('style = ?')
       args.push(styleText(style.value))
@@ -1393,6 +1417,21 @@ export class Directory extends DurableObject<Env> {
         .toArray()
         .map((r) => ({ ...this.toUser(r), banned: (r.flags & FLAG_BANNED) !== 0, createdAt: r.created_at })),
     )
+  }
+
+  /** O dono escolhe quem é o Pioneiro (o selo e os exclusivos passam pra essa conta). */
+  async adminSetPioneer(staffId: string, userId: string): Promise<Result<null>> {
+    if (!this.isStaff(staffId)) return fail(403, 'Só o dono da plataforma.')
+    const row = this.user(userId)
+    if (!row || row.flags & FLAG_DELETED) return fail(404, 'Conta não encontrada.')
+    if (row.flags & FLAG_STAFF) return fail(400, 'O dono já é o Fundador.')
+    const before = this.pioneerId()
+    this.setMeta('pioneer_id', userId)
+    for (const id of new Set([before, userId])) {
+      const changed = id ? this.user(id) : null
+      if (changed) await this.propagateProfile(changed)
+    }
+    return ok(null)
   }
 
   async adminSetBanned(staffId: string, userId: string, banned: boolean): Promise<Result<null>> {

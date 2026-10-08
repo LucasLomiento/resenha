@@ -1,7 +1,7 @@
 // Personalização do perfil (tema, nome, moldura, efeito): nomes pra mostrar e
 // as contas de cor. Sem store, serve pro app e pros protótipos.
 
-import type { Decoration, NameEffect, NameFont, ProfileEffect, ProfileStyle } from '../../../../shared/protocol'
+import type { Badge, Decoration, NameEffect, NameFont, ProfileEffect, ProfileStyle } from '../../../../shared/protocol'
 import { userColors, userGradient } from './format'
 
 /** O mínimo de uma pessoa pra desenhar o perfil dela. */
@@ -24,6 +24,7 @@ export const DECORATION_LABEL: Record<Decoration, string> = {
   crown: 'Coroa',
   cat: 'Gatinho',
   founder: 'Fundador',
+  pioneer: 'Pioneiro',
 }
 
 export const EFFECT_LABEL: Record<ProfileEffect, string> = {
@@ -46,10 +47,12 @@ export const NAME_EFFECT_LABEL: Record<NameEffect, string> = {
   gradient: 'Degradê',
   neon: 'Neon',
   holo: 'Holográfico',
+  horizon: 'Horizonte',
 }
 
-/** O dono do Resenha (o servidor põe o selo no perfil; ninguém mais tem). */
-export const isFounder = (user: Styled | null | undefined) => !!user && !user.deleted && user.style?.badge === 'founder'
+/** Selo da pessoa (o servidor põe no perfil): Fundador (o dono do Resenha) ou Pioneiro (a primeira pessoa que chegou). */
+export const badgeOf = (user: Styled | null | undefined): Badge | null => (user && !user.deleted && user.style?.badge) || null
+export const isFounder = (user: Styled | null | undefined) => badgeOf(user) === 'founder'
 
 /** Temas prontos: [principal, destaque]. */
 export const THEME_PRESETS: { name: string; colors: [number, number] }[] = [

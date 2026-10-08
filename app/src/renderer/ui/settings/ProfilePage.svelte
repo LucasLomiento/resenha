@@ -2,7 +2,7 @@
   import { untrack } from 'svelte'
   import {
     DECORATIONS,
-    FOUNDER_DECORATIONS,
+    EXCLUSIVE_DECORATIONS,
     MAX_PRONOUNS,
     NAME_FONTS,
     PROFILE_EFFECTS,
@@ -96,9 +96,9 @@
     return style
   })
   const previewUser = $derived({ id: me?.id ?? '', accent: draft.accent, style: previewStyle })
-  /** Dono do Resenha: tem a moldura e o efeito de nome que só ele usa. */
-  const founder = $derived(!!me?.staff)
-  const decorations = $derived(DECORATIONS.filter((kind) => founder || !FOUNDER_DECORATIONS.includes(kind)))
+  /** Selo (Fundador, Pioneiro): cada um vê a moldura e o efeito de nome que só ele usa. */
+  const myBadge = $derived(me?.style?.badge ?? null)
+  const decorations = $derived(DECORATIONS.filter((kind) => !EXCLUSIVE_DECORATIONS[kind] || EXCLUSIVE_DECORATIONS[kind] === myBadge))
 
   // Perfil mudou (salvo aqui ou em outro aparelho): sem nada pendente, o formulário acompanha.
   $effect(() => {
@@ -414,7 +414,8 @@
                 { value: 'none', label: 'Nenhum' },
                 { value: 'gradient', label: NAME_EFFECT_LABEL.gradient },
                 { value: 'neon', label: NAME_EFFECT_LABEL.neon },
-                ...(founder ? [{ value: 'holo', label: NAME_EFFECT_LABEL.holo }] : []),
+                ...(myBadge === 'founder' ? [{ value: 'holo', label: NAME_EFFECT_LABEL.holo }] : []),
+                ...(myBadge === 'pioneer' ? [{ value: 'horizon', label: NAME_EFFECT_LABEL.horizon }] : []),
               ]}
               value={draft.nameEffect ?? 'none'}
               onchange={(value) => (draft.nameEffect = value === 'none' ? null : (value as NameEffect))}

@@ -1,4 +1,4 @@
-import type { SignalData, VoiceMember } from '../../../../shared/protocol'
+import type { Badge, SignalData, VoiceMember } from '../../../../shared/protocol'
 import type { PlatformInfo } from '../../preload/api'
 import type { Api } from './api'
 import { userColor } from './format'
@@ -8,7 +8,12 @@ import { MicPipeline } from './mic'
 import { Peer, type LinkStats, type SfuScreen, type VideoStats } from './peer'
 import { PRESETS, settings } from './settings.svelte'
 import { SfuPublisher, SfuViewer } from './sfu'
-import { playSound } from './sounds'
+import { playSound, type SoundName } from './sounds'
+
+/** Quem tem selo entra na call com som próprio (o Fundador ganha do Pioneiro se os dois chegarem juntos). */
+function joinSound(badge: Badge | null): SoundName | null {
+  return badge === 'founder' ? 'founder-join' : badge === 'pioneer' ? 'pioneer-join' : null
+}
 
 interface CallDeps {
   api(): Api | null
@@ -16,8 +21,8 @@ interface CallDeps {
   toast(text: string, kind?: 'error' | 'info'): void
   /** Nome de exibição de alguém (pros rabiscos na minha tela). */
   name(userId: string): string
-  /** É o dono do Resenha (entra com som próprio)? Sem `userId`, se sou eu. */
-  founder(userId?: string): boolean
+  /** Selo de alguém (Fundador, Pioneiro: entram com som próprio). Sem `userId`, o meu. */
+  badge(userId?: string): Badge | null
 }
 
 /**
@@ -178,7 +183,7 @@ export class Call {
         return
       }
       this.startTickers()
-      playSound(this.deps.founder() ? 'founder-join' : 'self-join')
+      playSound(joinSound(this.deps.badge()) ?? 'self-join')
     } catch (err) {
       console.error(err)
       this.deps.toast(
@@ -358,7 +363,7 @@ export class Call {
     if (this.known) {
       const before = this.known
       const arrived = others.filter((m) => !before.has(m.connId))
-      if (arrived.length) playSound(arrived.some((m) => this.deps.founder(m.userId)) ? 'founder-join' : 'join')
+      if (arrived.length) playSound(arrived.map((m) => joinSound(this.deps.badge(m.userId))).find(Boolean) ?? 'join')
       else if ([...before.keys()].some((id) => !others.some((m) => m.connId === id))) playSound('leave')
       if (others.some((m) => m.sharing && before.get(m.connId) === false)) playSound('live')
     }

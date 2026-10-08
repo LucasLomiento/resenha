@@ -1,11 +1,13 @@
 import {
+  BADGES,
   DECORATIONS,
-  FOUNDER_DECORATIONS,
-  FOUNDER_NAME_EFFECTS,
+  EXCLUSIVE_DECORATIONS,
+  EXCLUSIVE_NAME_EFFECTS,
   MAX_PRONOUNS,
   NAME_EFFECTS,
   NAME_FONTS,
   PROFILE_EFFECTS,
+  type Badge,
   type ProfileStyle,
 } from '../../shared/protocol'
 import { cleanLine, color } from './validate'
@@ -59,7 +61,7 @@ export function normalizeStyle(input: unknown): ProfileStyle | undefined {
         clean = oneOf(NAME_EFFECTS, value)
         break
       case 'badge':
-        clean = value === 'founder' ? 'founder' : undefined
+        clean = oneOf(BADGES, value)
         break
     }
     if (clean !== undefined) (out as Record<string, unknown>)[key] = clean
@@ -97,7 +99,7 @@ const PATCHABLE: [keyof ProfileStyle, (value: unknown) => unknown, string][] = [
 export function applyStylePatch(
   current: ProfileStyle | undefined,
   patch: unknown,
-  founder = false,
+  badge: Badge | null = null,
 ): { ok: true; value: ProfileStyle | undefined } | { ok: false; error: string } {
   if (!patch || typeof patch !== 'object' || Array.isArray(patch)) return { ok: false, error: 'Personalização inválida.' }
   const input = patch as Record<string, unknown>
@@ -106,31 +108,32 @@ export function applyStylePatch(
     if (input[key] === undefined) continue
     const value = input[key] === null ? null : clean(input[key])
     if (value === undefined) return { ok: false, error }
-    if (!founder && isFounderOnly(key, value)) return { ok: false, error: 'Só o dono do Resenha pode usar essa.' }
+    const owner = exclusiveOf(key, value)
+    if (owner && owner !== badge) return { ok: false, error: owner === 'founder' ? 'Só o dono do Resenha pode usar essa.' : 'Só o Pioneiro do Resenha pode usar essa.' }
     if (value === null || value === '') delete next[key]
     else next[key] = value
   }
   return { ok: true, value: normalizeStyle(next) }
 }
 
-/** Moldura ou efeito de nome exclusivo do dono do Resenha. */
-function isFounderOnly(key: keyof ProfileStyle, value: unknown): boolean {
-  if (key === 'decoration') return FOUNDER_DECORATIONS.includes(value as never)
-  if (key === 'nameEffect') return FOUNDER_NAME_EFFECTS.includes(value as never)
-  return false
+/** De quem é a moldura ou o efeito de nome, se for exclusivo (senão null). */
+function exclusiveOf(key: keyof ProfileStyle, value: unknown): Badge | null {
+  if (key === 'decoration') return EXCLUSIVE_DECORATIONS[value as keyof typeof EXCLUSIVE_DECORATIONS] ?? null
+  if (key === 'nameEffect') return EXCLUSIVE_NAME_EFFECTS[value as keyof typeof EXCLUSIVE_NAME_EFFECTS] ?? null
+  return null
 }
 
 /**
- * O perfil como os outros veem: o dono do Resenha ganha o selo (que nunca fica
- * guardado), e ninguém mais fica com o que é exclusivo dele.
+ * O perfil como os outros veem: quem tem selo (dono, pioneiro) ganha ele aqui (o
+ * selo nunca fica guardado), e ninguém fica com exclusivo que não é seu.
  */
-export function publicStyle(style: ProfileStyle | undefined, founder: boolean): ProfileStyle | undefined {
+export function publicStyle(style: ProfileStyle | undefined, badge: Badge | null): ProfileStyle | undefined {
   const out: Record<string, unknown> = { ...style }
   delete out.badge
-  if (founder) out.badge = 'founder'
-  else {
-    if (out.decoration && isFounderOnly('decoration', out.decoration)) delete out.decoration
-    if (out.nameEffect && isFounderOnly('nameEffect', out.nameEffect)) delete out.nameEffect
+  if (badge) out.badge = badge
+  for (const key of ['decoration', 'nameEffect'] as const) {
+    const owner = out[key] ? exclusiveOf(key, out[key]) : null
+    if (owner && owner !== badge) delete out[key]
   }
   return normalizeStyle(out)
 }

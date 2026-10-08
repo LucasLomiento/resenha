@@ -105,22 +105,28 @@ export interface ProfileStyle {
   effect?: ProfileEffect
   nameFont?: NameFont
   nameEffect?: NameEffect
-  /** Posto pelo servidor, nunca pelo app: 'founder' é o dono do Resenha (selo, som de entrada). */
-  badge?: 'founder'
+  /**
+   * Posto pelo servidor, nunca pelo app (selo, som de entrada, exclusivos):
+   * 'founder' é o dono do Resenha, 'pioneer' a primeira pessoa que chegou depois dele.
+   */
+  badge?: Badge
 }
 
-export const DECORATIONS = ['neon', 'aurora', 'headset', 'stars', 'flames', 'flowers', 'crown', 'cat', 'founder'] as const
+export const BADGES = ['founder', 'pioneer'] as const
+export type Badge = (typeof BADGES)[number]
+
+export const DECORATIONS = ['neon', 'aurora', 'headset', 'stars', 'flames', 'flowers', 'crown', 'cat', 'founder', 'pioneer'] as const
 export type Decoration = (typeof DECORATIONS)[number]
 export const PROFILE_EFFECTS = ['confetti', 'snow', 'sparkles', 'hearts', 'bubbles', 'fireflies'] as const
 export type ProfileEffect = (typeof PROFILE_EFFECTS)[number]
 export const NAME_FONTS = ['serif', 'rounded', 'script', 'pixel'] as const
 export type NameFont = (typeof NAME_FONTS)[number]
-export const NAME_EFFECTS = ['gradient', 'neon', 'holo'] as const
+export const NAME_EFFECTS = ['gradient', 'neon', 'holo', 'horizon'] as const
 export type NameEffect = (typeof NAME_EFFECTS)[number]
 
-/** Só o dono do Resenha pode usar (o servidor recusa pros outros). */
-export const FOUNDER_DECORATIONS: readonly Decoration[] = ['founder']
-export const FOUNDER_NAME_EFFECTS: readonly NameEffect[] = ['holo']
+/** Moldura e efeito de nome exclusivos: de quem é cada um (o servidor recusa pros outros). */
+export const EXCLUSIVE_DECORATIONS: Partial<Record<Decoration, Badge>> = { founder: 'founder', pioneer: 'pioneer' }
+export const EXCLUSIVE_NAME_EFFECTS: Partial<Record<NameEffect, Badge>> = { holo: 'founder', horizon: 'pioneer' }
 
 /** O que o app manda no PATCH /api/me: null (ou texto vazio) volta pro padrão. */
 export type ProfileStylePatch = {

@@ -351,8 +351,29 @@ svg {
   animation: name-holo 3.2s linear infinite paused;
 }
 
-:is(article, .member, .holo-play):hover .name-fx-holo,
-.holo-play .name-fx-holo {
+/* Horizonte (só do Pioneiro): nascer do sol sobre o mar passando devagar pelas letras. */
+.name-fx-horizon {
+  margin: -0.25em -0.12em;
+  padding: 0.25em 0.12em;
+  background: linear-gradient(90deg, var(--name-a) 0%, #5ab8ff 22%, #2ad4b0 42%, #ffe08a 58%, #ffb38a 68%, #5ab8ff 84%, var(--name-a) 100%);
+  background-size: 300% 100%;
+  background-position: 0% 0;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  text-decoration-color: #5ab8ff;
+  filter: drop-shadow(0 0 4px rgb(46 139 255 / 0.35));
+  animation: name-horizon 6s ease-in-out infinite alternate paused;
+}
+
+@keyframes name-horizon {
+  to {
+    background-position: 100% 0;
+  }
+}
+
+:is(article, .member, .holo-play):hover :is(.name-fx-holo, .name-fx-horizon),
+.holo-play :is(.name-fx-holo, .name-fx-horizon) {
   animation-play-state: running;
 }
 

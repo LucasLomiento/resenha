@@ -1,7 +1,7 @@
 import { SELF, env, runInDurableObject } from 'cloudflare:test'
 import { describe, expect, it } from 'vitest'
 import { isAnimated, normalizeStyle, styleText } from '../src/style'
-import { BASE, PASSWORD, api, call, guildSocket, post, signup, world } from './helpers'
+import { BASE, PASSWORD, api, call, guildSocket, invite, post, signup, world } from './helpers'
 
 // Personalização do perfil (banner, foto animada, tema, pronomes, moldura,
 // efeito, fonte e estilo do nome).
@@ -45,6 +45,8 @@ const mediaStatus = async (id: string) => (await SELF.fetch(`${BASE}/media/${id}
 
 /** A primeira conta é a do dono do Resenha: o perfil dela sempre vem com o selo de fundador. */
 const FOUNDER = { badge: 'founder' } as const
+/** A segunda conta (a primeira depois do dono) é a do Pioneiro. */
+const PIONEER = { badge: 'pioneer' } as const
 
 describe('personalização do perfil', () => {
   it('muda tema, pronomes, moldura, efeito e nome; null volta pro padrão', async () => {
@@ -104,8 +106,9 @@ describe('personalização do perfil', () => {
     expect(denied.status).toBe(400)
     expect(denied.body.error).toContain('dono do Resenha')
     expect((await call('PATCH', '/api/me', { style: { nameEffect: 'holo' } }, friend.token)).status).toBe(400)
+    // O amigo é a primeira conta depois do dono: o Pioneiro (o selo vem do servidor, não do app).
     const sneaky = await call('PATCH', '/api/me', { style: { badge: 'founder', pronouns: 'ele' } }, friend.token)
-    expect(sneaky.body.style).toEqual({ pronouns: 'ele' })
+    expect(sneaky.body.style).toEqual({ pronouns: 'ele', ...PIONEER })
 
     // O dono usa, e quem está no servidor recebe com o selo.
     const mine = await call('PATCH', '/api/me', { style: { decoration: 'founder', nameEffect: 'holo' } }, owner.token)
@@ -114,12 +117,39 @@ describe('personalização do perfil', () => {
     const update = await b.next('member.upsert', (m) => m.user.id === owner.user.id)
     expect(update.user.style).toEqual({ decoration: 'founder', nameEffect: 'holo', ...FOUNDER })
 
-    // Se a conta deixar de ser a dona, o exclusivo some do perfil (e o selo também).
+    // Se a conta deixar de ser a dona, o exclusivo de dono some do perfil (vira a conta mais
+    // antiga sem ser dona: o Pioneiro, com o selo dele e sem a moldura e o nome do Fundador).
     const dir = env.DIRECTORY.get(env.DIRECTORY.idFromName('directory'))
     await runInDurableObject(dir, (_, state) => {
       state.storage.sql.exec('UPDATE users SET flags = flags & ~1 WHERE id = ?', owner.user.id)
     })
-    expect((await call('GET', '/api/me', undefined, owner.token)).body.style).toBeUndefined()
+    expect((await call('GET', '/api/me', undefined, owner.token)).body.style).toEqual(PIONEER)
+  })
+
+  it('pioneiro: a primeira conta depois do dono tem selo, moldura e nome só dela; o dono pode trocar', async () => {
+    const { owner, friend, a } = await world()
+    const third = await signup('bia', await invite(a), 'Bia')
+
+    // O Pioneiro usa o que é dele; o dono (Fundador) e a terceira conta, não.
+    const mine = await call('PATCH', '/api/me', { style: { decoration: 'pioneer', nameEffect: 'horizon' } }, friend.token)
+    expect(mine.status, JSON.stringify(mine.body)).toBe(200)
+    expect(mine.body.style).toEqual({ decoration: 'pioneer', nameEffect: 'horizon', ...PIONEER })
+    const notOwner = await call('PATCH', '/api/me', { style: { decoration: 'pioneer' } }, owner.token)
+    expect(notOwner.status).toBe(400)
+    expect(notOwner.body.error).toContain('Pioneiro')
+    expect((await call('PATCH', '/api/me', { style: { nameEffect: 'horizon' } }, third.token)).status).toBe(400)
+    expect((await call('GET', '/api/me', undefined, third.token)).body.style).toBeUndefined()
+    const update = await a.next('member.upsert', (m) => m.user.id === friend.user.id)
+    expect(update.user.style).toEqual({ decoration: 'pioneer', nameEffect: 'horizon', ...PIONEER })
+
+    // Só o dono troca o Pioneiro; aí o selo e os exclusivos passam pra outra conta.
+    expect((await call('POST', `/api/admin/users/${third.user.id}/pioneer`, {}, friend.token)).status).toBe(403)
+    expect((await call('POST', `/api/admin/users/${owner.user.id}/pioneer`, {}, owner.token)).status).toBe(400)
+    expect((await call('POST', `/api/admin/users/${third.user.id}/pioneer`, {}, owner.token)).status).toBe(200)
+    expect((await call('GET', '/api/me', undefined, third.token)).body.style).toEqual(PIONEER)
+    expect((await call('GET', '/api/me', undefined, friend.token)).body.style).toBeUndefined()
+    const moved = await a.next('member.upsert', (m) => m.user.id === friend.user.id && !m.user.style)
+    expect(moved.user.style).toBeUndefined()
   })
 
   it('banner: só imagem, até 1,5 MB; trocar e remover apagam o anterior', async () => {

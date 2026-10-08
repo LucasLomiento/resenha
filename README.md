@@ -105,7 +105,7 @@ Formatos que se atualizam pelo app:
 
 O `.zip` do Windows não se atualiza.
 
-O app procura versão nova ao abrir e a cada 30 minutos, baixa sozinho quando não está em call e mostra um aviso no canto (e um aviso do sistema, se a janela estiver fora de foco) quando dá pra reiniciar e atualizar. Quem reinicia pra atualizar no meio de uma call volta sozinho pra mesma sala ao abrir, com o mesmo mudo/ensurdecido (`client.installUpdate` manda a sala pro processo principal, que grava `rejoin.json` na pasta do app na hora, antes de fechar pra instalar; vale 10 minutos e uma vez só; ligação privada só volta se a outra pessoa continua nela). Tela e câmera não voltam: o seletor de tela precisa de clique.
+O app procura versão nova ao abrir e a cada 30 minutos, baixa sozinho quando não está em call e mostra um aviso no canto (e um aviso do sistema, se a janela estiver fora de foco) quando dá pra reiniciar e atualizar. Quem reinicia pra atualizar no meio de uma call vê, ao abrir, uma pílula oferecendo voltar pra mesma sala ("Reconectar"), com o mesmo mudo/ensurdecido (`client.installUpdate` manda a sala pro processo principal, que grava `rejoin.json` na pasta do app na hora, antes de fechar pra instalar; vale 10 minutos e uma vez só; ligação privada só volta se a outra pessoa continua nela). Tela e câmera não voltam: o seletor de tela precisa de clique.
 
 Pra gerar localmente:
 

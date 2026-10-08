@@ -286,6 +286,11 @@ export class Api {
     return this.request(`/api/admin/users/${encodeURIComponent(userId)}/ban`, { method: 'POST', json: { banned } })
   }
 
+  /** Dá o selo de Pioneiro (e os exclusivos dele) pra outra conta. */
+  adminSetPioneer(userId: string) {
+    return this.request(`/api/admin/users/${encodeURIComponent(userId)}/pioneer`, { method: 'POST', json: {} })
+  }
+
   // ---------- Call e anexos ----------
 
   async iceServers(): Promise<RTCIceServer[]> {

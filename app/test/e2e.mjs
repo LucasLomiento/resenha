@@ -623,6 +623,11 @@ const patchStyle = (token, style) =>
 const founderStyle = await patchStyle(owner.token, { decoration: 'founder', nameEffect: 'holo' })
 const notFounder = await patchStyle(duarte.token, { decoration: 'founder' })
 check(founderStyle.ok && notFounder.status === 400, 'moldura e nome do Fundador: o dono usa, os outros levam recusa', `${founderStyle.status}/${notFounder.status}`)
+// A segunda conta é a do Pioneiro: só ela usa a moldura e o nome dele (volta pros fones depois).
+const pioneerStyle = await patchStyle(duarte.token, { decoration: 'pioneer', nameEffect: 'horizon' })
+const notPioneer = await patchStyle(owner.token, { nameEffect: 'horizon' })
+await patchStyle(duarte.token, { decoration: 'headset', nameEffect: 'gradient' })
+check(pioneerStyle.ok && notPioneer.status === 400, 'moldura e nome do Pioneiro: a primeira conta depois do dono usa, o dono leva recusa', `${pioneerStyle.status}/${notPioneer.status}`)
 
 // Prefixo dos perfis: dá pra rodar dois e2e ao mesmo tempo (com RESENHA_E2E_PORT diferente também).
 const PROFILE = process.env.RESENHA_E2E_PROFILE ?? 'e2e'
@@ -810,6 +815,11 @@ try {
     b.page.locator('.members button.member', { hasText: 'Duarte' }).locator('.founder-badge').count(),
   ])
   check(founder.join(',') === '1,1,1,0', 'B vê o selo de Fundador, a moldura e o nome holográfico só no dono', founder.join(','))
+  const pioneer = await Promise.all([
+    a.page.locator('.members button.member', { hasText: 'Duarte' }).locator('.pioneer-badge').count(),
+    lucasForB.locator('.pioneer-badge').count(),
+  ])
+  check(pioneer.join(',') === '1,0', 'A vê o selo de Pioneiro no Duarte (a primeira conta depois do dono), e só nele', pioneer.join(','))
   await a.page.getByRole('button', { name: 'Mensagem', exact: true }).click({ force: true })
   await a.page.getByPlaceholder('Mensagem pra Duarte').fill('oi no privado')
   await a.page.keyboard.press('Enter')
@@ -1345,8 +1355,8 @@ try {
   check(suggested === 'Resenha dos Amigos' && fresh === true, '"Trazer do Discord" cria o servidor com o nome e só os canais do print', `${suggested} · ${fresh}`)
   await shot(a, '10b-servidor-do-discord')
 
-  // Atualizar no meio da call: o app grava a sala ao reiniciar e, ao abrir de novo, volta sozinho
-  // pra ela, mutado como estava. (Sem atualização de verdade aqui: o processo principal não instala
+  // Atualizar no meio da call: o app grava a sala ao reiniciar e, ao abrir de novo, oferece
+  // voltar pra ela (numa pílula em cima), mutado como estava. (Sem atualização de verdade aqui: o processo principal não instala
   // nada, e recarregar a página faz o papel do app reabrindo.)
   await a.page.getByRole('button', { name: 'Mutar', exact: true }).click({ force: true })
   await a.app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.send('update:state', { status: 'ready', version: '9.9.9' }))
@@ -1363,6 +1373,10 @@ try {
   // O app volta pra call logo ao abrir: o microfone falso tem que estar lá antes dele (nunca o de verdade).
   await a.page.addInitScript(installFakeMic)
   await a.page.reload()
+  // Ao abrir, uma pílula em cima pergunta se quer voltar pra call (com o nome do canal e do servidor).
+  const offer = a.page.locator('.rejoin')
+  const offerText = await offer.waitFor({ timeout: 15_000 }).then(() => offer.innerText(), () => '')
+  await a.page.getByRole('button', { name: 'Reconectar', exact: true }).click({ force: true }).catch(() => {})
   // Entrar na call leva um instante (microfone, conexão): espera o "Sair da call" ficar ativo.
   const rejoined = await a.page
     .waitForFunction(() => {
@@ -1372,7 +1386,11 @@ try {
     .then(() => true, () => false)
   const callName = await a.page.locator('.dock').innerText().catch(() => '')
   if (!rejoined) console.log('   tela de A depois de reabrir:', (await a.page.locator('body').innerText()).replace(/\n+/g, ' | ').slice(0, 400))
-  check(!!savedCall && rejoined && callName.includes('Geral'), 'reiniciar pra atualizar no meio da call: o app volta sozinho pra mesma sala, mutado', savedCall ?? 'nada gravado')
+  check(
+    !!savedCall && /Geral/.test(offerText) && /Turma/.test(offerText) && rejoined && callName.includes('Geral') && (await offer.count()) === 0,
+    'reiniciar pra atualizar no meio da call: ao abrir, a pílula oferece voltar e "Reconectar" volta pra mesma sala, mutado',
+    `${offerText.replace(/\n/g, ' ')} · ${savedCall ?? 'nada gravado'}`,
+  )
   await a.page.getByRole('button', { name: 'Desmutar', exact: true }).click({ force: true })
 
   // Fechar o app sai da call na hora (não fica "esperando voltar" como numa queda de rede).

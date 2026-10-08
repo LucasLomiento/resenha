@@ -3,8 +3,9 @@
   import type { AdminPanel, AdminUser } from '../../lib/api'
   import { client } from '../../lib/client.svelte'
   import { formatSize } from '../../lib/format'
+  import { badgeOf } from '../../lib/profile'
   import { confirmAction } from '../../lib/ui.svelte'
-  import { Avatar, Badge, Button, Icon, PageHeader, RadioGroup, Row, Section, Spinner, TextField } from '../kit'
+  import { Avatar, Badge, Button, Icon, PageHeader, RadioGroup, Row, Section, Spinner, TextField, UserBadge } from '../kit'
 
   const GB = 1024 ** 3
   const count = new Intl.NumberFormat('pt-BR')
@@ -95,6 +96,28 @@
     } finally {
       busyUser = null
     }
+  }
+
+  /** O Pioneiro é a primeira conta depois da sua; dá pra trocar se o selo foi pra pessoa errada. */
+  function makePioneer(user: AdminUser) {
+    confirmAction({
+      title: `Dar o selo de Pioneiro pra ${user.name}?`,
+      description: 'O selo, a moldura e o nome exclusivos do Pioneiro saem de quem tem agora e passam pra essa conta.',
+      confirm: 'Dar o selo',
+      onconfirm: async () => {
+        const api = client.api
+        if (!api) return
+        busyUser = user.id
+        try {
+          await api.adminSetPioneer(user.id)
+          await search(query.trim())
+        } catch (err) {
+          client.toast((err as Error).message)
+        } finally {
+          busyUser = null
+        }
+      },
+    })
   }
 
   function setBanned(user: AdminUser, banned: boolean) {
@@ -189,10 +212,17 @@
     {:else}
       {#each users as user (user.id)}
         {@const self = user.id === client.me?.id}
+        {@const badge = badgeOf(user)}
         <Row label={user.name} description="{user.username} · desde {date(user.createdAt)}">
           {#snippet leading()}
             <Avatar id={user.id} name={user.name} size={32} src={client.api?.avatar(user) ?? null} cutout="var(--bg-raised)" />
           {/snippet}
+          {#if badge}<UserBadge {badge} size={18} />{/if}
+          {#if badge === 'pioneer'}
+            <Badge tone="accent">Pioneiro</Badge>
+          {:else if !self && !user.banned}
+            <Button size="sm" variant="ghost" disabled={!!busyUser} onclick={() => makePioneer(user)}>Tornar Pioneiro</Button>
+          {/if}
           {#if self}
             <Badge tone="accent">Você</Badge>
           {:else if user.banned}

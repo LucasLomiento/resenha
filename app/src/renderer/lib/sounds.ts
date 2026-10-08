@@ -18,6 +18,8 @@ export type SoundName =
   | 'leave'
   /** O dono do Resenha entra na call (no lugar do "alguém entra"; pra ele, no lugar do "você entra"). */
   | 'founder-join'
+  /** O Pioneiro (a primeira pessoa que chegou) entra na call (idem). */
+  | 'pioneer-join'
   | 'mute'
   | 'unmute'
   | 'deafen'
@@ -44,6 +46,7 @@ export const SOUND_LABELS: [SoundName, string][] = [
   ['join', 'Alguém entra'],
   ['leave', 'Alguém sai'],
   ['founder-join', 'O dono do Resenha entra'],
+  ['pioneer-join', 'O Pioneiro entra'],
   ['mute', 'Mutar'],
   ['unmute', 'Desmutar'],
   ['deafen', 'Ensurdecer'],
@@ -266,6 +269,14 @@ const SOUNDS: Record<SoundName, (bus: Bus, at: number) => void> = {
     bell(bus, NOTE.G6, top + 0.04, { gain: 0.32, decay: 1.05, ratio: 4.1 })
     whoosh(bus, 2600, 9000, top - 0.06, { gain: 0.22, length: 0.5 })
   },
+  'pioneer-join': (bus, at) => {
+    // Chamado de explorador: um sopro que sobe (vento) e sinos em quartas e quintas, abertos.
+    whoosh(bus, 450, 5200, at, { gain: 0.32, length: 0.34 })
+    bell(bus, NOTE.A5, at + 0.12, { gain: 0.55, decay: 0.7, pan: -0.25, ratio: 3 })
+    bell(bus, NOTE.E6, at + 0.22, { gain: 0.48, decay: 0.8, pan: 0.2, ratio: 3 })
+    bell(bus, NOTE.A6, at + 0.32, { gain: 0.36, decay: 1, ratio: 4.1 })
+    mallet(bus, NOTE.A5 / 2, at + 0.12, { gain: 0.45, decay: 0.7 })
+  },
   leave: (bus, at) => {
     drop(bus, NOTE.E6, at, { fall: true, gain: 0.75, pan: 0.1 })
     drop(bus, NOTE.A5, at + 0.09, { fall: true, gain: 0.7, pan: -0.1, decay: 0.26 })
@@ -333,6 +344,7 @@ const LEVEL: Record<SoundName, number> = {
   join: 0.87,
   leave: 0.85,
   'founder-join': 0.54,
+  'pioneer-join': 0.6,
   mute: 1.57,
   unmute: 1.6,
   deafen: 0.73,

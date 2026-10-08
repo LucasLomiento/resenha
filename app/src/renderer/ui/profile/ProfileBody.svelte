@@ -4,8 +4,8 @@
   import { formatDay } from '../../lib/format'
   import { confirmAction, ui } from '../../lib/ui.svelte'
   import { canModerate, memberMenu } from '../guild/memberMenu'
-  import { isFounder, nameStyle } from '../../lib/profile'
-  import { Avatar, Badge, Button, FounderBadge, Icon, IconButton, Menu, STATUS_LABEL, tooltip, type MenuItem } from '../kit'
+  import { badgeOf, nameStyle } from '../../lib/profile'
+  import { Avatar, Badge, Button, UserBadge, Icon, IconButton, Menu, STATUS_LABEL, tooltip, type MenuItem } from '../kit'
   import ProfileShell from './ProfileShell.svelte'
 
   /**
@@ -169,7 +169,7 @@
       {:else}
         <h2 class="holo-play">
           <span class={styledName.class} style={styledName.style}>{guild ? guild.displayName(userId) : profile.name}</span>
-          {#if isFounder(profile)}<FounderBadge size={18} />{/if}
+          <UserBadge badge={badgeOf(profile)} size={18} />
           {#if canEditNick}
             <button class="nick-edit" aria-label="Mudar apelido" use:tooltip={'Apelido neste servidor'} onclick={() => ((nick = member?.nick ?? ''), (editingNick = true))}>
               <Icon name="pencil" size={13} />

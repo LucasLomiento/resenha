@@ -15,7 +15,7 @@ import { Api, HttpError } from './api'
 import { Call, type CallTransport } from './call.svelte'
 import { GuildState, type GuildHost } from './guild.svelte'
 import { HomeState, type HomeHost } from './home.svelte'
-import { isFounder } from './profile'
+import { badgeOf } from './profile'
 import { attachmentLabel } from './voice-note'
 import { settings } from './settings.svelte'
 import { playSound } from './sounds'
@@ -60,7 +60,15 @@ interface Rejoin {
  */
 async function takeRejoin(): Promise<Rejoin | null> {
   try {
-    const saved = (await window.resenha.update.takeRejoin()) as Rejoin | null
+    let saved = (await window.resenha.update.takeRejoin()) as Rejoin | null
+    // A 1.5.1 gravava no armazenamento da página: vale pra quem atualiza a partir dela.
+    try {
+      const legacy = localStorage.getItem('resenha.rejoin')
+      localStorage.removeItem('resenha.rejoin')
+      if (!saved && legacy) saved = JSON.parse(legacy) as Rejoin
+    } catch {
+      // sem armazenamento
+    }
     const fresh = saved && typeof saved.channelId === 'string' && (saved.kind === 'guild' || saved.kind === 'dm') && Date.now() - saved.at < REJOIN_TTL
     return fresh ? saved : null
   } catch {
@@ -122,6 +130,8 @@ class Client implements GuildHost, HomeHost {
   private openWhenJoined: string | null = null
   /** Call pra voltar assim que o servidor (ou a conexão pessoal) abrir: o app reiniciou pra atualizar no meio dela. */
   private rejoin: Rejoin | null = null
+  /** Depois de atualizar: a call em que a pessoa estava, oferecida numa pílula em cima ("Reconectar?"). */
+  rejoinOffer = $state<(Rejoin & { label: string; place: string }) | null>(null)
   private lastAction: Partial<Record<ShortcutAction, number>> = {}
 
   readonly call: Call = new Call({
@@ -129,7 +139,7 @@ class Client implements GuildHost, HomeHost {
     platform: () => this.platform,
     toast: (text, kind) => this.toast(text, kind),
     name: (userId): string => this.user(userId, this.call.guildId)?.name ?? 'Alguém',
-    founder: (userId) => (userId ? isFounder(this.user(userId, this.call.guildId)) : isFounder(this.me)),
+    badge: (userId) => badgeOf(userId ? this.user(userId, this.call.guildId) : this.me),
   })
 
   constructor() {
@@ -418,28 +428,39 @@ class Client implements GuildHost, HomeHost {
     void window.resenha.update.install(target ? { ...target, muted, deafened, at: Date.now() } : null)
   }
 
-  /** Voltando de uma atualização: entra de novo na call em que estava, com o mesmo mudo/ensurdecido. */
+  /** Voltando de uma atualização: oferece (numa pílula em cima) voltar pra call em que estava. */
   private resumeAfterUpdate(target: HomeState | GuildState) {
     const saved = this.rejoin
     if (!saved || this.call.channelId) return
     if (saved.kind === 'guild') {
       if (!(target instanceof GuildState) || target.id !== saved.guildId) return
       this.rejoin = null
-      if (target.channel(saved.channelId)?.kind !== 'voice') return
-      this.call.muted = saved.muted || saved.deafened
-      this.call.deafened = saved.deafened
-      this.joinVoice(target.id, saved.channelId)
-      this.toast('De volta à call depois da atualização.', 'info')
+      const channel = target.channel(saved.channelId)
+      if (channel?.kind !== 'voice') return
+      this.rejoinOffer = { ...saved, label: channel.name, place: target.info.name }
       return
     }
     if (!(target instanceof HomeState)) return
     this.rejoin = null
-    // Ligação privada: só volta se a outra pessoa continua nela (nunca liga de novo sozinho).
-    if (!target.calls[saved.channelId]?.members.some((m) => m.userId !== this.meId())) return
-    this.call.muted = saved.muted || saved.deafened
-    this.call.deafened = saved.deafened
-    void this.startDmCall(saved.channelId)
-    this.toast('De volta à ligação depois da atualização.', 'info')
+    // Ligação privada: só se a outra pessoa continua nela (nunca liga de novo sozinho).
+    const other = target.calls[saved.channelId]?.members.find((m) => m.userId !== this.meId())
+    if (!other) return
+    this.rejoinOffer = { ...saved, label: this.user(other.userId)?.name ?? 'a ligação', place: 'ligação privada' }
+  }
+
+  /** "Reconectar": volta pra call, com o mudo/ensurdecido de antes. */
+  acceptRejoin() {
+    const offer = this.rejoinOffer
+    this.rejoinOffer = null
+    if (!offer || this.call.channelId) return
+    this.call.muted = offer.muted || offer.deafened
+    this.call.deafened = offer.deafened
+    if (offer.kind === 'guild' && offer.guildId) this.joinVoice(offer.guildId, offer.channelId)
+    else if (offer.kind === 'dm' && this.home?.calls[offer.channelId]?.members.length) void this.startDmCall(offer.channelId)
+  }
+
+  dismissRejoin() {
+    this.rejoinOffer = null
   }
 
   ready(target: HomeState | GuildState, reconnected: boolean, resumed: boolean) {
@@ -803,6 +824,7 @@ class Client implements GuildHost, HomeHost {
   joinVoice(guildId: string, channelId: string) {
     const guild = this.guilds[guildId]
     if (!guild) return
+    this.rejoinOffer = null
     this.stopRinging()
     this.call.join(this.guildTransport(guild, channelId))
   }
@@ -811,6 +833,7 @@ class Client implements GuildHost, HomeHost {
   async startDmCall(channelId: string, video = false) {
     const home = this.home
     if (!home) return
+    this.rejoinOffer = null
     const ringing = !home.calls[channelId]?.members.length
     await this.call.join(this.dmTransport(home, channelId, video))
     if (ringing && this.call.dmId === channelId) {

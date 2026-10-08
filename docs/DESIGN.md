@@ -143,6 +143,7 @@ Sintetizados na hora (`lib/sounds.ts`), um timbre por família, pra dar pra sabe
 | Conversa | sino de vidro (menção: duas notas, mais brilhante) | `message`, `mention` |
 | Ligação | frase de sinos (tocando) e o "tuuu" de 425 Hz (chamando) | `ring`, `ringback` |
 | O dono do Resenha entra | fanfarra: marimba subindo e acorde de sinos com brilho (no lugar de `join`, e de `self-join` pra ele) | `founder-join` |
+| O Pioneiro entra | chamado de explorador: sopro que sobe e sinos em quartas e quintas (idem) | `pioneer-join` |
 
 Tudo passa por um reverb curto e um compressor. O volume de cada som foi medido (RMS em janelas de 50 ms, renderizando offline) e acertado na tabela `LEVEL`: avisos de atenção (ligação, menção) um pouco acima, cliques frequentes um pouco abaixo. Som novo: meça antes de pôr.
 
@@ -225,6 +226,7 @@ Tudo passa por um reverb curto e um compressor. O volume de cada som foi medido 
 - **Cartão no canto de baixo à direita**, acima do campo de mensagem (a ligação chegando tem a vez): ícone de download, "Resenha 1.2.2 chegou", uma linha do que fazer e "Novidades ↗" (a página da versão no GitHub) com o botão principal à direita. O X ("Depois") esconde até a próxima versão; o botão no pé do trilho continua lá.
 - **Estados:** pronta ("Reinicie pra usar a versão nova", ou "Reiniciar agora tira você da call"), esperando a call acabar pra baixar ("Baixar agora"), baixando (porcentagem) e instalando ("Se pedir senha, é pra isso").
 - **Fora do app:** um aviso do sistema por versão, quando ela fica pronta e a janela está fora de foco.
+- **Depois de atualizar no meio de uma call:** uma pílula de vidro no alto do painel: ícone, "Você estava em **Geral** · Turma antes de atualizar.", **Reconectar** e o X ("Agora não"). Some ao reconectar, ao dispensar ou ao entrar em outra call. Ligação privada só aparece se a outra pessoa continua nela.
 
 ### Rabiscos na transmissão
 
@@ -354,6 +356,7 @@ O "Nitro" do Resenha, pra todo mundo. Tudo opcional; sem nada, o perfil fica com
 - **Nome**: fonte (Clássica = Fraunces, Redonda = Fredoka, Cursiva = Pacifico, Pixel = Silkscreen, todas OFL e empacotadas) e efeito (degradê com as cores do perfil, neon). As cores são clareadas até dar contraste no fundo escuro, e o `line-height: 1` do nome estilizado não muda a altura da linha no chat (`.styled-name` no `app.css`).
 - **Onde aparece**: cartão de perfil, painel da conversa privada, prévia nas configurações, mensagens e lista de membros. A galeria `#proto/profile-style` mostra tudo com dados de exemplo.
 - **Fundador (só o dono do Resenha)**: selo (`kit/FounderBadge.svelte`: medalhão violeta e rosa com borda dourada e o balão da marca; brilha só no hover) ao lado do nome nas mensagens, na lista de membros, no cartão, na lista da call e nos quadros da call; moldura "Fundador" (anel nas cores do app, louros e órbita dourados, medalhão embaixo); nome "Holográfico" (brilho que corre pelas letras, parado nas listas e animado no hover e no cartão, `.holo-play`); som próprio ao entrar na call (`founder-join`, medido junto com os outros) e o nome dele entra com um brilho na lista da call. As opções exclusivas só aparecem pra ele nas configurações.
+- **Pioneiro (a primeira pessoa que chegou depois do dono)**: o mesmo esquema nas cores do mar. Selo (medalhão azul e verde-água, borda prateada, uma bandeira fincada); moldura "Pioneiro" (anel azul com brilho, um cometa dando a volta e a bandeira fincada no alto, balançando); nome "Horizonte" (nascer do sol sobre o mar passando devagar pelas letras; parado nas listas, anima no hover e no cartão); som `pioneer-join` e o brilho de chegada na call em prata e azul. O dono vê e troca quem é em Configurações → Plataforma ("Tornar Pioneiro").
 
 ## Acessibilidade
 
