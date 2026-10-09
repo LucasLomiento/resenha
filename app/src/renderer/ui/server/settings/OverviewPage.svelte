@@ -3,17 +3,20 @@
   import { P } from '../../../../../../shared/protocol'
   import { client } from '../../../lib/client.svelte'
   import type { GuildState } from '../../../lib/guild.svelte'
+  import { m } from '../../../lib/i18n.svelte'
   import { confirmAction, ui } from '../../../lib/ui.svelte'
   import { Avatar, Button, Icon, PageHeader, Row, Section, TextField } from '../../kit'
   import SaveBar from '../SaveBar.svelte'
   import { settled } from '../settle.svelte'
   import type { Unsaved } from '../unsaved.svelte'
-  import { cleanName, iconBlob, pickImage, plural } from '../util'
+  import { cleanName, iconBlob, pickImage } from '../util'
   import DeleteGuildModal from './DeleteGuildModal.svelte'
   import TransferModal from './TransferModal.svelte'
 
   let { guild, unsaved }: { guild: GuildState; unsaved: Unsaved } = $props()
 
+  const t = $derived(m.server.overview)
+  const shared = $derived(m.server.shared)
   const canEdit = $derived(guild.canGuild(P.MANAGE_GUILD))
   const memberCount = $derived(Object.keys(guild.members).length)
 
@@ -26,7 +29,7 @@
   let dialog = $state<'transfer' | 'delete' | null>(null)
 
   const shownName = $derived(name ?? guild.info.name)
-  const nameError = $derived(name !== null && cleanName(name).length < 2 ? 'O nome precisa ter pelo menos 2 caracteres.' : null)
+  const nameError = $derived(name !== null && cleanName(name).length < 2 ? shared.nameTooShort : null)
   const iconUrl = $derived(icon === undefined ? (client.api?.media(guild.info.icon) ?? null) : (icon?.url ?? null))
   const changed = $derived((name !== null && cleanName(name) !== guild.info.name) || icon !== undefined)
 
@@ -83,7 +86,7 @@
       )
       if (ok) reset()
     } catch (err) {
-      client.toast((err as Error).message || 'Não deu pra salvar agora.')
+      client.toast((err as Error).message || t.saveFailed)
     } finally {
       saving = false
     }
@@ -92,9 +95,9 @@
   function leave() {
     const { id, info } = guild
     confirmAction({
-      title: `Sair de ${info.name}?`,
-      description: 'Pra voltar, só com um convite novo.',
-      confirm: 'Sair',
+      title: t.leaveTitle(info.name),
+      description: t.leaveDescription,
+      confirm: t.leave,
       onconfirm: async () => {
         ui.guildSettings = null
         try {
@@ -107,13 +110,13 @@
   }
 </script>
 
-<PageHeader title="Visão geral" />
+<PageHeader title={shared.overview} />
 
 <Section>
   <Row stack>
     <div class="identity">
       {#if canEdit}
-        <button class="icon-edit" type="button" aria-label="Trocar ícone" onclick={chooseIcon}>
+        <button class="icon-edit" type="button" aria-label={shared.changeIcon} onclick={chooseIcon}>
           <Avatar id={guild.id} name={cleanName(shownName) || guild.info.name} size={88} square src={iconUrl} cutout="var(--bg-raised)" />
           <span class="icon-overlay" aria-hidden="true"><Icon name="photo" size={20} /></span>
         </button>
@@ -124,7 +127,7 @@
       <div class="identity-fields">
         {#if canEdit}
           <TextField
-            label="Nome do servidor"
+            label={shared.serverName}
             bind:value={() => shownName, (v) => (name = v)}
             maxlength={100}
             spellcheck={false}
@@ -133,15 +136,15 @@
           {#if iconError}
             <p class="hint error" role="alert"><Icon name="circle-alert" size={14} />{iconError}</p>
           {:else}
-            <p class="hint">Imagem quadrada, de pelo menos 512 px.</p>
+            <p class="hint">{t.iconHint}</p>
           {/if}
           <div class="identity-actions">
-            <Button size="sm" icon="upload" onclick={chooseIcon}>{iconUrl ? 'Trocar ícone' : 'Escolher ícone'}</Button>
-            {#if iconUrl}<Button size="sm" variant="ghost" onclick={removeIcon}>Remover</Button>{/if}
+            <Button size="sm" icon="upload" onclick={chooseIcon}>{iconUrl ? shared.changeIcon : shared.chooseIcon}</Button>
+            {#if iconUrl}<Button size="sm" variant="ghost" onclick={removeIcon}>{m.common.remove}</Button>{/if}
           </div>
         {:else}
           <h2 class="guild-name">{guild.info.name}</h2>
-          <p class="hint tabular">{plural(memberCount, 'membro', 'membros')}</p>
+          <p class="hint tabular">{shared.members(memberCount)}</p>
         {/if}
       </div>
     </div>
@@ -149,21 +152,21 @@
 </Section>
 
 {#if guild.isOwner}
-  <Section title="Zona de perigo">
+  <Section title={t.danger}>
     <Row
-      label="Transferir o servidor"
-      description={memberCount > 1 ? 'Outra pessoa vira a dona. Você continua como membro.' : 'Só dá pra passar pra alguém que já está no servidor.'}
+      label={t.transfer}
+      description={memberCount > 1 ? t.transferDescription : t.transferAlone}
     >
-      <Button onclick={() => (dialog = 'transfer')} disabled={memberCount < 2}>Transferir</Button>
+      <Button onclick={() => (dialog = 'transfer')} disabled={memberCount < 2}>{t.transferButton}</Button>
     </Row>
-    <Row label="Excluir o servidor" description="Apaga canais, mensagens e arquivos. Não dá pra desfazer.">
-      <Button variant="danger-soft" icon="trash" onclick={() => (dialog = 'delete')}>Excluir</Button>
+    <Row label={t.deleteRow} description={t.deleteDescription}>
+      <Button variant="danger-soft" icon="trash" onclick={() => (dialog = 'delete')}>{m.common.delete}</Button>
     </Row>
   </Section>
 {:else}
   <Section>
-    <Row label="Sair do servidor" description="Pra voltar, só com um convite novo.">
-      <Button variant="danger-soft" icon="door-open" onclick={leave}>Sair</Button>
+    <Row label={t.leaveRow} description={t.leaveDescription}>
+      <Button variant="danger-soft" icon="door-open" onclick={leave}>{t.leave}</Button>
     </Row>
   </Section>
 {/if}

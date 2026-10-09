@@ -2,6 +2,7 @@ import type { Badge, SignalData, VoiceMember } from '../../../../shared/protocol
 import type { PlatformInfo } from '../../preload/api'
 import type { Api } from './api'
 import { userColor } from './format'
+import { m } from './i18n.svelte'
 import { InkShare, cleanInk, type InkMessage, type InkPolicy } from './ink.svelte'
 import { captureScreen, getCameraStream, getMicTrack, stopCapture } from './media'
 import { MicPipeline } from './mic'
@@ -196,8 +197,8 @@ export class Call {
       console.error(err)
       this.deps.toast(
         (err as Error).name === 'NotAllowedError' || (err as Error).name === 'NotFoundError'
-          ? 'Sem acesso ao microfone.'
-          : `Não deu pra entrar na call: ${(err as Error).message}`,
+          ? m.lib.call.noMic
+          : m.lib.call.joinFailed((err as Error).message),
       )
     } finally {
       this.joining = false
@@ -296,7 +297,7 @@ export class Call {
     try {
       await this.openMic()
     } catch (err) {
-      this.deps.toast(`Não deu pra trocar o microfone: ${(err as Error).message}`)
+      this.deps.toast(m.lib.call.micFailed((err as Error).message))
     }
   }
 
@@ -550,7 +551,7 @@ export class Call {
         audio: settings.screenAudio,
       })
     } catch (err) {
-      if ((err as Error).name !== 'NotAllowedError') this.deps.toast(`Não deu pra compartilhar: ${(err as Error).message}`)
+      if ((err as Error).name !== 'NotAllowedError') this.deps.toast(m.lib.call.shareFailed((err as Error).message))
       return
     }
     if (capture.warning) this.deps.toast(capture.warning, 'info')
@@ -643,9 +644,8 @@ export class Call {
       stream = await getCameraStream()
     } catch (err) {
       const name = (err as Error).name
-      return this.deps.toast(
-        name === 'NotFoundError' ? 'Nenhuma câmera encontrada.' : name === 'NotAllowedError' ? 'Sem acesso à câmera.' : `Não deu pra ligar a câmera: ${(err as Error).message}`,
-      )
+      const t = m.lib.call
+      return this.deps.toast(name === 'NotFoundError' ? t.noCamera : name === 'NotAllowedError' ? t.cameraDenied : t.cameraFailed((err as Error).message))
     }
     // Câmera desconectada (USB) no meio da call: desliga sozinho.
     stream.getVideoTracks()[0].addEventListener('ended', () => {
@@ -679,7 +679,7 @@ export class Call {
       await Promise.all(this.peerList.map((p) => p.sendCamera(stream)))
       for (const track of old.getTracks()) track.stop()
     } catch (err) {
-      this.deps.toast(`Não deu pra trocar a câmera: ${(err as Error).message}`)
+      this.deps.toast(m.lib.call.cameraSwitchFailed((err as Error).message))
     }
   }
 
@@ -735,7 +735,7 @@ export class Call {
     if (this.sharing) {
       const sfu = await this.sfuShare?.videoStats()
       const onSfu = Object.keys(this.sfuViewers).length
-      if (sfu) outbound.push({ userId: '', label: `Cloudflare (${onSfu} ${onSfu === 1 ? 'pessoa' : 'pessoas'})`, stats: sfu })
+      if (sfu) outbound.push({ userId: '', label: m.lib.call.sfuViewers(onSfu), stats: sfu })
       for (const peer of this.peers.values()) {
         if (!this.watchers[peer.connId] || this.sfuViewers[peer.connId]) continue
         const stats = await peer.videoStats('outbound')
@@ -761,7 +761,7 @@ export class Call {
   private relayFor(transport: CallTransport, warn: boolean): boolean {
     if (!this.deps.relayWanted(transport)) return false
     if (this.hasTurn()) return true
-    if (warn) this.deps.toast('Essa sala passa pelo Cloudflare, mas ele não está disponível agora: a call vai direto (P2P).', 'info')
+    if (warn) this.deps.toast(m.lib.call.relayUnavailable, 'info')
     return false
   }
 
@@ -776,7 +776,7 @@ export class Call {
     if (relay === this.relay) return
     this.relay = relay
     for (const peer of this.peers.values()) peer.setRelay(relay, this.ice.servers)
-    this.deps.toast(relay ? 'A sala agora passa pelo Cloudflare.' : 'A sala voltou a ir direto (P2P).', 'info')
+    this.deps.toast(relay ? m.lib.call.relayOn : m.lib.call.relayOff, 'info')
   }
 
   // ---------- Tela pelo SFU ----------

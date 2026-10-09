@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onDestroy } from 'svelte'
+  import { m } from '../lib/i18n.svelte'
   import { videoBox, type InkMessage, type InkScreen, type InkTool } from '../lib/ink.svelte'
 
   /**
@@ -287,7 +288,7 @@
   bind:this={canvas}
   class="ink-layer"
   class:active
-  aria-label={active ? 'Rabiscar na tela' : undefined}
+  aria-label={active ? m.app.stream.ink : undefined}
   aria-hidden={!active}
   onpointerdown={down}
   onpointermove={move}

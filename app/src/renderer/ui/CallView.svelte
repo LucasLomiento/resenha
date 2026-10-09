@@ -1,11 +1,13 @@
 <script lang="ts">
-  import { plural, userColor } from '../lib/format'
+  import { userColor } from '../lib/format'
   import { client } from '../lib/client.svelte'
+  import { m } from '../lib/i18n.svelte'
   import { badgeOf } from '../lib/profile'
   import { Avatar, Badge, Button, UserBadge, Icon } from './kit'
   import VideoTile from './VideoTile.svelte'
 
   const call = client.call
+  const t = $derived(m.app.call)
   const place = $derived(client.callPlace)
   const members = $derived(client.callMembers)
   // Até 1 pessoa: bloco grande; até 4: 2 colunas; mais que isso: 3.
@@ -19,11 +21,11 @@
 </script>
 
 <!-- Só os blocos: os controles da call ficam no painel da barra lateral, sempre no mesmo lugar. -->
-<section aria-label="Call">
+<section aria-label={t.label}>
   <header>
     <Icon name="volume" size={20} class="header-icon" />
     <h1>{place?.name ?? ''}</h1>
-    <span class="count">{members.length <= 1 ? 'só você por aqui' : plural(members.length, 'pessoa', 'pessoas')}</span>
+    <span class="count">{members.length <= 1 ? t.alone : t.people(members.length)}</span>
   </header>
 
   <div class="stage">
@@ -54,14 +56,14 @@
             {:else if member.muted}<Icon name="mic-off" size={14} class="state" />{/if}
             <span>{user?.name ?? '?'}</span>
             <UserBadge badge={badgeOf(user)} size={14} />
-            {#if self}<span class="you">você</span>{/if}
+            {#if self}<span class="you">{t.you}</span>{/if}
           </div>
 
           {#if member.sharing}
             <div class="watch">
-              <Badge tone="live">AO VIVO</Badge>
+              <Badge tone="live">{m.app.liveBadge}</Badge>
               <Button size="sm" variant="secondary" icon="eye" onclick={() => watch(member.connId)}>
-                {self ? 'Ver minha tela' : 'Assistir'}
+                {self ? t.watchMine : t.watch}
               </Button>
             </div>
           {/if}

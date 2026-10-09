@@ -1,12 +1,15 @@
 <script lang="ts">
   import { client } from '../../lib/client.svelte'
   import type { GuildState } from '../../lib/guild.svelte'
+  import { m } from '../../lib/i18n.svelte'
   import { badgeOf, nameStyle } from '../../lib/profile'
   import { openProfile, ui } from '../../lib/ui.svelte'
   import { Avatar, UserBadge, Icon, Menu, tooltip, type MenuItem } from '../kit'
   import { memberMenu } from './memberMenu'
 
   let { guild }: { guild: GuildState } = $props()
+
+  const t = $derived(m.guild.members)
 
   const hex = (color: number | null) => (color === null ? null : `#${color.toString(16).padStart(6, '0')}`)
   const selected = $derived(ui.profile?.guildId === guild.id ? ui.profile.userId : null)
@@ -18,7 +21,7 @@
   /** Embaixo do nome: na call, senão o status personalizado. */
   function activity(userId: string) {
     const call = guild.voice.find((v) => v.userId === userId)
-    if (call) return { icon: 'audio-lines' as const, text: `Na call · ${guild.channel(call.channelId)?.name ?? ''}` }
+    if (call) return { icon: 'audio-lines' as const, text: t.inCall(guild.channel(call.channelId)?.name ?? '') }
     const text = guild.presences[userId]?.text
     return text ? { icon: null, text } : null
   }
@@ -29,7 +32,7 @@
   }
 </script>
 
-<aside class="members" aria-label="Membros">
+<aside class="members" aria-label={t.label}>
   {#each guild.memberGroups as group (group.title)}
     <div class="group-title">{group.title} — {group.ids.length}</div>
     {#each group.ids as userId (userId)}
@@ -67,8 +70,8 @@
               ><span class={styled.class} style={styled.style}>{guild.displayName(userId)}</span></span
             >
             <UserBadge badge={badgeOf(user)} size={14} />
-            {#if userId === guild.info.ownerId}<span class="crown" use:tooltip={'Dono do servidor'}><Icon name="crown" size={13} /></span>{/if}
-            {#if timedOut(userId)}<span class="timeout" use:tooltip={'De castigo'}><Icon name="clock" size={13} /></span>{/if}
+            {#if userId === guild.info.ownerId}<span class="crown" use:tooltip={t.owner}><Icon name="crown" size={13} /></span>{/if}
+            {#if timedOut(userId)}<span class="timeout" use:tooltip={t.timedOut}><Icon name="clock" size={13} /></span>{/if}
           </span>
           {#if now && !off}
             <span class="activity">

@@ -1,11 +1,13 @@
 <script lang="ts">
   import { client } from '../lib/client.svelte'
+  import { m } from '../lib/i18n.svelte'
   import { ui } from '../lib/ui.svelte'
-  import { Avatar, Icon, IconButton, SignalBars, Spinner, STATUS_LABEL, tooltip } from './kit'
+  import { Avatar, Icon, IconButton, SignalBars, Spinner, tooltip } from './kit'
   import SharePanel from './SharePanel.svelte'
   import StatusMenu from './StatusMenu.svelte'
 
   const call = client.call
+  const t = $derived(m.app.dock)
   const place = $derived(client.callPlace)
   const inCall = $derived(!!call.channelId || call.joining)
 
@@ -53,15 +55,15 @@
         <button
           class="call-info"
           disabled={!call.channelId}
-          aria-label="Abrir a call"
-          use:tooltip={{ text: 'Abrir a call', placement: 'top' }}
+          aria-label={t.openCall}
+          use:tooltip={{ text: t.openCall, placement: 'top' }}
           onclick={() => (client.view = 'call')}
         >
           <span class="status">
             {#if call.joining}
-              <Spinner size={12} /> Entrando…
+              <Spinner size={12} /> {t.joining}
             {:else}
-              <Icon name="audio-lines" size={14} /> Na call
+              <Icon name="audio-lines" size={14} /> {t.inCall}
             {/if}
           </span>
           <span class="where">{place ? `${place.name} · ${place.where}` : ''}</span>
@@ -69,7 +71,7 @@
         {#if call.channelId && worstLink}
           <SignalBars rtt={worstLink.rtt} route={worstLink.route} />
         {/if}
-        <IconButton icon="phone-off" label="Sair da call" tone="danger" disabled={!call.channelId} onclick={() => client.leaveCall()} />
+        <IconButton icon="phone-off" label={t.leave} tone="danger" disabled={!call.channelId} onclick={() => client.leaveCall()} />
       </div>
 
       <div class="call-actions" class:three={!!mapGuild}>
@@ -77,42 +79,42 @@
           class="action"
           class:on={!!call.camera}
           disabled={!call.channelId}
-          aria-label={call.camera ? 'Desligar câmera' : 'Ligar câmera'}
+          aria-label={call.camera ? t.cameraOff : t.cameraOn}
           aria-pressed={!!call.camera}
-          use:tooltip={call.camera ? 'Desligar câmera' : 'Ligar câmera'}
+          use:tooltip={call.camera ? t.cameraOff : t.cameraOn}
           onclick={toggleCamera}
         >
           <Icon name="camera" size={16} />
-          Câmera
+          {t.camera}
         </button>
         <button
           class="action"
           class:sharing={call.sharing}
           disabled={!call.channelId}
-          aria-label={call.sharing ? 'Ao vivo: opções da transmissão' : 'Compartilhar tela'}
+          aria-label={call.sharing ? t.liveOptions : t.shareScreen}
           aria-expanded={call.sharing ? ui.sharePanel : undefined}
-          use:tooltip={call.sharing ? 'Opções da transmissão' : 'Compartilhar tela'}
+          use:tooltip={call.sharing ? t.streamOptions : t.shareScreen}
           onclick={screenClick}
         >
           {#if call.sharing}
             <span class="dot"></span>
-            Ao vivo
+            {t.live}
           {:else}
             <Icon name="screen" size={16} />
-            Tela
+            {t.screen}
           {/if}
         </button>
         {#if mapGuild}
           <button
             class="action"
             class:on={mapOpen}
-            aria-label={mapOpen ? 'Fechar o mapa' : 'Abrir o mapa do servidor'}
+            aria-label={mapOpen ? t.closeMap : t.openMap}
             aria-pressed={mapOpen}
-            use:tooltip={onMap ? `${onMap} no mapa agora` : 'Mapa do servidor: todo mundo vê junto'}
+            use:tooltip={onMap ? t.onMap(onMap) : t.mapHint}
             onclick={mapClick}
           >
             <Icon name="map" size={16} />
-            Mapa
+            {t.map}
             {#if onMap && !mapOpen}<span class="count tabular">{onMap}</span>{/if}
           </button>
         {/if}
@@ -125,7 +127,7 @@
       <button
         bind:this={meButton}
         class="me-button"
-        aria-label="Status: {STATUS_LABEL[client.presenceOf(client.me.id).status]}"
+        aria-label={t.status(m.common.presence[client.presenceOf(client.me.id).status])}
         aria-expanded={statusOpen}
         onclick={() => (statusOpen = !statusOpen)}
         onmouseenter={() => (meHover = true)}
@@ -145,13 +147,13 @@
         />
         <span class="me-text">
           <span class="me-name">{client.me.name}</span>
-          <span class="me-status">{client.statusText ?? (client.status === 'invisible' ? 'Invisível' : `@${client.me.username}`)}</span>
+          <span class="me-status">{client.statusText ?? (client.status === 'invisible' ? m.common.presence.invisible : `@${client.me.username}`)}</span>
         </span>
       </button>
     {/if}
     <IconButton
       icon={call.muted ? 'mic-off' : 'mic'}
-      label={call.muted ? 'Desmutar' : 'Mutar'}
+      label={call.muted ? t.unmute : t.mute}
       tone="danger"
       active={call.muted}
       aria-pressed={call.muted}
@@ -159,13 +161,13 @@
     />
     <IconButton
       icon={call.deafened ? 'headphones-off' : 'headphones'}
-      label={call.deafened ? 'Voltar a ouvir' : 'Ensurdecer'}
+      label={call.deafened ? t.undeafen : t.deafen}
       tone="danger"
       active={call.deafened}
       aria-pressed={call.deafened}
       onclick={() => call.toggleDeafen()}
     />
-    <IconButton icon="settings" label="Configurações" onclick={() => (ui.settings = 'profile')} />
+    <IconButton icon="settings" label={t.settings} onclick={() => (ui.settings = 'profile')} />
   </div>
 </div>
 

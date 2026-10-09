@@ -3,6 +3,7 @@
 
 import type { Badge, Decoration, NameEffect, NameFont, ProfileEffect, ProfileStyle } from '../../../../shared/protocol'
 import { userColors, userGradient } from './format'
+import { m } from './i18n.svelte'
 
 /** O mínimo de uma pessoa pra desenhar o perfil dela. */
 export interface Styled {
@@ -14,41 +15,27 @@ export interface Styled {
 
 export const hex = (color: number) => `#${color.toString(16).padStart(6, '0')}`
 
-export const DECORATION_LABEL: Record<Decoration, string> = {
-  neon: 'Neon',
-  aurora: 'Aurora',
-  headset: 'Fones',
-  stars: 'Estrelinhas',
-  flames: 'Chamas',
-  flowers: 'Flores',
-  crown: 'Coroa',
-  cat: 'Gatinho',
-  founder: 'Fundador',
-  pioneer: 'Pioneiro',
+/**
+ * Tabela de nomes lida do catálogo a cada acesso: `DECORATION_LABEL.neon` sai no idioma
+ * em uso na hora (e acompanha a troca), sem a interface precisar saber do catálogo.
+ */
+function labels<K extends string>(read: () => Record<K, string>): Readonly<Record<K, string>> {
+  return new Proxy({} as Record<K, string>, {
+    get: (_, key) => read()[key as K],
+    has: (_, key) => key in read(),
+    ownKeys: () => Reflect.ownKeys(read()),
+    getOwnPropertyDescriptor: (_, key) =>
+      key in read() ? { value: read()[key as K], enumerable: true, configurable: true, writable: false } : undefined,
+  })
 }
 
-export const EFFECT_LABEL: Record<ProfileEffect, string> = {
-  confetti: 'Confete',
-  snow: 'Neve',
-  sparkles: 'Brilhos',
-  hearts: 'Corações',
-  bubbles: 'Bolhas',
-  fireflies: 'Vaga-lumes',
-}
+export const DECORATION_LABEL = labels<Decoration>(() => m.lib.profile.decorations)
 
-export const NAME_FONT_LABEL: Record<NameFont, string> = {
-  serif: 'Clássica',
-  rounded: 'Redonda',
-  script: 'Cursiva',
-  pixel: 'Pixel',
-}
+export const EFFECT_LABEL = labels<ProfileEffect>(() => m.lib.profile.effects)
 
-export const NAME_EFFECT_LABEL: Record<NameEffect, string> = {
-  gradient: 'Degradê',
-  neon: 'Neon',
-  holo: 'Holográfico',
-  horizon: 'Horizonte',
-}
+export const NAME_FONT_LABEL = labels<NameFont>(() => m.lib.profile.nameFonts)
+
+export const NAME_EFFECT_LABEL = labels<NameEffect>(() => m.lib.profile.nameEffects)
 
 /** Selo da pessoa (o servidor põe no perfil): Fundador (o dono do Resenha) ou Pioneiro (a primeira pessoa que chegou). */
 export const badgeOf = (user: Styled | null | undefined): Badge | null => (user && !user.deleted && user.style?.badge) || null
@@ -56,16 +43,26 @@ export const isFounder = (user: Styled | null | undefined) => badgeOf(user) === 
 /** Quem abre o painel da plataforma: o dono (tudo) e o melhor amigo dele (só os números). */
 export const seesPlatform = (user: (Styled & { staff?: boolean }) | null | undefined) => !!user?.staff || badgeOf(user) === 'pioneer'
 
-/** Temas prontos: [principal, destaque]. */
-export const THEME_PRESETS: { name: string; colors: [number, number] }[] = [
-  { name: 'Resenha', colors: [0x6a5cf6, 0xff7ab6] },
-  { name: 'Pôr do sol', colors: [0xff7a59, 0x8f3fd1] },
-  { name: 'Oceano', colors: [0x2e8bff, 0x2ad4b0] },
-  { name: 'Floresta', colors: [0x2f9e62, 0xc8e05a] },
-  { name: 'Algodão-doce', colors: [0xff9ccf, 0x8ec5ff] },
-  { name: 'Brasa', colors: [0xe8452c, 0xffc34d] },
-  { name: 'Meia-noite', colors: [0x23265c, 0x6a5cf6] },
-]
+type ThemeId = keyof typeof m.lib.profile.themes
+
+/** Temas prontos: [principal, destaque]. O nome sai do catálogo na hora de mostrar. */
+export const THEME_PRESETS: { id: ThemeId; readonly name: string; colors: [number, number] }[] = (
+  [
+    ['resenha', [0x6a5cf6, 0xff7ab6]],
+    ['sunset', [0xff7a59, 0x8f3fd1]],
+    ['ocean', [0x2e8bff, 0x2ad4b0]],
+    ['forest', [0x2f9e62, 0xc8e05a]],
+    ['cottonCandy', [0xff9ccf, 0x8ec5ff]],
+    ['ember', [0xe8452c, 0xffc34d]],
+    ['midnight', [0x23265c, 0x6a5cf6]],
+  ] as [ThemeId, [number, number]][]
+).map(([id, colors]) => ({
+  id,
+  get name() {
+    return m.lib.profile.themes[id]
+  },
+  colors,
+}))
 
 function rgb(color: string): [number, number, number] {
   const n = parseInt(color.slice(1), 16)

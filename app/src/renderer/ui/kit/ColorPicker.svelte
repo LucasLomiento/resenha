@@ -1,11 +1,12 @@
 <script lang="ts">
   import { untrack } from 'svelte'
+  import { m } from '../../lib/i18n.svelte'
 
   /**
    * Escolha de cor livre: quadro de saturação/brilho, matiz e código.
    * Avisa a cada movimento (`onchange`), pra prévia acompanhar enquanto arrasta.
    */
-  let { value, onchange, label = 'Cor' }: { value: number; onchange: (value: number) => void; label?: string } = $props()
+  let { value, onchange, label }: { value: number; onchange: (value: number) => void; label?: string } = $props()
 
   type Hsv = [number, number, number]
 
@@ -89,14 +90,14 @@
   }
 </script>
 
-<div class="picker" role="group" aria-label={label}>
+<div class="picker" role="group" aria-label={label ?? m.kit.colorPicker.label}>
   <div
     bind:this={area}
     class="area"
     style:--hue={hsv[0]}
     role="slider"
     tabindex="0"
-    aria-label="Saturação e brilho"
+    aria-label={m.kit.colorPicker.area}
     aria-valuetext={text}
     aria-valuenow={Math.round(hsv[1] * 100)}
     onpointerdown={drag}
@@ -111,14 +112,14 @@
     min="0"
     max="359"
     step="1"
-    aria-label="Matiz"
+    aria-label={m.kit.colorPicker.hue}
     value={Math.round(hsv[0])}
     oninput={(e) => set([Number(e.currentTarget.value), hsv[1], hsv[2]])}
   />
   <div class="code">
     <span class="chip" style:background={text}></span>
     <input
-      aria-label="Código da cor"
+      aria-label={m.kit.colorPicker.code}
       spellcheck="false"
       maxlength="7"
       bind:value={text}

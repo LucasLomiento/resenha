@@ -9,6 +9,7 @@
 
 <script lang="ts">
   import type { Snippet } from 'svelte'
+  import { m } from '../../lib/i18n.svelte'
   import Icon from './Icon.svelte'
   import { layer } from './layers'
   import NavItem from './NavItem.svelte'
@@ -88,7 +89,7 @@
     </main>
 
     <div class="close">
-      <button type="button" aria-label="Fechar" onclick={onclose}><Icon name="x" size={18} /></button>
+      <button type="button" aria-label={m.common.close} onclick={onclose}><Icon name="x" size={18} /></button>
       <span aria-hidden="true">Esc</span>
     </div>
   </div>

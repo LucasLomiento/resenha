@@ -12,6 +12,7 @@
 </script>
 
 <script lang="ts">
+  import { m } from '../../lib/i18n.svelte'
   import { isJumbo, parseMarkdown, type Block, type Inline } from '../../lib/markdown'
   import { Icon } from '../kit'
   import Spoiler from './Spoiler.svelte'
@@ -44,12 +45,12 @@
       >{:else if node.t === 'role'}{@const role = names.role(node.id)}<span
         class="mention"
         style:color={hex(role?.color ?? null)}
-        style:background={role?.color != null ? `${hex(role.color)}26` : null}>@{role?.name ?? 'cargo excluído'}</span
+        style:background={role?.color != null ? `${hex(role.color)}26` : null}>@{role?.name ?? m.chat.mention.deletedRole}</span
       >{:else if node.t === 'channel'}{@const channel = names.channel(node.id)}<button
         class="mention"
         disabled={!channel}
         onclick={() => names.openChannel?.(node.id)}
-        ><Icon name={channel?.kind === 'voice' ? 'volume' : 'hash'} size={13} />{channel?.name ?? 'canal desconhecido'}</button
+        ><Icon name={channel?.kind === 'voice' ? 'volume' : 'hash'} size={13} />{channel?.name ?? m.chat.mention.unknownChannel}</button
       >{:else if node.t === 'everyone'}<span class="mention">{node.text}</span>{/if}
   {/each}
 {/snippet}

@@ -28,6 +28,8 @@ export interface DesktopPrefs {
   zoom: number
   /** Atalhos no formato de accelerator do Electron (ex.: "CommandOrControl+Shift+M"). */
   shortcuts: Record<ShortcutAction, string | null>
+  /** Último idioma da interface (a bandeja abre nele antes da janela carregar). */
+  locale?: 'pt' | 'en' | 'es'
 }
 
 export interface CallState {
@@ -111,6 +113,8 @@ export interface ResenhaApi {
   turnstile(server: string): Promise<string | null>
   /** Baixa um anexo com o diálogo de salvar do sistema. */
   download(url: string): void
+  /** A interface trocou de idioma: bandeja, avisos e corretor acompanham. */
+  setLocale(locale: 'pt' | 'en' | 'es'): void
   desktop: {
     get(): Promise<DesktopPrefs>
     /** Aplica e salva; devolve as preferências e os atalhos que o sistema recusou. */

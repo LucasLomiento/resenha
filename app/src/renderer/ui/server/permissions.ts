@@ -4,6 +4,7 @@
 import { basePermissions, outranks, topPosition, type PermissionContext } from '../../../../../shared/permissions'
 import { ALL_PERMISSIONS, P, has, type ChannelKind, type Overwrite } from '../../../../../shared/protocol'
 import type { GuildState } from '../../lib/guild.svelte'
+import { m } from '../../lib/i18n.svelte'
 
 export interface PermissionInfo {
   bit: number
@@ -17,88 +18,93 @@ export interface PermissionGroup {
   items: PermissionInfo[]
 }
 
-/** Permissões de cargo, por grupo (Cargos). */
-export const ROLE_PERMISSIONS: PermissionGroup[] = [
-  {
-    title: 'Geral',
-    items: [
-      { bit: P.VIEW_CHANNEL, label: 'Ver canais' },
-      { bit: P.MANAGE_CHANNELS, label: 'Gerenciar canais', hint: 'Criar, editar e apagar canais e categorias.' },
-      { bit: P.MANAGE_ROLES, label: 'Gerenciar cargos', hint: 'Só os cargos abaixo do mais alto de quem tem.' },
-      { bit: P.MANAGE_GUILD, label: 'Gerenciar o servidor', hint: 'Nome, ícone e convites.' },
-      { bit: P.CREATE_INVITE, label: 'Criar convites' },
-      { bit: P.CHANGE_NICKNAME, label: 'Mudar o próprio apelido' },
-    ],
-  },
-  {
-    title: 'Mensagens',
-    items: [
-      { bit: P.SEND_MESSAGES, label: 'Mandar mensagens' },
-      { bit: P.ATTACH_FILES, label: 'Enviar arquivos' },
-      { bit: P.ADD_REACTIONS, label: 'Reagir' },
-      { bit: P.READ_HISTORY, label: 'Ler mensagens antigas', hint: 'Sem isso, só vê o que chegar com o canal aberto.' },
-      { bit: P.MENTION_EVERYONE, label: 'Mencionar @everyone', hint: 'Avisa todo mundo do servidor.' },
-      { bit: P.MANAGE_MESSAGES, label: 'Gerenciar mensagens', hint: 'Apagar e fixar mensagens dos outros.' },
-    ],
-  },
-  {
-    title: 'Voz',
-    items: [
-      { bit: P.CONNECT, label: 'Entrar nas calls' },
-      { bit: P.SPEAK, label: 'Falar' },
-      { bit: P.VIDEO, label: 'Câmera e tela' },
-      { bit: P.MUTE_MEMBERS, label: 'Mutar os outros' },
-      { bit: P.DEAFEN_MEMBERS, label: 'Ensurdecer os outros' },
-      { bit: P.MOVE_MEMBERS, label: 'Mover e desconectar', hint: 'Tirar alguém da call ou levar pra outra.' },
-    ],
-  },
-  {
-    title: 'Moderação',
-    items: [
-      { bit: P.MANAGE_NICKNAMES, label: 'Mudar o apelido dos outros' },
-      { bit: P.MODERATE_MEMBERS, label: 'Castigar', hint: 'Tirar alguém de falar e escrever por um tempo.' },
-      { bit: P.KICK_MEMBERS, label: 'Expulsar' },
-      { bit: P.BAN_MEMBERS, label: 'Banir' },
-      { bit: P.VIEW_AUDIT_LOG, label: 'Ver o registro de auditoria' },
-    ],
-  },
-  {
-    title: 'Avançado',
-    items: [{ bit: P.ADMINISTRATOR, label: 'Administrador', hint: 'Pode tudo, em todos os canais.' }],
-  },
-]
+/** Permissões de cargo, por grupo (Cargos). Função: os nomes saem no idioma em uso. */
+export function rolePermissions(): PermissionGroup[] {
+  const { groups, role } = m.server.permissions
+  return [
+    {
+      title: groups.general,
+      items: [
+        { bit: P.VIEW_CHANNEL, ...role.viewChannel },
+        { bit: P.MANAGE_CHANNELS, ...role.manageChannels },
+        { bit: P.MANAGE_ROLES, ...role.manageRoles },
+        { bit: P.MANAGE_GUILD, ...role.manageGuild },
+        { bit: P.CREATE_INVITE, ...role.createInvite },
+        { bit: P.CHANGE_NICKNAME, ...role.changeNickname },
+      ],
+    },
+    {
+      title: groups.messages,
+      items: [
+        { bit: P.SEND_MESSAGES, ...role.sendMessages },
+        { bit: P.ATTACH_FILES, ...role.attachFiles },
+        { bit: P.ADD_REACTIONS, ...role.addReactions },
+        { bit: P.READ_HISTORY, ...role.readHistory },
+        { bit: P.MENTION_EVERYONE, ...role.mentionEveryone },
+        { bit: P.MANAGE_MESSAGES, ...role.manageMessages },
+      ],
+    },
+    {
+      title: groups.voice,
+      items: [
+        { bit: P.CONNECT, ...role.connect },
+        { bit: P.SPEAK, ...role.speak },
+        { bit: P.VIDEO, ...role.video },
+        { bit: P.MUTE_MEMBERS, ...role.muteMembers },
+        { bit: P.DEAFEN_MEMBERS, ...role.deafenMembers },
+        { bit: P.MOVE_MEMBERS, ...role.moveMembers },
+      ],
+    },
+    {
+      title: groups.moderation,
+      items: [
+        { bit: P.MANAGE_NICKNAMES, ...role.manageNicknames },
+        { bit: P.MODERATE_MEMBERS, ...role.moderateMembers },
+        { bit: P.KICK_MEMBERS, ...role.kickMembers },
+        { bit: P.BAN_MEMBERS, ...role.banMembers },
+        { bit: P.VIEW_AUDIT_LOG, ...role.viewAuditLog },
+      ],
+    },
+    {
+      title: groups.advanced,
+      items: [{ bit: P.ADMINISTRATOR, ...role.administrator }],
+    },
+  ]
+}
 
 /** Permissões que valem por canal (exceções), de acordo com o tipo. */
 export function channelPermissionGroups(kind: ChannelKind): PermissionGroup[] {
+  const { groups, role, channel } = m.server.permissions
+  const category = kind === 'category'
   const general: PermissionGroup = {
-    title: 'Geral',
+    title: groups.general,
     items: [
-      { bit: P.VIEW_CHANNEL, label: kind === 'category' ? 'Ver os canais' : 'Ver o canal' },
+      { bit: P.VIEW_CHANNEL, label: category ? channel.viewChannels : channel.viewChannel },
       {
         bit: P.MANAGE_CHANNELS,
-        label: kind === 'category' ? 'Gerenciar os canais' : 'Gerenciar o canal',
-        hint: 'Mudar nome e configurações, ou apagar.',
+        label: category ? channel.manageChannels : channel.manageChannel,
+        hint: channel.manageChannelHint,
       },
-      { bit: P.MANAGE_ROLES, label: 'Gerenciar permissões', hint: 'Mudar estas exceções.' },
+      { bit: P.MANAGE_ROLES, ...channel.managePermissions },
     ],
   }
   const text: PermissionGroup = {
-    title: 'Mensagens',
+    title: groups.messages,
     items: [
-      { bit: P.SEND_MESSAGES, label: 'Mandar mensagens' },
-      { bit: P.ATTACH_FILES, label: 'Enviar arquivos' },
-      { bit: P.ADD_REACTIONS, label: 'Reagir' },
-      { bit: P.READ_HISTORY, label: 'Ler mensagens antigas' },
-      { bit: P.MENTION_EVERYONE, label: 'Mencionar @everyone' },
-      { bit: P.MANAGE_MESSAGES, label: 'Gerenciar mensagens', hint: 'Apagar e fixar mensagens dos outros.' },
+      { bit: P.SEND_MESSAGES, label: role.sendMessages.label },
+      { bit: P.ATTACH_FILES, label: role.attachFiles.label },
+      { bit: P.ADD_REACTIONS, label: role.addReactions.label },
+      { bit: P.READ_HISTORY, label: role.readHistory.label },
+      { bit: P.MENTION_EVERYONE, label: role.mentionEveryone.label },
+      { bit: P.MANAGE_MESSAGES, ...role.manageMessages },
     ],
   }
   const voice: PermissionGroup = {
-    title: 'Voz',
+    title: groups.voice,
     items: [
-      { bit: P.CONNECT, label: 'Entrar na call' },
-      { bit: P.SPEAK, label: 'Falar' },
-      { bit: P.VIDEO, label: 'Câmera e tela' },
+      { bit: P.CONNECT, label: channel.connect },
+      { bit: P.SPEAK, label: role.speak.label },
+      { bit: P.VIDEO, label: role.video.label },
     ],
   }
   if (kind === 'text') return [general, text]

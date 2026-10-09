@@ -24,6 +24,7 @@ import { join } from 'node:path'
 import { app } from 'electron'
 import { autoUpdater } from 'electron-updater'
 import type { UpdateState } from '../preload/api'
+import { tm } from './i18n'
 
 let state: UpdateState = { status: 'idle' }
 let downloadedFile: string | null = null
@@ -216,18 +217,14 @@ async function installPacman(file: string, version: string) {
   if (code === 126) return set({ status: 'ready', version })
 
   // Sem agente do polkit: terminal com sudo, que no fim reabre o app.
+  const t = tm().update
   const terminal = findTerminal()
-  if (!terminal) {
-    return set({
-      status: 'error',
-      message: `Não achei um terminal pra pedir a senha. Instale manualmente: sudo pacman -U "${file}"`,
-    })
-  }
+  if (!terminal) return set({ status: 'error', message: t.noTerminal(file) })
   const quote = (text: string) => `'${text.replace(/'/g, `'\\''`)}'`
   const script = [
-    `echo 'Atualizando o Resenha pra versão ${version}. Digite sua senha:'`,
+    `echo ${quote(t.terminalPrompt(version))}`,
     // Se não der, mostra o erro em vez de fechar (e reabrir a versão velha) sem dizer nada.
-    `sudo pacman -U --noconfirm ${quote(file)} || { echo; echo 'Não deu pra atualizar. Aperte Enter pra abrir o Resenha.'; read -r _; }`,
+    `sudo pacman -U --noconfirm ${quote(file)} || { echo; echo ${quote(t.terminalFailed)}; read -r _; }`,
     `setsid ${quote(process.execPath)} >/dev/null 2>&1 &`,
     'sleep 1',
   ].join('; ')
@@ -237,11 +234,12 @@ async function installPacman(file: string, version: string) {
 }
 
 function findTerminal(): { command: string; args: string[] } | null {
+  const title = tm().update.terminalTitle
   const candidates: { command: string; args: string[] }[] = [
-    { command: 'foot', args: ['-T', 'Atualizar Resenha'] },
+    { command: 'foot', args: ['-T', title] },
     { command: 'konsole', args: ['-e'] },
-    { command: 'kitty', args: ['--title', 'Atualizar Resenha'] },
-    { command: 'alacritty', args: ['-T', 'Atualizar Resenha', '-e'] },
+    { command: 'kitty', args: ['--title', title] },
+    { command: 'alacritty', args: ['-T', title, '-e'] },
     { command: 'ghostty', args: ['-e'] },
     { command: 'xfce4-terminal', args: ['-x'] },
     { command: 'xterm', args: ['-e'] },

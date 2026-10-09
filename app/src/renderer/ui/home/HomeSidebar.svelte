@@ -1,12 +1,14 @@
 <script lang="ts">
   import type { DmChannel } from '../../../../../shared/protocol'
   import { client } from '../../lib/client.svelte'
+  import { m } from '../../lib/i18n.svelte'
   import { ui } from '../../lib/ui.svelte'
   import { Avatar, Badge, Icon, IconButton, Kbd, Menu, NavItem, type MenuItem } from '../kit'
 
   const home = $derived(client.home)
   const route = $derived(client.route)
   const dms = $derived(home?.sortedDms ?? [])
+  const t = $derived(m.home.sidebar)
 
   let menu = $state<{ dm: DmChannel; anchor: { x: number; y: number } } | null>(null)
 
@@ -14,16 +16,16 @@
   function subtitle(dm: DmChannel): string {
     const presence = client.presenceOf(dm.user.id)
     if (presence.text) return presence.text
-    if (client.home?.calls[dm.id]?.members.length) return 'Em chamada'
+    if (client.home?.calls[dm.id]?.members.length) return t.inCall
     return ''
   }
 
   function dmMenu(dm: DmChannel): MenuItem[] {
     return [
-      { label: 'Perfil', icon: 'user', onselect: () => (ui.profile = { userId: dm.user.id, guildId: null, anchor: menu!.anchor }) },
-      { label: 'Ligar', icon: 'phone', onselect: () => client.startDmCall(dm.id) },
+      { label: t.profile, icon: 'user', onselect: () => (ui.profile = { userId: dm.user.id, guildId: null, anchor: menu!.anchor }) },
+      { label: t.call, icon: 'phone', onselect: () => client.startDmCall(dm.id) },
       { kind: 'separator' },
-      { label: 'Fechar conversa', icon: 'x', onselect: () => home?.closeDm(dm.id) },
+      { label: t.closeDm, icon: 'x', onselect: () => home?.closeDm(dm.id) },
     ]
   }
 </script>
@@ -31,21 +33,21 @@
 <header>
   <button class="search" onclick={() => (ui.switcher = true)}>
     <Icon name="search" size={16} />
-    <span>Encontrar conversa</span>
+    <span>{t.find}</span>
     <Kbd keys={['Ctrl', 'K']} />
   </button>
 </header>
 
-<nav aria-label="Início">
-  <NavItem icon="users" label="Amigos" active={route.kind === 'home'} onclick={() => client.openHome()}>
+<nav aria-label={t.nav}>
+  <NavItem icon="users" label={t.friends} active={route.kind === 'home'} onclick={() => client.openHome()}>
     {#snippet trailing()}
       {#if home?.pendingRequests}<Badge tone="count">{home.pendingRequests}</Badge>{/if}
     {/snippet}
   </NavItem>
 
   <div class="section">
-    <span>Mensagens privadas</span>
-    <IconButton icon="plus" label="Nova mensagem" size="sm" onclick={() => (ui.switcher = true)} />
+    <span>{t.dms}</span>
+    <IconButton icon="plus" label={t.newDm} size="sm" onclick={() => (ui.switcher = true)} />
   </div>
 
   {#each dms as dm (dm.id)}
@@ -71,11 +73,11 @@
         {#if dm.unread}<Badge tone="count">{dm.unread > 99 ? '99+' : dm.unread}</Badge>{/if}
       </button>
       <span class="close">
-        <IconButton icon="x" label="Fechar conversa" size="sm" onclick={() => home?.closeDm(dm.id)} />
+        <IconButton icon="x" label={t.closeDm} size="sm" onclick={() => home?.closeDm(dm.id)} />
       </span>
     </div>
   {:else}
-    <p class="empty">Suas conversas privadas aparecem aqui.</p>
+    <p class="empty">{t.empty}</p>
   {/each}
 </nav>
 

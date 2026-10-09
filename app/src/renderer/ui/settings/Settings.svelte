@@ -1,8 +1,9 @@
 <script lang="ts">
   import { tick } from 'svelte'
   import { client } from '../../lib/client.svelte'
+  import { i18n, m } from '../../lib/i18n.svelte'
   import { seesPlatform } from '../../lib/profile'
-  import { PAGE_LABEL, searchSettings, type SettingEntry } from '../../lib/settings-search'
+  import { searchSettings, type SettingEntry } from '../../lib/settings-search'
   import { confirmAction, openSetting, ui, type SettingsPage } from '../../lib/ui.svelte'
   import { Icon, SettingsLayout, type SettingsNavEntry } from '../kit'
   import AppPage from './AppPage.svelte'
@@ -15,23 +16,24 @@
   import ShortcutsPage from './ShortcutsPage.svelte'
   import VoicePage from './VoicePage.svelte'
 
-  const ADMIN: SettingsNavEntry[] = [{ heading: 'Administração' }, { id: 'platform', label: 'Plataforma', icon: 'shield' }]
+  const t = $derived(m.settings)
+  const admin = $derived<SettingsNavEntry[]>([{ heading: t.nav.admin }, { id: 'platform', label: t.pages.platform, icon: 'shield' }])
 
   // Conta em cima, app embaixo; o painel da plataforma só pro dono dela (e, só pra ver, pro melhor amigo dele).
   const nav = $derived<SettingsNavEntry[]>([
-    { heading: 'Conta' },
-    { id: 'profile', label: 'Perfil', icon: 'user' },
-    { id: 'devices', label: 'Aparelhos', icon: 'laptop' },
-    { id: 'password', label: 'Senha', icon: 'key' },
-    { id: 'privacy', label: 'Privacidade', icon: 'lock' },
-    { heading: 'App' },
-    { id: 'voice', label: 'Voz e vídeo', icon: 'mic' },
-    { id: 'notifications', label: 'Notificações', icon: 'bell' },
-    { id: 'shortcuts', label: 'Atalhos', icon: 'keyboard' },
-    { id: 'app', label: 'Aplicativo', icon: 'sliders' },
-    ...(seesPlatform(client.me) ? ADMIN : []),
+    { heading: t.nav.account },
+    { id: 'profile', label: t.pages.profile, icon: 'user' },
+    { id: 'devices', label: t.pages.devices, icon: 'laptop' },
+    { id: 'password', label: t.pages.password, icon: 'key' },
+    { id: 'privacy', label: t.pages.privacy, icon: 'lock' },
+    { heading: t.nav.app },
+    { id: 'voice', label: t.pages.voice, icon: 'mic' },
+    { id: 'notifications', label: t.pages.notifications, icon: 'bell' },
+    { id: 'shortcuts', label: t.pages.shortcuts, icon: 'keyboard' },
+    { id: 'app', label: t.pages.app, icon: 'sliders' },
+    ...(seesPlatform(client.me) ? admin : []),
     { separator: true },
-    { id: 'logout', label: 'Sair da conta', icon: 'log-out', tone: 'danger' },
+    { id: 'logout', label: t.nav.logout, icon: 'log-out', tone: 'danger' },
   ])
 
   /** Página aberta: valor desconhecido (ou a plataforma sem ser dono) cai no Perfil. */
@@ -49,7 +51,13 @@
 
   const results = $derived(
     query.trim()
-      ? searchSettings(query, { staff: !!client.me?.staff, platform: seesPlatform(client.me), desktop: !!client.desktop, hyprland: !!client.platform?.hyprland })
+      ? searchSettings(query, {
+          staff: !!client.me?.staff,
+          platform: seesPlatform(client.me),
+          desktop: !!client.desktop,
+          hyprland: !!client.platform?.hyprland,
+          locale: i18n.locale,
+        })
       : null,
   )
   const icons = $derived(Object.fromEntries(nav.filter((e) => 'id' in e).map((e) => [e.id, e.icon])))
@@ -116,7 +124,7 @@
 
   function select(id: string) {
     if (id !== 'logout') return (ui.settings = id as SettingsPage)
-    confirmAction({ title: 'Sair da conta?', confirm: 'Sair', onconfirm: () => client.logout() })
+    confirmAction({ title: t.logout.title, confirm: t.logout.confirm, onconfirm: () => client.logout() })
   }
 </script>
 
@@ -138,8 +146,8 @@
       bind:this={searchInput}
       bind:value={query}
       type="search"
-      placeholder="Buscar"
-      aria-label="Buscar nas configurações"
+      placeholder={t.search.placeholder}
+      aria-label={t.search.label}
       autocomplete="off"
       spellcheck="false"
       data-own-escape={query ? '' : undefined}
@@ -149,7 +157,7 @@
 {/snippet}
 
 {#snippet found()}
-  <div class="results" bind:this={resultList} role="listbox" aria-label="Resultados">
+  <div class="results" bind:this={resultList} role="listbox" aria-label={t.search.results}>
     {#each results ?? [] as entry, i (entry.id)}
       <button
         class="result"
@@ -162,16 +170,16 @@
         <Icon name={icons[entry.page] ?? 'settings'} size={16} />
         <span class="text">
           <span class="name">{entry.label}</span>
-          <span class="where">{PAGE_LABEL[entry.page]}{entry.section ? ` · ${entry.section}` : ''}</span>
+          <span class="where">{entry.where}</span>
         </span>
       </button>
     {:else}
-      <p class="empty">Nada com “{query.trim()}”.</p>
+      <p class="empty">{t.search.empty(query.trim())}</p>
     {/each}
   </div>
 {/snippet}
 
-<SettingsLayout title="Configurações" {nav} active={page} onselect={select} onclose={close} {search} results={results ? found : undefined}>
+<SettingsLayout title={t.title} {nav} active={page} onselect={select} onclose={close} {search} results={results ? found : undefined}>
   {#if page === 'profile'}
     <ProfilePage />
   {:else if page === 'devices'}

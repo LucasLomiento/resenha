@@ -2,6 +2,7 @@
   import { onMount } from 'svelte'
   import type { Message } from '../../../../../shared/protocol'
   import { formatStamp } from '../../lib/format'
+  import { m } from '../../lib/i18n.svelte'
   import { plainText } from '../../lib/markdown'
   import { Avatar, Button, EmptyState, IconButton, Popover, Spinner } from '../kit'
   import type { ChatTarget } from './target.svelte'
@@ -16,6 +17,7 @@
 
   let pins = $state<Message[] | null>(null)
   let failed = $state(false)
+  const t = $derived(m.chat.pins)
 
   onMount(async () => {
     try {
@@ -27,31 +29,31 @@
 
   /** As fixadas mudam enquanto o painel está aberto (alguém desafixa): acompanha pelo chat. */
   const live = $derived(
-    pins?.filter((p) => target.messages.find((m) => m.id === p.id)?.pinned !== false) ?? null,
+    pins?.filter((p) => target.messages.find((msg) => msg.id === p.id)?.pinned !== false) ?? null,
   )
 
   const text = (content: string) =>
     plainText(content, {
       user: target.names.user,
-      role: (id) => target.names.role(id)?.name ?? 'cargo',
-      channel: (id) => target.names.channel(id)?.name ?? 'canal',
+      role: (id) => target.names.role(id)?.name ?? m.chat.mention.role,
+      channel: (id) => target.names.channel(id)?.name ?? m.chat.mention.channel,
     })
 </script>
 
 <!-- Fixadas do canal: abre pelo alfinete do cabeçalho. -->
-<Popover {anchor} placement="bottom-end" width={380} label="Mensagens fixadas" {onclose}>
+<Popover {anchor} placement="bottom-end" width={380} label={t.label} {onclose}>
   <div class="pins">
     <header>
-      <span>Fixadas</span>
+      <span>{t.title}</span>
       {#if live}<span class="count">{live.length}</span>{/if}
     </header>
     <div class="list">
       {#if failed}
-        <p class="note">Não deu pra carregar agora.</p>
+        <p class="note">{t.failed}</p>
       {:else if !live}
         <div class="note"><Spinner size={16} /></div>
       {:else if live.length === 0}
-        <EmptyState icon="pin" title="Nada fixado ainda" description="Fixe mensagens importantes pra achar depois." />
+        <EmptyState icon="pin" title={t.emptyTitle} description={t.emptyDescription} />
       {:else}
         {#each live as message (message.id)}
           <div class="pin">
@@ -60,11 +62,11 @@
               <span class="name" style:color={target.color(message.authorId)}>{target.displayName(message.authorId)}</span>
               <span class="time">{formatStamp(message.createdAt)}</span>
               <span class="pin-actions">
-                <Button size="sm" variant="ghost" onclick={() => onjump(message.id)}>Ir</Button>
+                <Button size="sm" variant="ghost" onclick={() => onjump(message.id)}>{t.jump}</Button>
                 {#if target.canPin}
                   <IconButton
                     icon="pin-off"
-                    label="Desafixar"
+                    label={t.unpin}
                     size="sm"
                     onclick={() => {
                       target.pin(message.id, false)

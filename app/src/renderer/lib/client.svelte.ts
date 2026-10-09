@@ -16,6 +16,7 @@ import { Api, HttpError } from './api'
 import { Call, type CallTransport } from './call.svelte'
 import { GuildState, type GuildHost } from './guild.svelte'
 import { HomeState, type HomeHost } from './home.svelte'
+import { m } from './i18n.svelte'
 import { badgeOf } from './profile'
 import { attachmentLabel } from './voice-note'
 import { settings } from './settings.svelte'
@@ -131,15 +132,15 @@ class Client implements GuildHost, HomeHost {
   private openWhenJoined: string | null = null
   /** Call pra voltar assim que o servidor (ou a conexão pessoal) abrir: o app reiniciou pra atualizar no meio dela. */
   private rejoin: Rejoin | null = null
-  /** Depois de atualizar: a call em que a pessoa estava, oferecida numa pílula em cima ("Reconectar?"). */
-  rejoinOffer = $state<(Rejoin & { label: string; place: string }) | null>(null)
+  /** Depois de atualizar: a call em que a pessoa estava. Nome e lugar nulos: ligação privada (o texto sai no idioma da hora). */
+  private rejoinSaved = $state<(Rejoin & { label: string | null; place: string | null }) | null>(null)
   private lastAction: Partial<Record<ShortcutAction, number>> = {}
 
   readonly call: Call = new Call({
     api: () => this.api,
     platform: () => this.platform,
     toast: (text, kind) => this.toast(text, kind),
-    name: (userId): string => this.user(userId, this.call.guildId)?.name ?? 'Alguém',
+    name: (userId): string => this.user(userId, this.call.guildId)?.name ?? m.lib.someone,
     badge: (userId) => badgeOf(userId ? this.user(userId, this.call.guildId) : this.me),
     relayWanted: (transport) => transport.kind === 'guild' && !!this.guilds[transport.scopeId]?.channel(transport.channelId)?.relay,
   })
@@ -196,8 +197,8 @@ class Client implements GuildHost, HomeHost {
       try {
         session = { ...session, userId: (await this.api.me()).id }
       } catch (err) {
-        if (err instanceof HttpError && err.status === 401) return this.reset('Sua sessão expirou. Entre de novo.')
-        this.toast('Sem conexão com o servidor. Tentando de novo…')
+        if (err instanceof HttpError && err.status === 401) return this.reset(m.lib.client.sessionExpired)
+        this.toast(m.lib.client.retrying)
         setTimeout(() => this.start(session), 5000)
         return
       }
@@ -249,9 +250,9 @@ class Client implements GuildHost, HomeHost {
   get callPlace(): { name: string; where: string } | null {
     if (!this.call.channelId) return null
     const guild = this.callGuild
-    if (guild) return { name: guild.channel(this.call.channelId)?.name ?? 'Call', where: guild.info.name }
+    if (guild) return { name: guild.channel(this.call.channelId)?.name ?? m.lib.client.call, where: guild.info.name }
     const dm = this.call.dmId ? this.home?.dm(this.call.dmId) : undefined
-    return { name: dm?.user.name ?? 'Chamada', where: 'Mensagem privada' }
+    return { name: dm?.user.name ?? m.lib.client.dmCall, where: m.lib.client.dmPlace }
   }
 
   /** Perfil de alguém, de onde a gente tiver (servidor, amigos, conversas). */
@@ -266,7 +267,7 @@ class Client implements GuildHost, HomeHost {
   /** Nome pra mostrar: apelido no servidor, senão o nome de exibição. */
   displayName(userId: string, guildId?: string | null): string {
     const nick = guildId ? this.guilds[guildId]?.members[userId]?.nick : null
-    return nick || this.user(userId, guildId)?.name || 'Alguém'
+    return nick || this.user(userId, guildId)?.name || m.lib.someone
   }
 
   /** Foto de alguém (URL completa), ou null pro degradê com iniciais. Foto animada vem parada (o primeiro quadro). */
@@ -329,7 +330,7 @@ class Client implements GuildHost, HomeHost {
       this.leaving = false
       throw err
     }
-    this.reset('Sua conta foi excluída.', 'info')
+    this.reset(m.lib.client.accountDeleted, 'info')
     this.leaving = false
   }
 
@@ -447,7 +448,7 @@ class Client implements GuildHost, HomeHost {
       this.rejoin = null
       const channel = target.channel(saved.channelId)
       if (channel?.kind !== 'voice') return
-      this.rejoinOffer = { ...saved, label: channel.name, place: target.info.name }
+      this.rejoinSaved = { ...saved, label: channel.name, place: target.info.name }
       return
     }
     if (!(target instanceof HomeState)) return
@@ -455,13 +456,19 @@ class Client implements GuildHost, HomeHost {
     // Ligação privada: só se a outra pessoa continua nela (nunca liga de novo sozinho).
     const other = target.calls[saved.channelId]?.members.find((m) => m.userId !== this.meId())
     if (!other) return
-    this.rejoinOffer = { ...saved, label: this.user(other.userId)?.name ?? 'a ligação', place: 'ligação privada' }
+    this.rejoinSaved = { ...saved, label: this.user(other.userId)?.name ?? null, place: null }
+  }
+
+  /** A call oferecida numa pílula em cima ("Reconectar?"). */
+  get rejoinOffer(): (Rejoin & { label: string; place: string }) | null {
+    const saved = this.rejoinSaved
+    return saved && { ...saved, label: saved.label ?? m.lib.client.rejoinCall, place: saved.place ?? m.lib.client.rejoinPlace }
   }
 
   /** "Reconectar": volta pra call, com o mudo/ensurdecido de antes. */
   acceptRejoin() {
     const offer = this.rejoinOffer
-    this.rejoinOffer = null
+    this.rejoinSaved = null
     if (!offer || this.call.channelId) return
     this.call.muted = offer.muted || offer.deafened
     this.call.deafened = offer.deafened
@@ -470,7 +477,7 @@ class Client implements GuildHost, HomeHost {
   }
 
   dismissRejoin() {
-    this.rejoinOffer = null
+    this.rejoinSaved = null
   }
 
   ready(target: HomeState | GuildState, reconnected: boolean, resumed: boolean) {
@@ -503,7 +510,7 @@ class Client implements GuildHost, HomeHost {
     // A chamada acabou (ou a outra pessoa saiu) enquanto a conexão estava caída: sai sem ligar de novo.
     if (!resumed && !home.calls[dm]?.members.some((m) => m.userId !== this.meId())) {
       this.call.leave(false)
-      this.toast('A ligação caiu.', 'info')
+      this.toast(m.lib.client.callDropped, 'info')
       return
     }
     this.call.reconnected(resumed)
@@ -553,13 +560,14 @@ class Client implements GuildHost, HomeHost {
   guildLeft(guildId: string, reason: 'left' | 'kicked' | 'banned' | 'deleted') {
     const name = this.guilds[guildId]?.info.name ?? this.droppedNames[guildId]
     this.dropGuild(guildId)
-    if (reason === 'kicked') this.toast(name ? `Você foi expulso de ${name}.` : 'Você foi expulso de um servidor.')
-    if (reason === 'banned') this.toast(name ? `Você foi banido de ${name}.` : 'Você foi banido de um servidor.')
-    if (reason === 'deleted') this.toast(name ? `${name} foi excluído.` : 'Um servidor foi excluído.', 'info')
+    const t = m.lib.client
+    if (reason === 'kicked') this.toast(name ? t.kickedFrom(name) : t.kicked)
+    if (reason === 'banned') this.toast(name ? t.bannedFrom(name) : t.banned)
+    if (reason === 'deleted') this.toast(name ? t.serverDeleted(name) : t.someServerDeleted, 'info')
   }
 
   closed(target: GuildState | CloseReason, reason?: CloseReason) {
-    const expired = () => (this.leaving ? undefined : 'Sua sessão expirou. Entre de novo.')
+    const expired = () => (this.leaving ? undefined : m.lib.client.sessionExpired)
     // Conexão pessoal: sessão inválida.
     if (!(target instanceof GuildState)) {
       if (target === 'unauthorized' && this.phase === 'app') this.reset(expired())
@@ -589,10 +597,11 @@ class Client implements GuildHost, HomeHost {
     if (this.call.guildId !== guild.id) return
     this.call.leave(false)
     if (channelId) {
-      this.toast(`Você foi movido pra ${guild.channel(channelId)?.name ?? 'outro canal'}.`, 'info')
+      const name = guild.channel(channelId)?.name
+      this.toast(name ? m.lib.client.movedTo(name) : m.lib.client.movedElsewhere, 'info')
       this.call.join(this.guildTransport(guild, channelId))
     } else {
-      this.toast('Você foi desconectado da call.', 'info')
+      this.toast(m.lib.client.disconnected, 'info')
     }
   }
 
@@ -623,8 +632,8 @@ class Client implements GuildHost, HomeHost {
     playSound('ring')
     this.ringTimer = setInterval(() => playSound('ring'), 2600)
     if (!document.hasFocus()) {
-      const name = this.home?.dm(channelId)?.user.name ?? 'Alguém'
-      new Notification(`${name} está te ligando`, { body: 'Clique pra abrir o Resenha.', silent: true }).onclick = () => {
+      const name = this.home?.dm(channelId)?.user.name ?? m.lib.someone
+      new Notification(m.lib.notify.calling(name), { body: m.lib.notify.callingBody, silent: true }).onclick = () => {
         window.resenha.showWindow()
         this.navigate({ kind: 'dm', channelId })
       }
@@ -658,7 +667,7 @@ class Client implements GuildHost, HomeHost {
     playSound(guild.mentionsMe(message) ? 'mention' : 'message')
     if (focused) return
     const channel = guild.channel(message.channelId)?.name ?? ''
-    this.notify(`${guild.displayName(message.authorId)} em #${channel} · ${guild.info.name}`, message, () =>
+    this.notify(m.lib.notify.channelMessage(guild.displayName(message.authorId), channel, guild.info.name), message, () =>
       this.openChannel(guild.id, message.channelId),
     )
   }
@@ -669,14 +678,14 @@ class Client implements GuildHost, HomeHost {
     if (focused && this.viewing(channelId)) return
     playSound('message')
     if (focused) return
-    const name = this.home?.dm(channelId)?.user.name ?? 'Alguém'
+    const name = this.home?.dm(channelId)?.user.name ?? m.lib.someone
     this.notify(name, message, () => this.navigate({ kind: 'dm', channelId }))
   }
 
   private notify(title: string, message: Message, open: () => void) {
     const body = message.content || (message.attachments.length ? attachmentLabel(message.attachments[0]) : '')
     // Com "esconder o texto", a notificação só diz que chegou mensagem (bom com a tela compartilhada).
-    const notification = new Notification(title, { body: settings.notifyContent ? body.slice(0, 200) : 'Nova mensagem', silent: true })
+    const notification = new Notification(title, { body: settings.notifyContent ? body.slice(0, 200) : m.lib.notify.hiddenMessage, silent: true })
     notification.onclick = () => {
       window.resenha.showWindow()
       open()
@@ -834,7 +843,7 @@ class Client implements GuildHost, HomeHost {
   joinVoice(guildId: string, channelId: string) {
     const guild = this.guilds[guildId]
     if (!guild) return
-    this.rejoinOffer = null
+    this.rejoinSaved = null
     this.stopRinging()
     this.call.join(this.guildTransport(guild, channelId))
   }
@@ -843,7 +852,7 @@ class Client implements GuildHost, HomeHost {
   async startDmCall(channelId: string, video = false) {
     const home = this.home
     if (!home) return
-    this.rejoinOffer = null
+    this.rejoinSaved = null
     const ringing = !home.calls[channelId]?.members.length
     await this.call.join(this.dmTransport(home, channelId, video))
     if (ringing && this.call.dmId === channelId) {

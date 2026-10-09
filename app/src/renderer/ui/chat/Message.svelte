@@ -2,6 +2,7 @@
   import type { Attachment, Embed, Message } from '../../../../../shared/protocol'
   import { client } from '../../lib/client.svelte'
   import { formatFull, formatSize, formatStamp, formatTime } from '../../lib/format'
+  import { m } from '../../lib/i18n.svelte'
   import { plainText } from '../../lib/markdown'
   import { badgeOf, nameStyle } from '../../lib/profile'
   import { confirmAction, openProfile, ui } from '../../lib/ui.svelte'
@@ -40,6 +41,7 @@
   let hovered = $state(false)
   const mentioned = $derived(!mine && target.mentionsMe(message))
   const canDelete = $derived(mine || target.canManage)
+  const t = $derived(m.chat.message)
 
   const IMAGE = /^image\/(png|jpe?g|gif|webp|avif|bmp)$/
   const VIDEO = /^video\/(mp4|webm|ogg)$/
@@ -89,7 +91,7 @@
   function remove(event?: MouseEvent) {
     const run = () => target.remove(message.id)
     if (event?.shiftKey) return run()
-    confirmAction({ title: 'Apagar mensagem?', description: 'Não dá pra desfazer.', confirm: 'Apagar', onconfirm: run })
+    confirmAction({ title: t.deleteTitle, description: t.deleteDescription, confirm: t.deleteConfirm, onconfirm: run })
   }
 
   function toggleReaction(emoji: string) {
@@ -102,22 +104,22 @@
 
   function moreItems(): MenuItem[] {
     const items: MenuItem[] = []
-    if (target.canReact) items.push({ label: 'Reagir', icon: 'emoji-plus', onselect: () => (pickerAnchor = menu?.anchor ?? null) })
-    if (target.canSend) items.push({ label: 'Responder', icon: 'reply', onselect: () => onreply(message) })
-    if (mine && message.content) items.push({ label: 'Editar', icon: 'pencil', onselect: startEdit })
+    if (target.canReact) items.push({ label: t.react, icon: 'emoji-plus', onselect: () => (pickerAnchor = menu?.anchor ?? null) })
+    if (target.canSend) items.push({ label: t.reply, icon: 'reply', onselect: () => onreply(message) })
+    if (mine && message.content) items.push({ label: m.common.edit, icon: 'pencil', onselect: startEdit })
     if (target.canPin) {
-      items.push({ label: message.pinned ? 'Desafixar' : 'Fixar', icon: message.pinned ? 'pin-off' : 'pin', onselect: () => target.pin(message.id, !message.pinned) })
+      items.push({ label: message.pinned ? t.unpin : t.pin, icon: message.pinned ? 'pin-off' : 'pin', onselect: () => target.pin(message.id, !message.pinned) })
     }
     if (message.content) {
       items.push({
-        label: 'Copiar texto',
+        label: t.copyText,
         icon: 'copy',
-        onselect: () => navigator.clipboard.writeText(plainText(message.content, { user: target.names.user, role: (id) => target.names.role(id)?.name ?? 'cargo', channel: (id) => target.names.channel(id)?.name ?? 'canal' })),
+        onselect: () => navigator.clipboard.writeText(plain(message.content)),
       })
     }
     if (canDelete) {
       items.push({ kind: 'separator' })
-      items.push({ label: 'Apagar mensagem', icon: 'trash', danger: true, onselect: () => remove() })
+      items.push({ label: t.delete, icon: 'trash', danger: true, onselect: () => remove() })
     }
     return items
   }
@@ -141,6 +143,15 @@
   }
 
   const url = (path: string) => client.api?.url(path) ?? path
+
+  /** Texto puro (copiar, resumo da resposta): menção sem nome vira "cargo" ou "canal". */
+  function plain(content: string): string {
+    return plainText(content, {
+      user: target.names.user,
+      role: (id) => target.names.role(id)?.name ?? m.chat.mention.role,
+      channel: (id) => target.names.channel(id)?.name ?? m.chat.mention.channel,
+    })
+  }
 
   /** Com o tamanho conhecido, o espaço fica reservado antes de a imagem chegar. */
   function ratio(a: Attachment): string | null {
@@ -184,10 +195,10 @@
         <Avatar id={ref.authorId} name={replyName ?? '?'} size={16} src={target.avatar(ref.authorId)} />
         <span class="reply-name" style:color={target.color(ref.authorId)}>{replyName}</span>
         <span class="reply-text">
-          {ref.content ? plainText(ref.content, { user: target.names.user, role: (id) => target.names.role(id)?.name ?? 'cargo', channel: (id) => target.names.channel(id)?.name ?? 'canal' }) : 'Clique pra ver o anexo'}
+          {ref.content ? plain(ref.content) : t.replyAttachment}
         </span>
       {:else}
-        <span class="reply-text gone">A mensagem original foi apagada</span>
+        <span class="reply-text gone">{t.replyDeleted}</span>
       {/if}
     </button>
   {/if}
@@ -197,7 +208,7 @@
       {#if grouped}
         <time class="time-hover tabular" use:tooltip={formatFull(message.createdAt)}>{formatTime(message.createdAt)}</time>
       {:else}
-        <button class="avatar-button" aria-label="Perfil de {name}" onclick={(e) => openAuthor(e.currentTarget)} oncontextmenu={authorMenu}>
+        <button class="avatar-button" aria-label={t.profileOf(name)} onclick={(e) => openAuthor(e.currentTarget)} oncontextmenu={authorMenu}>
           <Avatar
             id={message.authorId}
             {name}
@@ -220,32 +231,32 @@
           >
           <UserBadge badge={badgeOf(author)} size={15} />
           <time class="stamp" use:tooltip={formatFull(message.createdAt)}>{formatStamp(message.createdAt)}</time>
-          {#if message.pinned}<span class="pin" use:tooltip={'Fixada'}><Icon name="pin" size={12} /></span>{/if}
+          {#if message.pinned}<span class="pin" use:tooltip={t.pinned}><Icon name="pin" size={12} /></span>{/if}
         </div>
       {/if}
 
       {#if editing}
-        <textarea class="edit" bind:value={draft} onkeydown={editKey} use:autofocus rows="1" aria-label="Editar mensagem" data-own-escape
+        <textarea class="edit" bind:value={draft} onkeydown={editKey} use:autofocus rows="1" aria-label={t.editLabel} data-own-escape
           oninput={(e) => {
             e.currentTarget.style.height = 'auto'
             e.currentTarget.style.height = `${Math.min(e.currentTarget.scrollHeight, 320)}px`
           }}
         ></textarea>
         <div class="edit-hint">
-          <span><Kbd keys="Enter" /> salva</span>
-          <span><Kbd keys="Esc" /> cancela</span>
+          <span><Kbd keys="Enter" /> {t.editSave}</span>
+          <span><Kbd keys="Esc" /> {t.editCancel}</span>
         </div>
       {:else if message.content}
         <div class="content">
           <Markdown content={message.content} names={{ ...target.names, openUser: (id, anchor) => openProfile(id, target.guild?.id ?? null, anchor) }} />
-          {#if message.editedAt}<span class="edited" use:tooltip={formatFull(message.editedAt)}>editada</span>{/if}
-          {#if grouped && message.pinned}<span class="pin inline" use:tooltip={'Fixada'}><Icon name="pin" size={12} /></span>{/if}
+          {#if message.editedAt}<span class="edited" use:tooltip={formatFull(message.editedAt)}>{t.edited}</span>{/if}
+          {#if grouped && message.pinned}<span class="pin inline" use:tooltip={t.pinned}><Icon name="pin" size={12} /></span>{/if}
         </div>
       {/if}
 
       {#each message.attachments as a (a.id)}
         {#if IMAGE.test(a.type) && !broken[a.id]}
-          <button class="image" aria-label="Abrir {a.name}" onclick={() => openImage(a)} style:aspect-ratio={ratio(a)} style:width={fitWidth(a, 420, 320)}>
+          <button class="image" aria-label={t.openImage(a.name)} onclick={() => openImage(a)} style:aspect-ratio={ratio(a)} style:width={fitWidth(a, 420, 320)}>
             <img src={url(a.url)} alt={a.name} loading="lazy" draggable="false" onerror={() => (broken[a.id] = true)} />
           </button>
         {:else if AUDIO.test(a.type)}
@@ -260,7 +271,7 @@
               <span class="file-name" title={a.name}>{a.name}</span>
               <span class="file-size">{formatSize(a.size)}</span>
             </div>
-            <IconButton icon="download" label="Baixar" onclick={() => window.resenha.download(url(a.url))} />
+            <IconButton icon="download" label={t.download} onclick={() => window.resenha.download(url(a.url))} />
           </div>
         {/if}
       {/each}
@@ -292,7 +303,13 @@
               class:me
               aria-pressed={me}
               aria-label="{reaction.emoji} {reaction.userIds.length}"
-              use:tooltip={reaction.userIds.slice(0, 8).map((id) => target.displayName(id)).join(', ') + (reaction.userIds.length > 8 ? ` e mais ${reaction.userIds.length - 8}` : '')}
+              use:tooltip={t.reactors(
+                reaction.userIds
+                  .slice(0, 8)
+                  .map((id) => target.displayName(id))
+                  .join(', '),
+                Math.max(0, reaction.userIds.length - 8),
+              )}
               disabled={!me && !target.canReact && !target.canSend}
               onclick={() => toggleReaction(reaction.emoji)}
             >
@@ -301,7 +318,7 @@
             </button>
           {/each}
           {#if target.canReact}
-            <button class="reaction add" aria-label="Reagir" onclick={(e) => (pickerAnchor = e.currentTarget)}><Icon name="emoji-plus" size={16} /></button>
+            <button class="reaction add" aria-label={t.react} onclick={(e) => (pickerAnchor = e.currentTarget)}><Icon name="emoji-plus" size={16} /></button>
           {/if}
         </div>
       {/if}
@@ -311,17 +328,17 @@
   {#if !editing}
     <div class="actions" class:open={!!pickerAnchor || !!menu}>
       {#if target.canReact}
-        <IconButton icon="emoji-plus" label="Reagir" size="sm" onclick={(e) => (pickerAnchor = e.currentTarget)} />
+        <IconButton icon="emoji-plus" label={t.react} size="sm" onclick={(e) => (pickerAnchor = e.currentTarget)} />
       {/if}
       {#if target.canSend}
-        <IconButton icon="reply" label="Responder" size="sm" onclick={() => onreply(message)} />
+        <IconButton icon="reply" label={t.reply} size="sm" onclick={() => onreply(message)} />
       {/if}
       {#if mine && message.content}
-        <IconButton icon="pencil" label="Editar" size="sm" onclick={startEdit} />
+        <IconButton icon="pencil" label={m.common.edit} size="sm" onclick={startEdit} />
       {:else if target.canPin}
-        <IconButton icon={message.pinned ? 'pin-off' : 'pin'} label={message.pinned ? 'Desafixar' : 'Fixar'} size="sm" onclick={() => target.pin(message.id, !message.pinned)} />
+        <IconButton icon={message.pinned ? 'pin-off' : 'pin'} label={message.pinned ? t.unpin : t.pin} size="sm" onclick={() => target.pin(message.id, !message.pinned)} />
       {/if}
-      <IconButton icon="ellipsis" label="Mais" size="sm" onclick={(e) => (menu = { items: moreItems(), anchor: e.currentTarget })} />
+      <IconButton icon="ellipsis" label={m.common.more} size="sm" onclick={(e) => (menu = { items: moreItems(), anchor: e.currentTarget })} />
     </div>
   {/if}
 </article>

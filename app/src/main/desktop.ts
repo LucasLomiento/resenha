@@ -6,6 +6,7 @@ import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { CallState, DesktopPrefs, ShortcutAction } from '../preload/api'
+import { onLocaleChange, tm } from './i18n'
 
 type Dispatch = (action: ShortcutAction) => void
 
@@ -31,6 +32,9 @@ export function appIcon(): NativeImage {
 
 let tray: Tray | null = null
 let lastState: CallState = { inCall: false, muted: false, deafened: false, sharing: false, speaking: false }
+/** O que o menu e os botões chamam, e a janela: guardados pra refazer tudo quando o idioma muda. */
+let actions: { show: () => void; dispatch: Dispatch } | null = null
+let lastWin: BrowserWindow | null = null
 
 /** Mutado ou ensurdecido: o ícone inteiro vira o aviso (vermelho), que lê até nos 12 px do tray do Omarchy. */
 function alertName(state: CallState) {
@@ -49,18 +53,25 @@ function stateIcon(state: CallState) {
 }
 
 function trayMenu(state: CallState, show: () => void, dispatch: Dispatch) {
+  const t = tm().tray
   return Menu.buildFromTemplate([
-    { label: 'Abrir o Resenha', click: show },
+    { label: t.open, click: show },
     { type: 'separator' },
-    { label: 'Mutar microfone', type: 'checkbox', checked: state.muted, click: () => dispatch('toggle-mute') },
-    { label: 'Ensurdecer', type: 'checkbox', checked: state.deafened, click: () => dispatch('toggle-deafen') },
-    { label: 'Sair da call', enabled: state.inCall, click: () => dispatch('leave-call') },
+    { label: t.mute, type: 'checkbox', checked: state.muted, click: () => dispatch('toggle-mute') },
+    { label: t.deafen, type: 'checkbox', checked: state.deafened, click: () => dispatch('toggle-deafen') },
+    { label: t.leave, enabled: state.inCall, click: () => dispatch('leave-call') },
     { type: 'separator' },
-    { label: 'Fechar o Resenha', click: () => app.quit() },
+    { label: t.quit, click: () => app.quit() },
   ])
 }
 
+function trayTooltip(state: CallState) {
+  const t = tm().tray
+  return state.deafened ? t.deafened : state.muted ? t.muted : 'Resenha'
+}
+
 export function setTray(enabled: boolean, show: () => void, dispatch: Dispatch) {
+  actions = { show, dispatch }
   if (!enabled) {
     tray?.destroy()
     tray = null
@@ -68,7 +79,7 @@ export function setTray(enabled: boolean, show: () => void, dispatch: Dispatch) 
   }
   if (tray) return
   tray = new Tray(stateIcon(lastState))
-  tray.setToolTip('Resenha')
+  tray.setToolTip(trayTooltip(lastState))
   tray.on('click', show)
   tray.setContextMenu(trayMenu(lastState, show, dispatch))
 }
@@ -81,6 +92,8 @@ export function hasTray() {
 export function showCallState(state: CallState, win: BrowserWindow | null, show: () => void, dispatch: Dispatch) {
   const previous = lastState
   lastState = state
+  actions = { show, dispatch }
+  lastWin = win
   const iconChanged = iconName(state) !== iconName(previous)
   // Falar liga e desliga várias vezes por segundo: o menu só é refeito quando o resto muda.
   const menuChanged = state.inCall !== previous.inCall || state.muted !== previous.muted || state.deafened !== previous.deafened
@@ -88,7 +101,7 @@ export function showCallState(state: CallState, win: BrowserWindow | null, show:
   if (tray) {
     if (iconChanged) tray.setImage(stateIcon(state))
     if (menuChanged) {
-      tray.setToolTip(state.deafened ? 'Resenha · ensurdecido' : state.muted ? 'Resenha · mutado' : 'Resenha')
+      tray.setToolTip(trayTooltip(state))
       tray.setContextMenu(trayMenu(state, show, dispatch))
     }
   }
@@ -104,22 +117,29 @@ export function showCallState(state: CallState, win: BrowserWindow | null, show:
   if (process.platform !== 'win32') return
 
   // Windows: selo no ícone da barra de tarefas (verde falando, vermelho mutado) e botões na miniatura.
-  if (iconChanged) {
-    const name = iconName(state)
-    const label = state.deafened ? 'Ensurdecido' : state.muted ? 'Mutado' : name === 'tray-speaking' ? 'Falando' : ''
-    win.setOverlayIcon(name === 'tray' ? null : image(name, 16), label)
-  }
-  if (!menuChanged) return
+  if (iconChanged) taskbarOverlay(state, win)
+  if (menuChanged) taskbarButtons(state, win, dispatch)
+}
+
+function taskbarOverlay(state: CallState, win: BrowserWindow) {
+  const t = tm().taskbar
+  const name = iconName(state)
+  const label = state.deafened ? t.deafened : state.muted ? t.muted : name === 'tray-speaking' ? t.speaking : ''
+  win.setOverlayIcon(name === 'tray' ? null : image(name, 16), label)
+}
+
+function taskbarButtons(state: CallState, win: BrowserWindow, dispatch: Dispatch) {
+  const t = tm().taskbar
   win.setThumbarButtons(
     state.inCall
       ? [
           {
-            tooltip: state.muted ? 'Desmutar' : 'Mutar',
+            tooltip: state.muted ? t.unmute : t.mute,
             icon: image(state.muted ? 'tray-muted' : 'tray', 16),
             click: () => dispatch('toggle-mute'),
           },
           {
-            tooltip: state.deafened ? 'Voltar a ouvir' : 'Ensurdecer',
+            tooltip: state.deafened ? t.undeafen : t.deafen,
             icon: image(state.deafened ? 'tray-deafened' : 'tray', 16),
             click: () => dispatch('toggle-deafen'),
           },
@@ -127,6 +147,18 @@ export function showCallState(state: CallState, win: BrowserWindow | null, show:
       : [],
   )
 }
+
+// A interface trocou de idioma: refaz o menu e as dicas da bandeja (e os botões do Windows).
+onLocaleChange(() => {
+  if (!actions) return
+  if (tray) {
+    tray.setToolTip(trayTooltip(lastState))
+    tray.setContextMenu(trayMenu(lastState, actions.show, actions.dispatch))
+  }
+  if (process.platform !== 'win32' || !lastWin || lastWin.isDestroyed()) return
+  taskbarOverlay(lastState, lastWin)
+  taskbarButtons(lastState, lastWin, actions.dispatch)
+})
 
 // ---------- Atalhos globais ----------
 

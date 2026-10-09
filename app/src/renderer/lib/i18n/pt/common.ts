@@ -1,0 +1,26 @@
+// Palavras que aparecem no app inteiro (botões e estados). O texto de cada área fica no arquivo dela.
+export default {
+  cancel: 'Cancelar',
+  save: 'Salvar',
+  close: 'Fechar',
+  back: 'Voltar',
+  retry: 'Tentar de novo',
+  more: 'Mais',
+  remove: 'Remover',
+  delete: 'Excluir',
+  edit: 'Editar',
+  copy: 'Copiar',
+  copied: 'Copiado',
+  undo: 'Desfazer',
+  create: 'Criar',
+  search: 'Buscar',
+  loading: 'Carregando',
+  you: 'Você',
+  presence: {
+    online: 'Online',
+    idle: 'Ausente',
+    dnd: 'Não perturbe',
+    invisible: 'Invisível',
+    offline: 'Offline',
+  },
+}

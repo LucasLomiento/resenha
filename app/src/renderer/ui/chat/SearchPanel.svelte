@@ -3,6 +3,7 @@
   import { client } from '../../lib/client.svelte'
   import type { GuildState } from '../../lib/guild.svelte'
   import { formatStamp } from '../../lib/format'
+  import { m } from '../../lib/i18n.svelte'
   import { plainText } from '../../lib/markdown'
   import { Avatar, Button, EmptyState, Icon, IconButton, Spinner } from '../kit'
   import { attachmentLabel } from '../../lib/voice-note'
@@ -18,6 +19,7 @@
   let total = $state(0)
   let loading = $state(false)
   let failed = $state(false)
+  const t = $derived(m.chat.search)
 
   // Busca de novo quando o texto muda (com uma pausinha pra não buscar a cada letra).
   $effect(() => {
@@ -85,30 +87,30 @@
   const clean = (content: string) =>
     plainText(content, {
       user: (id) => guild.displayName(id),
-      role: (id) => guild.roles.find((r) => r.id === id)?.name ?? 'cargo',
-      channel: (id) => guild.channel(id)?.name ?? 'canal',
+      role: (id) => guild.roles.find((r) => r.id === id)?.name ?? m.chat.mention.role,
+      channel: (id) => guild.channel(id)?.name ?? m.chat.mention.channel,
     })
 
   const hex = (color: number | null) => (color === null ? null : `#${color.toString(16).padStart(6, '0')}`)
 </script>
 
 <!-- Resultado da busca: ocupa o lugar da lista de membros. Clicar leva até a mensagem. -->
-<aside class="search" aria-label="Resultados da busca">
+<aside class="search" aria-label={t.label}>
   <header>
     <span class="count">
-      {#if loading && !hits.length}Buscando…{:else}{total >= 1000 ? 'Mais de 1000 resultados' : total === 1 ? '1 resultado' : `${total} resultados`}{/if}
+      {#if loading && !hits.length}{t.searching}{:else}{t.results(total)}{/if}
     </span>
-    <IconButton icon="x" label="Fechar busca" size="sm" onclick={onclose} />
+    <IconButton icon="x" label={t.close} size="sm" onclick={onclose} />
   </header>
   <div class="list">
     {#if failed}
-      <p class="note">Não deu pra buscar agora.</p>
+      <p class="note">{t.failed}</p>
     {:else if !loading && hits.length === 0}
-      <EmptyState icon="search" title="Nada encontrado" description="Tente outras palavras." />
+      <EmptyState icon="search" title={t.emptyTitle} description={t.emptyDescription} />
     {/if}
     {#each hits as hit, i (hit.id)}
       {#if i === 0 || hits[i - 1].channelId !== hit.channelId}
-        <div class="channel"><Icon name="hash" size={14} /> {guild.channel(hit.channelId)?.name ?? 'canal'}</div>
+        <div class="channel"><Icon name="hash" size={14} /> {guild.channel(hit.channelId)?.name ?? m.chat.mention.channel}</div>
       {/if}
       <button class="hit" onclick={() => onjump(hit.channelId, hit.id)}>
         <span class="hit-head">
@@ -124,7 +126,7 @@
     {/each}
     {#if hits.length && hits.length < total}
       <div class="more">
-        {#if loading}<Spinner size={16} />{:else}<Button size="sm" variant="ghost" onclick={more}>Ver mais</Button>{/if}
+        {#if loading}<Spinner size={16} />{:else}<Button size="sm" variant="ghost" onclick={more}>{t.more}</Button>{/if}
       </div>
     {/if}
   </div>

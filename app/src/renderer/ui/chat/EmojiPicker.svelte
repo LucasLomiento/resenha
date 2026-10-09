@@ -1,5 +1,6 @@
 <script lang="ts">
   import { CATEGORIES, recentEmoji, rememberEmoji, searchEmoji } from '../../lib/emoji'
+  import { m } from '../../lib/i18n.svelte'
   import { Icon, Popover } from '../kit'
   import type { Placement } from '../kit/position'
 
@@ -20,6 +21,7 @@
   const recent = recentEmoji()
   const results = $derived(searchEmoji(query))
   let grid = $state<HTMLDivElement>()
+  const t = $derived(m.chat.emoji)
 
   function pick(emoji: string) {
     rememberEmoji(emoji)
@@ -36,14 +38,14 @@
   }
 </script>
 
-<Popover {anchor} {placement} {onclose} width={344} label="Emojis">
+<Popover {anchor} {placement} {onclose} width={344} label={t.label}>
   <div class="picker">
     <label class="search">
       <Icon name="search" size={15} />
       <input
         bind:value={query}
-        placeholder="Procurar emoji"
-        aria-label="Procurar emoji"
+        placeholder={t.search}
+        aria-label={t.search}
         use:autofocus
         onkeydown={(e) => {
           if (e.key === 'Enter' && results[0]) {
@@ -56,7 +58,7 @@
 
     {#if !query}
       <div class="tabs" role="tablist">
-        <button role="tab" aria-selected={section === 'recent'} aria-label="Recentes" class:on={section === 'recent'} onclick={() => jump('recent')}>
+        <button role="tab" aria-selected={section === 'recent'} aria-label={t.recent} class:on={section === 'recent'} onclick={() => jump('recent')}>
           <Icon name="clock" size={16} />
         </button>
         {#each CATEGORIES as category (category.id)}
@@ -76,10 +78,10 @@
             {/each}
           </div>
         {:else}
-          <p class="empty">Nenhum emoji com “{query}”.</p>
+          <p class="empty">{t.none(query)}</p>
         {/if}
       {:else}
-        <div class="label" data-section="recent">Recentes</div>
+        <div class="label" data-section="recent">{t.recent}</div>
         <div class="emojis">
           {#each recent as emoji (emoji)}
             <button class="emoji" aria-label={emoji} onclick={() => pick(emoji)}>{emoji}</button>

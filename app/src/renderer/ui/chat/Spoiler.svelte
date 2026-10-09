@@ -1,12 +1,13 @@
 <script lang="ts">
   import type { Snippet } from 'svelte'
+  import { m } from '../../lib/i18n.svelte'
 
   let { children }: { children: Snippet } = $props()
   let shown = $state(false)
 </script>
 
 <!-- Texto escondido até alguém clicar (||assim||). -->
-<button class="spoiler" class:shown aria-label={shown ? undefined : 'Spoiler: clique pra ver'} onclick={() => (shown = true)}
+<button class="spoiler" class:shown aria-label={shown ? undefined : m.chat.spoiler.reveal} onclick={() => (shown = true)}
   >{@render children()}</button
 >
 

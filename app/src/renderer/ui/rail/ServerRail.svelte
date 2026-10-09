@@ -2,6 +2,7 @@
   import logo from '../../../../build/icon.svg?url'
   import { client } from '../../lib/client.svelte'
   import type { GuildState } from '../../lib/guild.svelte'
+  import { m } from '../../lib/i18n.svelte'
   import { confirmAction, ui } from '../../lib/ui.svelte'
   import { Avatar, Icon, Menu, Spinner, tooltip, type MenuItem } from '../kit'
 
@@ -11,34 +12,35 @@
   const unreadDms = $derived((client.home?.sortedDms ?? []).filter((d) => d.unread > 0).slice(0, 5))
   const homeBadge = $derived((client.home?.pendingRequests ?? 0) + (client.home?.unreadDms ?? 0))
   const update = $derived(client.update)
+  const t = $derived(m.home.rail)
 
   let menu = $state<{ guild: GuildState; anchor: { x: number; y: number } } | null>(null)
 
   function guildMenu(guild: GuildState): MenuItem[] {
     const items: MenuItem[] = [
-      { label: 'Marcar como lido', icon: 'check', onselect: () => guild.ackAll() },
+      { label: t.markRead, icon: 'check', onselect: () => guild.ackAll() },
       {
-        label: guild.muted ? 'Voltar a notificar' : 'Silenciar servidor',
+        label: guild.muted ? t.unmute : t.mute,
         icon: guild.muted ? 'bell' : 'bell-off',
         onselect: () => guild.setNotify({ ...guild.notify, mutedUntil: guild.muted ? null : 8.64e15 }),
       },
       { kind: 'separator' },
-      { label: 'Convidar pessoas', icon: 'user-plus', onselect: () => (ui.invite = { guildId: guild.id }) },
+      { label: t.invite, icon: 'user-plus', onselect: () => (ui.invite = { guildId: guild.id }) },
     ]
     if (guild.canManage) {
-      items.push({ label: 'Configurações do servidor', icon: 'settings', onselect: () => (ui.guildSettings = { guildId: guild.id, page: 'overview' }) })
+      items.push({ label: t.settings, icon: 'settings', onselect: () => (ui.guildSettings = { guildId: guild.id, page: 'overview' }) })
     }
     if (!guild.isOwner) {
       items.push({ kind: 'separator' })
       items.push({
-        label: 'Sair do servidor',
+        label: t.leave,
         icon: 'log-out',
         danger: true,
         onselect: () =>
           confirmAction({
-            title: `Sair de ${guild.info.name}?`,
-            description: 'Pra voltar, você vai precisar de um convite.',
-            confirm: 'Sair',
+            title: t.leaveTitle(guild.info.name),
+            description: t.leaveDescription,
+            confirm: t.leaveConfirm,
             onconfirm: () => client.leaveGuild(guild.id).catch((err) => client.toast((err as Error).message)),
           }),
       })
@@ -53,22 +55,22 @@
 
   const updateTip = $derived(
     update.status === 'available'
-      ? `Atualizar pra ${update.version}`
+      ? t.updateTo(update.version)
       : update.status === 'downloading'
-        ? `Baixando ${update.percent}%`
+        ? t.downloading(update.percent)
         : update.status === 'ready'
-          ? 'Reiniciar pra atualizar'
+          ? t.restart
           : update.status === 'installing'
-            ? 'Instalando…'
+            ? t.installing
             : null,
   )
 </script>
 
 <!-- Trilho de servidores: início no topo, servidores, e no fim criar/entrar. -->
-<nav class="rail" aria-label="Servidores">
+<nav class="rail" aria-label={t.label}>
   <div class="slot" class:active={atHome}>
     <span class="indicator"></span>
-    <button class="home" aria-label="Início" use:tooltip={{ text: 'Início', placement: 'right' }} onclick={() => client.openHome()}>
+    <button class="home" aria-label={t.home} use:tooltip={{ text: t.home, placement: 'right' }} onclick={() => client.openHome()}>
       <img src={logo} alt="" width="44" height="44" draggable="false" />
     </button>
     {#if homeBadge && !atHome}<span class="mentions">{homeBadge > 99 ? '99+' : homeBadge}</span>{/if}
@@ -79,7 +81,7 @@
       <span class="indicator"></span>
       <button
         class="guild"
-        aria-label="Mensagem de {dm.user.name}"
+        aria-label={t.dmFrom(dm.user.name)}
         use:tooltip={{ text: dm.user.name, placement: 'right' }}
         onclick={() => client.navigate({ kind: 'dm', channelId: dm.id })}
       >
@@ -117,8 +119,8 @@
     <span class="indicator"></span>
     <button
       class="add"
-      aria-label="Criar ou entrar num servidor"
-      use:tooltip={{ text: 'Criar ou entrar num servidor', placement: 'right' }}
+      aria-label={t.addServer}
+      use:tooltip={{ text: t.addServer, placement: 'right' }}
       onclick={() => (ui.addServer = { step: 'choose' })}
     >
       <Icon name="plus" size={22} />

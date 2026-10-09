@@ -25,6 +25,7 @@ import {
   type VoiceMember,
 } from '../../../../shared/protocol'
 import type { Api } from './api'
+import { fmt, m, serverText } from './i18n.svelte'
 import { GuildMap } from './map.svelte'
 import { Connection, connectionKey, type CloseReason, type ConnectionStatus } from './ws'
 
@@ -138,24 +139,24 @@ export class GuildState {
     this.conn.close()
     for (const { reject, timer } of this.sends.values()) {
       clearTimeout(timer)
-      reject(new Error('fechado'))
+      reject(new Error(m.lib.connection.closed))
     }
     this.sends.clear()
   }
 
   send(msg: ClientMessage): boolean {
     const ok = this.conn.send(msg)
-    if (!ok) this.host.toast('Sem conexão com o servidor agora.')
+    if (!ok) this.host.toast(m.lib.connection.offlineNow)
     return ok
   }
 
   /** Pedido com resposta (histórico, busca, listas). */
   private request<T extends WithReq['t']>(msg: ClientMessage & { reqId: string }, timeout = 10_000): Promise<Of<T>> {
     return new Promise((resolve, reject) => {
-      if (!this.send(msg)) return reject(new Error('offline'))
+      if (!this.send(msg)) return reject(new Error(m.lib.connection.disconnected))
       const timer = setTimeout(() => {
         this.requests.delete(msg.reqId)
-        reject(new Error('sem resposta'))
+        reject(new Error(m.lib.connection.noReply))
       }, timeout)
       this.requests.set(msg.reqId, (reply) => {
         clearTimeout(timer)
@@ -238,7 +239,7 @@ export class GuildState {
 
   /** Apelido no servidor, ou o nome de exibição. */
   displayName(userId: string): string {
-    return this.members[userId]?.nick || this.users[userId]?.name || 'Alguém'
+    return this.members[userId]?.nick || this.users[userId]?.name || m.lib.someone
   }
 
   /** Cor do cargo mais alto que tem cor. */
@@ -264,7 +265,7 @@ export class GuildState {
     const hoisted = this.roles.filter((r) => r.hoist && r.id !== this.id).sort((a, b) => b.position - a.position)
     const placed = new Set<string>()
     const groups: { title: string; ids: string[] }[] = []
-    const byName = (a: string, b: string) => this.displayName(a).localeCompare(this.displayName(b), 'pt-BR')
+    const byName = (a: string, b: string) => fmt.compare(this.displayName(a), this.displayName(b))
     for (const role of hoisted) {
       const ids = Object.values(this.members)
         .filter((m) => online(m.userId) && !placed.has(m.userId) && this.rolesOf(m.userId).find((r) => r.hoist)?.id === role.id)
@@ -276,8 +277,8 @@ export class GuildState {
     const rest = Object.keys(this.members).filter((id) => !placed.has(id))
     const on = rest.filter(online).sort(byName)
     const off = rest.filter((id) => !online(id)).sort(byName)
-    if (on.length) groups.push({ title: 'Online', ids: on })
-    if (off.length) groups.push({ title: 'Offline', ids: off })
+    if (on.length) groups.push({ title: m.common.presence.online, ids: on })
+    if (off.length) groups.push({ title: m.common.presence.offline, ids: off })
     return groups
   }
 
@@ -551,9 +552,9 @@ export class GuildState {
           clearTimeout(waiting.timer)
           this.sends.delete(msg.nonce)
           this.inviteWaiters.delete(msg.nonce)
-          return waiting.reject(new Error(msg.message))
+          return waiting.reject(new Error(serverText(msg.message)))
         }
-        this.host.toast(msg.message)
+        this.host.toast(serverText(msg.message))
         return
       }
     }
@@ -622,9 +623,9 @@ export class GuildState {
   sendMessage(channelId: string, content: string, attachmentIds: string[], replyTo: string | null = null): Promise<void> {
     const nonce = nextId()
     return new Promise((resolve, reject) => {
-      if (!this.send({ t: 'chat.send', channelId, content, attachmentIds, nonce, replyTo })) return reject(new Error('Sem conexão.'))
+      if (!this.send({ t: 'chat.send', channelId, content, attachmentIds, nonce, replyTo })) return reject(new Error(m.lib.connection.offline))
       const timer = setTimeout(() => {
-        if (this.sends.delete(nonce)) reject(new Error('O servidor não respondeu.'))
+        if (this.sends.delete(nonce)) reject(new Error(m.lib.connection.noAnswer))
       }, 15_000)
       this.sends.set(nonce, { resolve, reject, timer })
       this.typingSent[channelId] = 0
@@ -670,9 +671,9 @@ export class GuildState {
   createInvite(options: { maxAge?: number | null; maxUses?: number | null } = {}): Promise<Invite | null> {
     const nonce = nextId()
     return new Promise((resolve, reject) => {
-      if (!this.send({ t: 'invite.create', ...options, nonce })) return reject(new Error('Sem conexão.'))
+      if (!this.send({ t: 'invite.create', ...options, nonce })) return reject(new Error(m.lib.connection.offline))
       const timer = setTimeout(() => {
-        if (this.inviteWaiters.delete(nonce)) reject(new Error('O servidor não respondeu.'))
+        if (this.inviteWaiters.delete(nonce)) reject(new Error(m.lib.connection.noAnswer))
       }, 10_000)
       this.inviteWaiters.set(nonce, { resolve, reject, timer })
     })

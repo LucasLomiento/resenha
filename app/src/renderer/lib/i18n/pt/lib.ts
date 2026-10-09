@@ -1,0 +1,180 @@
+// Textos da área "lib" em português (a fonte: en e es seguem estas chaves): avisos,
+// notificações e erros que saem de `lib/*`, e as tabelas de nomes (sons, atalhos,
+// personalização do perfil, categorias de emoji).
+export default {
+  /** Nome de quem não dá pra saber (conta sumida, perfil ainda não carregado). */
+  someone: 'Alguém',
+  format: {
+    today: 'Hoje',
+    yesterday: 'Ontem',
+    /** Horário ao lado do nome numa mensagem de ontem. */
+    yesterdayAt: (time: string) => `Ontem ${time}`,
+  },
+  api: {
+    offline: 'Não deu pra falar com o servidor. Confira a internet.',
+    status: (status: number) => `Erro ${status}`,
+    exportFailed: 'Não deu pra exportar agora.',
+    uploadNetwork: 'Falha de rede no envio.',
+    uploadCanceled: 'Envio cancelado.',
+  },
+  /** Conexões com o servidor (servidores e a pessoal). */
+  connection: {
+    offlineNow: 'Sem conexão com o servidor agora.',
+    offline: 'Sem conexão.',
+    noAnswer: 'O servidor não respondeu.',
+    noReply: 'sem resposta',
+    closed: 'fechado',
+    disconnected: 'offline',
+    invalidDm: 'Conversa inválida.',
+    dmRefused: 'Essa pessoa não aceita mensagens suas.',
+  },
+  client: {
+    /** Nome da call no dock quando o canal sumiu. */
+    call: 'Call',
+    /** Ligação privada: nome (se a pessoa sumiu) e lugar. */
+    dmCall: 'Chamada',
+    dmPlace: 'Mensagem privada',
+    /** Pílula "Reconectar?" de uma ligação privada. */
+    rejoinCall: 'a ligação',
+    rejoinPlace: 'ligação privada',
+    sessionExpired: 'Sua sessão expirou. Entre de novo.',
+    retrying: 'Sem conexão com o servidor. Tentando de novo…',
+    accountDeleted: 'Sua conta foi excluída.',
+    callDropped: 'A ligação caiu.',
+    kickedFrom: (server: string) => `Você foi expulso de ${server}.`,
+    kicked: 'Você foi expulso de um servidor.',
+    bannedFrom: (server: string) => `Você foi banido de ${server}.`,
+    banned: 'Você foi banido de um servidor.',
+    serverDeleted: (server: string) => `${server} foi excluído.`,
+    someServerDeleted: 'Um servidor foi excluído.',
+    movedTo: (channel: string) => `Você foi movido pra ${channel}.`,
+    movedElsewhere: 'Você foi movido pra outro canal.',
+    disconnected: 'Você foi desconectado da call.',
+  },
+  /** Avisos do sistema (mensagem e ligação chegando). */
+  notify: {
+    calling: (name: string) => `${name} está te ligando`,
+    callingBody: 'Clique pra abrir o Resenha.',
+    channelMessage: (author: string, channel: string, server: string) => `${author} em #${channel} · ${server}`,
+    hiddenMessage: 'Nova mensagem',
+  },
+  call: {
+    noMic: 'Sem acesso ao microfone.',
+    joinFailed: (error: string) => `Não deu pra entrar na call: ${error}`,
+    micFailed: (error: string) => `Não deu pra trocar o microfone: ${error}`,
+    shareFailed: (error: string) => `Não deu pra compartilhar: ${error}`,
+    noCamera: 'Nenhuma câmera encontrada.',
+    cameraDenied: 'Sem acesso à câmera.',
+    cameraFailed: (error: string) => `Não deu pra ligar a câmera: ${error}`,
+    cameraSwitchFailed: (error: string) => `Não deu pra trocar a câmera: ${error}`,
+    /** Quem assiste a minha tela pelo SFU, nas estatísticas da transmissão. */
+    sfuViewers: (count: number) => `Cloudflare (${count} ${count === 1 ? 'pessoa' : 'pessoas'})`,
+    relayUnavailable: 'Essa sala passa pelo Cloudflare, mas ele não está disponível agora: a call vai direto (P2P).',
+    relayOn: 'A sala agora passa pelo Cloudflare.',
+    relayOff: 'A sala voltou a ir direto (P2P).',
+  },
+  media: {
+    screenAudioFailed: 'Não deu pra capturar o áudio da tela; compartilhando só o vídeo.',
+    screenAudioOldWindows: 'Neste Windows o áudio da tela inclui a voz da call. Atualize pro Windows 10 22H2 ou 11.',
+  },
+  image: {
+    unreadable: 'Não deu pra abrir essa imagem. Use PNG, JPEG, WebP ou GIF.',
+    tooBig: 'A imagem ficou grande demais. Tente outra.',
+    animatedAvatar: 'A foto animada pode ter até 1,5 MB.',
+    animatedBanner: 'O banner animado pode ter até 1,5 MB.',
+  },
+  discordImport: {
+    printTooBig: 'O print é grande demais. Tire o print só da lista de canais.',
+  },
+  voiceNote: {
+    /** Como uma mensagem de voz aparece em resumos (aviso, busca, fixadas). */
+    label: '🎤 Mensagem de voz',
+    convertFailed: 'não deu pra converter o áudio',
+  },
+  profile: {
+    decorations: {
+      neon: 'Neon',
+      aurora: 'Aurora',
+      headset: 'Fones',
+      stars: 'Estrelinhas',
+      flames: 'Chamas',
+      flowers: 'Flores',
+      crown: 'Coroa',
+      cat: 'Gatinho',
+      founder: 'Fundador',
+      pioneer: 'Pioneiro',
+    },
+    effects: {
+      confetti: 'Confete',
+      snow: 'Neve',
+      sparkles: 'Brilhos',
+      hearts: 'Corações',
+      bubbles: 'Bolhas',
+      fireflies: 'Vaga-lumes',
+    },
+    nameFonts: {
+      serif: 'Clássica',
+      rounded: 'Redonda',
+      script: 'Cursiva',
+      pixel: 'Pixel',
+    },
+    nameEffects: {
+      gradient: 'Degradê',
+      neon: 'Neon',
+      holo: 'Holográfico',
+      horizon: 'Horizonte',
+    },
+    themes: {
+      resenha: 'Resenha',
+      sunset: 'Pôr do sol',
+      ocean: 'Oceano',
+      forest: 'Floresta',
+      cottonCandy: 'Algodão-doce',
+      ember: 'Brasa',
+      midnight: 'Meia-noite',
+    },
+  },
+  /** Nome de cada som, pra prévia nas configurações. */
+  sounds: {
+    'self-join': 'Você entra',
+    'self-leave': 'Você sai',
+    join: 'Alguém entra',
+    leave: 'Alguém sai',
+    'founder-join': 'O dono do Resenha entra',
+    'pioneer-join': 'O melhor amigo do dono entra',
+    mute: 'Mutar',
+    unmute: 'Desmutar',
+    deafen: 'Ensurdecer',
+    undeafen: 'Voltar a ouvir',
+    live: 'Ao vivo',
+    'stream-end': 'Fim da transmissão',
+    'viewer-join': 'Alguém assiste',
+    'viewer-leave': 'Parou de assistir',
+    message: 'Mensagem',
+    mention: 'Menção',
+    ring: 'Ligação',
+    ringback: 'Chamando',
+  },
+  shortcuts: {
+    actions: {
+      'toggle-mute': 'Mutar / desmutar o microfone',
+      'toggle-deafen': 'Ensurdecer / voltar a ouvir',
+      'toggle-share': 'Compartilhar / parar a tela',
+      'leave-call': 'Sair da call',
+      'show-window': 'Mostrar o Resenha',
+    },
+    /** Ação sem atalho. */
+    none: 'Nenhum',
+  },
+  /** Categorias do seletor de emoji (as palavras da busca seguem só em português). */
+  emoji: {
+    smileys: 'Carinhas',
+    people: 'Gestos',
+    nature: 'Bichos e natureza',
+    food: 'Comida',
+    activity: 'Atividades',
+    objects: 'Objetos',
+    symbols: 'Símbolos',
+    flags: 'Bandeiras',
+  },
+}

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { m } from '../lib/i18n.svelte'
   import { ui } from '../lib/ui.svelte'
   import { IconButton, layer, portal } from './kit'
 
@@ -22,8 +23,8 @@
   <img src={item.url} alt={item.name} draggable="false" />
   <div class="bar">
     <span class="name">{item.name}</span>
-    <IconButton variant="glass" icon="download" label="Baixar" tip="bottom" onclick={() => window.resenha.download(item.url)} />
-    <IconButton variant="glass" icon="x" label="Fechar" tip="bottom" onclick={close} />
+    <IconButton variant="glass" icon="download" label={m.app.lightbox.download} tip="bottom" onclick={() => window.resenha.download(item.url)} />
+    <IconButton variant="glass" icon="x" label={m.common.close} tip="bottom" onclick={close} />
   </div>
 </div>
 

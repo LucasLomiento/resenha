@@ -3,11 +3,15 @@
   import { P, type Invite } from '../../../../../../shared/protocol'
   import { client } from '../../../lib/client.svelte'
   import type { GuildState } from '../../../lib/guild.svelte'
+  import { m } from '../../../lib/i18n.svelte'
   import { Avatar, Button, EmptyState, IconButton, PageHeader, Section, Select, Spinner, tooltip } from '../../kit'
-  import { INVITE_AGES, INVITE_USES, copyText, inviteOptions, plural, relative, whenText } from '../util'
+  import { copyText, inviteAges, inviteOptions, inviteUses, relative, whenText } from '../util'
 
   let { guild }: { guild: GuildState } = $props()
 
+  const t = $derived(m.server.invites)
+  /** Opções do convite (iguais às da janela de convidar). */
+  const inviteText = $derived(m.server.invite)
   let invites = $state<Invite[] | null>(null)
   let failed = $state(false)
   let age = $state('604800')
@@ -57,7 +61,7 @@
   }
 
   async function copy(code: string) {
-    if (!(await copyText(link(code)))) return client.toast('Não deu pra copiar o link.')
+    if (!(await copyText(link(code)))) return client.toast(m.server.shared.copyFailed)
     copied = code
     clearTimeout(copiedTimer)
     copiedTimer = setTimeout(() => (copied = null), 2000)
@@ -69,41 +73,41 @@
   }
 
   function usesText(invite: Invite): string {
-    return invite.maxUses ? `${invite.uses}/${invite.maxUses} usos` : plural(invite.uses, 'uso', 'usos')
+    return invite.maxUses ? t.usesOf(invite.uses, invite.maxUses) : t.usesCount(invite.uses)
   }
 </script>
 
-<PageHeader title="Convites" description="Quem tem o convite entra no servidor." />
+<PageHeader title={t.title} description={t.description} />
 
 {#if canCreate}
-  <Section title="Novo convite">
+  <Section title={t.newInvite}>
     <div class="invite-form">
       <label class="mini-field">
-        <span>Vale por</span>
-        <Select label="Vale por" bind:value={age} options={INVITE_AGES} />
+        <span>{inviteText.validFor}</span>
+        <Select label={inviteText.validFor} bind:value={age} options={inviteAges()} />
       </label>
       <label class="mini-field">
-        <span>Usos</span>
-        <Select label="Usos" bind:value={uses} options={INVITE_USES} />
+        <span>{inviteText.uses}</span>
+        <Select label={inviteText.uses} bind:value={uses} options={inviteUses()} />
       </label>
       <span class="grow"></span>
-      <Button variant="primary" icon="link" loading={creating} onclick={create}>Criar convite</Button>
+      <Button variant="primary" icon="link" loading={creating} onclick={create}>{t.create}</Button>
     </div>
   </Section>
 {/if}
 
-<Section title="Ativos">
+<Section title={t.active}>
   {#if failed}
     <div class="state">
-      <EmptyState icon="link" title="Não deu pra carregar os convites" description="Confira a conexão e tente de novo.">
-        {#snippet actions()}<Button onclick={load}>Tentar de novo</Button>{/snippet}
+      <EmptyState icon="link" title={t.failedTitle} description={m.server.shared.checkConnection}>
+        {#snippet actions()}<Button onclick={load}>{m.common.retry}</Button>{/snippet}
       </EmptyState>
     </div>
   {:else if !invites}
     <div class="state"><Spinner size={20} /></div>
   {:else if active.length === 0}
     <div class="state">
-      <EmptyState icon="link" title="Nenhum convite ativo" description="Crie um pra chamar alguém pro servidor." />
+      <EmptyState icon="link" title={t.emptyTitle} description={t.emptyDescription} />
     </div>
   {:else}
     {#each active as invite (invite.code)}
@@ -113,21 +117,21 @@
         <code class="selectable">{invite.code}</code>
         <span class="by">
           <Avatar id={invite.inviterId} name={inviterName} size={20} src={client.avatarOf(invite.inviterId, guild.id)} cutout="var(--bg-raised)" />
-          <span class="truncate">{inviter ? inviterName : 'Alguém que saiu'}</span>
+          <span class="truncate">{inviter ? inviterName : t.leftUser}</span>
         </span>
         <span class="uses tabular">{usesText(invite)}</span>
         <span class="expires" use:tooltip={invite.expiresAt ? whenText(invite.expiresAt, client.now) : null}>
-          {invite.expiresAt ? `vence ${relative(invite.expiresAt, client.now)}` : 'não vence'}
+          {invite.expiresAt ? inviteText.expires(relative(invite.expiresAt, client.now)) : inviteText.never}
         </span>
         <IconButton
           icon={copied === invite.code ? 'check' : 'copy'}
-          label={copied === invite.code ? 'Copiado' : 'Copiar link'}
+          label={copied === invite.code ? m.common.copied : t.copyLink}
           size="sm"
           tone="success"
           active={copied === invite.code}
           onclick={() => copy(invite.code)}
         />
-        <IconButton icon="trash" label="Revogar" size="sm" tone="danger" onclick={() => revoke(invite.code)} />
+        <IconButton icon="trash" label={t.revoke} size="sm" tone="danger" onclick={() => revoke(invite.code)} />
       </div>
     {/each}
   {/if}

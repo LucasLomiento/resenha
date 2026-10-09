@@ -26,6 +26,7 @@ Os detalhes (e as regras de segurança do servidor) estão em [docs/ARQUITETURA.
 - **Perfil personalizado** (o "Nitro" de graça): banner e foto que podem ser animados, tema do cartão em duas cores, pronomes, moldura do avatar, efeito no cartão e nome com fonte e efeito. Molduras, efeitos e fontes vêm embutidos no app; o servidor guarda só os ids (`server/src/style.ts`).
 - **Anexos** (`server/src/files.ts`): ficam no SQLite do servidor/conversa, em pedaços de 1 MB, até 25 MB por arquivo, com teto de espaço pra plataforma inteira.
 - **Mensagem de voz** (`app/src/renderer/lib/voice-note.ts`): o app grava com o MediaRecorder (WebM/Opus, leve enquanto grava), no fim decodifica e converte pra MP3 mono a 64 kbps num worker (LAME em JavaScript, `@breezystack/lamejs`, LGPL-3.0) e manda como anexo comum (`audio/mpeg`, nome `mensagem-de-voz-…mp3`). O servidor não sabe que é voz. A onda do player é calculada no app, só quando o áudio aparece na tela.
+- **Idiomas** (`docs/I18N.md`): português, inglês e espanhol, trocados em Configurações → Aplicativo sem reiniciar. O automático segue o sistema. Os textos ficam em catálogos por área (`app/src/renderer/lib/i18n`), e a checagem de tipos acusa chave faltando em qualquer idioma. O servidor responde em português e o app traduz na hora de mostrar.
 - **Mapa** (`app/src/renderer/ui/map`): um por servidor, com a mesma vista pra todo mundo, cursores e marcadores ao vivo. Desenhado com o [MapLibre GL](https://maplibre.org) e os mapas grátis do [OpenFreeMap](https://openfreemap.org) (© OpenMapTiles, dados do © OpenStreetMap); a busca de endereço é do Nominatim (OpenStreetMap). Sem chave de API. Pra satélite e Street View, "Abrir no Google Maps".
 - **app/**: Electron + Svelte 5. Cada pessoa da call tem uma `RTCPeerConnection` própria (`src/renderer/lib/peer.ts`, com "perfect negotiation"); a mesma call serve pro canal de voz e pra chamada privada. A tela só é enviada pra quem clica em **Assistir**.
 - **shared/**: os tipos das mensagens trocadas entre o app e o servidor, e o cálculo de permissões.
@@ -133,7 +134,7 @@ Com o Resenha aberto, esse comando só manda a ação pra janela que já está r
 ```bash
 npm test                       # servidor: contas, servidores, permissões, moderação, mensagens, DMs, chamadas, migração da 0.5
 npm -w app run typecheck
-npm -w app run test:ui         # formatação das mensagens
+npm -w app run test:ui         # formatação das mensagens, busca nas configurações, tradução dos erros do servidor
 npm -w app run test:mic        # processador do microfone (RNNoise + limiar), no Node, sem áudio
 npm -w app run e2e             # duas instâncias escondidas do app contra o servidor local
 ```
@@ -143,6 +144,8 @@ O e2e faz o fluxo inteiro: cadastro, convite, chat, anexo, call P2P, indicador d
 - `RESENHA_E2E_AUDIO=1`: liga o venmic e confere no grafo do PipeWire que o áudio da tela pega os outros apps, mas não o próprio Resenha. **Atenção:** isso religa as saídas dos apps que estão tocando (Spotify, Discord…) e pode fazer o som do PC engasgar enquanto roda.
 - `RESENHA_E2E_FULL=1`: transmite em 1440p, com duas codificações pesadas na CPU.
 - `RESENHA_SHOTS=pasta`: salva capturas da interface.
+
+O e2e abre o app em português (`LANGUAGE=pt_BR`), troca pra inglês e espanhol, passa pelas configurações, pelas do servidor e pelo início em cada um, e falha se sobrar texto em português na tela.
 
 ## Limites conhecidos
 

@@ -3,6 +3,7 @@
   import type { CaptureSource } from '../../preload/api'
   import { settings, type ScreenMode, type ScreenPreset } from '../lib/settings.svelte'
   import { client } from '../lib/client.svelte'
+  import { m } from '../lib/i18n.svelte'
   import { ui } from '../lib/ui.svelte'
   import { Button, Icon, IconButton, Modal, Segmented, Spinner, Switch, Tabs } from './kit'
 
@@ -16,28 +17,27 @@
   let playing = $state<{ binary: string; name: string; voice: boolean }[]>([])
   let loadingApps = $state(false)
 
-  const qualities: { value: ScreenPreset; label: string; hint: string }[] = [
-    { value: '720p', label: '720p', hint: 'Mais leve' },
-    { value: '1080p', label: '1080p', hint: 'Full HD' },
-    { value: '1440p', label: '1440p', hint: 'Máxima' },
-  ]
-  const modes: { value: ScreenMode; label: string; hint: string }[] = [
-    { value: 'motion', label: 'Fluidez', hint: 'Jogos e vídeos' },
-    { value: 'detail', label: 'Nitidez', hint: 'Texto e código' },
-  ]
+  const t = $derived(m.app.share)
+  const qualities = $derived(
+    (['720p', '1080p', '1440p'] as const).map((value): { value: ScreenPreset; label: string; hint: string } => ({
+      value,
+      label: value,
+      hint: t.qualityHints[value],
+    })),
+  )
+  const modes = $derived(
+    (['motion', 'detail'] as const).map((value): { value: ScreenMode; label: string; hint: string } => ({
+      value,
+      label: t.modes[value],
+      hint: t.modeHints[value],
+    })),
+  )
 
   const screens = $derived(sources.filter((s) => s.kind === 'screen'))
   const windows = $derived(sources.filter((s) => s.kind === 'window'))
   const shown = $derived(screens.length && windows.length ? (kind === 'screen' ? screens : windows) : sources)
 
-  const audioNote = $derived(
-    {
-      venmic: 'Sem o som da call.',
-      'exclude-self': 'Som do computador, sem o som da call.',
-      'loopback-all': 'Neste Windows, o som da call vai junto.',
-      none: 'Indisponível neste sistema.',
-    }[platform.screenAudio],
-  )
+  const audioNote = $derived(t.audioNotes[platform.screenAudio])
 
   async function loadApps() {
     if (platform.screenAudio !== 'venmic') return
@@ -78,15 +78,15 @@
   }
 </script>
 
-<Modal title="Compartilhar tela" size={platform.portalPicker ? 'lg' : 'xl'} onclose={() => (ui.share = false)}>
+<Modal title={t.title} size={platform.portalPicker ? 'lg' : 'xl'} onclose={() => (ui.share = false)}>
   {#if !platform.portalPicker}
     {#if screens.length && windows.length}
       <Tabs
-        label="Tipo"
+        label={t.kind}
         class="kind-tabs"
         tabs={[
-          { value: 'screen', label: 'Telas', count: screens.length },
-          { value: 'window', label: 'Janelas', count: windows.length },
+          { value: 'screen', label: t.screens, count: screens.length },
+          { value: 'window', label: t.windows, count: windows.length },
         ]}
         bind:value={kind}
       />
@@ -94,7 +94,7 @@
     {#if loading}
       <div class="sources-loading"><Spinner size={20} /></div>
     {:else}
-      <div class="grid" role="listbox" aria-label="O que compartilhar">
+      <div class="grid" role="listbox" aria-label={t.sources}>
         {#each shown as source (source.id)}
           <button
             class="source"
@@ -116,18 +116,18 @@
   {:else}
     <div class="portal">
       <span class="portal-icon"><Icon name="monitor" size={20} /></span>
-      <p>O sistema vai perguntar qual tela ou janela.</p>
+      <p>{t.portal}</p>
     </div>
   {/if}
 
   <div class="options">
     <div class="option">
-      <span class="label">Qualidade</span>
-      <Segmented label="Qualidade" options={qualities} bind:value={settings.screenPreset} />
+      <span class="label">{t.quality}</span>
+      <Segmented label={t.quality} options={qualities} bind:value={settings.screenPreset} />
     </div>
     <div class="option">
-      <span class="label">Priorizar</span>
-      <Segmented label="Priorizar" options={modes} bind:value={settings.screenMode} />
+      <span class="label">{t.priority}</span>
+      <Segmented label={t.priority} options={modes} bind:value={settings.screenMode} />
     </div>
   </div>
 
@@ -135,7 +135,7 @@
     <div class="audio-row">
       <span class="audio-icon"><Icon name="volume" size={18} /></span>
       <label for="share-audio" class="audio-text">
-        <span class="audio-title">Compartilhar o som</span>
+        <span class="audio-title">{t.audio}</span>
         <span class="audio-note" class:warn={platform.screenAudio === 'loopback-all'}>{audioNote}</span>
       </label>
       <Switch id="share-audio" bind:checked={settings.screenAudio} disabled={platform.screenAudio === 'none'} />
@@ -144,16 +144,16 @@
     {#if platform.screenAudio === 'venmic' && settings.screenAudio}
       <div class="apps">
         <Segmented
-          label="De quais apps"
+          label={t.whichApps}
           size="sm"
           options={[
-            { value: 'all', label: 'Todos os apps' },
-            { value: 'apps', label: 'Escolher apps' },
+            { value: 'all', label: t.allApps },
+            { value: 'apps', label: t.pickApps },
           ]}
           bind:value={settings.screenAudioMode}
         />
         {#if settings.screenAudioMode === 'all'}
-          <p class="apps-note">Apps de voz, como o Discord, ficam de fora.</p>
+          <p class="apps-note">{t.voiceAppsOut}</p>
         {:else}
           <div class="chips">
             {#each playing as app (app.binary)}
@@ -165,15 +165,15 @@
               >
                 {#if settings.screenAudioApps.includes(app.binary)}<Icon name="check" size={14} />{/if}
                 {app.name}
-                {#if app.voice}<span class="chip-note">voz</span>{/if}
+                {#if app.voice}<span class="chip-note">{t.voiceApp}</span>{/if}
               </button>
             {:else}
-              <p class="apps-note">{loadingApps ? 'Procurando…' : 'Nenhum app tocando agora. Dê play e atualize.'}</p>
+              <p class="apps-note">{loadingApps ? t.lookingApps : t.noApps}</p>
             {/each}
-            <IconButton icon="restart" label="Atualizar a lista" size="sm" onclick={loadApps} disabled={loadingApps} />
+            <IconButton icon="restart" label={t.refreshApps} size="sm" onclick={loadApps} disabled={loadingApps} />
           </div>
           {#if settings.screenAudioApps.length === 0 && playing.length}
-            <p class="apps-note warn">Escolha pelo menos um, senão vai sem som.</p>
+            <p class="apps-note warn">{t.pickOne}</p>
           {/if}
         {/if}
       </div>
@@ -184,21 +184,21 @@
     <div class="audio-row">
       <span class="audio-icon"><Icon name="pen" size={18} /></span>
       <label for="share-ink" class="audio-text">
-        <span class="audio-title">Deixar quem assiste rabiscar</span>
-        <span class="audio-note">Os rabiscos aparecem no seu monitor. Só com a tela inteira.</span>
+        <span class="audio-title">{t.ink}</span>
+        <span class="audio-note">{t.inkNote}</span>
       </label>
       <Switch id="share-ink" bind:checked={settings.inkAllowed} />
     </div>
   </div>
 
   {#snippet footer()}
-    <Button variant="ghost" onclick={() => (ui.share = false)}>Cancelar</Button>
+    <Button variant="ghost" onclick={() => (ui.share = false)}>{m.common.cancel}</Button>
     <Button
       variant="primary"
       icon="screen"
       loading={starting}
       disabled={!platform.portalPicker && !selected}
-      onclick={start}>Compartilhar</Button
+      onclick={start}>{t.start}</Button
     >
   {/snippet}
 </Modal>

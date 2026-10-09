@@ -1,6 +1,7 @@
 <script lang="ts">
   import { P } from '../../../../../shared/protocol'
   import { client } from '../../lib/client.svelte'
+  import { m } from '../../lib/i18n.svelte'
   import { confirmAction, ui } from '../../lib/ui.svelte'
   import { SettingsLayout, type SettingsNavEntry } from '../kit'
   import ChannelOverview from './channel/ChannelOverview.svelte'
@@ -26,12 +27,14 @@
   let page = $state<'overview' | 'permissions'>('overview')
   const current = $derived(page === 'permissions' && canPermissions ? 'permissions' : 'overview')
 
+  const t = $derived(m.server.channelSettings)
+
   const nav = $derived<SettingsNavEntry[]>([
     { heading: channel ? (channel.kind === 'text' ? `#${channel.name}` : channel.name) : '' },
-    { id: 'overview', label: 'Visão geral', icon: 'settings' },
-    ...(canPermissions ? [{ id: 'permissions', label: 'Permissões', icon: 'shield' as const }] : []),
+    { id: 'overview', label: m.server.shared.overview, icon: 'settings' },
+    ...(canPermissions ? [{ id: 'permissions', label: t.permissions, icon: 'shield' as const }] : []),
     { separator: true },
-    { id: 'delete', label: channel?.kind === 'category' ? 'Apagar categoria' : 'Apagar canal', icon: 'trash', tone: 'danger' },
+    { id: 'delete', label: channel?.kind === 'category' ? t.deleteCategory : t.deleteChannel, icon: 'trash', tone: 'danger' },
   ])
 
   function select(id: string) {
@@ -49,14 +52,10 @@
     const owner = guild
     const { id, name, kind } = channel
     confirmAction({
-      title: kind === 'category' ? `Apagar a categoria ${name}?` : `Apagar ${kind === 'text' ? '#' : ''}${name}?`,
+      title: kind === 'category' ? t.deleteCategoryTitle(name) : t.deleteTitle(kind === 'text' ? `#${name}` : name),
       description:
-        kind === 'category'
-          ? 'Os canais dela ficam soltos, fora de categoria.'
-          : kind === 'voice'
-            ? 'Quem estiver na call sai dela.'
-            : 'As mensagens somem pra todo mundo. Não dá pra desfazer.',
-      confirm: 'Apagar',
+        kind === 'category' ? t.deleteCategoryDescription : kind === 'voice' ? t.deleteVoiceDescription : t.deleteTextDescription,
+      confirm: m.server.shared.delete,
       // Se der certo, o canal some e esta tela fecha; se não (último canal de texto), o servidor avisa.
       onconfirm: () => owner.deleteChannel(id),
     })
@@ -64,7 +63,7 @@
 </script>
 
 {#if guild && channel}
-  <SettingsLayout title="Configurações do canal" {nav} active={current} onselect={select} onclose={close}>
+  <SettingsLayout title={t.title} {nav} active={current} onselect={select} onclose={close}>
     {#key channel.id}
       {#if current === 'permissions'}
         <ChannelPermissions {guild} {channel} {unsaved} />

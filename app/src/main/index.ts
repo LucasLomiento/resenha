@@ -16,6 +16,7 @@ import { release } from 'node:os'
 import { dirname, join } from 'node:path'
 import type { CallState, CaptureSource, DesktopPrefs, PlatformInfo, SavedSession, ShortcutAction } from '../preload/api'
 import { appIcon, hasTray, registerShortcuts, setAutostart, setTray, showCallState } from './desktop'
+import { isLocale, localeFrom, mainLocale, setMainLocale, tm, type Locale } from './i18n'
 import { inkEvent, inkMonitors, inkStart, inkStop, onInkClosed } from './ink'
 import { isHyprland, loadPrefs, savePrefs } from './prefs'
 import {
@@ -311,7 +312,7 @@ handle('turnstile:verify', (_event, server: string): Promise<string | null> => {
       resizable: false,
       minimizable: false,
       maximizable: false,
-      title: 'Verificação',
+      title: tm().verifyTitle,
       backgroundColor: '#0d0e12',
       autoHideMenuBar: true,
       webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false, partition: 'turnstile' },
@@ -367,6 +368,24 @@ listen('unread', (_event, count: number) => {
   app.setBadgeCount(value)
 })
 
+// A interface trocou de idioma: guarda (a bandeja abre nele da próxima vez) e o corretor acompanha.
+listen('locale', (_event, value: unknown) => {
+  if (!isLocale(value)) return
+  setMainLocale(value)
+  setSpellCheck(value)
+  if (prefs.locale !== value) {
+    prefs = { ...prefs, locale: value }
+    savePrefs(prefs)
+  }
+})
+
+/** Corretor no idioma do app, com o inglês de reserva (o português junto, pra quem escreve misturado). */
+function setSpellCheck(locale: Locale) {
+  const wanted = { pt: ['pt-BR', 'en-US'], en: ['en-US', 'pt-BR'], es: ['es', 'es-419', 'en-US'] }[locale]
+  const available = new Set(session.defaultSession.availableSpellCheckerLanguages)
+  session.defaultSession.setSpellCheckerLanguages(wanted.filter((tag) => available.size === 0 || available.has(tag)))
+}
+
 handle('update:state', () => updateState())
 handle('update:check', () => checkForUpdates())
 handle('update:download', () => downloadUpdate())
@@ -414,7 +433,8 @@ app.whenReady().then(() => {
     callback(wc === win?.webContents && allowed.has(permission)),
   )
   session.defaultSession.setPermissionCheckHandler((wc, permission) => wc === win?.webContents && allowed.has(permission))
-  session.defaultSession.setSpellCheckerLanguages(['pt-BR', 'en-US'])
+  setMainLocale(prefs.locale ?? localeFrom(app.getLocale()))
+  setSpellCheck(mainLocale())
   setupDisplayMedia()
   createWindow()
   applyPrefs(null)

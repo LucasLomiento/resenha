@@ -9,6 +9,7 @@
   import { client } from '../../lib/client.svelte'
   import { searchEmoji } from '../../lib/emoji'
   import { formatSize } from '../../lib/format'
+  import { around, m } from '../../lib/i18n.svelte'
   import { compressImage } from '../../lib/media'
   import { VOICE_MAX_SECONDS, VoiceRecording, clock } from '../../lib/voice-note'
   import { Avatar, Icon, IconButton, Kbd, Spinner } from '../kit'
@@ -54,6 +55,7 @@
   const waiting = $derived(Math.max(0, Math.ceil((waitUntil - client.now) / 1000)))
   const canSend = $derived(target.canSend && !uploading && waiting === 0 && (text.trim().length > 0 || uploads.some((u) => u.attachment)))
   const length = $derived(text.length)
+  const t = $derived(m.chat.composer)
 
   // Trocou de conversa: guarda o rascunho desta e traz o da outra. Só quando o id muda de
   // verdade: a conversa pode chegar como um objeto novo com o mesmo id (e aí não pode
@@ -126,7 +128,7 @@
     const current = uploads.find((u) => u.key === key)
     if (!current || !client.api) return // removido enquanto comprimia
     if (file.size > MAX_UPLOAD_BYTES) {
-      return update(key, { preparing: false, error: `Maior que ${formatSize(MAX_UPLOAD_BYTES)}` })
+      return update(key, { preparing: false, error: m.chat.composer.tooBig(formatSize(MAX_UPLOAD_BYTES)) })
     }
     const size = await mediaSize(file)
     const job = client.api.upload(target.uploadPath, file, (fraction) => update(key, { progress: fraction }), size)
@@ -208,7 +210,7 @@
     } catch (err) {
       console.error('[voz] não deu pra gravar', err)
       const name = (err as Error).name
-      client.toast(name === 'NotAllowedError' || name === 'NotFoundError' ? 'Sem acesso ao microfone.' : `Não deu pra gravar: ${(err as Error).message}`)
+      client.toast(name === 'NotAllowedError' || name === 'NotFoundError' ? m.chat.composer.micDenied : m.chat.composer.recordFailed((err as Error).message))
     } finally {
       starting = false
     }
@@ -253,14 +255,14 @@
   async function sendVoice() {
     const rec = recording
     if (!rec || voiceBusy || !client.api) return
-    if (waiting) return client.toast(`Modo lento: espere ${waiting}s.`)
+    if (waiting) return client.toast(m.chat.composer.slowmodeWait(waiting))
     recording = null
     voiceBusy = 'encoding'
     voiceProgress = 0
     const reply = replyTo?.id ?? null
     try {
       const { file } = await rec.finish()
-      if (file.size > MAX_UPLOAD_BYTES) throw new Error(`O áudio passou de ${formatSize(MAX_UPLOAD_BYTES)}.`)
+      if (file.size > MAX_UPLOAD_BYTES) throw new Error(m.chat.composer.voiceTooBig(formatSize(MAX_UPLOAD_BYTES)))
       voiceBusy = 'uploading'
       const job = client.api.upload(target.uploadPath, file, (fraction) => (voiceProgress = fraction), null)
       voiceAbort = job.abort
@@ -270,7 +272,7 @@
       if (target.slowmode) waitUntil = Date.now() + target.slowmode * 1000
       await target.send('', [attachment.id], reply)
     } catch (err) {
-      if ((err as Error).name !== 'AbortError') client.toast((err as Error).message || 'A mensagem de voz não foi enviada.')
+      if ((err as Error).name !== 'AbortError') client.toast((err as Error).message || m.chat.composer.voiceFailed)
     } finally {
       voiceBusy = null
       voiceAbort = null
@@ -282,7 +284,7 @@
     if (!canSend) return
     const typed = text.trim()
     const content = toRaw(typed, tokens)
-    if (content.length > MAX_MESSAGE_LENGTH) return client.toast(`A mensagem passa de ${MAX_MESSAGE_LENGTH} caracteres.`)
+    if (content.length > MAX_MESSAGE_LENGTH) return client.toast(m.chat.composer.tooLong(MAX_MESSAGE_LENGTH))
     const sent = uploads.filter((u) => u.attachment)
     const ids = sent.map((u) => u.attachment!.id)
     const reply = replyTo?.id ?? null
@@ -305,7 +307,7 @@
         requestAnimationFrame(resize)
       }
       waitUntil = 0
-      client.toast((err as Error).message || 'A mensagem não foi enviada. Tente de novo.')
+      client.toast((err as Error).message || m.chat.composer.sendFailed)
     }
   }
 
@@ -381,7 +383,7 @@
         out.push({
           key: role.id,
           label: `@${role.name}`,
-          sub: `${Object.values(guild.members).filter((m) => m.roles.includes(role.id)).length} pessoas`,
+          sub: m.chat.composer.rolePeople(Object.values(guild.members).filter((member) => member.roles.includes(role.id)).length),
           color: role.color === null ? null : `#${role.color.toString(16).padStart(6, '0')}`,
           dot: role.color === null ? 'var(--fg-3)' : `#${role.color.toString(16).padStart(6, '0')}`,
           insert: `@${role.name}`,
@@ -390,7 +392,7 @@
       }
       if (target.canMentionEveryone) {
         for (const word of ['everyone', 'here']) {
-          if (word.startsWith(q)) out.push({ key: word, label: `@${word}`, sub: word === 'everyone' ? 'Notifica todo mundo' : 'Notifica quem está online', dot: 'var(--fg-3)', insert: `@${word}` })
+          if (word.startsWith(q)) out.push({ key: word, label: `@${word}`, sub: word === 'everyone' ? m.chat.composer.everyone : m.chat.composer.here, dot: 'var(--fg-3)', insert: `@${word}` })
         }
       }
     }
@@ -484,7 +486,7 @@
 
 <div class="composer">
   {#if suggestions.length}
-    <div class="picker" role="listbox" aria-label="Sugestões">
+    <div class="picker" role="listbox" aria-label={t.suggestions}>
       {#each suggestions as s, i (s.key)}
         <button
           class="option"
@@ -503,16 +505,17 @@
           {#if s.sub}<span class="option-sub">{s.sub}</span>{/if}
         </button>
       {/each}
-      <div class="picker-foot"><Kbd keys="↑" /><Kbd keys="↓" /> escolher <Kbd keys="Tab" /> completar</div>
+      <div class="picker-foot"><Kbd keys="↑" /><Kbd keys="↓" /> {t.pick} <Kbd keys="Tab" /> {t.complete}</div>
     </div>
   {/if}
 
   <div class="box" class:replying={!!replyTo} class:disabled={!target.canSend}>
     {#if replyTo}
+      {@const [before, after] = around(t.replyingTo, '{name}')}
       <div class="reply-bar">
         <Icon name="reply" size={14} />
-        <span>Respondendo a <b>{replyName}</b>{#if pingReply}<span class="ping"> · vai notificar</span>{/if}</span>
-        <button class="reply-close" aria-label="Cancelar resposta" onclick={() => (replyTo = null)}><Icon name="x" size={14} /></button>
+        <span>{before}<b>{replyName}</b>{after}{#if pingReply}<span class="ping"> · {t.willNotify}</span>{/if}</span>
+        <button class="reply-close" aria-label={t.cancelReply} onclick={() => (replyTo = null)}><Icon name="x" size={14} /></button>
       </div>
     {/if}
 
@@ -534,12 +537,12 @@
             </div>
             <span class="upload-name" title={u.file.name}>{u.file.name}</span>
             <span class="upload-meta">
-              {u.error ?? (u.preparing ? 'Preparando…' : u.attachment ? formatSize(u.file.size) : 'Enviando…')}
+              {u.error ?? (u.preparing ? t.preparing : u.attachment ? formatSize(u.file.size) : t.uploading)}
             </span>
             {#if !u.attachment && !u.error && !u.preparing}
               <div class="bar"><div style:width="{u.progress * 100}%"></div></div>
             {/if}
-            <button class="remove" aria-label="Remover {u.file.name}" onclick={() => removeUpload(u.key)}>
+            <button class="remove" aria-label={t.removeFile(u.file.name)} onclick={() => removeUpload(u.key)}>
               <Icon name="x" size={14} />
             </button>
           </div>
@@ -548,12 +551,12 @@
     {/if}
 
     {#if recording || voiceBusy}
-      <div class="input-row voice-row" role="group" aria-label="Mensagem de voz">
-        <IconButton icon="trash" label="Descartar (Esc)" disabled={!!voiceBusy} onclick={cancelVoice} />
+      <div class="input-row voice-row" role="group" aria-label={t.voice}>
+        <IconButton icon="trash" label={t.discard} disabled={!!voiceBusy} onclick={cancelVoice} />
         <span class="rec-dot" class:busy={!!voiceBusy}></span>
         <span class="rec-time tabular">{clock(recordSeconds)}</span>
         {#if voiceBusy}
-          <span class="rec-status">{voiceBusy === 'encoding' ? 'Preparando o áudio…' : `Enviando ${Math.round(voiceProgress * 100)}%`}</span>
+          <span class="rec-status">{voiceBusy === 'encoding' ? t.encoding : t.uploadingPercent(Math.round(voiceProgress * 100))}</span>
           <Spinner size={16} />
         {:else}
           <div class="rec-bars" aria-hidden="true">
@@ -562,12 +565,12 @@
             {/each}
           </div>
         {/if}
-        <IconButton icon="send" label="Enviar (Enter)" disabled={!!voiceBusy} onclick={() => void sendVoice()} />
+        <IconButton icon="send" label={t.sendEnter} disabled={!!voiceBusy} onclick={() => void sendVoice()} />
       </div>
     {:else}
     <div class="input-row">
       {#if target.canAttach && target.canSend}
-        <IconButton icon="paperclip" label="Anexar arquivo" onclick={() => picker?.click()} />
+        <IconButton icon="paperclip" label={t.attach} onclick={() => picker?.click()} />
       {/if}
       <textarea
         bind:this={input}
@@ -587,17 +590,17 @@
         onfocus={() => (caret = input?.selectionStart ?? 0)}
       ></textarea>
       {#if waiting}
-        <span class="slow" title="Modo lento"><Icon name="clock" size={14} />{waiting}s</span>
+        <span class="slow" title={t.slowmode}><Icon name="clock" size={14} />{waiting}s</span>
       {:else if length > MAX_MESSAGE_LENGTH - 500}
         <span class="counter" class:over={length > MAX_MESSAGE_LENGTH}>{MAX_MESSAGE_LENGTH - length}</span>
       {/if}
       {#if target.canSend}
         <span bind:this={emojiButton}>
-          <IconButton icon="emoji" label="Emoji" active={emojiOpen} onclick={() => (emojiOpen = !emojiOpen)} />
+          <IconButton icon="emoji" label={t.emoji} active={emojiOpen} onclick={() => (emojiOpen = !emojiOpen)} />
         </span>
       {/if}
       {#if target.canAttach && target.canSend}
-        <IconButton icon="mic" label="Gravar mensagem de voz" onclick={() => void startVoice()} />
+        <IconButton icon="mic" label={t.record} onclick={() => void startVoice()} />
       {/if}
     </div>
     {/if}

@@ -5,6 +5,8 @@ export type ScreenMode = 'motion' | 'detail'
 export type VideoCodec = 'VP9' | 'VP8' | 'H264' | 'AV1'
 
 export interface Settings {
+  /** Idioma do app: o do sistema (auto) ou um escolhido. */
+  language: 'auto' | 'pt' | 'en' | 'es'
   inputDevice: string
   outputDevice: string
   cameraDevice: string
@@ -53,6 +55,7 @@ export interface Settings {
 const KEY = 'resenha.settings'
 
 const defaults: Settings = {
+  language: 'auto',
   inputDevice: 'default',
   outputDevice: 'default',
   cameraDevice: 'default',
@@ -84,7 +87,11 @@ const defaults: Settings = {
 
 function load(): Settings {
   try {
-    return { ...defaults, ...JSON.parse(localStorage.getItem(KEY) ?? '{}') }
+    const stored = localStorage.getItem(KEY)
+    const saved = JSON.parse(stored ?? '{}') as Partial<Settings>
+    // Quem já usava o app antes dos idiomas (1.9) continua em português; instalação nova segue o sistema.
+    if (stored && !('language' in saved)) saved.language = 'pt'
+    return { ...defaults, ...saved }
   } catch {
     return { ...defaults }
   }

@@ -1,10 +1,13 @@
 <script lang="ts">
   import { HttpError } from '../../lib/api'
   import { client } from '../../lib/client.svelte'
+  import { m } from '../../lib/i18n.svelte'
   import { Button, Icon, PageHeader, Row, Section, TextField } from '../kit'
 
   const MIN = 8
   const TONES = ['empty', 'red', 'yellow', 'green', 'green'] as const
+
+  const t = $derived(m.settings.password)
 
   let current = $state('')
   let next = $state('')
@@ -17,20 +20,21 @@
 
   /** Força aproximada (0 a 4); quem decide mesmo é o servidor (senhas comuns, igual ao usuário). */
   function strength(password: string, username: string): { level: number; label: string } {
-    if (!password) return { level: 0, label: `Pelo menos ${MIN} caracteres` }
+    const labels = t.strength
+    if (!password) return { level: 0, label: labels.atLeast(MIN) }
     const missing = MIN - password.length
-    if (missing > 0) return { level: 1, label: missing === 1 ? 'Falta 1 caractere' : `Faltam ${missing} caracteres` }
-    if (password.toLowerCase() === username.toLowerCase() || /^(.)\1+$/.test(password)) return { level: 1, label: 'Fácil de adivinhar' }
+    if (missing > 0) return { level: 1, label: labels.missing(missing) }
+    if (password.toLowerCase() === username.toLowerCase() || /^(.)\1+$/.test(password)) return { level: 1, label: labels.guessable }
     const kinds = [/[a-z]/, /[A-Z]/, /\d/, /[^A-Za-z0-9]/].filter((re) => re.test(password)).length
-    if (password.length >= 16 || (password.length >= 12 && kinds >= 3)) return { level: 4, label: 'Forte' }
-    if (password.length >= 12 || (password.length >= 10 && kinds >= 3)) return { level: 3, label: 'Boa' }
-    return { level: 2, label: 'Razoável' }
+    if (password.length >= 16 || (password.length >= 12 && kinds >= 3)) return { level: 4, label: labels.strong }
+    if (password.length >= 12 || (password.length >= 10 && kinds >= 3)) return { level: 3, label: labels.good }
+    return { level: 2, label: labels.fair }
   }
 
   const meter = $derived(strength(next, client.me?.username ?? ''))
   // Erro só depois de sair do campo, ou já no primeiro caractere diferente.
   const repeatError = $derived(
-    repeat && repeat !== next && (repeatTouched || !next.startsWith(repeat)) ? 'As senhas não são iguais.' : null,
+    repeat && repeat !== next && (repeatTouched || !next.startsWith(repeat)) ? t.mismatch : null,
   )
   const ready = $derived(!!current && next.length >= MIN && repeat === next)
 
@@ -44,7 +48,7 @@
       await api.changePassword(current, next)
       current = next = repeat = ''
       repeatTouched = false
-      client.toast('Senha trocada. Os outros aparelhos saíram.', 'info')
+      client.toast(t.changed, 'info')
     } catch (err) {
       const message = (err as Error).message
       const status = err instanceof HttpError ? err.status : 0
@@ -57,7 +61,7 @@
   }
 </script>
 
-<PageHeader title="Senha" description="Trocar a senha desconecta os outros aparelhos." />
+<PageHeader title={m.settings.pages.password} description={t.description} />
 
 <Section setting="password.change">
   <Row stack>
@@ -65,7 +69,7 @@
       <!-- Pros gerenciadores de senha saberem de qual conta é. -->
       <input type="text" autocomplete="username" value={client.me?.username ?? ''} hidden readonly />
       <TextField
-        label="Senha atual"
+        label={t.current}
         type="password"
         bind:value={current}
         autocomplete="current-password"
@@ -74,7 +78,7 @@
       />
       <div class="new">
         <TextField
-          label="Nova senha"
+          label={t.next}
           type="password"
           bind:value={next}
           autocomplete="new-password"
@@ -85,7 +89,7 @@
         <div
           class="strength tone-{TONES[meter.level]}"
           role="meter"
-          aria-label="Força da senha"
+          aria-label={t.strength.label}
           aria-valuemin={0}
           aria-valuemax={4}
           aria-valuenow={meter.level}
@@ -96,7 +100,7 @@
         </div>
       </div>
       <TextField
-        label="Repita a nova senha"
+        label={t.repeat}
         type="password"
         bind:value={repeat}
         autocomplete="new-password"
@@ -107,7 +111,7 @@
         <p class="error" role="alert"><Icon name="circle-alert" size={14} />{formError}</p>
       {/if}
       <div class="actions">
-        <Button variant="primary" type="submit" loading={busy} disabled={!ready}>Trocar senha</Button>
+        <Button variant="primary" type="submit" loading={busy} disabled={!ready}>{t.submit}</Button>
       </div>
     </form>
   </Row>

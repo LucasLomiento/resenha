@@ -3,6 +3,7 @@
   import { channelPermissions } from '../../../../../shared/permissions'
   import { P, has, type ChannelKind, type Overwrite } from '../../../../../shared/protocol'
   import { client } from '../../lib/client.svelte'
+  import { m } from '../../lib/i18n.svelte'
   import { ui } from '../../lib/ui.svelte'
   import { Button, Icon, Modal, Switch, TextField, type IconName } from '../kit'
   import { hex, isAdmin, permContext, withTri } from './permissions'
@@ -12,6 +13,8 @@
   const request = $derived(ui.createChannel)
   const guild = $derived(request ? (client.guilds[request.guildId] ?? null) : null)
   const uid = $props.id()
+  const t = $derived(m.server.createChannel)
+  const shared = $derived(m.server.shared)
 
   // O servidor sumiu, ou a pessoa perdeu a permissão: fecha.
   $effect(() => {
@@ -27,18 +30,18 @@
   let allowed = $state<string[]>([])
   let busy = $state(false)
 
-  const KINDS: { value: ChannelKind; label: string; hint: string; icon: IconName }[] = [
-    { value: 'text', label: 'Texto', hint: 'Mensagens, imagens e links', icon: 'hash' },
-    { value: 'voice', label: 'Voz', hint: 'Call com voz, câmera e tela', icon: 'volume' },
-    { value: 'category', label: 'Categoria', hint: 'Junta canais num grupo', icon: 'folder' },
-  ]
+  const KINDS = $derived<{ value: ChannelKind; label: string; hint: string; icon: IconName }[]>([
+    { value: 'text', ...t.kinds.text, icon: 'hash' },
+    { value: 'voice', ...t.kinds.voice, icon: 'volume' },
+    { value: 'category', ...t.kinds.category, icon: 'folder' },
+  ])
   // Dentro de uma categoria não cabe outra.
   const kinds = $derived(parent ? KINDS.filter((k) => k.value !== 'category') : KINDS)
 
   const canPrivate = $derived(!!guild && guild.canGuild(P.MANAGE_ROLES))
   const roles = $derived(guild ? guild.roles.filter((r) => r.id !== guild.id).sort((a, b) => b.position - a.position) : [])
   const clean = $derived(cleanName(name))
-  const title = $derived(kind === 'category' ? 'Criar categoria' : 'Criar canal')
+  const title = $derived(kind === 'category' ? t.titleCategory : t.titleChannel)
 
   function close() {
     ui.createChannel = null
@@ -92,9 +95,9 @@
 </script>
 
 {#if guild}
-  <Modal {title} description={parent ? `Em ${parent.name}` : undefined} onclose={close} dismissible={!busy}>
+  <Modal {title} description={parent ? t.inParent(parent.name) : undefined} onclose={close} dismissible={!busy}>
     <form id="{uid}-form" class="form" onsubmit={submit}>
-      <div class="kinds" role="radiogroup" aria-label="Tipo">
+      <div class="kinds" role="radiogroup" aria-label={t.kind}>
         {#each kinds as option (option.value)}
           <button
             type="button"
@@ -115,9 +118,9 @@
       </div>
 
       <TextField
-        label={kind === 'category' ? 'Nome da categoria' : 'Nome do canal'}
+        label={kind === 'category' ? shared.categoryName : shared.channelName}
         icon={kind === 'text' ? 'hash' : kind === 'voice' ? 'volume' : 'folder'}
-        placeholder={kind === 'text' ? 'novo-canal' : kind === 'voice' ? 'Nova call' : 'Nova categoria'}
+        placeholder={t.placeholders[kind]}
         bind:value={name}
         maxlength={100}
         spellcheck={false}
@@ -128,14 +131,14 @@
           <label class="private-row" for="{uid}-private">
             <span class="private-icon"><Icon name="lock" size={16} /></span>
             <span class="private-text">
-              <span class="private-label">{kind === 'category' ? 'Categoria privada' : 'Canal privado'}</span>
-              <span class="private-hint">Só os cargos escolhidos veem.</span>
+              <span class="private-label">{kind === 'category' ? shared.privateCategory : shared.privateChannel}</span>
+              <span class="private-hint">{t.privateHint}</span>
             </span>
             <Switch id="{uid}-private" bind:checked={isPrivate} />
           </label>
           {#if isPrivate}
             {#if roles.length}
-              <div class="roles" role="group" aria-label="Quem pode ver">
+              <div class="roles" role="group" aria-label={t.whoCanSee}>
                 {#each roles as role (role.id)}
                   <label class="role">
                     <span class="dot" style:background={hex(role.color) ?? 'var(--fg-3)'}></span>
@@ -145,7 +148,7 @@
                 {/each}
               </div>
             {:else}
-              <p class="none">Ainda não tem cargos: só quem administra vai ver.</p>
+              <p class="none">{t.noRoles}</p>
             {/if}
           {/if}
         </div>
@@ -153,7 +156,7 @@
     </form>
 
     {#snippet footer()}
-      <Button variant="ghost" onclick={close} disabled={busy}>Cancelar</Button>
+      <Button variant="ghost" onclick={close} disabled={busy}>{m.common.cancel}</Button>
       <Button variant="primary" type="submit" form="{uid}-form" disabled={!clean} loading={busy}>{title}</Button>
     {/snippet}
   </Modal>

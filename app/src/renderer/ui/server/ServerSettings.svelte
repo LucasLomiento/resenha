@@ -1,6 +1,7 @@
 <script lang="ts">
   import { P } from '../../../../../shared/protocol'
   import { client } from '../../lib/client.svelte'
+  import { m } from '../../lib/i18n.svelte'
   import { ui, type GuildSettingsPage } from '../../lib/ui.svelte'
   import { SettingsLayout, type IconName, type SettingsNavEntry } from '../kit'
   import AuditPage from './settings/AuditPage.svelte'
@@ -20,18 +21,18 @@
     if (target && !guild) ui.guildSettings = null
   })
 
-  const PAGES: { id: GuildSettingsPage; label: string; icon: IconName; bits: number[] }[] = [
-    { id: 'overview', label: 'Visão geral', icon: 'settings', bits: [] },
-    { id: 'roles', label: 'Cargos', icon: 'shield', bits: [P.MANAGE_ROLES] },
+  // O nome de cada página vem do catálogo (m.server.settings.pages), lido na hora de montar o menu.
+  const PAGES: { id: GuildSettingsPage; icon: IconName; bits: number[] }[] = [
+    { id: 'overview', icon: 'settings', bits: [] },
+    { id: 'roles', icon: 'shield', bits: [P.MANAGE_ROLES] },
     {
       id: 'members',
-      label: 'Membros',
       icon: 'users',
       bits: [P.MANAGE_ROLES, P.MANAGE_NICKNAMES, P.MODERATE_MEMBERS, P.KICK_MEMBERS, P.BAN_MEMBERS],
     },
-    { id: 'invites', label: 'Convites', icon: 'link', bits: [P.MANAGE_GUILD] },
-    { id: 'bans', label: 'Banimentos', icon: 'ban', bits: [P.BAN_MEMBERS] },
-    { id: 'audit', label: 'Registro de auditoria', icon: 'scroll', bits: [P.VIEW_AUDIT_LOG] },
+    { id: 'invites', icon: 'link', bits: [P.MANAGE_GUILD] },
+    { id: 'bans', icon: 'ban', bits: [P.BAN_MEMBERS] },
+    { id: 'audit', icon: 'scroll', bits: [P.VIEW_AUDIT_LOG] },
   ]
 
   /** Só as páginas que a pessoa consegue usar. */
@@ -40,7 +41,7 @@
 
   const nav = $derived<SettingsNavEntry[]>([
     { heading: guild?.info.name ?? '' },
-    ...pages.map((p) => ({ id: p.id, label: p.label, icon: p.icon })),
+    ...pages.map((p) => ({ id: p.id, label: m.server.settings.pages[p.id], icon: p.icon })),
   ])
 
   function select(id: string) {
@@ -54,7 +55,7 @@
 </script>
 
 {#if guild}
-  <SettingsLayout title="Configurações do servidor" {nav} active={page} onselect={select} onclose={close}>
+  <SettingsLayout title={m.server.settings.title} {nav} active={page} onselect={select} onclose={close}>
     {#if page === 'roles'}
       <RolesPage {guild} {unsaved} />
     {:else if page === 'members'}

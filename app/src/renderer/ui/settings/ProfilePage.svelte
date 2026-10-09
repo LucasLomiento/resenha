@@ -16,6 +16,7 @@
   } from '../../../../../shared/protocol'
   import { client } from '../../lib/client.svelte'
   import { userGradient } from '../../lib/format'
+  import { m } from '../../lib/i18n.svelte'
   import { avatarImages, bannerImage } from '../../lib/image'
   import { DECORATION_LABEL, EFFECT_LABEL, NAME_EFFECT_LABEL, NAME_FONT_LABEL, THEME_PRESETS, bannerFill, hex, profileColors } from '../../lib/profile'
   import { Avatar, Button, ColorPicker, Icon, PageHeader, Popover, Row, Section, Segmented, TextField, tooltip } from '../kit'
@@ -35,16 +36,18 @@
   }
 
   const BIO_MAX = 190
-  /** Cores do perfil (as mesmas famílias dos degradês dos avatares); null = automática. */
-  const SWATCHES: { color: number | null; name: string }[] = [
-    { color: 0x7c6cff, name: 'Violeta' },
-    { color: 0xff7a93, name: 'Coral' },
-    { color: 0x48b9ff, name: 'Oceano' },
-    { color: 0x36d6ad, name: 'Menta' },
-    { color: 0xffc35a, name: 'Sol' },
-    { color: 0xee78dc, name: 'Orquídea' },
-    { color: 0x9edc66, name: 'Lima' },
-    { color: null, name: 'Automática' },
+  const t = $derived(m.settings.profile)
+  type SwatchName = keyof typeof t.color.swatches
+  /** Cores do perfil (as mesmas famílias dos degradês dos avatares); null = automática. O nome vem do catálogo. */
+  const SWATCHES: { color: number | null; name: SwatchName }[] = [
+    { color: 0x7c6cff, name: 'violet' },
+    { color: 0xff7a93, name: 'coral' },
+    { color: 0x48b9ff, name: 'ocean' },
+    { color: 0x36d6ad, name: 'mint' },
+    { color: 0xffc35a, name: 'sun' },
+    { color: 0xee78dc, name: 'orchid' },
+    { color: 0x9edc66, name: 'lime' },
+    { color: null, name: 'auto' },
   ]
 
   const pick = (me: Me | null): Draft => ({
@@ -80,10 +83,10 @@
   let saving = $state(false)
 
   const dirty = $derived(!same(draft, base))
-  const nameError = $derived(draft.name.trim() ? null : 'O nome não pode ficar vazio.')
+  const nameError = $derived(draft.name.trim() ? null : t.nameEmpty)
   // Cor que veio de outro lugar e não está nas amostras: aparece como a primeira.
   const swatches = $derived(
-    base.accent !== null && !SWATCHES.some((s) => s.color === base.accent) ? [{ color: base.accent, name: 'Cor atual' }, ...SWATCHES] : SWATCHES,
+    base.accent !== null && !SWATCHES.some((s) => s.color === base.accent) ? [{ color: base.accent, name: 'current' as const }, ...SWATCHES] : SWATCHES,
   )
 
   /** A personalização como ela vai ficar (o rascunho), pra prévia. */
@@ -199,90 +202,91 @@
   let hovered = $state<string | null>(null)
 </script>
 
-<PageHeader title="Perfil" />
+<PageHeader title={m.settings.pages.profile} />
 
 {#if me}
   <div class="profile-box">
     <form class="profile" onsubmit={save}>
       <div class="form">
         <Section>
-          <Row stack label="Foto" setting="profile.photo">
+          <Row stack label={t.photo.label} setting="profile.photo">
             <div class="photo">
               <Avatar id={me.id} name={draft.name || me.username} size={72} src={avatar} decoration={draft.decoration} play cutout="var(--bg-raised)" />
               <div class="side">
                 <div class="actions">
-                  <Button size="sm" icon="upload" loading={busy === 'photo'} disabled={!!busy} onclick={() => photoInput?.click()}>Trocar foto</Button>
+                  <Button size="sm" icon="upload" loading={busy === 'photo'} disabled={!!busy} onclick={() => photoInput?.click()}>{t.photo.change}</Button>
                   {#if me.avatar}
                     <Button size="sm" variant="ghost" loading={busy === 'photo-remove'} disabled={!!busy} onclick={() => run('photo-remove', () => client.api!.clearAvatar())}
-                      >Remover</Button
+                      >{m.common.remove}</Button
                     >
                   {/if}
                 </div>
                 {#if photoError}
                   <p class="error" role="alert"><Icon name="circle-alert" size={14} />{photoError}</p>
                 {:else}
-                  <p class="hint">GIF animado também vale (até 1,5 MB).</p>
+                  <p class="hint">{t.photo.hint}</p>
                 {/if}
               </div>
               <input bind:this={photoInput} type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden onchange={changePhoto} />
             </div>
           </Row>
           <Row stack setting="profile.name">
-            <TextField label="Nome de exibição" bind:value={draft.name} maxlength={32} hint="Como aparece nas conversas." error={nameError} />
+            <TextField label={t.name.label} bind:value={draft.name} maxlength={32} hint={t.name.hint} error={nameError} />
           </Row>
           <Row stack setting="profile.pronouns">
-            <TextField label="Pronomes" bind:value={draft.pronouns} maxlength={MAX_PRONOUNS} placeholder="ele/dele, ela/dela…" />
+            <TextField label={t.pronouns.label} bind:value={draft.pronouns} maxlength={MAX_PRONOUNS} placeholder={t.pronouns.placeholder} />
           </Row>
           <Row stack setting="profile.username">
-            <TextField label="Nome de usuário" icon="at" value={me.username} mono readonly hint="Único. É como te acham pra adicionar como amigo." />
+            <TextField label={t.username.label} icon="at" value={me.username} mono readonly hint={t.username.hint} />
           </Row>
           <Row stack setting="profile.bio">
             <label class="bio">
-              <span class="bio-label">Sobre mim</span>
+              <span class="bio-label">{t.bio}</span>
               <textarea rows="3" maxlength={BIO_MAX} bind:value={draft.bio}></textarea>
               <small class="tabular" class:near={draft.bio.length >= BIO_MAX - 10} aria-hidden="true">{draft.bio.length}/{BIO_MAX}</small>
             </label>
           </Row>
         </Section>
 
-        <Section title="Personalizar">
-          <Row stack label="Banner" setting="profile.banner">
+        <Section title={t.customize}>
+          <Row stack label={t.banner.label} setting="profile.banner">
             <div class="photo">
               <div class="banner-thumb" style:background={banner ? null : bannerFill(previewUser)}>
                 {#if banner}<img src={banner} alt="" draggable="false" />{/if}
               </div>
               <div class="side">
                 <div class="actions">
-                  <Button size="sm" icon="upload" loading={busy === 'banner'} disabled={!!busy} onclick={() => bannerInput?.click()}>Trocar banner</Button>
+                  <Button size="sm" icon="upload" loading={busy === 'banner'} disabled={!!busy} onclick={() => bannerInput?.click()}>{t.banner.change}</Button>
                   {#if banner}
                     <Button size="sm" variant="ghost" loading={busy === 'banner-remove'} disabled={!!busy} onclick={() => run('banner-remove', () => client.api!.clearBanner())}
-                      >Remover</Button
+                      >{m.common.remove}</Button
                     >
                   {/if}
                 </div>
                 {#if bannerError}
                   <p class="error" role="alert"><Icon name="circle-alert" size={14} />{bannerError}</p>
                 {:else}
-                  <p class="hint">Sem banner, o topo fica com as cores do tema ou do perfil.</p>
+                  <p class="hint">{t.banner.hint}</p>
                 {/if}
               </div>
               <input bind:this={bannerInput} type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden onchange={changeBanner} />
             </div>
           </Row>
 
-          <Row stack label="Cor do perfil" setting="profile.color">
-            <div class="swatches" role="radiogroup" aria-label="Cor do perfil">
+          <Row stack label={t.color.label} setting="profile.color">
+            <div class="swatches" role="radiogroup" aria-label={t.color.label}>
               {#each swatches as swatch (swatch.color ?? 'auto')}
                 {@const on = draft.accent === swatch.color}
+                {@const name = t.color.swatches[swatch.name]}
                 <button
                   type="button"
                   role="radio"
                   aria-checked={on}
-                  aria-label={swatch.name}
+                  aria-label={name}
                   class="swatch"
                   class:on
                   style:background={swatch.color === null ? userGradient(me.id) : hex(swatch.color)}
-                  use:tooltip={swatch.name}
+                  use:tooltip={name}
                   onclick={() => (draft.accent = swatch.color)}
                 >
                   {#if on}<Icon name="check" size={14} stroke={2.25} />{/if}
@@ -291,21 +295,21 @@
             </div>
           </Row>
 
-          <Row stack label="Tema do cartão" setting="profile.theme">
-            <div class="swatches" role="radiogroup" aria-label="Tema do cartão">
+          <Row stack label={t.theme.label} setting="profile.theme">
+            <div class="swatches" role="radiogroup" aria-label={t.theme.label}>
               <button
                 type="button"
                 role="radio"
                 aria-checked={!draft.theme}
-                aria-label="Sem tema"
+                aria-label={t.theme.none}
                 class="swatch none"
                 class:on={!draft.theme}
-                use:tooltip={'Sem tema'}
+                use:tooltip={t.theme.none}
                 onclick={() => (draft.theme = null)}
               >
                 <Icon name="ban" size={14} />
               </button>
-              {#each THEME_PRESETS as preset (preset.name)}
+              {#each THEME_PRESETS as preset (preset.id)}
                 {@const on = sameTheme(draft.theme, preset.colors)}
                 <button
                   type="button"
@@ -324,13 +328,13 @@
             </div>
             {#if draft.theme}
               <div class="theme-colors">
-                {#each ['Principal', 'Destaque'] as label, i (label)}
+                {#each [t.theme.main, t.theme.accent] as label, i (i)}
                   {@const color = draft.theme[i]}
                   <button
                     type="button"
                     class="color-chip"
                     class:open={editing?.index === i}
-                    aria-label="{label}: {hex(color)}"
+                    aria-label={t.theme.chip(label, hex(color))}
                     onclick={(e) => (editing = editing?.index === i ? null : { index: i as 0 | 1, anchor: e.currentTarget })}
                   >
                     <span class="dot" style:background={hex(color)}></span>
@@ -342,11 +346,11 @@
             {/if}
           </Row>
 
-          <Row stack label="Moldura do avatar" setting="profile.decoration">
-            <div class="tiles" role="radiogroup" aria-label="Moldura do avatar">
+          <Row stack label={t.decoration.label} setting="profile.decoration">
+            <div class="tiles" role="radiogroup" aria-label={t.decoration.label}>
               {#each [null, ...decorations] as kind (kind ?? 'none')}
                 {@const on = draft.decoration === kind}
-                {@const label = kind ? DECORATION_LABEL[kind] : 'Nenhuma'}
+                {@const label = kind ? DECORATION_LABEL[kind] : t.decoration.none}
                 <button
                   type="button"
                   role="radio"
@@ -367,11 +371,11 @@
             </div>
           </Row>
 
-          <Row stack label="Efeito do perfil" setting="profile.effect">
-            <div class="tiles" role="radiogroup" aria-label="Efeito do perfil">
+          <Row stack label={t.effect.label} setting="profile.effect">
+            <div class="tiles" role="radiogroup" aria-label={t.effect.label}>
               {#each [null, ...PROFILE_EFFECTS] as kind (kind ?? 'none')}
                 {@const on = draft.effect === kind}
-                {@const label = kind ? EFFECT_LABEL[kind] : 'Nenhum'}
+                {@const label = kind ? EFFECT_LABEL[kind] : t.effect.none}
                 <button
                   type="button"
                   role="radio"
@@ -396,22 +400,22 @@
             </div>
           </Row>
 
-          <Row stack label="Fonte do nome" setting="profile.nameFont">
-            <div class="fonts" role="radiogroup" aria-label="Fonte do nome">
+          <Row stack label={t.nameFont.label} setting="profile.nameFont">
+            <div class="fonts" role="radiogroup" aria-label={t.nameFont.label}>
               {#each [null, ...NAME_FONTS] as font (font ?? 'default')}
                 {@const on = draft.nameFont === font}
                 <button type="button" role="radio" aria-checked={on} class="font" class:on onclick={() => (draft.nameFont = font)}>
-                  <span class={font ? `name-font-${font}` : ''}>{font ? NAME_FONT_LABEL[font] : 'Padrão'}</span>
+                  <span class={font ? `name-font-${font}` : ''}>{font ? NAME_FONT_LABEL[font] : t.nameFont.none}</span>
                 </button>
               {/each}
             </div>
           </Row>
 
-          <Row stack label="Efeito do nome" setting="profile.nameEffect">
+          <Row stack label={t.nameEffect.label} setting="profile.nameEffect">
             <Segmented
-              label="Efeito do nome"
+              label={t.nameEffect.label}
               options={[
-                { value: 'none', label: 'Nenhum' },
+                { value: 'none', label: t.nameEffect.none },
                 { value: 'gradient', label: NAME_EFFECT_LABEL.gradient },
                 { value: 'neon', label: NAME_EFFECT_LABEL.neon },
                 ...(myBadge === 'founder' ? [{ value: 'holo', label: NAME_EFFECT_LABEL.holo }] : []),
@@ -425,7 +429,7 @@
       </div>
 
       <div class="preview">
-        <span class="preview-label">Prévia</span>
+        <span class="preview-label">{t.preview}</span>
         <ProfilePreview
           id={me.id}
           name={draft.name}
@@ -444,16 +448,17 @@
 
   {#if editing && draft.theme}
     {@const index = editing.index}
-    <Popover anchor={editing.anchor} placement="bottom-start" width={232} label={index ? 'Cor de destaque' : 'Cor principal'} onclose={() => (editing = null)}>
-      <ColorPicker label={index ? 'Cor de destaque' : 'Cor principal'} value={draft.theme[index]} onchange={(color) => setThemeColor(index, color)} />
+    {@const label = index ? t.theme.accentColor : t.theme.mainColor}
+    <Popover anchor={editing.anchor} placement="bottom-start" width={232} {label} onclose={() => (editing = null)}>
+      <ColorPicker {label} value={draft.theme[index]} onchange={(color) => setThemeColor(index, color)} />
     </Popover>
   {/if}
 
   {#if dirty}
-    <div class="savebar" role="region" aria-label="Alterações não salvas">
-      <span>Você tem alterações não salvas.</span>
-      <Button variant="ghost" size="sm" disabled={saving} onclick={() => (draft = { ...base })}>Desfazer</Button>
-      <Button variant="primary" size="sm" loading={saving} disabled={!!nameError} onclick={() => save()}>Salvar</Button>
+    <div class="savebar" role="region" aria-label={t.unsaved.label}>
+      <span>{t.unsaved.text}</span>
+      <Button variant="ghost" size="sm" disabled={saving} onclick={() => (draft = { ...base })}>{m.common.undo}</Button>
+      <Button variant="primary" size="sm" loading={saving} disabled={!!nameError} onclick={() => save()}>{m.common.save}</Button>
     </div>
   {/if}
 {/if}

@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { Badge } from '../../../../../shared/protocol'
+  import { m } from '../../lib/i18n.svelte'
   import { tooltip } from './tooltip'
 
   /**
@@ -12,15 +13,12 @@
   let { badge, size = 16 }: { badge: Badge | null | undefined; size?: number } = $props()
 
   const uid = $props.id()
-  const LABEL: Record<Badge, string> = {
-    founder: 'Fundador do Resenha',
-    // O selo do Pioneiro (a primeira pessoa que chegou), com o texto que o dono escreveu pra ele.
-    pioneer: 'Melhor amigo do dono do Resenha, o cara mais pika que já conheci. Às vezes puto demais, às vezes puta demais.',
-  }
+  // O texto do selo (no Pioneiro, o que o dono escreveu pra ele) fica no catálogo do kit.
+  const label = $derived(badge ? m.kit.badge[badge] : '')
 </script>
 
 {#if badge}
-  <span class="user-badge {badge}-badge" style:--size="{size}px" role="img" aria-label={LABEL[badge]} use:tooltip={LABEL[badge]}>
+  <span class="user-badge {badge}-badge" style:--size="{size}px" role="img" aria-label={label} use:tooltip={label}>
     <svg viewBox="0 0 20 20" aria-hidden="true">
       <defs>
         <linearGradient id="{uid}-a" x1="0" y1="0" x2="1" y2="1">

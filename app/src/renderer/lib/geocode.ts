@@ -1,6 +1,9 @@
 // Busca de endereço pelo Nominatim (OpenStreetMap), de graça e sem chave. As
 // regras de uso pedem no máximo uma busca por segundo e nada de autocompletar:
 // a tela só busca quando a pessoa aperta Enter, e aqui ainda espera o segundo passar.
+// Os nomes vêm no idioma do app (`accept-language`).
+
+import { i18n, m } from './i18n.svelte'
 
 export interface Place {
   name: string
@@ -27,15 +30,16 @@ let nextAt = 0
 export async function searchPlaces(query: string): Promise<Place[]> {
   const q = query.trim().replace(/\s+/g, ' ').slice(0, 200)
   if (!q) return []
-  const key = q.toLowerCase()
+  const language = i18n.intl
+  const key = `${language}|${q.toLowerCase()}`
   const cached = cache.get(key)
   if (cached) return cached
   const wait = nextAt - Date.now()
   nextAt = Math.max(nextAt, Date.now()) + 1000
   if (wait > 0) await new Promise((r) => setTimeout(r, wait))
-  const params = new URLSearchParams({ format: 'jsonv2', q, limit: '5', 'accept-language': 'pt-BR' })
+  const params = new URLSearchParams({ format: 'jsonv2', q, limit: '5', 'accept-language': language })
   const res = await fetch(`${ENDPOINT}?${params}`, { headers: { Accept: 'application/json' } })
-  if (!res.ok) throw new Error(res.status === 429 ? 'Muitas buscas seguidas. Espere um pouco.' : 'A busca não respondeu. Tente de novo.')
+  if (!res.ok) throw new Error(res.status === 429 ? m.map.searchBusy : m.map.searchFailed)
   const places = ((await res.json()) as NominatimResult[]).map(toPlace).filter((p): p is Place => !!p)
   if (cache.size > 100) cache.clear()
   cache.set(key, places)

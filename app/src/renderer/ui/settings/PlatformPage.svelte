@@ -3,6 +3,7 @@
   import type { AdminPanel, AdminUser } from '../../lib/api'
   import { client } from '../../lib/client.svelte'
   import { formatSize } from '../../lib/format'
+  import { fmt, m } from '../../lib/i18n.svelte'
   import { badgeOf } from '../../lib/profile'
   import { confirmAction } from '../../lib/ui.svelte'
   import { Avatar, Badge, Button, Icon, PageHeader, RadioGroup, Row, Section, Spinner, TextField, UserBadge } from '../kit'
@@ -10,12 +11,11 @@
   const GB = 1024 ** 3
   /** O dono mexe em tudo; o melhor amigo dele só vê os números. */
   const owner = $derived(!!client.me?.staff)
-  const count = new Intl.NumberFormat('pt-BR')
-  const dateFmt = new Intl.DateTimeFormat('pt-BR', { day: 'numeric', month: 'short', year: 'numeric' })
+  const t = $derived(m.settings.platform)
 
-  const bytes = (n: number) => (n >= GB ? `${(n / GB).toFixed(1).replace('.', ',').replace(/,0$/, '')} GB` : formatSize(n))
-  /** "5 de out. de 2026" vira "5 out 2026". */
-  const date = (ms: number) => dateFmt.format(ms).replaceAll(' de ', ' ').replace('.', '')
+  const bytes = (n: number) => (n >= GB ? `${fmt.number(n / GB, { maximumFractionDigits: 1 })} GB` : formatSize(n))
+  /** Data curta: no português, "5 de out. de 2026" vira "5 out 2026" (os outros idiomas já vêm curtos). */
+  const date = (ms: number) => fmt.date(ms, { day: 'numeric', month: 'short', year: 'numeric' }).replaceAll(' de ', ' ').replace('.', '')
 
   // ---------- Números e cadastro ----------
 
@@ -104,9 +104,9 @@
   /** O Pioneiro é a primeira conta depois da sua; dá pra trocar se o selo foi pra pessoa errada. */
   function makePioneer(user: AdminUser) {
     confirmAction({
-      title: `Dar o selo de melhor amigo pra ${user.name}?`,
-      description: 'O selo de melhor amigo do dono, a moldura e o nome exclusivos saem de quem tem agora e passam pra essa conta.',
-      confirm: 'Dar o selo',
+      title: t.pioneer.title(user.name),
+      description: t.pioneer.description,
+      confirm: t.pioneer.confirm,
       onconfirm: async () => {
         const api = client.api
         if (!api) return
@@ -127,51 +127,48 @@
     // Reativar não precisa de confirmação: dá pra suspender de novo.
     if (!banned) return apply(user, false)
     confirmAction({
-      title: `Suspender ${user.name}?`,
-      description: 'A conta sai de todos os aparelhos e não entra mais até você reativar.',
-      confirm: 'Suspender',
+      title: t.ban.title(user.name),
+      description: t.ban.description,
+      confirm: t.ban.confirm,
       onconfirm: () => apply(user, true),
     })
   }
 </script>
 
-<PageHeader
-  title="Plataforma"
-  description={owner ? 'Vale pro Resenha inteiro, não só pros seus servidores.' : 'Os números do Resenha inteiro. Só pra ver: quem mexe aqui é o dono.'}
-/>
+<PageHeader title={m.settings.pages.platform} description={owner ? t.ownerDescription : t.viewerDescription} />
 
 {#if panel}
   <div class="stats">
     <div class="stat">
-      <span class="stat-label">Contas</span>
-      <span class="stat-value">{count.format(panel.users)}</span>
+      <span class="stat-label">{t.stats.accounts}</span>
+      <span class="stat-value">{fmt.number(panel.users)}</span>
     </div>
     <div class="stat">
-      <span class="stat-label">Servidores</span>
-      <span class="stat-value">{count.format(panel.guilds)}</span>
+      <span class="stat-label">{t.stats.servers}</span>
+      <span class="stat-value">{fmt.number(panel.guilds)}</span>
     </div>
     <div class="stat" data-setting="platform.invites">
-      <span class="stat-label">Convites ativos</span>
-      <span class="stat-value">{count.format(panel.invites ?? 0)}</span>
+      <span class="stat-label">{t.stats.invites}</span>
+      <span class="stat-value">{fmt.number(panel.invites ?? 0)}</span>
     </div>
     <div class="stat wide" data-setting="platform.storage">
-      <span class="stat-label">Espaço usado</span>
-      <span class="stat-value">{bytes(panel.storageUsed)} <small>de {bytes(panel.storageLimit)}</small></span>
-      {@render meter('Espaço usado', storage)}
+      <span class="stat-label">{t.stats.storage}</span>
+      <span class="stat-value">{bytes(panel.storageUsed)} <small>{t.stats.of(bytes(panel.storageLimit))}</small></span>
+      {@render meter(t.stats.storage, storage)}
       {#if tone(storage) === 'full'}
-        <span class="stat-note tone-full"><Icon name="circle-alert" size={14} />Cheio: anexos novos não sobem.</span>
+        <span class="stat-note tone-full"><Icon name="circle-alert" size={14} />{t.storageFull}</span>
       {:else if tone(storage) === 'warn'}
-        <span class="stat-note tone-warn"><Icon name="triangle-alert" size={14} />Quase cheio ({Math.round(storage * 100)}%).</span>
+        <span class="stat-note tone-warn"><Icon name="triangle-alert" size={14} />{t.storageWarn(Math.round(storage * 100))}</span>
       {/if}
     </div>
     <div class="stat wide" data-setting="platform.media">
-      <span class="stat-label">Mídia pelo Cloudflare neste mês</span>
-      <span class="stat-value">{bytes(panel.mediaUsed ?? 0)} <small>de {bytes(panel.mediaLimit ?? 0)}</small></span>
-      {@render meter('Mídia pelo Cloudflare neste mês', media)}
+      <span class="stat-label">{t.stats.media}</span>
+      <span class="stat-value">{bytes(panel.mediaUsed ?? 0)} <small>{t.stats.of(bytes(panel.mediaLimit ?? 0))}</small></span>
+      {@render meter(t.stats.media, media)}
       {#if tone(media) === 'full'}
-        <span class="stat-note tone-full"><Icon name="circle-alert" size={14} />Acabou a cota do mês: tela e calls ficam só diretas até o mês virar.</span>
+        <span class="stat-note tone-full"><Icon name="circle-alert" size={14} />{t.mediaFull}</span>
       {:else}
-        <span class="stat-note tone-{tone(media)}">Tela com 2 ou mais assistindo e conexões que não fecham direto. O grátis é 1.000 GB; o Resenha para antes.</span>
+        <span class="stat-note tone-{tone(media)}">{t.mediaNote}</span>
       {/if}
     </div>
   </div>
@@ -184,13 +181,13 @@
   {/snippet}
 
   {#if owner}
-    <Section title="Cadastro" setting="platform.signup">
+    <Section title={t.signup.title} setting="platform.signup">
       <RadioGroup
-        label="Cadastro"
+        label={t.signup.title}
         bind:value={() => panel!.signup, (mode) => setSignup(mode)}
         options={[
-          { value: 'invite', label: 'Só com convite', description: 'Quem chega precisa do convite de algum servidor.' },
-          { value: 'open', label: 'Aberto', description: 'Qualquer pessoa cria conta, com verificação anti-robô.' },
+          { value: 'invite', label: t.signup.invite, description: t.signup.inviteDescription },
+          { value: 'open', label: t.signup.open, description: t.signup.openDescription },
         ]}
       />
     </Section>
@@ -200,25 +197,25 @@
   {/if}
 {:else if panelError}
   <Section>
-    <Row label="Não deu pra carregar o painel." description={panelError}>
-      <Button icon="restart" onclick={loadPanel}>Tentar de novo</Button>
+    <Row label={t.loadError} description={panelError}>
+      <Button icon="restart" onclick={loadPanel}>{m.common.retry}</Button>
     </Row>
   </Section>
 {:else}
-  <div class="loading" role="status" aria-label="Carregando"><Spinner size={20} /></div>
+  <div class="loading" role="status" aria-label={m.common.loading}><Spinner size={20} /></div>
 {/if}
 
 {#if owner}
   <div class="accounts">
-    <Section setting="platform.accounts" title="Contas">
+    <Section setting="platform.accounts" title={t.accounts.title}>
       {#snippet actions()}
         <div class="search">
-          <TextField icon="search" placeholder="Nome ou usuário" aria-label="Buscar contas" bind:value={query} spellcheck={false} />
+          <TextField icon="search" placeholder={t.accounts.placeholder} aria-label={t.accounts.search} bind:value={query} spellcheck={false} />
         </div>
       {/snippet}
       {#if usersError}
-        <Row label="Não deu pra buscar." description={usersError}>
-          <Button icon="restart" onclick={() => search(query.trim())}>Tentar de novo</Button>
+        <Row label={t.accounts.searchError} description={usersError}>
+          <Button icon="restart" onclick={() => search(query.trim())}>{m.common.retry}</Button>
         </Row>
       {:else if users === null}
         <Row><div class="row-loading"><Spinner size={18} /></div></Row>
@@ -226,27 +223,27 @@
         {#each users as user (user.id)}
           {@const self = user.id === client.me?.id}
           {@const badge = badgeOf(user)}
-          <Row label={user.name} description="{user.username} · desde {date(user.createdAt)}">
+          <Row label={user.name} description={t.accounts.since(user.username, date(user.createdAt))}>
             {#snippet leading()}
               <Avatar id={user.id} name={user.name} size={32} src={client.api?.avatar(user) ?? null} cutout="var(--bg-raised)" />
             {/snippet}
             {#if badge}<UserBadge {badge} size={18} />{/if}
             {#if badge === 'pioneer'}
-              <Badge tone="accent">Melhor amigo</Badge>
+              <Badge tone="accent">{t.accounts.pioneer}</Badge>
             {:else if !self && !user.banned}
-              <Button size="sm" variant="ghost" disabled={!!busyUser} onclick={() => makePioneer(user)}>Tornar melhor amigo</Button>
+              <Button size="sm" variant="ghost" disabled={!!busyUser} onclick={() => makePioneer(user)}>{t.accounts.makePioneer}</Button>
             {/if}
             {#if self}
-              <Badge tone="accent">Você</Badge>
+              <Badge tone="accent">{m.common.you}</Badge>
             {:else if user.banned}
-              <Badge tone="danger">Suspensa</Badge>
-              <Button size="sm" loading={busyUser === user.id} disabled={!!busyUser} onclick={() => setBanned(user, false)}>Reativar</Button>
+              <Badge tone="danger">{t.accounts.banned}</Badge>
+              <Button size="sm" loading={busyUser === user.id} disabled={!!busyUser} onclick={() => setBanned(user, false)}>{t.accounts.unban}</Button>
             {:else}
-              <Button size="sm" loading={busyUser === user.id} disabled={!!busyUser} onclick={() => setBanned(user, true)}>Suspender</Button>
+              <Button size="sm" loading={busyUser === user.id} disabled={!!busyUser} onclick={() => setBanned(user, true)}>{t.accounts.ban}</Button>
             {/if}
           </Row>
         {:else}
-          <Row description={query.trim() ? 'Ninguém com esse nome.' : 'Nenhuma conta ainda.'} />
+          <Row description={query.trim() ? t.accounts.noMatch : t.accounts.none} />
         {/each}
       {/if}
     </Section>

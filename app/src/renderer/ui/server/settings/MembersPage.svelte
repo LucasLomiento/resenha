@@ -2,15 +2,18 @@
   import { P, type Member } from '../../../../../../shared/protocol'
   import { client } from '../../../lib/client.svelte'
   import type { GuildState } from '../../../lib/guild.svelte'
+  import { fmt, m } from '../../../lib/i18n.svelte'
   import { Avatar, Badge, Button, EmptyState, Icon, IconButton, Menu, PageHeader, Section, Select, TextField, tooltip, type MenuItem } from '../../kit'
   import { hex, isAdmin, myTop, outranksMember } from '../permissions'
   import { settled } from '../settle.svelte'
-  import { fold, plural, shortDate, whenText } from '../util'
+  import { fold, shortDate, whenText } from '../util'
   import MemberDialog, { type MemberAction } from './MemberDialog.svelte'
 
   let { guild }: { guild: GuildState } = $props()
 
   const PAGE = 100
+  const t = $derived(m.server.members)
+  const shared = $derived(m.server.shared)
 
   let query = $state('')
   let roleFilter = $state('all')
@@ -29,7 +32,7 @@
         const user = guild.users[m.userId]
         return [guild.displayName(m.userId), user?.username ?? '', user?.name ?? ''].some((text) => fold(text).includes(q))
       })
-      .sort((a, b) => guild.displayName(a.userId).localeCompare(guild.displayName(b.userId), 'pt-BR'))
+      .sort((a, b) => fmt.compare(guild.displayName(a.userId), guild.displayName(b.userId)))
   })
 
   // Filtro mudou: volta pra primeira página.
@@ -56,22 +59,22 @@
 
     const manage: MenuItem[] = []
     if (guild.canGuild(P.MANAGE_ROLES) && (self || below) && roles.some((r) => guild.isOwner || r.position < top)) {
-      manage.push({ label: 'Cargos', icon: 'shield', hint: member.roles.length ? String(member.roles.length) : undefined, onselect: open('roles') })
+      manage.push({ label: t.menuRoles, icon: 'shield', hint: member.roles.length ? String(member.roles.length) : undefined, onselect: open('roles') })
     }
     if (self ? guild.canGuild(P.CHANGE_NICKNAME) : guild.canGuild(P.MANAGE_NICKNAMES) && below) {
-      manage.push({ label: 'Mudar apelido', icon: 'pencil', onselect: open('nick') })
+      manage.push({ label: t.menuNick, icon: 'pencil', onselect: open('nick') })
     }
 
     const moderate: MenuItem[] = []
     if (!self && below && guild.canGuild(P.MODERATE_MEMBERS) && !isAdmin(guild, userId)) {
       moderate.push(
         timedOut(member)
-          ? { label: 'Tirar castigo', icon: 'clock', onselect: () => untimeout(userId) }
-          : { label: 'Castigar…', icon: 'clock', onselect: open('timeout') },
+          ? { label: t.menuRemoveTimeout, icon: 'clock', onselect: () => untimeout(userId) }
+          : { label: t.menuTimeout, icon: 'clock', onselect: open('timeout') },
       )
     }
-    if (!self && below && guild.canGuild(P.KICK_MEMBERS)) moderate.push({ label: `Expulsar ${name}`, icon: 'door-open', danger: true, onselect: open('kick') })
-    if (!self && below && guild.canGuild(P.BAN_MEMBERS)) moderate.push({ label: `Banir ${name}`, icon: 'hammer', danger: true, onselect: open('ban') })
+    if (!self && below && guild.canGuild(P.KICK_MEMBERS)) moderate.push({ label: t.menuKick(name), icon: 'door-open', danger: true, onselect: open('kick') })
+    if (!self && below && guild.canGuild(P.BAN_MEMBERS)) moderate.push({ label: t.menuBan(name), icon: 'hammer', danger: true, onselect: open('ban') })
 
     return manage.length && moderate.length ? [...manage, { kind: 'separator' }, ...moderate] : [...manage, ...moderate]
   }
@@ -83,28 +86,28 @@
   async function untimeout(userId: string) {
     const name = guild.displayName(userId)
     guild.timeout(userId, 0)
-    if (await settled(() => !timedOut(guild.members[userId]))) client.toast(`Você tirou o castigo de ${name}.`, 'info')
+    if (await settled(() => !timedOut(guild.members[userId]))) client.toast(t.removedTimeout(name), 'info')
   }
 </script>
 
-<PageHeader title="Membros" description="{plural(total, 'pessoa', 'pessoas')} no servidor." />
+<PageHeader title={t.title} description={t.description(total)} />
 
 <div class="toolbar">
   <div class="grow">
-    <TextField icon="search" placeholder="Buscar por nome" aria-label="Buscar membros" bind:value={query} spellcheck={false} />
+    <TextField icon="search" placeholder={t.search} aria-label={t.searchLabel} bind:value={query} spellcheck={false} />
   </div>
   <div class="filter">
     <Select
-      label="Filtrar por cargo"
+      label={t.filterRole}
       bind:value={roleFilter}
-      options={[{ value: 'all', label: 'Todos os cargos' }, ...roles.map((r) => ({ value: r.id, label: r.name }))]}
+      options={[{ value: 'all', label: t.allRoles }, ...roles.map((r) => ({ value: r.id, label: r.name }))]}
     />
   </div>
 </div>
 
 {#if members.length === 0}
   <div class="empty">
-    <EmptyState icon="search" title="Ninguém encontrado" description="Tente outro nome ou outro cargo." />
+    <EmptyState icon="search" title={t.emptyTitle} description={t.emptyDescription} />
   </div>
 {:else}
   <Section>
@@ -119,14 +122,14 @@
           <span class="member-name">
             <span class="truncate" style:color={hex(guild.colorOf(m.userId))}>{name}</span>
             {#if m.userId === guild.info.ownerId}
-              <span class="crown" use:tooltip={'Dono do servidor'}><Icon name="crown" size={14} /></span>
+              <span class="crown" use:tooltip={shared.owner}><Icon name="crown" size={14} /></span>
             {/if}
           </span>
-          <span class="member-sub truncate">@{user?.username ?? 'desconhecido'}</span>
+          <span class="member-sub truncate">@{user?.username ?? t.unknown}</span>
         </span>
         <span class="member-roles">
           {#if timedOut(m)}
-            <span use:tooltip={`Até ${whenText(m.timeoutUntil!, client.now)}`}><Badge tone="warning">De castigo</Badge></span>
+            <span use:tooltip={t.until(whenText(m.timeoutUntil!, client.now))}><Badge tone="warning">{t.timedOut}</Badge></span>
           {/if}
           {#each own.slice(0, 2) as r (r.id)}
             <Badge dot={hex(r.color) ?? undefined}>{r.name}</Badge>
@@ -135,9 +138,9 @@
             <span use:tooltip={own.slice(2).map((r) => r.name).join(', ')}><Badge>+{own.length - 2}</Badge></span>
           {/if}
         </span>
-        <span class="member-date tabular" use:tooltip={'Entrou no servidor'}>{shortDate(m.joinedAt)}</span>
+        <span class="member-date tabular" use:tooltip={t.joined}>{shortDate(m.joinedAt)}</span>
         {#if items.length}
-          <IconButton icon="ellipsis" label="Ações de {name}" size="sm" active={menu?.userId === m.userId} onclick={(e) => toggleMenu(e, m.userId)} />
+          <IconButton icon="ellipsis" label={t.actions(name)} size="sm" active={menu?.userId === m.userId} onclick={(e) => toggleMenu(e, m.userId)} />
         {:else}
           <span class="menu-gap" aria-hidden="true"></span>
         {/if}
@@ -146,7 +149,7 @@
   </Section>
   {#if members.length > limit}
     <div class="more">
-      <Button variant="ghost" onclick={() => (limit += PAGE)}>Mostrar mais</Button>
+      <Button variant="ghost" onclick={() => (limit += PAGE)}>{t.showMore}</Button>
     </div>
   {/if}
 {/if}

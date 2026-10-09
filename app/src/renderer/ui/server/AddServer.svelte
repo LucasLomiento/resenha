@@ -3,14 +3,17 @@
   import type { InvitePreview } from '../../../../../shared/protocol'
   import { HttpError } from '../../lib/api'
   import { client, inviteCode } from '../../lib/client.svelte'
+  import { m } from '../../lib/i18n.svelte'
   import { ui } from '../../lib/ui.svelte'
   import { Avatar, Button, Icon, IconButton, Modal, Spinner, TextField } from '../kit'
   import { settled } from './settle.svelte'
-  import { cleanName, iconBlob, pickImage, plural } from './util'
+  import { cleanName, iconBlob, pickImage } from './util'
 
   type Step = 'choose' | 'create' | 'join'
 
   const uid = $props.id()
+  const t = $derived(m.server.add)
+  const shared = $derived(m.server.shared)
   let step = $state<Step>(untrack(() => ui.addServer?.step ?? 'choose'))
   let body = $state<HTMLDivElement>()
 
@@ -28,14 +31,15 @@
 
   // ---------- Criar ----------
 
-  let name = $state(untrack(() => (client.me ? `Servidor de ${client.me.name}` : 'Meu servidor')))
+  // Sugestão no idioma de quando a janela abriu (depois é o que a pessoa digitar).
+  let name = $state(untrack(() => (client.me ? m.server.add.defaultName(client.me.name) : m.server.add.defaultNameAnon)))
   let icon = $state<{ blob: Blob; url: string } | null>(null)
   let iconError = $state<string | null>(null)
   let createError = $state<string | null>(null)
   let creating = $state(false)
   const cleanTitle = $derived(cleanName(name))
   const createProblem = $derived(
-    iconError ?? createError ?? (name && cleanTitle.length < 2 ? 'O nome precisa ter pelo menos 2 caracteres.' : null),
+    iconError ?? createError ?? (name && cleanTitle.length < 2 ? shared.nameTooShort : null),
   )
 
   function setIcon(next: { blob: Blob; url: string } | null) {
@@ -118,7 +122,7 @@
         const found = await api.invitePreview(value)
         if (!cancelled) preview = found
       } catch (err) {
-        if (!cancelled) joinError = err instanceof HttpError && err.status === 404 ? 'Convite inválido, vencido ou já usado.' : (err as Error).message
+        if (!cancelled) joinError = err instanceof HttpError && err.status === 404 ? m.server.add.invalidInvite : (err as Error).message
       } finally {
         if (!cancelled) checking = false
       }
@@ -149,14 +153,13 @@
     }
   }
 
-  const TITLES: Record<Step, string> = { choose: 'Novo servidor', create: 'Criar servidor', join: 'Entrar com convite' }
   const busy = $derived(creating || joining)
 </script>
 
 <!-- O "+" do trilho: criar um servidor ou entrar num com convite, no mesmo lugar. -->
 <Modal
-  title={TITLES[step]}
-  description={step === 'choose' ? 'Crie o seu ou entre num com convite.' : undefined}
+  title={t.titles[step]}
+  description={step === 'choose' ? t.chooseDescription : undefined}
   onclose={close}
   dismissible={!busy}
 >
@@ -166,8 +169,8 @@
         <button type="button" class="choice" onclick={() => go('create')}>
           <span class="choice-icon create"><Icon name="plus" size={24} /></span>
           <span class="choice-text">
-            <span class="choice-title">Criar meu servidor</span>
-            <span class="choice-sub">Pro seu grupo, do seu jeito.</span>
+            <span class="choice-title">{t.createTitle}</span>
+            <span class="choice-sub">{t.createSub}</span>
           </span>
           <Icon name="chevron-right" size={18} />
         </button>
@@ -181,16 +184,16 @@
         >
           <span class="choice-icon import"><Icon name="image-plus" size={22} /></span>
           <span class="choice-text">
-            <span class="choice-title">Trazer do Discord</span>
-            <span class="choice-sub">Mande um print da lista de canais e a gente monta igual.</span>
+            <span class="choice-title">{t.importTitle}</span>
+            <span class="choice-sub">{t.importSub}</span>
           </span>
           <Icon name="chevron-right" size={18} />
         </button>
         <button type="button" class="choice" onclick={() => go('join')}>
           <span class="choice-icon join"><Icon name="link" size={22} /></span>
           <span class="choice-text">
-            <span class="choice-title">Entrar com convite</span>
-            <span class="choice-sub">Cole o código ou o link que te mandaram.</span>
+            <span class="choice-title">{t.joinTitle}</span>
+            <span class="choice-sub">{t.joinSub}</span>
           </span>
           <Icon name="chevron-right" size={18} />
         </button>
@@ -199,36 +202,36 @@
       <form id="{uid}-create" onsubmit={create}>
         <div class="create-form">
           <div class="upload-wrap">
-            <button type="button" class="upload" class:filled={!!icon} aria-label={icon ? 'Trocar ícone' : 'Escolher ícone'} onclick={chooseIcon}>
+            <button type="button" class="upload" class:filled={!!icon} aria-label={icon ? shared.changeIcon : shared.chooseIcon} onclick={chooseIcon}>
               {#if icon}
                 <img src={icon.url} alt="" />
               {:else}
                 <Icon name="image-plus" size={24} />
-                <span>Ícone</span>
+                <span>{t.icon}</span>
               {/if}
             </button>
             {#if icon}
               <span class="upload-clear">
-                <IconButton icon="x" label="Tirar ícone" size="sm" variant="subtle" onclick={() => setIcon(null)} />
+                <IconButton icon="x" label={t.removeIcon} size="sm" variant="subtle" onclick={() => setIcon(null)} />
               </span>
             {/if}
           </div>
-          <TextField label="Nome do servidor" bind:value={name} maxlength={64} spellcheck={false} aria-invalid={!!createProblem} />
+          <TextField label={shared.serverName} bind:value={name} maxlength={64} spellcheck={false} aria-invalid={!!createProblem} />
         </div>
         <!-- Erro na mesma linha da dica: o campo não cresce e o ícone não sai do lugar. -->
         {#if createProblem}
           <p class="note error" role="alert"><Icon name="circle-alert" size={14} />{createProblem}</p>
         {:else}
-          <p class="note">Ícone é opcional. Dá pra mudar tudo depois.</p>
+          <p class="note">{t.iconNote}</p>
         {/if}
       </form>
     {:else}
       <form id="{uid}-join" onsubmit={join}>
         <TextField
-          label="Convite ou link"
+          label={t.inviteLabel}
           mono
           bind:value={code}
-          placeholder="Código ou link"
+          placeholder={t.invitePlaceholder}
           spellcheck={false}
           autocomplete="off"
           error={joinError}
@@ -238,16 +241,16 @@
             <Avatar id={preview.guild.id} name={preview.guild.name} size={52} square src={client.api?.media(preview.guild.icon) ?? null} cutout="var(--bg-raised)" />
             <div class="preview-text">
               <span class="preview-name">{preview.guild.name}</span>
-              <span class="preview-meta tabular">{plural(preview.memberCount, 'membro', 'membros')}</span>
+              <span class="preview-meta tabular">{shared.members(preview.memberCount)}</span>
               {#if member}
-                <span class="preview-by">Você já está nesse servidor.</span>
+                <span class="preview-by">{t.alreadyMember}</span>
               {:else if preview.inviter}
-                <span class="preview-by">Convite de {preview.inviter.name}</span>
+                <span class="preview-by">{t.invitedBy(preview.inviter.name)}</span>
               {/if}
             </div>
           </div>
         {:else if checking}
-          <div class="preview loading"><Spinner size={18} /><span>Procurando o convite…</span></div>
+          <div class="preview loading"><Spinner size={18} /><span>{t.checking}</span></div>
         {/if}
       </form>
     {/if}
@@ -255,14 +258,14 @@
 
   {#snippet footer()}
     {#if step !== 'choose'}
-      <Button variant="ghost" icon="arrow-left" onclick={() => go('choose')} disabled={busy}>Voltar</Button>
+      <Button variant="ghost" icon="arrow-left" onclick={() => go('choose')} disabled={busy}>{m.common.back}</Button>
       <span class="grow"></span>
     {/if}
     {#if step === 'create'}
-      <Button variant="primary" type="submit" form="{uid}-create" disabled={cleanTitle.length < 2} loading={creating}>Criar</Button>
+      <Button variant="primary" type="submit" form="{uid}-create" disabled={cleanTitle.length < 2} loading={creating}>{m.common.create}</Button>
     {:else if step === 'join'}
       <Button variant="primary" type="submit" form="{uid}-join" disabled={!preview} loading={joining}>
-        {member ? 'Abrir servidor' : 'Entrar no servidor'}
+        {member ? t.open : t.join}
       </Button>
     {/if}
   {/snippet}

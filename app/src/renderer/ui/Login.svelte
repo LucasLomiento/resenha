@@ -4,6 +4,7 @@
   import logo from '../../../build/icon.svg?url'
   import { Api } from '../lib/api'
   import { client, DEFAULT_SERVER, inviteCode } from '../lib/client.svelte'
+  import { m } from '../lib/i18n.svelte'
   import { Avatar, Button, Icon, TextField } from './kit'
 
   const server = DEFAULT_SERVER
@@ -18,14 +19,15 @@
   let error = $state('')
   let preview = $state<InvitePreview | null>(null)
 
+  const t = $derived(m.app.login)
   const subtitle = $derived(
     mode === 'login'
-      ? 'Que bom te ver de novo.'
+      ? t.welcome
       : !needsInvite && !open
-        ? 'Servidor novo: esta conta vira a dona da plataforma.'
+        ? t.firstAccount
         : open
-          ? 'Crie sua conta. Se tiver um convite, cole aqui.'
-          : 'Crie sua conta com o convite que te mandaram.',
+          ? t.openSignup
+          : t.inviteSignup,
   )
 
   async function checkServer() {
@@ -73,7 +75,7 @@
         // Cadastro aberto sem convite: a verificação anti-robô abre numa janelinha.
         const turnstileToken = !code && open ? await window.resenha.turnstile(server) : null
         if (!code && open && !turnstileToken) {
-          error = 'Faltou confirmar que você não é um robô.'
+          error = t.robot
           return
         }
         auth = await api.register({
@@ -114,14 +116,14 @@
 
   <form class="card" onsubmit={submit}>
     <img class="logo" src={logo} alt="" width="56" height="56" draggable="false" />
-    <h1>{mode === 'login' ? 'Entrar no Resenha' : 'Criar conta'}</h1>
+    <h1>{mode === 'login' ? t.title : t.register}</h1>
     <p class="sub">{subtitle}</p>
 
     {#if mode === 'register' && preview}
       <div class="invite">
         <Avatar id={preview.guild.id} name={preview.guild.name} size={40} square src={new Api(server).media(preview.guild.icon)} cutout="var(--bg-raised)" />
         <div>
-          <span class="invite-label">{preview.inviter ? `${preview.inviter.name} te convidou pra` : 'Você foi convidado pra'}</span>
+          <span class="invite-label">{preview.inviter ? t.invitedBy(preview.inviter.name) : t.invited}</span>
           <strong>{preview.guild.name}</strong>
         </div>
       </div>
@@ -129,7 +131,7 @@
 
     <div class="fields">
       <TextField
-        label="Nome de usuário"
+        label={t.username}
         size="lg"
         bind:value={username}
         autocomplete="username"
@@ -137,31 +139,31 @@
         minlength={2}
         maxlength={mode === 'login' ? 64 : 32}
         spellcheck={false}
-        hint={mode === 'register' ? 'Letras minúsculas, números, _ e ponto. É como te acham.' : undefined}
+        hint={mode === 'register' ? t.usernameHint : undefined}
       />
       {#if mode === 'register'}
-        <TextField label="Nome de exibição" size="lg" bind:value={name} maxlength={32} placeholder={username || undefined} hint="Como aparece pros outros. Dá pra mudar depois." />
+        <TextField label={t.displayName} size="lg" bind:value={name} maxlength={32} placeholder={username || undefined} hint={t.displayNameHint} />
       {/if}
       <TextField
-        label="Senha"
+        label={t.password}
         size="lg"
         type="password"
         bind:value={password}
         autocomplete={mode === 'login' ? 'current-password' : 'new-password'}
         required
         minlength={mode === 'register' ? 8 : 1}
-        hint={mode === 'register' ? 'Pelo menos 8 caracteres.' : undefined}
+        hint={mode === 'register' ? t.passwordHint : undefined}
       />
       {#if mode === 'register' && (needsInvite || open)}
         <TextField
-          label={open ? 'Convite (opcional)' : 'Convite'}
+          label={open ? t.inviteOptional : t.invite}
           size="lg"
           mono
           bind:value={invite}
           required={!open}
           spellcheck={false}
           autocomplete="off"
-          placeholder="Código ou link"
+          placeholder={t.invitePlaceholder}
         />
       {/if}
     </div>
@@ -171,13 +173,13 @@
     {/if}
 
     <Button variant="primary" size="lg" type="submit" full loading={busy}>
-      {mode === 'login' ? 'Entrar' : 'Criar conta'}
+      {mode === 'login' ? t.submit : t.register}
     </Button>
   </form>
 
   <p class="switch">
-    {mode === 'login' ? 'Ainda não tem conta?' : 'Já tem conta?'}
-    <button type="button" onclick={switchMode}>{mode === 'login' ? 'Criar conta' : 'Entrar'}</button>
+    {mode === 'login' ? t.noAccount : t.hasAccount}
+    <button type="button" onclick={switchMode}>{mode === 'login' ? t.register : t.submit}</button>
   </p>
 </div>
 

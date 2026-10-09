@@ -3,11 +3,13 @@
   import type { Ban } from '../../../../../../shared/protocol'
   import { client } from '../../../lib/client.svelte'
   import type { GuildState } from '../../../lib/guild.svelte'
+  import { m } from '../../../lib/i18n.svelte'
   import { Avatar, Button, EmptyState, PageHeader, Section, Spinner, TextField, tooltip } from '../../kit'
   import { fold, relative, whenText } from '../util'
 
   let { guild }: { guild: GuildState } = $props()
 
+  const t = $derived(m.server.bans)
   let bans = $state<Ban[] | null>(null)
   let failed = $state(false)
   let query = $state('')
@@ -29,38 +31,38 @@
 
   onMount(load)
 
-  const nameOf = (ban: Ban) => (ban.user?.deleted ? 'Usuário excluído' : (ban.user?.name ?? 'Conta desconhecida'))
+  const nameOf = (ban: Ban) => (ban.user?.deleted ? t.deletedUser : (ban.user?.name ?? t.unknownUser))
 
   function unban(ban: Ban) {
     guild.unban(ban.userId)
     bans = (bans ?? []).filter((b) => b.userId !== ban.userId)
-    client.toast(`Você desbaniu ${nameOf(ban)}.`, 'info')
+    client.toast(t.unbanned(nameOf(ban)), 'info')
   }
 </script>
 
-<PageHeader title="Banimentos" description="Quem foi banido não volta, nem com convite." />
+<PageHeader title={t.title} description={t.description} />
 
 {#if bans && bans.length > 6}
   <div class="toolbar">
-    <TextField icon="search" placeholder="Buscar por nome ou motivo" aria-label="Buscar banimentos" bind:value={query} spellcheck={false} />
+    <TextField icon="search" placeholder={t.search} aria-label={t.searchLabel} bind:value={query} spellcheck={false} />
   </div>
 {/if}
 
 <Section>
   {#if failed}
     <div class="state">
-      <EmptyState icon="ban" title="Não deu pra carregar a lista" description="Confira a conexão e tente de novo.">
-        {#snippet actions()}<Button onclick={load}>Tentar de novo</Button>{/snippet}
+      <EmptyState icon="ban" title={t.failedTitle} description={m.server.shared.checkConnection}>
+        {#snippet actions()}<Button onclick={load}>{m.common.retry}</Button>{/snippet}
       </EmptyState>
     </div>
   {:else if !bans}
     <div class="state"><Spinner size={20} /></div>
   {:else if bans.length === 0}
     <div class="state">
-      <EmptyState icon="ban" title="Ninguém banido" description="Quem for banido aparece aqui, com o motivo." />
+      <EmptyState icon="ban" title={t.emptyTitle} description={t.emptyDescription} />
     </div>
   {:else if shown.length === 0}
-    <div class="state"><p>Ninguém com esse nome ou motivo.</p></div>
+    <div class="state"><p>{t.noMatch}</p></div>
   {:else}
     {#each shown as ban (ban.userId)}
       {@const name = nameOf(ban)}
@@ -71,13 +73,13 @@
             {name}
             {#if ban.user?.username && !ban.user.deleted}<span class="username">@{ban.user.username}</span>{/if}
           </span>
-          <span class="reason" class:none={!ban.reason}>{ban.reason || 'Sem motivo'}</span>
+          <span class="reason" class:none={!ban.reason}>{ban.reason || t.noReason}</span>
           <span class="meta">
-            por {guild.displayName(ban.actorId)} ·
+            {t.by(guild.displayName(ban.actorId))} ·
             <span use:tooltip={whenText(ban.createdAt, client.now)}>{relative(ban.createdAt, client.now)}</span>
           </span>
         </span>
-        <Button size="sm" onclick={() => unban(ban)}>Desbanir</Button>
+        <Button size="sm" onclick={() => unban(ban)}>{t.unban}</Button>
       </div>
     {/each}
   {/if}

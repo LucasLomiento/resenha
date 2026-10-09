@@ -10,11 +10,14 @@ export interface MapListener {
   cursor(connId: string, userId: string, at: { lng: number; lat: number } | null): void
 }
 
-/** Estilos do OpenFreeMap (grátis, sem chave). Cada um escolhe o seu: não muda pros outros. */
+/**
+ * Estilos do OpenFreeMap (grátis, sem chave). Cada um escolhe o seu: não muda pros outros.
+ * O nome de cada um fica no catálogo (`m.map.styles`).
+ */
 export const MAP_STYLES = {
-  dark: { label: 'Escuro', url: 'https://tiles.openfreemap.org/styles/dark' },
-  positron: { label: 'Claro', url: 'https://tiles.openfreemap.org/styles/positron' },
-  liberty: { label: 'Colorido', url: 'https://tiles.openfreemap.org/styles/liberty' },
+  dark: { url: 'https://tiles.openfreemap.org/styles/dark' },
+  positron: { url: 'https://tiles.openfreemap.org/styles/positron' },
+  liberty: { url: 'https://tiles.openfreemap.org/styles/liberty' },
 } as const
 
 export type MapStyleName = keyof typeof MAP_STYLES

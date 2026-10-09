@@ -1,44 +1,49 @@
 <script lang="ts">
   import { client } from '../lib/client.svelte'
+  import { m } from '../lib/i18n.svelte'
   import { ACTIONS, describeAccelerator } from '../lib/shortcuts'
   import { ui } from '../lib/ui.svelte'
   import { Kbd, Modal } from './kit'
 
   type Item = [keys: string, label: string]
 
-  const GROUPS: { title: string; items: Item[] }[] = [
-    {
-      title: 'Navegar',
-      items: [
-        ['Ctrl + K', 'Ir pra canal, conversa ou configuração'],
-        ['Ctrl + F', 'Buscar nas configurações'],
-        ['Alt + ↑', 'Canal de cima'],
-        ['Alt + ↓', 'Canal de baixo'],
-        ['Esc', 'Fechar o que estiver aberto'],
-        ['Ctrl + /', 'Esta lista'],
-      ],
-    },
-    {
-      title: 'Mensagens',
-      items: [
-        ['Enter', 'Mandar'],
-        ['Shift + Enter', 'Pular linha'],
-        ['↑', 'Editar a última mensagem (com o campo vazio)'],
-        ['Ctrl + V', 'Colar print ou arquivo'],
-        ['@', 'Mencionar alguém'],
-        ['#', 'Citar um canal'],
-        [':', 'Emoji pelo nome'],
-      ],
-    },
-    {
-      title: 'Janela',
-      items: [
-        ['Ctrl + =', 'Aumentar a interface'],
-        ['Ctrl + -', 'Diminuir a interface'],
-        ['Ctrl + 0', 'Tamanho normal'],
-      ],
-    },
-  ]
+  const t = $derived(m.app.shortcuts)
+  const groups = $derived.by((): { title: string; items: Item[] }[] => {
+    const { navigate: nav, messages: msg, window: win } = t
+    return [
+      {
+        title: nav.title,
+        items: [
+          ['Ctrl + K', nav.switcher],
+          ['Ctrl + F', nav.searchSettings],
+          ['Alt + ↑', nav.channelUp],
+          ['Alt + ↓', nav.channelDown],
+          ['Esc', nav.close],
+          ['Ctrl + /', nav.help],
+        ],
+      },
+      {
+        title: msg.title,
+        items: [
+          ['Enter', msg.send],
+          ['Shift + Enter', msg.newline],
+          ['↑', msg.editLast],
+          ['Ctrl + V', msg.paste],
+          ['@', msg.mention],
+          ['#', msg.channel],
+          [':', msg.emoji],
+        ],
+      },
+      {
+        title: win.title,
+        items: [
+          ['Ctrl + =', win.zoomIn],
+          ['Ctrl + -', win.zoomOut],
+          ['Ctrl + 0', win.zoomReset],
+        ],
+      },
+    ]
+  })
 
   const platform = $derived(client.platform?.platform ?? '')
   const call = $derived(
@@ -51,9 +56,9 @@
   }
 </script>
 
-<Modal title="Atalhos" size="xl" onclose={() => (ui.shortcutsHelp = false)}>
+<Modal title={t.title} size="xl" onclose={() => (ui.shortcutsHelp = false)}>
   <div class="groups">
-    {#each GROUPS as group (group.title)}
+    {#each groups as group (group.title)}
       <section>
         <h3>{group.title}</h3>
         {#each group.items as [keys, label] (keys)}
@@ -65,16 +70,16 @@
       </section>
     {/each}
     <section>
-      <h3>Call <span class="hint">(valem com o app minimizado)</span></h3>
+      <h3>{t.call} <span class="hint">{t.callHint}</span></h3>
       {#each call as [value, label] (label)}
         <div class="item">
           <span>{label}</span>
           <Kbd keys={describeAccelerator(value, platform)} />
         </div>
       {:else}
-        <p class="empty">Nenhum configurado.</p>
+        <p class="empty">{t.none}</p>
       {/each}
-      <button class="link" onclick={openSettings}>Mudar os atalhos da call</button>
+      <button class="link" onclick={openSettings}>{t.change}</button>
     </section>
   </div>
 </Modal>

@@ -3,17 +3,14 @@
   import type { ShortcutAction } from '../../../preload/api'
   import { ACTIONS, acceleratorFrom, describeAccelerator } from '../../lib/shortcuts'
   import { client } from '../../lib/client.svelte'
+  import { m } from '../../lib/i18n.svelte'
   import { ui } from '../../lib/ui.svelte'
   import { Button, Icon, IconButton, Kbd, PageHeader, Row, Section } from '../kit'
 
-  /** Nomes curtos: o atalho alterna (aperta de novo, desfaz). */
-  const LABELS: Record<ShortcutAction, string> = {
-    'toggle-mute': 'Mutar',
-    'toggle-deafen': 'Ensurdecer',
-    'toggle-share': 'Compartilhar tela',
-    'leave-call': 'Sair da call',
-    'show-window': 'Mostrar o Resenha',
-  }
+  const t = $derived(m.settings.shortcuts)
+  /** O texto do Hyprland em pedaços: os marcadores ({command}, {toggle-deafen}…) viram código. */
+  const hyprland = $derived(t.hyprland.text.split(/(\{[\w-]+\})/).filter(Boolean))
+  const marker = (part: string) => /^\{[\w-]+\}$/.test(part)
 
   let recording = $state<ShortcutAction | null>(null)
   let failed = $state<ShortcutAction[]>([])
@@ -60,9 +57,9 @@
 
 <svelte:window onkeydowncapture={onRecordKey} />
 
-<PageHeader title="Atalhos" description="Funcionam mesmo com o Resenha minimizado." setting="shortcuts.all">
+<PageHeader title={m.settings.pages.shortcuts} description={t.description} setting="shortcuts.all">
   {#snippet actions()}
-    <Button size="sm" variant="secondary" icon="keyboard" onclick={() => (ui.shortcutsHelp = true)}>Todos os atalhos</Button>
+    <Button size="sm" variant="secondary" icon="keyboard" onclick={() => (ui.shortcutsHelp = true)}>{t.all}</Button>
   {/snippet}
 </PageHeader>
 
@@ -70,27 +67,27 @@
   <Section>
     {#each ACTIONS as action (action.id)}
       {@const value = client.desktop.shortcuts[action.id]}
-      <Row label={LABELS[action.id]} setting="shortcuts.{action.id}">
+      <Row label={t.actions[action.id]} setting="shortcuts.{action.id}">
         <button
           class="key"
           class:recording={recording === action.id}
-          aria-label="Mudar o atalho de {LABELS[action.id]}"
+          aria-label={t.change(t.actions[action.id])}
           onclick={() => (recording === action.id ? stopRecording() : record(action.id))}
         >
           {#if recording === action.id}
-            Aperte as teclas…
+            {t.recording}
           {:else if value}
             <Kbd keys={describeAccelerator(value, platform)} />
           {:else}
-            <span class="none">Nenhum</span>
+            <span class="none">{t.none}</span>
           {/if}
         </button>
-        <IconButton icon="x" label="Remover atalho" size="sm" disabled={!value} onclick={() => setShortcut(action.id, null)} />
+        <IconButton icon="x" label={t.remove} size="sm" disabled={!value} onclick={() => setShortcut(action.id, null)} />
       </Row>
       {#if failed.includes(action.id)}
         <div class="failed">
           <Icon name="triangle-alert" size={14} />
-          O sistema não deixou usar esse atalho fora do app. Com o Resenha aberto, ele funciona.
+          {t.failed}
         </div>
       {/if}
     {/each}
@@ -98,11 +95,12 @@
 {/if}
 
 {#if client.platform?.hyprland}
-  <Section title="No Hyprland" plain setting="shortcuts.hyprland">
+  <Section title={t.hyprland.section} plain setting="shortcuts.hyprland">
+    <!-- Numa linha só: espaço entre os blocos viraria espaço no texto, antes do ponto. -->
     <p class="hypr">
-      Pra funcionar com o app em segundo plano, crie um bind no seu config chamando
-      <code class="selectable">resenha --action=toggle-mute</code>. Também vale <code>toggle-deafen</code>,
-      <code>toggle-share</code>, <code>leave-call</code> e <code>show-window</code>.
+      {#each hyprland as part, i (i)}{#if part === '{command}'}<code class="selectable">resenha --action=toggle-mute</code>{:else if marker(part)}<code
+            >{part.slice(1, -1)}</code
+          >{:else}{part}{/if}{/each}
     </p>
   </Section>
 {/if}

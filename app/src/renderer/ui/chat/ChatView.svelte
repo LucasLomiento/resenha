@@ -3,9 +3,10 @@
   import type { Message } from '../../../../../shared/protocol'
   import { client } from '../../lib/client.svelte'
   import { formatDay } from '../../lib/format'
+  import { around, m } from '../../lib/i18n.svelte'
   import { toggleMembers, ui } from '../../lib/ui.svelte'
   import MemberList from '../guild/MemberList.svelte'
-  import { Avatar, Button, EmptyState, Icon, IconButton, Spinner, STATUS_LABEL } from '../kit'
+  import { Avatar, Button, EmptyState, Icon, IconButton, Spinner } from '../kit'
   import ProfileBody from '../profile/ProfileBody.svelte'
   import Composer from './Composer.svelte'
   import MessageItem from './Message.svelte'
@@ -33,6 +34,7 @@
   const typing = $derived(target ? target.typing(client.now) : [])
   const peer = $derived(target?.dm?.user ?? null)
   const peerPresence = $derived(peer ? client.presenceOf(peer.id) : null)
+  const t = $derived(m.chat.view)
 
   let scroller = $state<HTMLDivElement>()
   let composer = $state<{ addFiles(files: File[]): void; focus(): void }>()
@@ -136,7 +138,7 @@
     await target.jumpTo(messageId)
     await tick()
     const el = scroller?.querySelector(`[data-message-id="${CSS.escape(messageId)}"]`) as HTMLElement | null
-    if (!el) return client.toast('Essa mensagem não existe mais.')
+    if (!el) return client.toast(m.chat.view.messageGone)
     el.scrollIntoView({ block: 'center', behavior: 'smooth' })
     highlighted = messageId
     setTimeout(() => {
@@ -198,7 +200,7 @@
   <div class="pane" class:with-aside={!!aside}>
     <section
       class="chat"
-      aria-label="Chat"
+      aria-label={t.label}
       ondragover={(e) => {
         if (e.dataTransfer?.types.includes('Files') && target.canAttach && target.canSend) {
           e.preventDefault()
@@ -214,7 +216,7 @@
         {#if peer}
           <Avatar id={peer.id} name={peer.name} size={24} src={client.avatarOf(peer.id)} status={peerPresence?.status ?? null} cutout="var(--bg-panel)" />
           <h1>{peer.name}</h1>
-          <span class="topic">{peerPresence?.text ?? STATUS_LABEL[peerPresence?.status ?? 'offline']}</span>
+          <span class="topic">{peerPresence?.text ?? m.common.presence[peerPresence?.status ?? 'offline']}</span>
         {:else}
           <Icon name="hash" size={20} class="header-icon" />
           <h1>{target.title}</h1>
@@ -223,19 +225,19 @@
 
         <div class="tools">
           {#if peer}
-            <IconButton icon="phone" label="Ligar" tip="bottom" disabled={inThisCall || !target.canSend} onclick={() => client.startDmCall(target.id)} />
-            <IconButton icon="camera" label="Chamada de vídeo" tip="bottom" disabled={inThisCall || !target.canSend} onclick={() => client.startDmCall(target.id, true)} />
-            <IconButton icon="user" label="Perfil" tip="bottom" active={ui.members} onclick={toggleMembers} />
+            <IconButton icon="phone" label={t.call} tip="bottom" disabled={inThisCall || !target.canSend} onclick={() => client.startDmCall(target.id)} />
+            <IconButton icon="camera" label={t.videoCall} tip="bottom" disabled={inThisCall || !target.canSend} onclick={() => client.startDmCall(target.id, true)} />
+            <IconButton icon="user" label={t.profile} tip="bottom" active={ui.members} onclick={toggleMembers} />
           {:else}
             <span bind:this={pinsButton}>
-              <IconButton icon="pin" label="Mensagens fixadas" tip="bottom" active={pinsOpen} onclick={() => (pinsOpen = !pinsOpen)} />
+              <IconButton icon="pin" label={m.chat.pins.label} tip="bottom" active={pinsOpen} onclick={() => (pinsOpen = !pinsOpen)} />
             </span>
-            <IconButton icon="users" label="Membros" tip="bottom" active={ui.members && !searchQuery} onclick={() => (searchQuery ? (searchQuery = '') : toggleMembers())} />
+            <IconButton icon="users" label={t.members} tip="bottom" active={ui.members && !searchQuery} onclick={() => (searchQuery ? (searchQuery = '') : toggleMembers())} />
             <label class="search" class:filled={!!searchText}>
               <Icon name="search" size={15} />
-              <input placeholder="Buscar" bind:value={searchText} aria-label="Buscar mensagens" onkeydown={submitSearch} data-own-escape />
+              <input placeholder={m.common.search} bind:value={searchText} aria-label={t.searchLabel} onkeydown={submitSearch} data-own-escape />
               {#if searchText}
-                <button class="clear" aria-label="Limpar busca" onclick={() => ((searchText = ''), (searchQuery = ''))}><Icon name="x" size={14} /></button>
+                <button class="clear" aria-label={t.clearSearch} onclick={() => ((searchText = ''), (searchQuery = ''))}><Icon name="x" size={14} /></button>
               {/if}
             </label>
           {/if}
@@ -245,14 +247,14 @@
       {#if dmCall && !inThisCall && dmCall.members.length}
         <div class="call-banner">
           <Icon name="phone" size={16} />
-          <span>Chamada em andamento</span>
-          <Button size="sm" variant="primary" onclick={() => client.startDmCall(target.id)}>Entrar</Button>
+          <span>{t.callOngoing}</span>
+          <Button size="sm" variant="primary" onclick={() => client.startDmCall(target.id)}>{t.join}</Button>
         </div>
       {:else if inThisCall && dmCall?.ringing.length}
         <div class="call-banner calling">
           <span class="pulse" aria-hidden="true"></span>
-          <span>Chamando {peer?.name}…</span>
-          <Button size="sm" variant="danger-soft" onclick={() => client.leaveCall()}>Cancelar</Button>
+          <span>{t.calling(peer?.name ?? '')}</span>
+          <Button size="sm" variant="danger-soft" onclick={() => client.leaveCall()}>{m.common.cancel}</Button>
         </div>
       {/if}
 
@@ -262,11 +264,11 @@
             {#if peer}
               <Avatar id={peer.id} name={peer.name} size={64} src={client.avatarOf(peer.id)} />
               <h2>{peer.name}</h2>
-              <p>Este é o começo da conversa com @{peer.username}. Só vocês dois veem.</p>
+              <p>{t.dmStart(peer.username)}</p>
             {:else}
               <div class="start-icon"><Icon name="hash" size={28} /></div>
-              <h2>Boas-vindas a #{target.title}</h2>
-              <p>Este é o começo do canal.</p>
+              <h2>{t.channelWelcome(target.title)}</h2>
+              <p>{t.channelStart}</p>
             {/if}
           </div>
         {:else if target.loading && !messages.length}
@@ -280,7 +282,7 @@
             <div class="day" role="separator"><span>{formatDay(message.createdAt)}</span></div>
           {/if}
           {#if message.id === firstNew}
-            <div class="new-divider" role="separator"><span>Novas</span></div>
+            <div class="new-divider" role="separator"><span>{t.newMessages}</span></div>
           {/if}
           <MessageItem
             bind:this={refs[message.id]}
@@ -296,8 +298,8 @@
 
       {#if target.hasNewer}
         <button class="present" onclick={() => target.jumpToPresent()}>
-          Vendo mensagens antigas
-          <span>Ir pras recentes <Icon name="chevron-down" size={14} /></span>
+          {t.oldMessages}
+          <span>{t.toPresent} <Icon name="chevron-down" size={14} /></span>
         </button>
       {/if}
 
@@ -305,9 +307,11 @@
       <div class="typing" aria-live="polite">
         {#if typing.length}
           <span class="dots" aria-hidden="true"><i></i><i></i><i></i></span>
-          {#if typing.length === 1}<b>{target.displayName(typing[0])}</b> está digitando…
-          {:else if typing.length <= 3}<b>{typing.map((id) => target.displayName(id)).join(', ')}</b> estão digitando…
-          {:else}Várias pessoas estão digitando…{/if}
+          {#if typing.length === 1}{@const [before, after] = around(t.typingOne, '{name}')}{before}<b>{target.displayName(typing[0])}</b>{after}
+          {:else if typing.length <= 3}{@const [before, after] = around(t.typingSome, '{names}')}{before}<b
+              >{typing.map((id) => target.displayName(id)).join(', ')}</b
+            >{after}
+          {:else}{t.typingMany}{/if}
         {/if}
       </div>
 
@@ -315,7 +319,7 @@
         <div class="drop">
           <div class="drop-card">
             <Icon name="upload" size={28} />
-            <span>Solte pra enviar {peer ? `pra ${peer.name}` : `em #${target.title}`}</span>
+            <span>{peer ? t.dropDm(peer.name) : t.dropChannel(target.title)}</span>
           </div>
         </div>
       {/if}
@@ -340,7 +344,7 @@
     {#if client.route.kind === 'guild' && !client.guilds[client.route.guildId]?.loaded}
       <Spinner size={20} />
     {:else}
-      <EmptyState icon="hash" title="Nenhum canal aberto" description="Escolha um canal na lista ao lado." />
+      <EmptyState icon="hash" title={t.noChannel} description={t.noChannelHint} />
     {/if}
   </div>
 {/if}

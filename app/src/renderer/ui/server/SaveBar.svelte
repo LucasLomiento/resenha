@@ -1,5 +1,6 @@
 <script lang="ts">
   import { untrack } from 'svelte'
+  import { m } from '../../lib/i18n.svelte'
   import { Button } from '../kit'
 
   let {
@@ -41,9 +42,9 @@
 
 <!-- Alteração pendente: fica presa embaixo da página até salvar ou desfazer. -->
 <div class="savebar" class:alert bind:this={bar} role="status">
-  <span>{alert ? 'Salve ou desfaça antes de sair.' : 'Você tem alterações não salvas.'}</span>
-  <Button variant="ghost" size="sm" onclick={onreset} disabled={saving}>Desfazer</Button>
-  <Button variant="primary" size="sm" onclick={onsave} loading={saving} {disabled}>Salvar</Button>
+  <span>{alert ? m.server.saveBar.blocked : m.server.saveBar.pending}</span>
+  <Button variant="ghost" size="sm" onclick={onreset} disabled={saving}>{m.common.undo}</Button>
+  <Button variant="primary" size="sm" onclick={onsave} loading={saving} {disabled}>{m.common.save}</Button>
 </div>
 
 <style>

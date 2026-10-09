@@ -1,5 +1,6 @@
 <script lang="ts">
   import { client } from '../lib/client.svelte'
+  import { m } from '../lib/i18n.svelte'
   import { settings } from '../lib/settings.svelte'
   import { Button, Icon, IconButton } from './kit'
 
@@ -11,6 +12,7 @@
   const RELEASES = 'https://lucaslomiento.github.io/resenha/#v'
 
   const update = $derived(client.update)
+  const t = $derived(m.app.update)
   const version = $derived('version' in update ? update.version : null)
   const inCall = $derived(!!client.call.channelId)
   const visible = $derived(
@@ -23,42 +25,41 @@
     if (update.status !== 'ready' || notified === update.version || settings.updateDismissed === update.version) return
     notified = update.version
     if (document.hasFocus()) return
-    new Notification('Atualização do Resenha', { body: `A versão ${update.version} está pronta pra instalar.`, silent: true }).onclick = () =>
-      window.resenha.showWindow()
+    new Notification(t.title, { body: t.ready(update.version), silent: true }).onclick = () => window.resenha.showWindow()
   })
 </script>
 
 {#if visible && version}
-  <div class="notice" role="status" aria-label="Atualização do Resenha">
+  <div class="notice" role="status" aria-label={t.title}>
     <span class="badge"><Icon name="download" size={18} /></span>
     <div class="body">
-      <strong>Resenha {version} chegou</strong>
+      <strong>{t.arrived(version)}</strong>
       <p>
         {#if update.status === 'available'}
-          Baixa sozinha quando você sair da call.
+          {t.afterCall}
         {:else if update.status === 'downloading'}
-          Baixando… {update.percent}%
+          {t.downloading(update.percent)}
         {:else if update.status === 'installing'}
-          Instalando. Se pedir senha, é pra isso.
+          {t.installing}
         {:else if inCall}
-          Reiniciar agora tira você da call.
+          {t.leavesCall}
         {:else}
-          Reinicie pra usar a versão nova.
+          {t.restart}
         {/if}
       </p>
       <div class="actions">
-        <a class="notes" href="{RELEASES}{version}" target="_blank" rel="noreferrer">Novidades<Icon name="arrow-up-right" size={13} /></a>
+        <a class="notes" href="{RELEASES}{version}" target="_blank" rel="noreferrer">{t.notes}<Icon name="arrow-up-right" size={13} /></a>
         {#if update.status === 'available'}
-          <Button size="sm" variant="primary" icon="download" onclick={() => window.resenha.update.download()}>Baixar agora</Button>
+          <Button size="sm" variant="primary" icon="download" onclick={() => window.resenha.update.download()}>{t.download}</Button>
         {:else if update.status === 'ready'}
-          <Button size="sm" variant="primary" icon="restart" onclick={() => client.installUpdate()}>Reiniciar e atualizar</Button>
+          <Button size="sm" variant="primary" icon="restart" onclick={() => client.installUpdate()}>{t.install}</Button>
         {:else}
-          <Button size="sm" variant="primary" loading>Aguarde</Button>
+          <Button size="sm" variant="primary" loading>{t.wait}</Button>
         {/if}
       </div>
     </div>
     {#if update.status !== 'installing'}
-      <IconButton icon="x" label="Depois" size="sm" onclick={() => (settings.updateDismissed = version)} />
+      <IconButton icon="x" label={t.later} size="sm" onclick={() => (settings.updateDismissed = version)} />
     {/if}
   </div>
 {/if}

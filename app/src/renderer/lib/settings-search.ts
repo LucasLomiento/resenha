@@ -1,19 +1,24 @@
 // Busca nas configurações: cada configuração tem um lugar (página + âncora
-// `data-setting` na linha) e palavras que levam até ela, além do próprio nome:
-// sinônimos, o nome no Discord, em inglês, o jeito que alguém procuraria.
-// Configuração nova: ponha aqui e marque a linha com `setting="<id>"` (o e2e
-// confere que toda âncora daqui existe na página).
+// `data-setting` na linha), e o catálogo de cada idioma (`settings.search.entries`)
+// tem o nome dela, o grupo e as palavras que levam até ela: sinônimos, o nome no
+// Discord, o jeito que alguém procuraria. Configuração nova: ponha aqui, nos três
+// catálogos, e marque a linha com `setting="<id>"` (o teste confere que toda âncora
+// daqui existe na página).
+// Roda também no teste do Node, que não entende runes: nada de i18n.svelte nem de
+// settings.svelte aqui. O idioma chega pelo contexto da busca.
 
+import type { Locale } from './i18n.svelte'
+import en from './i18n/en/settings'
+import es from './i18n/es/settings'
+import pt from './i18n/pt/settings'
 import type { SettingsPage } from './ui.svelte'
 
+export type SettingId = keyof typeof pt.search.entries
+
 export interface SettingEntry {
-  /** Âncora na página (`setting` no Row/Section). */
-  id: string
+  /** Âncora na página (`setting` no Row/Section); o texto fica no catálogo, com o mesmo id. */
+  id: SettingId
   page: SettingsPage
-  label: string
-  /** Grupo dentro da página, pra mostrar no resultado. */
-  section?: string
-  keywords: string[]
   /** Só pra quem é dono da plataforma. */
   staff?: boolean
   /** Pra quem vê os números da plataforma (o dono e o melhor amigo dele). */
@@ -24,89 +29,91 @@ export interface SettingEntry {
   hyprland?: boolean
 }
 
-export const PAGE_LABEL: Record<SettingsPage, string> = {
-  profile: 'Perfil',
-  devices: 'Aparelhos',
-  password: 'Senha',
-  privacy: 'Privacidade',
-  voice: 'Voz e vídeo',
-  notifications: 'Notificações',
-  shortcuts: 'Atalhos',
-  app: 'Aplicativo',
-  platform: 'Plataforma',
+/** Configuração achada, com os textos no idioma da busca. */
+export interface SettingMatch extends SettingEntry {
+  label: string
+  /** Grupo dentro da página. */
+  section?: string
+  /** "Página · Grupo", pra mostrar embaixo do nome. */
+  where: string
 }
+
+const CATALOGS: Record<Locale, typeof pt> = { pt, en, es }
+/** Os outros idiomas também valem (com peso menor): "language" acha o idioma em português. */
+const OTHERS: Record<Locale, Locale[]> = { pt: ['en', 'es'], en: ['pt', 'es'], es: ['pt', 'en'] }
 
 export const SETTINGS: SettingEntry[] = [
   // Perfil
-  { id: 'profile.photo', page: 'profile', label: 'Foto', keywords: ['avatar', 'foto de perfil', 'imagem', 'gif', 'picture', 'pfp'] },
-  { id: 'profile.name', page: 'profile', label: 'Nome de exibição', keywords: ['nome', 'apelido', 'nick', 'nickname', 'display name'] },
-  { id: 'profile.pronouns', page: 'profile', label: 'Pronomes', keywords: ['ele/dele', 'ela/dela', 'pronouns'] },
-  { id: 'profile.username', page: 'profile', label: 'Nome de usuário', keywords: ['usuário', 'username', 'arroba', '@', 'login', 'id'] },
-  { id: 'profile.bio', page: 'profile', label: 'Sobre mim', keywords: ['bio', 'biografia', 'descrição', 'about me', 'status'] },
-  { id: 'profile.banner', page: 'profile', section: 'Personalizar', label: 'Banner', keywords: ['capa', 'fundo', 'imagem de fundo', 'header', 'nitro', 'gif'] },
-  { id: 'profile.color', page: 'profile', section: 'Personalizar', label: 'Cor do perfil', keywords: ['cor', 'cor do banner', 'color', 'nitro'] },
-  { id: 'profile.theme', page: 'profile', section: 'Personalizar', label: 'Tema do cartão', keywords: ['tema', 'cores', 'gradiente', 'degradê', 'theme', 'nitro'] },
-  { id: 'profile.decoration', page: 'profile', section: 'Personalizar', label: 'Moldura do avatar', keywords: ['decoração', 'moldura', 'borda', 'enfeite', 'frame', 'decoration', 'nitro'] },
-  { id: 'profile.effect', page: 'profile', section: 'Personalizar', label: 'Efeito do perfil', keywords: ['efeito', 'animação', 'partículas', 'brilho', 'effect', 'nitro'] },
-  { id: 'profile.nameFont', page: 'profile', section: 'Personalizar', label: 'Fonte do nome', keywords: ['fonte', 'letra', 'tipografia', 'font', 'estilo do nome', 'nitro'] },
-  { id: 'profile.nameEffect', page: 'profile', section: 'Personalizar', label: 'Efeito do nome', keywords: ['neon', 'gradiente', 'nome colorido', 'brilho', 'nitro'] },
+  { id: 'profile.photo', page: 'profile' },
+  { id: 'profile.name', page: 'profile' },
+  { id: 'profile.pronouns', page: 'profile' },
+  { id: 'profile.username', page: 'profile' },
+  { id: 'profile.bio', page: 'profile' },
+  { id: 'profile.banner', page: 'profile' },
+  { id: 'profile.color', page: 'profile' },
+  { id: 'profile.theme', page: 'profile' },
+  { id: 'profile.decoration', page: 'profile' },
+  { id: 'profile.effect', page: 'profile' },
+  { id: 'profile.nameFont', page: 'profile' },
+  { id: 'profile.nameEffect', page: 'profile' },
 
   // Aparelhos e senha
-  { id: 'devices.list', page: 'devices', label: 'Aparelhos conectados', keywords: ['sessões', 'dispositivos', 'computadores', 'celular', 'onde estou logado', 'login', 'sair', 'devices'] },
-  { id: 'devices.others', page: 'devices', label: 'Sair de todos os outros', keywords: ['deslogar', 'desconectar', 'encerrar sessões', 'logout', 'segurança', 'invadiram'] },
-  { id: 'password.change', page: 'password', label: 'Trocar senha', keywords: ['senha', 'mudar senha', 'alterar senha', 'password', 'segurança'] },
+  { id: 'devices.list', page: 'devices' },
+  { id: 'devices.others', page: 'devices' },
+  { id: 'password.change', page: 'password' },
 
   // Privacidade
-  { id: 'privacy.dms', page: 'privacy', label: 'Quem pode te mandar mensagem privada', keywords: ['dm', 'mensagem direta', 'privado', 'pv', 'spam', 'quem fala comigo', 'direct message'] },
-  { id: 'privacy.blocked', page: 'privacy', label: 'Bloqueados', keywords: ['bloquear', 'desbloquear', 'block', 'unblock', 'lista de bloqueio'] },
-  { id: 'privacy.export', page: 'privacy', section: 'Seus dados', label: 'Baixar meus dados', keywords: ['exportar', 'lgpd', 'backup', 'json', 'download', 'dados'] },
-  { id: 'privacy.delete', page: 'privacy', section: 'Seus dados', label: 'Excluir conta', keywords: ['apagar conta', 'deletar', 'remover conta', 'encerrar conta', 'delete account'] },
-  { id: 'privacy.docs', page: 'privacy', label: 'Política de privacidade e termos de uso', keywords: ['termos', 'política', 'privacidade', 'lgpd', 'regras'] },
+  { id: 'privacy.dms', page: 'privacy' },
+  { id: 'privacy.blocked', page: 'privacy' },
+  { id: 'privacy.export', page: 'privacy' },
+  { id: 'privacy.delete', page: 'privacy' },
+  { id: 'privacy.docs', page: 'privacy' },
 
   // Voz e vídeo
-  { id: 'voice.input', page: 'voice', section: 'Áudio', label: 'Microfone', keywords: ['entrada', 'mic', 'dispositivo de entrada', 'headset', 'input', 'microphone'] },
-  { id: 'voice.output', page: 'voice', section: 'Áudio', label: 'Saída de áudio', keywords: ['alto-falante', 'caixa de som', 'fone', 'headphone', 'som', 'speaker', 'output'] },
-  { id: 'voice.test', page: 'voice', section: 'Áudio', label: 'Testar microfone', keywords: ['teste', 'ouvir minha voz', 'nível', 'volume do microfone', 'medidor', 'mic test'] },
-  { id: 'voice.noise', page: 'voice', section: 'Áudio', label: 'Redução de ruído', keywords: ['ruído', 'barulho', 'chiado', 'supressão', 'rnnoise', 'krisp', 'noise suppression'] },
-  { id: 'voice.gate', page: 'voice', section: 'Áudio', label: 'Só transmitir quando eu falar', keywords: ['detecção de voz', 'ativação por voz', 'sensibilidade', 'limiar', 'gate', 'voice activity', 'silêncio'] },
-  { id: 'voice.camera', page: 'voice', section: 'Câmera', label: 'Câmera', keywords: ['webcam', 'vídeo', 'dispositivo de vídeo', 'camera'] },
-  { id: 'voice.preview', page: 'voice', section: 'Câmera', label: 'Prévia da câmera', keywords: ['testar câmera', 'ver câmera', 'espelho', 'preview'] },
-  { id: 'voice.ink', page: 'voice', section: 'Transmissão', label: 'Quem assiste pode rabiscar na minha tela', keywords: ['rabisco', 'rabiscar', 'desenhar', 'anotar', 'caneta', 'laser', 'slack', 'permitir', 'bloquear rabisco', 'tela'] },
-  { id: 'voice.echo', page: 'voice', section: 'Avançado', label: 'Cancelamento de eco', keywords: ['eco', 'echo', 'caixa de som', 'microfonia'] },
-  { id: 'voice.agc', page: 'voice', section: 'Avançado', label: 'Ganho automático', keywords: ['agc', 'volume automático', 'ganho', 'gain'] },
-  { id: 'voice.codec', page: 'voice', section: 'Avançado', label: 'Codec da transmissão', keywords: ['vp9', 'vp8', 'h264', 'av1', 'qualidade', 'tela', 'stream', 'cpu', 'compartilhar tela'] },
-  { id: 'voice.stats', page: 'voice', section: 'Avançado', label: 'Estatísticas no player', keywords: ['fps', 'ping', 'resolução', 'bitrate', 'stats', 'lag'] },
+  { id: 'voice.input', page: 'voice' },
+  { id: 'voice.output', page: 'voice' },
+  { id: 'voice.test', page: 'voice' },
+  { id: 'voice.noise', page: 'voice' },
+  { id: 'voice.gate', page: 'voice' },
+  { id: 'voice.camera', page: 'voice' },
+  { id: 'voice.preview', page: 'voice' },
+  { id: 'voice.ink', page: 'voice' },
+  { id: 'voice.echo', page: 'voice' },
+  { id: 'voice.agc', page: 'voice' },
+  { id: 'voice.codec', page: 'voice' },
+  { id: 'voice.stats', page: 'voice' },
 
   // Notificações
-  { id: 'notify.sounds', page: 'notifications', section: 'Sons', label: 'Sons do app', keywords: ['som', 'barulho', 'efeitos sonoros', 'silenciar', 'mudo', 'sounds'] },
-  { id: 'notify.volume', page: 'notifications', section: 'Sons', label: 'Volume dos sons', keywords: ['volume', 'altura', 'mais baixo', 'mais alto'] },
-  { id: 'notify.message', page: 'notifications', section: 'Sons', label: 'Som de mensagem nova', keywords: ['mensagem', 'notificação sonora', 'ping', 'aviso'] },
-  { id: 'notify.preview', page: 'notifications', section: 'Sons', label: 'Ouvir cada som', keywords: ['testar sons', 'prévia', 'escutar'] },
-  { id: 'notify.content', page: 'notifications', section: 'Avisos do sistema', label: 'Mostrar o texto da mensagem', keywords: ['notificação', 'aviso', 'conteúdo', 'pré-visualização', 'privacidade', 'popup'] },
+  { id: 'notify.sounds', page: 'notifications' },
+  { id: 'notify.volume', page: 'notifications' },
+  { id: 'notify.message', page: 'notifications' },
+  { id: 'notify.preview', page: 'notifications' },
+  { id: 'notify.content', page: 'notifications' },
 
   // Atalhos
-  { id: 'shortcuts.toggle-mute', page: 'shortcuts', label: 'Atalho de mutar', keywords: ['tecla', 'mute', 'microfone', 'atalho global', 'keybind', 'hotkey'] },
-  { id: 'shortcuts.toggle-deafen', page: 'shortcuts', label: 'Atalho de ensurdecer', keywords: ['tecla', 'deafen', 'fone', 'keybind', 'hotkey'] },
-  { id: 'shortcuts.toggle-share', page: 'shortcuts', label: 'Atalho de compartilhar tela', keywords: ['tecla', 'stream', 'transmitir', 'keybind', 'hotkey'] },
-  { id: 'shortcuts.leave-call', page: 'shortcuts', label: 'Atalho de sair da call', keywords: ['tecla', 'desligar', 'keybind', 'hotkey'] },
-  { id: 'shortcuts.show-window', page: 'shortcuts', label: 'Atalho de mostrar o Resenha', keywords: ['tecla', 'abrir janela', 'trazer pra frente', 'keybind', 'hotkey'] },
-  { id: 'shortcuts.all', page: 'shortcuts', label: 'Todos os atalhos', keywords: ['lista de atalhos', 'teclado', 'ctrl', 'keybinds', 'comandos'] },
-  { id: 'shortcuts.hyprland', page: 'shortcuts', label: 'Atalhos no Hyprland', keywords: ['bind', 'hyprland.conf', 'config', 'segundo plano'], hyprland: true },
+  { id: 'shortcuts.toggle-mute', page: 'shortcuts' },
+  { id: 'shortcuts.toggle-deafen', page: 'shortcuts' },
+  { id: 'shortcuts.toggle-share', page: 'shortcuts' },
+  { id: 'shortcuts.leave-call', page: 'shortcuts' },
+  { id: 'shortcuts.show-window', page: 'shortcuts' },
+  { id: 'shortcuts.all', page: 'shortcuts' },
+  { id: 'shortcuts.hyprland', page: 'shortcuts', hyprland: true },
 
   // Aplicativo
-  { id: 'app.autostart', page: 'app', section: 'Ao ligar o computador', label: 'Abrir o Resenha ao ligar o computador', keywords: ['iniciar com o sistema', 'inicialização', 'autostart', 'boot', 'login', 'startup'], desktop: true },
-  { id: 'app.hidden', page: 'app', section: 'Ao ligar o computador', label: 'Começar minimizado', keywords: ['minimizado', 'segundo plano', 'escondido', 'bandeja'], desktop: true },
-  { id: 'app.tray', page: 'app', section: 'Janela', label: 'Ícone na bandeja', keywords: ['tray', 'bandeja', 'barra de tarefas', 'ícone', 'system tray'], desktop: true },
-  { id: 'app.close', page: 'app', section: 'Janela', label: 'Fechar só esconde a janela', keywords: ['minimizar ao fechar', 'segundo plano', 'fechar', 'x'], desktop: true },
-  { id: 'app.zoom', page: 'app', section: 'Janela', label: 'Tamanho da interface', keywords: ['zoom', 'escala', 'tamanho da letra', 'fonte', 'aumentar', 'diminuir', 'ctrl +'], desktop: true },
-  { id: 'app.update', page: 'app', section: 'Atualizações', label: 'Atualizações', keywords: ['atualizar', 'versão', 'update', 'nova versão', 'baixar atualização', 'novidades'] },
+  { id: 'app.language', page: 'app' },
+  { id: 'app.autostart', page: 'app', desktop: true },
+  { id: 'app.hidden', page: 'app', desktop: true },
+  { id: 'app.tray', page: 'app', desktop: true },
+  { id: 'app.close', page: 'app', desktop: true },
+  { id: 'app.zoom', page: 'app', desktop: true },
+  { id: 'app.update', page: 'app' },
 
   // Plataforma (os números: dono e melhor amigo; cadastro e contas: só o dono)
-  { id: 'platform.signup', page: 'platform', label: 'Cadastro', keywords: ['convite', 'cadastro aberto', 'registro', 'criar conta', 'turnstile'], staff: true },
-  { id: 'platform.accounts', page: 'platform', label: 'Contas', keywords: ['usuários', 'banir', 'moderação', 'pessoas'], staff: true },
-  { id: 'platform.storage', page: 'platform', label: 'Espaço usado', keywords: ['armazenamento', 'anexos', 'disco', 'arquivos', 'storage'], platform: true },
-  { id: 'platform.invites', page: 'platform', label: 'Convites ativos', keywords: ['convites', 'quantos convites', 'links de convite'], platform: true },
-  { id: 'platform.media', page: 'platform', label: 'Mídia pelo Cloudflare', keywords: ['sfu', 'turn', 'cota', 'gb', 'banda', 'transmissão', 'tela', 'relay'], platform: true },
+  { id: 'platform.signup', page: 'platform', staff: true },
+  { id: 'platform.accounts', page: 'platform', staff: true },
+  { id: 'platform.storage', page: 'platform', platform: true },
+  { id: 'platform.invites', page: 'platform', platform: true },
+  { id: 'platform.media', page: 'platform', platform: true },
 ]
 
 /** Sem acento, minúsculo, só letras/números (o resto vira espaço). */
@@ -158,33 +165,74 @@ export interface SettingContext {
   platform: boolean
   desktop: boolean
   hyprland: boolean
+  /** Idioma da interface (`i18n.locale`); sem ele, português. */
+  locale?: Locale
+}
+
+/** Os textos de uma configuração num idioma, já sem acento e separados em palavras. */
+interface Folded {
+  label: string[]
+  keywords: string[]
+  place: string[]
+  /** O nome e cada palavra-chave inteiros, pra ver se a busca é exatamente um deles. */
+  wholes: string[]
+}
+
+const foldedCache = new Map<string, Folded>()
+
+function folded(locale: Locale, entry: SettingEntry): Folded {
+  const key = `${locale}|${entry.id}`
+  let found = foldedCache.get(key)
+  if (!found) {
+    const catalog = CATALOGS[locale]
+    const text: { label: string; section?: string; keywords: string[] } = catalog.search.entries[entry.id]
+    found = {
+      label: fold(text.label).split(' '),
+      keywords: fold(text.keywords.join(' ')).split(' '),
+      place: fold(`${catalog.pages[entry.page]} ${text.section ?? ''}`).split(' '),
+      wholes: [text.label, ...text.keywords].map(fold),
+    }
+    foldedCache.set(key, found)
+  }
+  return found
+}
+
+/** A configuração com os textos do idioma. */
+function match(locale: Locale, entry: SettingEntry): SettingMatch {
+  const catalog = CATALOGS[locale]
+  const text: { label: string; section?: string } = catalog.search.entries[entry.id]
+  const page = catalog.pages[entry.page]
+  return { ...entry, label: text.label, section: text.section, where: text.section ? `${page} · ${text.section}` : page }
 }
 
 /** Configurações que batem com a busca, das mais certeiras pras menos. */
-export function searchSettings(query: string, context: SettingContext): SettingEntry[] {
+export function searchSettings(query: string, context: SettingContext): SettingMatch[] {
+  const locale = context.locale ?? 'pt'
   const whole = fold(query)
   const terms = whole.split(' ').filter(Boolean)
   if (terms.length === 0) return []
   const results: { entry: SettingEntry; score: number }[] = []
   for (const entry of SETTINGS) {
     if ((entry.staff && !context.staff) || (entry.platform && !context.platform) || (entry.desktop && !context.desktop) || (entry.hyprland && !context.hyprland)) continue
-    const label = fold(entry.label).split(' ')
-    const place = fold(`${PAGE_LABEL[entry.page]} ${entry.section ?? ''}`).split(' ')
-    const keywords = fold(entry.keywords.join(' ')).split(' ')
+    const own = folded(locale, entry)
+    const others = OTHERS[locale].map((other) => folded(other, entry))
     let score = 0
     let all = true
     for (const term of terms) {
-      // O nome vale mais que as palavras-chave, que valem mais que a página.
-      const hit = Math.max(wordScore(term, label) * 2, wordScore(term, keywords) * 1.4, wordScore(term, place))
+      // O nome vale mais que as palavras-chave, que valem mais que a página; os outros idiomas, menos.
+      let hit = Math.max(wordScore(term, own.label) * 2, wordScore(term, own.keywords) * 1.4, wordScore(term, own.place))
+      for (const other of others) hit = Math.max(hit, Math.max(wordScore(term, other.label), wordScore(term, other.keywords)) * 1.1)
       if (hit === 0) {
         all = false
         break
       }
       score += hit
     }
+    if (!all) continue
     // A busca inteira é o nome ou uma das palavras-chave: é isso que a pessoa quer.
-    if (all && (fold(entry.label) === whole || entry.keywords.some((k) => fold(k) === whole))) score += 3
-    if (all) results.push({ entry, score })
+    if (own.wholes.includes(whole)) score += 3
+    else if (others.some((other) => other.wholes.includes(whole))) score += 2
+    results.push({ entry, score })
   }
-  return results.sort((a, b) => b.score - a.score).map((r) => r.entry)
+  return results.sort((a, b) => b.score - a.score).map((r) => match(locale, r.entry))
 }

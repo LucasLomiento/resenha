@@ -1,4 +1,5 @@
 import type { PlatformInfo } from '../../preload/api'
+import { m } from './i18n.svelte'
 import { PRESETS, settings, type ScreenMode, type ScreenPreset } from './settings.svelte'
 
 export async function getMicTrack(): Promise<MediaStreamTrack> {
@@ -170,10 +171,10 @@ export async function captureScreen(options: {
     } catch (err) {
       console.error('áudio da tela (venmic)', err)
       await window.resenha.screenAudio.stop()
-      warning = 'Não deu pra capturar o áudio da tela; compartilhando só o vídeo.'
+      warning = m.lib.media.screenAudioFailed
     }
   } else if (options.audio && options.platform.screenAudio === 'loopback-all') {
-    warning = 'Neste Windows o áudio da tela inclui a voz da call. Atualize pro Windows 10 22H2 ou 11.'
+    warning = m.lib.media.screenAudioOldWindows
   }
 
   for (const track of stream.getAudioTracks()) track.contentHint = 'music'

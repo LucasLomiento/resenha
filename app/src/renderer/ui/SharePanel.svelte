@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { plural } from '../lib/format'
+  import { m } from '../lib/i18n.svelte'
   import { settings, type ScreenMode, type ScreenPreset } from '../lib/settings.svelte'
   import { client } from '../lib/client.svelte'
   import { ui } from '../lib/ui.svelte'
@@ -11,24 +11,23 @@
   const call = client.call
   const width = $derived(anchor?.offsetWidth ?? 232)
   const viewers = $derived(call.viewerIds)
-  const viewerNames = $derived(viewers.map((id) => client.user(id, call.guildId)?.name ?? 'Alguém').join(', '))
+  const viewerNames = $derived(viewers.map((id) => client.user(id, call.guildId)?.name ?? m.app.someone).join(', '))
+  const t = $derived(m.app.sharePanel)
 
   const qualities: { value: ScreenPreset; label: string }[] = [
     { value: '720p', label: '720p' },
     { value: '1080p', label: '1080p' },
     { value: '1440p', label: '1440p' },
   ]
-  const modes: { value: ScreenMode; label: string }[] = [
-    { value: 'motion', label: 'Fluidez' },
-    { value: 'detail', label: 'Nitidez' },
-  ]
+  const modes = $derived(
+    (['motion', 'detail'] as const).map((value): { value: ScreenMode; label: string } => ({ value, label: m.app.share.modes[value] })),
+  )
 
   const ink = call.ink
-  const inkNote: Partial<Record<typeof ink.status, string>> = {
-    window: 'Só funciona compartilhando a tela inteira.',
-    unsupported: 'Seu sistema não deixa desenhar por cima da tela (falta o gtk4-layer-shell, ou é GNOME).',
-    failed: 'Não deu pra achar o monitor transmitido: os rabiscos ficam desligados nesta transmissão.',
-  }
+  /** Aviso embaixo da chave dos rabiscos, quando eles não estão funcionando. */
+  const inkNote = $derived(
+    ink.status === 'window' || ink.status === 'unsupported' || ink.status === 'failed' ? t.inkNotes[ink.status] : null,
+  )
 
   function close() {
     ui.sharePanel = false
@@ -36,11 +35,11 @@
 </script>
 
 <!-- Qualquer mudança vale na hora pra quem está assistindo, sem reiniciar a transmissão. -->
-<Popover {anchor} placement="top-start" {width} onclose={close} label="Transmissão" class="share-panel">
+<Popover {anchor} placement="top-start" {width} onclose={close} label={t.label} class="share-panel">
   <div class="panel">
     <div class="head">
       <span class="live-dot"></span>
-      <span class="title">Ao vivo</span>
+      <span class="title">{t.live}</span>
       {#if viewers.length}
         <span class="faces" use:tooltip={viewerNames}>
           {#each viewers.slice(0, 4) as id (id)}
@@ -49,30 +48,30 @@
         </span>
       {/if}
       <span class="viewers" class:with-faces={viewers.length > 0}>
-        {call.viewerCount === 0 ? 'ninguém assistindo' : plural(call.viewerCount, 'pessoa assistindo', 'pessoas assistindo')}
+        {t.viewers(call.viewerCount)}
       </span>
     </div>
 
     <div class="option">
-      <span class="label">Qualidade</span>
-      <Segmented label="Qualidade" options={qualities} bind:value={settings.screenPreset} onchange={() => call.updateShare()} />
+      <span class="label">{m.app.share.quality}</span>
+      <Segmented label={m.app.share.quality} options={qualities} bind:value={settings.screenPreset} onchange={() => call.updateShare()} />
     </div>
 
     <div class="option">
-      <span class="label">Priorizar</span>
-      <Segmented label="Priorizar" options={modes} bind:value={settings.screenMode} onchange={() => call.updateShare()} />
+      <span class="label">{m.app.share.priority}</span>
+      <Segmented label={m.app.share.priority} options={modes} bind:value={settings.screenMode} onchange={() => call.updateShare()} />
     </div>
 
     <div class="option">
       <label class="ink-head">
-        <span class="label">Rabiscos de quem assiste</span>
+        <span class="label">{t.ink}</span>
         <Switch size="sm" checked={settings.inkAllowed} onchange={(e) => ink.setEnabled(e.currentTarget.checked)} />
       </label>
       {#if settings.inkAllowed && ink.status !== 'off'}
-        {#if inkNote[ink.status]}<span class="note">{inkNote[ink.status]}</span>{/if}
-        {#if ink.status === 'starting'}<span class="note"><Spinner size={12} /> Abrindo…</span>{/if}
+        {#if inkNote}<span class="note">{inkNote}</span>{/if}
+        {#if ink.status === 'starting'}<span class="note"><Spinner size={12} /> {t.opening}</span>{/if}
         {#if ink.status === 'on'}
-          <Button size="sm" variant="secondary" icon="eraser" full onclick={() => ink.clear()}>Limpar rabiscos</Button>
+          <Button size="sm" variant="secondary" icon="eraser" full onclick={() => ink.clear()}>{t.clearInk}</Button>
         {/if}
       {/if}
     </div>
@@ -85,7 +84,7 @@
           call.watch(client.callConnId!)
           client.view = 'stream'
           close()
-        }}>Ver minha tela</Button
+        }}>{t.watchMine}</Button
       >
       <Button
         variant="danger-soft"
@@ -94,7 +93,7 @@
         onclick={() => {
           call.stopShare()
           close()
-        }}>Parar</Button
+        }}>{t.stop}</Button
       >
     </div>
   </div>

@@ -14,6 +14,7 @@ import {
   type VoiceMember,
 } from '../../../../shared/protocol'
 import type { Api } from './api'
+import { m, serverText } from './i18n.svelte'
 import { mergeMessages } from './guild.svelte'
 import { Connection, connectionKey, type CloseReason, type ConnectionStatus } from './ws'
 
@@ -104,7 +105,7 @@ export class HomeState {
 
   send(msg: HomeClientMessage): boolean {
     const ok = this.conn.send(msg)
-    if (!ok) this.host.toast('Sem conexão com o servidor agora.')
+    if (!ok) this.host.toast(m.lib.connection.offlineNow)
     return ok
   }
 
@@ -320,9 +321,9 @@ export class HomeState {
         if (msg.nonce && waiting) {
           clearTimeout(waiting.timer)
           this.sends.delete(msg.nonce)
-          return waiting.reject(new Error(msg.message))
+          return waiting.reject(new Error(serverText(msg.message)))
         }
-        this.host.toast(msg.message)
+        this.host.toast(serverText(msg.message))
         return
       }
     }
@@ -337,15 +338,15 @@ export class HomeState {
   /** Abre (ou cria) a conversa com alguém e devolve o id dela. */
   openDm(userId: string): Promise<string> {
     const me = this.me?.id
-    if (!me || userId === me) return Promise.reject(new Error('Conversa inválida.'))
+    if (!me || userId === me) return Promise.reject(new Error(m.lib.connection.invalidDm))
     const existing = dmChannelId(me, userId)
     if (this.dm(existing)) return Promise.resolve(existing)
     const reqId = nextId()
     return new Promise((resolve, reject) => {
-      if (!this.send({ t: 'dm.open', userId, reqId })) return reject(new Error('Sem conexão.'))
+      if (!this.send({ t: 'dm.open', userId, reqId })) return reject(new Error(m.lib.connection.offline))
       const timer = setTimeout(() => {
         this.requests.delete(reqId)
-        reject(new Error('Essa pessoa não aceita mensagens suas.'))
+        reject(new Error(m.lib.connection.dmRefused))
       }, 8000)
       this.requests.set(reqId, (msg) => {
         clearTimeout(timer)
@@ -364,10 +365,10 @@ export class HomeState {
     const reqId = nextId()
     try {
       const page = await new Promise<Of<'dm.history'>>((resolve, reject) => {
-        if (!this.send({ t: 'dm.history', reqId, channelId, before })) return reject(new Error('offline'))
+        if (!this.send({ t: 'dm.history', reqId, channelId, before })) return reject(new Error(m.lib.connection.disconnected))
         const timer = setTimeout(() => {
           this.requests.delete(reqId)
-          reject(new Error('sem resposta'))
+          reject(new Error(m.lib.connection.noReply))
         }, 10_000)
         this.requests.set(reqId, (msg) => {
           clearTimeout(timer)
@@ -386,9 +387,9 @@ export class HomeState {
   sendMessage(channelId: string, content: string, attachmentIds: string[], replyTo: string | null = null): Promise<void> {
     const nonce = nextId()
     return new Promise((resolve, reject) => {
-      if (!this.send({ t: 'dm.send', channelId, content, attachmentIds, nonce, replyTo })) return reject(new Error('Sem conexão.'))
+      if (!this.send({ t: 'dm.send', channelId, content, attachmentIds, nonce, replyTo })) return reject(new Error(m.lib.connection.offline))
       const timer = setTimeout(() => {
-        if (this.sends.delete(nonce)) reject(new Error('O servidor não respondeu.'))
+        if (this.sends.delete(nonce)) reject(new Error(m.lib.connection.noAnswer))
       }, 15_000)
       this.sends.set(nonce, { resolve, reject, timer })
       this.typingSent[channelId] = 0

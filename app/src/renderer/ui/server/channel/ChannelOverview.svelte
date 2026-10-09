@@ -2,11 +2,12 @@
   import { onDestroy } from 'svelte'
   import { P, type Channel } from '../../../../../../shared/protocol'
   import type { GuildState } from '../../../lib/guild.svelte'
+  import { m } from '../../../lib/i18n.svelte'
   import { PageHeader, Row, Section, Select, Slider, TextField } from '../../kit'
   import SaveBar from '../SaveBar.svelte'
   import { settled } from '../settle.svelte'
   import type { Unsaved } from '../unsaved.svelte'
-  import { SLOWMODES, cleanName, plural } from '../util'
+  import { cleanName, slowmodes } from '../util'
 
   let { guild, channel, unsaved }: { guild: GuildState; channel: Channel; unsaved: Unsaved } = $props()
 
@@ -19,18 +20,19 @@
     userLimit: number
   }
 
-  const KIND = { text: 'Canal de texto', voice: 'Canal de voz', category: 'Categoria' } as const
+  const t = $derived(m.server.channelOverview)
+  const shared = $derived(m.server.shared)
   const TOPIC_MAX = 1024
 
   /** Igual ao servidor: sem sobra nas pontas e no máximo uma linha em branco seguida. */
   const cleanTopic = (text: string) => text.replace(/\n{3,}/g, '\n\n').trim()
 
   const parent = $derived(channel.parentId ? guild.channel(channel.parentId) : null)
-  const subtitle = $derived(parent ? `${KIND[channel.kind]} em ${parent.name}` : KIND[channel.kind])
+  const subtitle = $derived(parent ? t.kindIn(t.kinds[channel.kind], parent.name) : t.kinds[channel.kind])
 
   /** Só as categorias em que a pessoa pode pôr canal (e a atual, mesmo que não possa). */
   const categories = $derived([
-    { value: '', label: 'Sem categoria' },
+    { value: '', label: t.noCategory },
     ...guild.channels
       .filter((c) => c.kind === 'category' && (c.id === parent?.id || guild.can(c.id, P.MANAGE_CHANNELS)))
       .sort((a, b) => a.position - b.position || (a.id < b.id ? -1 : 1))
@@ -53,7 +55,7 @@
         (channel.kind === 'text' && (cleanTopic(draft.topic) !== base.topic || draft.slowmode !== base.slowmode)) ||
         (channel.kind === 'voice' && draft.userLimit !== base.userLimit)),
   )
-  const nameError = $derived(draft && !cleanName(draft.name) ? 'O nome não pode ficar vazio.' : null)
+  const nameError = $derived(draft && !cleanName(draft.name) ? t.nameEmpty : null)
   let saving = $state(false)
 
   $effect(() => {
@@ -93,12 +95,12 @@
   }
 </script>
 
-<PageHeader title="Visão geral" description={subtitle} />
+<PageHeader title={shared.overview} description={subtitle} />
 
 <Section>
   <Row stack>
     <TextField
-      label={channel.kind === 'category' ? 'Nome da categoria' : 'Nome do canal'}
+      label={channel.kind === 'category' ? shared.categoryName : shared.channelName}
       icon={channel.kind === 'text' ? 'hash' : channel.kind === 'voice' ? 'volume' : 'folder'}
       bind:value={() => view.name, (v) => edit({ name: v })}
       maxlength={100}
@@ -109,11 +111,11 @@
   {#if channel.kind === 'text'}
     <Row stack>
       <label class="topic">
-        <span>Tópico</span>
+        <span>{t.topic}</span>
         <textarea
           rows="3"
           maxlength={TOPIC_MAX}
-          placeholder="Do que se fala aqui"
+          placeholder={t.topicPlaceholder}
           value={view.topic}
           oninput={(e) => edit({ topic: e.currentTarget.value })}
         ></textarea>
@@ -125,22 +127,22 @@
 
 {#if channel.kind !== 'category'}
   <Section>
-    <Row label="Categoria">
+    <Row label={t.category}>
       <div class="w200">
-        <Select label="Categoria" bind:value={() => view.parentId, (v) => edit({ parentId: v })} options={categories} />
+        <Select label={t.category} bind:value={() => view.parentId, (v) => edit({ parentId: v })} options={categories} />
       </div>
     </Row>
     {#if channel.kind === 'text'}
-      <Row label="Modo lento" description="Cada pessoa espera esse tempo entre uma mensagem e outra.">
+      <Row label={t.slowmode} description={t.slowmodeDescription}>
         <div class="w200">
-          <Select label="Modo lento" bind:value={() => String(view.slowmode), (v) => edit({ slowmode: Number(v) })} options={SLOWMODES} />
+          <Select label={t.slowmode} bind:value={() => String(view.slowmode), (v) => edit({ slowmode: Number(v) })} options={slowmodes()} />
         </div>
       </Row>
     {:else}
-      <Row label="Limite de pessoas">
+      <Row label={t.userLimit}>
         <div class="limit">
-          <Slider label="Limite de pessoas" min={0} max={99} step={1} bind:value={() => view.userLimit, (v) => edit({ userLimit: Number(v) })} />
-          <span class="limit-value tabular">{view.userLimit === 0 ? 'Sem limite' : plural(view.userLimit, 'pessoa', 'pessoas')}</span>
+          <Slider label={t.userLimit} min={0} max={99} step={1} bind:value={() => view.userLimit, (v) => edit({ userLimit: Number(v) })} />
+          <span class="limit-value tabular">{view.userLimit === 0 ? m.server.time.noLimit : shared.people(view.userLimit)}</span>
         </div>
       </Row>
     {/if}

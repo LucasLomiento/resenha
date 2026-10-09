@@ -6,10 +6,11 @@
   import { untrack } from 'svelte'
   import { client } from '../../../lib/client.svelte'
   import type { GuildState } from '../../../lib/guild.svelte'
+  import { m } from '../../../lib/i18n.svelte'
   import { Button, Icon, Modal, Segmented, Switch, TextField } from '../../kit'
   import { hex, myTop } from '../permissions'
   import { settled } from '../settle.svelte'
-  import { TIMEOUTS, cleanName, durationText } from '../util'
+  import { cleanName, durationText, timeouts } from '../util'
 
   let { guild, action, userId, onclose }: { guild: GuildState; action: MemberAction; userId: string; onclose: () => void } = $props()
 
@@ -34,19 +35,21 @@
     if (!guild.members[userId] && !busy) onclose()
   })
 
-  const TITLES: Record<MemberAction, string> = {
-    roles: `Cargos de ${name}`,
-    nick: self ? 'Seu apelido neste servidor' : `Apelido de ${name}`,
-    timeout: `Castigar ${name}`,
-    kick: `Expulsar ${name}?`,
-    ban: `Banir ${name}?`,
-  }
+  const t = $derived(m.server.memberDialog)
 
-  const DESCRIPTIONS: Partial<Record<MemberAction, string>> = {
-    timeout: 'Não fala nem escreve até o castigo acabar.',
-    kick: 'Sai do servidor, mas pode voltar com um convite.',
-    ban: 'Sai do servidor e não volta, nem com convite, até alguém desbanir.',
-  }
+  const titles = $derived<Record<MemberAction, string>>({
+    roles: t.rolesTitle(name),
+    nick: self ? t.nickTitleSelf : t.nickTitle(name),
+    timeout: t.timeoutTitle(name),
+    kick: t.kickTitle(name),
+    ban: t.banTitle(name),
+  })
+
+  const descriptions = $derived<Partial<Record<MemberAction, string>>>({
+    timeout: t.timeoutDescription,
+    kick: t.kickDescription,
+    ban: t.banDescription,
+  })
 
   const sameSet = (a: string[], b: string[]) => a.length === b.length && a.every((id) => b.includes(id))
 
@@ -67,23 +70,23 @@
         return settled(() => (guild.members[userId]?.nick ?? null) === value)
       }
       case 'timeout': {
-        const m = Number(minutes)
-        guild.timeout(userId, m, reason.trim())
+        const length = Number(minutes)
+        guild.timeout(userId, length, reason.trim())
         const ok = await settled(() => (guild.members[userId]?.timeoutUntil ?? 0) > Date.now())
-        if (ok) client.toast(`${name} ficou de castigo por ${durationText(m)}.`, 'info')
+        if (ok) client.toast(t.timedOut(name, durationText(length)), 'info')
         return ok
       }
       case 'kick': {
         guild.kick(userId, reason.trim())
         const ok = await settled(() => !guild.members[userId])
-        if (ok) client.toast(`Você expulsou ${name}.`, 'info')
+        if (ok) client.toast(t.kicked(name), 'info')
         return ok
       }
       case 'ban': {
         guild.ban(userId, reason.trim(), purge)
         // Apagar as mensagens pode demorar um pouco mais.
         const ok = await settled(() => !guild.members[userId], 20_000)
-        if (ok) client.toast(`Você baniu ${name}.`, 'info')
+        if (ok) client.toast(t.banned(name), 'info')
         return ok
       }
     }
@@ -99,11 +102,11 @@
   }
 </script>
 
-<Modal title={TITLES[action]} description={DESCRIPTIONS[action]} size={action === 'roles' ? 'sm' : 'md'} {onclose} dismissible={!busy}>
+<Modal title={titles[action]} description={descriptions[action]} size={action === 'roles' ? 'sm' : 'md'} {onclose} dismissible={!busy}>
   <form id="{uid}-form" class="form" onsubmit={submit}>
     {#if action === 'roles'}
       {#if roles.length === 0}
-        <p class="empty">Ainda não tem cargo nenhum. Crie em Cargos.</p>
+        <p class="empty">{t.noRoles}</p>
       {:else}
         <div class="roles">
           {#each roles as r (r.id)}
@@ -124,40 +127,40 @@
       {/if}
     {:else if action === 'nick'}
       <TextField
-        label="Apelido"
+        label={t.nick}
         bind:value={nick}
         maxlength={32}
         placeholder={guild.users[userId]?.name ?? ''}
-        hint="Vazio volta pro nome de exibição."
+        hint={t.nickHint}
         spellcheck={false}
       />
     {:else}
       {#if action === 'timeout'}
         <div class="field">
-          <span class="field-label">Por quanto tempo</span>
-          <Segmented label="Por quanto tempo" options={TIMEOUTS} bind:value={minutes} />
+          <span class="field-label">{t.howLong}</span>
+          <Segmented label={t.howLong} options={timeouts()} bind:value={minutes} />
         </div>
       {/if}
-      <TextField label="Motivo" bind:value={reason} maxlength={512} hint="Opcional. Fica no registro de auditoria." />
+      <TextField label={t.reason} bind:value={reason} maxlength={512} hint={t.reasonHint} />
       {#if action === 'ban'}
         <label class="purge">
           <Switch bind:checked={purge} size="sm" />
-          <span>Apagar as mensagens dos últimos 7 dias</span>
+          <span>{t.purge}</span>
         </label>
       {/if}
     {/if}
   </form>
 
   {#snippet footer()}
-    <Button variant="ghost" onclick={onclose} disabled={busy}>Cancelar</Button>
+    <Button variant="ghost" onclick={onclose} disabled={busy}>{m.common.cancel}</Button>
     {#if action === 'kick'}
-      <Button variant="danger" type="submit" form="{uid}-form" loading={busy}>Expulsar</Button>
+      <Button variant="danger" type="submit" form="{uid}-form" loading={busy}>{t.kick}</Button>
     {:else if action === 'ban'}
-      <Button variant="danger" type="submit" form="{uid}-form" loading={busy}>Banir</Button>
+      <Button variant="danger" type="submit" form="{uid}-form" loading={busy}>{t.ban}</Button>
     {:else if action === 'timeout'}
-      <Button variant="primary" type="submit" form="{uid}-form" loading={busy}>Castigar</Button>
+      <Button variant="primary" type="submit" form="{uid}-form" loading={busy}>{t.timeout}</Button>
     {:else}
-      <Button variant="primary" type="submit" form="{uid}-form" loading={busy} disabled={action === 'roles' && roles.length === 0}>Salvar</Button>
+      <Button variant="primary" type="submit" form="{uid}-form" loading={busy} disabled={action === 'roles' && roles.length === 0}>{m.common.save}</Button>
     {/if}
   {/snippet}
 </Modal>

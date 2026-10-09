@@ -1,5 +1,6 @@
 import { P, has, type Channel, type DmChannel, type Message, type User } from '../../../../../shared/protocol'
 import { client } from '../../lib/client.svelte'
+import { m } from '../../lib/i18n.svelte'
 import type { GuildState } from '../../lib/guild.svelte'
 import type { HomeState } from '../../lib/home.svelte'
 import type { MentionNames } from './Markdown.svelte'
@@ -77,8 +78,8 @@ export function channelTarget(guild: GuildState, channel: Channel): ChatTarget {
       return guild.channel(id)?.name ?? channel.name
     },
     get placeholder() {
-      if (!has(perms(), P.SEND_MESSAGES)) return 'Você não pode escrever neste canal'
-      return `Mensagem em #${this.title}`
+      if (!has(perms(), P.SEND_MESSAGES)) return m.chat.composer.cantWrite
+      return m.chat.composer.channelPlaceholder(this.title)
     },
     get messages() {
       return guild.messages[id] ?? []
@@ -167,7 +168,7 @@ export function dmTarget(home: HomeState, dm: DmChannel): ChatTarget {
       return peer().name
     },
     get placeholder() {
-      return `Mensagem pra ${peer().name}`
+      return m.chat.composer.dmPlaceholder(peer().name)
     },
     get messages() {
       return home.messages[id] ?? []

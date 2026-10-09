@@ -2,6 +2,7 @@
   import { P, type Channel, type NotifyLevel, type VoiceMember } from '../../../../../shared/protocol'
   import { client } from '../../lib/client.svelte'
   import type { GuildState } from '../../lib/guild.svelte'
+  import { m } from '../../lib/i18n.svelte'
   import { settings } from '../../lib/settings.svelte'
   import { badgeOf } from '../../lib/profile'
   import { confirmAction, ui, type Anchor } from '../../lib/ui.svelte'
@@ -11,6 +12,7 @@
   let { guild }: { guild: GuildState } = $props()
 
   const call = client.call
+  const t = $derived(m.guild.sidebar)
   const route = $derived(client.route)
   const currentChannel = $derived(route.kind === 'guild' ? route.channelId : null)
   const manageChannels = $derived(guild.canGuild(P.MANAGE_CHANNELS))
@@ -46,45 +48,50 @@
   let headerButton = $state<HTMLButtonElement>()
   let menu = $state<{ items: MenuItem[]; anchor: Anchor; width?: number } | null>(null)
 
-  const LEVELS: { level: NotifyLevel; label: string }[] = [
-    { level: 'all', label: 'Todas as mensagens' },
-    { level: 'mentions', label: 'Só menções' },
-    { level: 'none', label: 'Nada' },
-  ]
+  /** Os níveis de notificação, no idioma de quando o menu abre. */
+  function levels(): { level: NotifyLevel; label: string }[] {
+    const names = m.guild.menu.levels
+    return [
+      { level: 'all', label: names.all },
+      { level: 'mentions', label: names.mentions },
+      { level: 'none', label: names.none },
+    ]
+  }
 
   function guildMenu(): MenuItem[] {
+    const t = m.guild.menu
     const items: MenuItem[] = []
-    if (guild.canGuild(P.CREATE_INVITE)) items.push({ label: 'Convidar pessoas', icon: 'user-plus', onselect: () => (ui.invite = { guildId: guild.id }) })
+    if (guild.canGuild(P.CREATE_INVITE)) items.push({ label: t.invite, icon: 'user-plus', onselect: () => (ui.invite = { guildId: guild.id }) })
     if (guild.canManage) {
-      items.push({ label: 'Configurações do servidor', icon: 'settings', onselect: () => (ui.guildSettings = { guildId: guild.id, page: 'overview' }) })
+      items.push({ label: t.settings, icon: 'settings', onselect: () => (ui.guildSettings = { guildId: guild.id, page: 'overview' }) })
     }
     if (manageChannels) {
-      items.push({ label: 'Criar canal', icon: 'plus', onselect: () => (ui.createChannel = { guildId: guild.id, kind: 'text', parentId: null }) })
-      items.push({ label: 'Criar categoria', icon: 'plus', onselect: () => (ui.createChannel = { guildId: guild.id, kind: 'category', parentId: null }) })
-      items.push({ label: 'Importar canais do Discord', icon: 'image-plus', onselect: () => (ui.discordImport = { guildId: guild.id }) })
+      items.push({ label: t.createChannel, icon: 'plus', onselect: () => (ui.createChannel = { guildId: guild.id, kind: 'text', parentId: null }) })
+      items.push({ label: t.createCategory, icon: 'plus', onselect: () => (ui.createChannel = { guildId: guild.id, kind: 'category', parentId: null }) })
+      items.push({ label: t.importDiscord, icon: 'image-plus', onselect: () => (ui.discordImport = { guildId: guild.id }) })
     }
     if (items.length) items.push({ kind: 'separator' })
-    items.push({ kind: 'label', label: 'Notificações' })
-    for (const { level, label } of LEVELS) {
+    items.push({ kind: 'label', label: t.notifications })
+    for (const { level, label } of levels()) {
       items.push({ label, checked: guild.notify.level === level, onselect: () => guild.setNotify({ ...guild.notify, level }) })
     }
     items.push({
-      label: guild.muted ? 'Voltar a notificar' : 'Silenciar servidor',
+      label: guild.muted ? t.notifyAgain : t.muteServer,
       icon: guild.muted ? 'bell' : 'bell-off',
       onselect: () => guild.setNotify({ ...guild.notify, mutedUntil: guild.muted ? null : 8.64e15 }),
     })
-    items.push({ label: 'Marcar tudo como lido', icon: 'check', onselect: () => guild.ackAll() })
+    items.push({ label: t.markAllRead, icon: 'check', onselect: () => guild.ackAll() })
     if (!guild.isOwner) {
       items.push({ kind: 'separator' })
       items.push({
-        label: 'Sair do servidor',
+        label: t.leave,
         icon: 'log-out',
         danger: true,
         onselect: () =>
           confirmAction({
-            title: `Sair de ${guild.info.name}?`,
-            description: 'Pra voltar, você vai precisar de um convite.',
-            confirm: 'Sair',
+            title: m.guild.menu.leaveTitle(guild.info.name),
+            description: m.guild.menu.leaveDescription,
+            confirm: m.guild.menu.leaveConfirm,
             onconfirm: () => client.leaveGuild(guild.id).catch((err) => client.toast((err as Error).message)),
           }),
       })
@@ -93,9 +100,10 @@
   }
 
   function channelMenu(channel: Channel): MenuItem[] {
+    const t = m.guild.channelMenu
     const items: MenuItem[] = []
     if (channel.kind === 'text') {
-      items.push({ label: 'Marcar como lido', icon: 'check', onselect: () => guild.ack(channel.id) })
+      items.push({ label: t.markRead, icon: 'check', onselect: () => guild.ack(channel.id) })
       const own = guild.notify.channels[channel.id]
       const muted = guild.channelMuted(channel.id)
       const setChannel = (patch: { level?: NotifyLevel | null; mutedUntil?: number | null }) => {
@@ -106,18 +114,18 @@
         guild.setNotify({ ...guild.notify, channels })
       }
       items.push({
-        label: muted ? 'Voltar a notificar' : 'Silenciar canal',
+        label: muted ? t.notifyAgain : t.muteChannel,
         icon: muted ? 'bell' : 'bell-off',
         onselect: () => setChannel({ mutedUntil: muted ? null : 8.64e15 }),
       })
-      items.push({ kind: 'label', label: 'Notificações' })
-      items.push({ label: 'Igual ao servidor', checked: !own?.level, onselect: () => setChannel({ level: null }) })
-      for (const { level, label } of LEVELS) items.push({ label, checked: own?.level === level, onselect: () => setChannel({ level }) })
+      items.push({ kind: 'label', label: m.guild.menu.notifications })
+      items.push({ label: t.sameAsServer, checked: !own?.level, onselect: () => setChannel({ level: null }) })
+      for (const { level, label } of levels()) items.push({ label, checked: own?.level === level, onselect: () => setChannel({ level }) })
     }
     // Só o dono do Resenha: a sala de voz passa pelo Cloudflare (gasta a cota do mês dele).
     if (channel.kind === 'voice' && client.me?.staff) {
       items.push({
-        label: 'Passar pelo Cloudflare',
+        label: t.relay,
         icon: 'cloud',
         checked: !!channel.relay,
         onselect: () => guild.updateChannel(channel.id, { relay: !channel.relay }),
@@ -126,25 +134,26 @@
     if (guild.can(channel.id, P.MANAGE_CHANNELS) || (channel.kind === 'category' && manageChannels)) {
       if (items.length) items.push({ kind: 'separator' })
       if (channel.kind === 'category') {
-        items.push({ label: 'Criar canal aqui', icon: 'plus', onselect: () => (ui.createChannel = { guildId: guild.id, kind: 'text', parentId: channel.id }) })
+        items.push({ label: t.createHere, icon: 'plus', onselect: () => (ui.createChannel = { guildId: guild.id, kind: 'text', parentId: channel.id }) })
       }
       items.push({
-        label: channel.kind === 'category' ? 'Editar categoria' : 'Editar canal',
+        label: channel.kind === 'category' ? t.editCategory : t.editChannel,
         icon: 'settings',
         onselect: () => (ui.channelSettings = { guildId: guild.id, channelId: channel.id }),
       })
       items.push({
-        label: channel.kind === 'category' ? 'Apagar categoria' : 'Apagar canal',
+        label: channel.kind === 'category' ? t.deleteCategory : t.deleteChannel,
         icon: 'trash',
         danger: true,
-        onselect: () =>
+        onselect: () => {
+          const ask = m.guild.channelMenu
           confirmAction({
-            title: channel.kind === 'category' ? `Apagar a categoria ${channel.name}?` : `Apagar #${channel.name}?`,
-            description:
-              channel.kind === 'category' ? 'Os canais dela continuam, fora da categoria.' : 'As mensagens e os arquivos desse canal somem pra sempre.',
-            confirm: 'Apagar',
+            title: channel.kind === 'category' ? ask.deleteCategoryTitle(channel.name) : ask.deleteChannelTitle(channel.name),
+            description: channel.kind === 'category' ? ask.deleteCategoryDescription : ask.deleteChannelDescription,
+            confirm: ask.deleteConfirm,
             onconfirm: () => guild.deleteChannel(channel.id),
-          }),
+          })
+        },
       })
     }
     return items
@@ -292,7 +301,7 @@
   </button>
 </header>
 
-<nav aria-label="Canais" ondragover={dragOverNav} ondrop={dropHere}>
+<nav aria-label={t.channels} ondragover={dragOverNav} ondrop={dropHere}>
   {#if !guild.loaded}
     <div class="loading"><Spinner size={16} /></div>
   {:else}
@@ -300,9 +309,9 @@
     <NavItem
       class="map-entry"
       icon="map"
-      label="Mapa"
+      label={t.map}
       active={client.view === 'map'}
-      aria-label={people.length ? `Mapa: ${people.length} ${people.length === 1 ? 'pessoa' : 'pessoas'} agora` : 'Mapa'}
+      aria-label={people.length ? t.mapPeople(people.length) : t.map}
       onclick={() => client.openMap(guild.id)}
     >
       {#snippet trailing()}
@@ -340,7 +349,7 @@
           <span class="category-add">
             <IconButton
               icon="plus"
-              label="Criar canal"
+              label={t.createChannel}
               size="sm"
               onclick={() => (ui.createChannel = { guildId: guild.id, kind: 'text', parentId: category.id })}
             />
@@ -381,7 +390,7 @@
               <span class="channel-gear">
                 <IconButton
                   icon="settings"
-                  label="Editar canal"
+                  label={t.editChannel}
                   size="sm"
                   onclick={() => (ui.channelSettings = { guildId: guild.id, channelId: channel.id })}
                 />
@@ -410,13 +419,13 @@
               icon={isPrivate(channel) ? 'lock' : 'volume'}
               label={channel.name}
               active={here && client.view === 'call'}
-              aria-label={here ? `${channel.name}: abrir a call` : `${channel.name}: entrar na call`}
+              aria-label={here ? t.openCall(channel.name) : t.joinCall(channel.name)}
               onclick={() => client.openChannel(guild.id, channel.id)}
             >
               {#snippet trailing()}
                 {#if call.joining && !here}<Spinner size={14} />{/if}
                 {#if channel.relay}
-                  <span class="relay" use:tooltip={{ text: 'Pelo Cloudflare: voz, câmera e tela passam pelos servidores dele, não direto entre os PCs', placement: 'right' }}>
+                  <span class="relay" use:tooltip={{ text: t.relay, placement: 'right' }}>
                     <Icon name="cloud" size={14} />
                   </span>
                 {/if}
@@ -439,7 +448,7 @@
                     class="member-main"
                     class:dim={!here}
                     aria-expanded={volumeFor === member.connId}
-                    use:tooltip={here && !self ? { text: 'Volume', placement: 'right' } : null}
+                    use:tooltip={here && !self ? { text: t.volume, placement: 'right' } : null}
                     onclick={() => (here && !self ? (volumeFor = volumeFor === member.connId ? null : member.connId) : null)}
                     oncontextmenu={(e) => openMenu(e, memberMenu(guild, member.userId, { x: e.clientX, y: e.clientY }))}
                   >
@@ -456,11 +465,11 @@
                     {#if here && !self}<SignalBars class="ping" rtt={link?.rtt} route={link?.route} />{/if}
                     {#if member.camera}<Icon name="camera" size={14} class="soft" />{/if}
                     {#if member.serverDeafened || member.deafened}
-                      <span class="state" use:tooltip={member.serverDeafened ? 'Ensurdecido por um moderador' : 'Ensurdecido'}>
+                      <span class="state" use:tooltip={member.serverDeafened ? t.deafenedByMod : t.deafened}>
                         <Icon name="headphones-off" size={14} />
                       </span>
                     {:else if member.serverMuted || member.muted}
-                      <span class="state" use:tooltip={member.serverMuted ? 'Mutado por um moderador' : 'Mutado'}>
+                      <span class="state" use:tooltip={member.serverMuted ? t.mutedByMod : t.muted}>
                         <Icon name="mic-off" size={14} />
                       </span>
                     {/if}
@@ -469,10 +478,10 @@
                     <button
                       class="live"
                       disabled={!here}
-                      use:tooltip={here ? (self ? 'Ver minha tela' : 'Assistir') : 'Entre na call pra assistir'}
+                      use:tooltip={here ? (self ? t.watchMine : t.watch) : t.joinToWatch}
                       onclick={() => watch(member)}
                     >
-                      AO VIVO
+                      {t.live}
                     </button>
                   {/if}
                 </li>
@@ -480,7 +489,7 @@
                   <li class="volume">
                     <Icon name="volume" size={14} />
                     <Slider
-                      label="Volume de {name}"
+                      label={t.volumeOf(name)}
                       max={1}
                       value={settings.userVolumes[member.userId] ?? 1}
                       oninput={(e) => setVolume(member.userId, Number(e.currentTarget.value))}

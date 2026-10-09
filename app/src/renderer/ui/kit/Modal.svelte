@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount, type Snippet } from 'svelte'
+  import { m } from '../../lib/i18n.svelte'
   import IconButton from './IconButton.svelte'
   import { layer } from './layers'
   import { portal } from './position'
@@ -59,7 +60,7 @@
         <h2 id="{uid}-title">{title}</h2>
         {#if description}<p>{description}</p>{/if}
       </div>
-      {#if dismissible}<IconButton icon="x" label="Fechar" size="sm" tip="bottom" onclick={onclose} />{/if}
+      {#if dismissible}<IconButton icon="x" label={m.common.close} size="sm" tip="bottom" onclick={onclose} />{/if}
     </header>
     {#if children}
       <div class="body">

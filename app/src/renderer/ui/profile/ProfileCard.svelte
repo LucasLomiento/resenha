@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { m } from '../../lib/i18n.svelte'
   import { ui } from '../../lib/ui.svelte'
   import { Popover } from '../kit'
   import ProfileBody from './ProfileBody.svelte'
@@ -14,7 +15,7 @@
 <!-- Cartão de perfil (popout): abre ao clicar no nome ou no avatar, em qualquer lugar. -->
 {#if profile}
   {#key profile.userId}
-    <Popover anchor={profile.anchor} placement="right-start" gap={12} width={320} label="Perfil" onclose={close} class="profile-pop">
+    <Popover anchor={profile.anchor} placement="right-start" gap={12} width={320} label={m.home.profile.label} onclose={close} class="profile-pop">
       <ProfileBody userId={profile.userId} guildId={profile.guildId} onaction={close} />
     </Popover>
   {/key}

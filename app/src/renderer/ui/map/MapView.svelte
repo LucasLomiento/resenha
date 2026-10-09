@@ -1,10 +1,11 @@
 <script lang="ts">
   import { onMount, tick } from 'svelte'
-  import { MAX_MAP_PIN_LABEL, P, type MapPin, type MapView, type StreetSpot } from '../../../../../shared/protocol'
+  import { MAX_MAP_PIN_LABEL, MAX_MAP_PINS, P, type MapPin, type MapView, type StreetSpot } from '../../../../../shared/protocol'
   import { client } from '../../lib/client.svelte'
-  import { formatStamp, plural, userColor } from '../../lib/format'
+  import { formatStamp, userColor } from '../../lib/format'
   import { searchPlaces, type Place } from '../../lib/geocode'
   import type { GuildState } from '../../lib/guild.svelte'
+  import { m } from '../../lib/i18n.svelte'
   import type { LngLat, SharedMap } from '../../lib/map-canvas'
   import { MAP_STYLES, PIN_COLORS, streetEmbedUrl, streetPageUrl, type MapListener, type MapStyleName } from '../../lib/map.svelte'
   import { confirmAction } from '../../lib/ui.svelte'
@@ -48,6 +49,7 @@
   let results = $state<Place[] | null>(null)
   let searchError = $state<string | null>(null)
 
+  const t = $derived(m.map)
   const timedOut = $derived(!!guild.me?.timeoutUntil && guild.me.timeoutUntil > client.now)
   const moderator = $derived(guild.canGuild(P.MANAGE_MESSAGES))
   const people = $derived(shared.people)
@@ -248,7 +250,7 @@
   // ---------- Marcadores ----------
 
   function openDraft(at: LngLat, label = '') {
-    if (timedOut) return client.toast('Você está de castigo e não pode marcar lugares agora.')
+    if (timedOut) return client.toast(m.map.timedOut)
     placing = false
     selected = null
     draft = { at, label, color: draft?.color ?? myColor() }
@@ -275,9 +277,9 @@
   function deletePin(pin: MapPin, event?: MouseEvent) {
     if (event?.shiftKey) return shared.removePin(pin.id)
     confirmAction({
-      title: 'Apagar marcador?',
-      description: `${pin.label} some do mapa pra todo mundo.`,
-      confirm: 'Apagar',
+      title: m.map.confirmDelete.title,
+      description: m.map.confirmDelete.description(pin.label),
+      confirm: m.map.delete,
       onconfirm: () => shared.removePin(pin.id),
     })
   }
@@ -309,7 +311,7 @@
       results = await searchPlaces(text)
     } catch (err) {
       results = []
-      searchError = err instanceof TypeError ? 'Sem conexão com a busca agora.' : (err as Error).message
+      searchError = err instanceof TypeError ? m.map.searchOffline : (err as Error).message
     } finally {
       searching = false
     }
@@ -336,7 +338,7 @@
 
   const styleItems = $derived<MenuItem[]>(
     (Object.keys(MAP_STYLES) as MapStyleName[]).map((name) => ({
-      label: MAP_STYLES[name].label,
+      label: t.styles[name],
       checked: styleName === name,
       onselect: () => {
         styleName = name
@@ -347,13 +349,13 @@
   )
 </script>
 
-<section class="map-pane" class:with-aside={pinsOpen} class:with-street={!!street} aria-label="Mapa">
+<section class="map-pane" class:with-aside={pinsOpen} class:with-street={!!street} aria-label={t.title}>
   <header>
     <Icon name="map" size={20} class="header-icon" />
-    <h1>Mapa</h1>
+    <h1>{t.title}</h1>
     {#if people.length}
       <span class="divider"></span>
-      <span class="people" aria-label="No mapa agora: {people.map((id) => guild.displayName(id)).join(', ')}">
+      <span class="people" aria-label={t.onMapNow(people.map((id) => guild.displayName(id)).join(', '))}>
         {#each people.slice(0, 5) as id (id)}
           <span class="face" use:tooltip={{ text: guild.displayName(id), placement: 'bottom' }}>
             <Avatar {id} name={guild.displayName(id)} size={24} src={client.avatarOf(id, guild.id)} />
@@ -366,14 +368,14 @@
     <div class="tools">
       <label class="search" class:filled={!!query}>
         {#if searching}<Spinner size={14} />{:else}<Icon name="search" size={15} />{/if}
-        <input placeholder="Buscar lugar" bind:value={query} aria-label="Buscar lugar" onkeydown={search} data-own-escape />
+        <input placeholder={t.search} bind:value={query} aria-label={t.search} onkeydown={search} data-own-escape />
         {#if query}
-          <button class="clear" aria-label="Limpar busca" onclick={clearSearch}><Icon name="x" size={14} /></button>
+          <button class="clear" aria-label={t.clearSearch} onclick={clearSearch}><Icon name="x" size={14} /></button>
         {/if}
       </label>
       <IconButton
         icon="map-pin-plus"
-        label={timedOut ? 'De castigo: sem marcar lugares' : 'Marcar lugar'}
+        label={timedOut ? t.markTimedOut : t.mark}
         tip="bottom"
         active={placing}
         tone="accent"
@@ -382,17 +384,17 @@
       />
       <IconButton
         icon="person-standing"
-        label={street ? 'Fechar o Street View' : 'Street View'}
+        label={street ? t.closeStreet : t.streetView}
         tip="bottom"
         active={streetPicking || !!street}
         disabled={status !== 'ready'}
         onclick={streetClick}
       />
-      <IconButton icon="map-pin" label="Marcadores" tip="bottom" active={pinsOpen} onclick={togglePins} />
+      <IconButton icon="map-pin" label={t.pins} tip="bottom" active={pinsOpen} onclick={togglePins} />
       <span bind:this={styleButton}>
-        <IconButton icon="layers" label="Estilo do mapa" tip="bottom" active={styleMenu} onclick={() => (styleMenu = !styleMenu)} />
+        <IconButton icon="layers" label={t.style} tip="bottom" active={styleMenu} onclick={() => (styleMenu = !styleMenu)} />
       </span>
-      <a class="gmaps" href={googleUrl} target="_blank" rel="noreferrer noopener" use:tooltip={{ text: 'Abrir este lugar no Google Maps (satélite, Street View)', placement: 'bottom' }}>
+      <a class="gmaps" href={googleUrl} target="_blank" rel="noreferrer noopener" use:tooltip={{ text: t.googleHint, placement: 'bottom' }}>
         <span class="gmaps-text">Google Maps</span>
         <Icon name="arrow-up-right" size={15} />
       </a>
@@ -412,11 +414,11 @@
       {:else if status === 'failed'}
         <div class="veil failed">
           {#if failure === 'offline'}
-            <EmptyState icon="map" title="O mapa não carregou" description="Sem conexão com o serviço dos mapas agora.">
-              {#snippet actions()}<Button size="sm" onclick={retry}>Tentar de novo</Button>{/snippet}
+            <EmptyState icon="map" title={t.offline.title} description={t.offline.description}>
+              {#snippet actions()}<Button size="sm" onclick={retry}>{m.common.retry}</Button>{/snippet}
             </EmptyState>
           {:else}
-            <EmptyState icon="map" title="O mapa não abriu" description="O app não conseguiu usar a placa de vídeo pra desenhar o mapa." />
+            <EmptyState icon="map" title={t.webgl.title} description={t.webgl.description} />
           {/if}
         </div>
       {/if}
@@ -424,19 +426,19 @@
       {#if placing}
         <div class="pill" role="status" use:layer={() => (placing = false)}>
           <Icon name="map-pin-plus" size={15} />
-          Clique no mapa pra marcar
+          {t.clickToMark}
           <Kbd keys="Esc" />
         </div>
       {:else if streetPicking}
         <div class="pill" role="status" use:layer={() => (streetPicking = false)}>
           <Icon name="person-standing" size={15} />
-          Clique no mapa pra ver a rua
+          {t.clickToStreet}
           <Kbd keys="Esc" />
         </div>
       {:else if mover}
         <div class="pill" role="status">
           <Avatar id={mover} name={guild.displayName(mover)} size={18} src={client.avatarOf(mover, guild.id)} />
-          {guild.displayName(mover)} está movendo o mapa
+          {t.moving(guild.displayName(mover))}
         </div>
       {/if}
 
@@ -445,7 +447,7 @@
           {#if searchError}
             <p class="note">{searchError}</p>
           {:else if results.length === 0}
-            <p class="note">Nada encontrado pra “{query.trim()}”.</p>
+            <p class="note">{t.noResults(query.trim())}</p>
           {:else}
             <ul>
               {#each results as place, i (i)}
@@ -457,12 +459,12 @@
                       {#if place.detail}<span class="result-detail">{place.detail}</span>{/if}
                     </span>
                   </button>
-                  <IconButton icon="map-pin-plus" label="Marcar aqui" size="sm" disabled={timedOut} onclick={() => markPlace(place)} />
+                  <IconButton icon="map-pin-plus" label={t.markHere} size="sm" disabled={timedOut} onclick={() => markPlace(place)} />
                 </li>
               {/each}
             </ul>
           {/if}
-          <p class="credit">Busca do OpenStreetMap</p>
+          <p class="credit">{t.credit}</p>
         </div>
       {/if}
 
@@ -475,25 +477,25 @@
                 bind:this={draftInput}
                 bind:value={draft.label}
                 maxlength={MAX_MAP_PIN_LABEL}
-                placeholder="Nome do lugar"
-                aria-label="Nome do lugar"
+                placeholder={t.placeName}
+                aria-label={t.placeName}
               />
-              <div class="swatches" role="radiogroup" aria-label="Cor">
+              <div class="swatches" role="radiogroup" aria-label={t.color}>
                 {#each PIN_COLORS as color (color)}
                   <button
                     type="button"
                     class="swatch"
                     role="radio"
                     aria-checked={draft.color === color}
-                    aria-label="Cor {PIN_COLORS.indexOf(color) + 1}"
+                    aria-label={t.colorN(PIN_COLORS.indexOf(color) + 1)}
                     style:--pin="#{color.toString(16).padStart(6, '0')}"
                     onclick={() => draft && (draft.color = color)}
                   ></button>
                 {/each}
               </div>
               <div class="actions">
-                <Button size="sm" variant="ghost" onclick={() => (draft = null)}>Cancelar</Button>
-                <Button size="sm" variant="primary" type="submit" disabled={!draft.label.trim()}>Marcar</Button>
+                <Button size="sm" variant="ghost" onclick={() => (draft = null)}>{m.common.cancel}</Button>
+                <Button size="sm" variant="primary" type="submit" disabled={!draft.label.trim()}>{t.markButton}</Button>
               </div>
             </form>
           {:else if selectedPin}
@@ -501,16 +503,16 @@
               <div class="pin-head">
                 <span class="dot" style:--pin="#{selectedPin.color.toString(16).padStart(6, '0')}"></span>
                 <strong>{selectedPin.label}</strong>
-                <IconButton icon="x" label="Fechar" size="sm" tip={false} onclick={() => (selected = null)} />
+                <IconButton icon="x" label={m.common.close} size="sm" tip={false} onclick={() => (selected = null)} />
               </div>
               <p class="pin-meta">{guild.displayName(selectedPin.authorId)} · {formatStamp(selectedPin.createdAt)}</p>
               <div class="actions">
                 {#if canDelete(selectedPin)}
                   {@const pin = selectedPin}
-                  <Button size="sm" variant="danger-soft" icon="trash" onclick={(e) => deletePin(pin, e)}>Apagar</Button>
+                  <Button size="sm" variant="danger-soft" icon="trash" onclick={(e) => deletePin(pin, e)}>{t.delete}</Button>
                 {/if}
                 <Button size="sm" variant="secondary" icon="person-standing" onclick={() => streetAtPin(selectedPin)}>
-                  Street View
+                  {t.streetView}
                 </Button>
                 <a class="gmaps small" href={pinPlace(selectedPin)} target="_blank" rel="noreferrer noopener">
                   Google Maps <Icon name="arrow-up-right" size={14} />
@@ -522,36 +524,36 @@
       </div>
 
       <div class="controls">
-        <IconButton icon="plus" label="Aproximar" variant="glass" tip="left" disabled={status !== 'ready'} onclick={() => canvas?.zoomBy(1)} />
-        <IconButton icon="minus" label="Afastar" variant="glass" tip="left" disabled={status !== 'ready'} onclick={() => canvas?.zoomBy(-1)} />
+        <IconButton icon="plus" label={t.zoomIn} variant="glass" tip="left" disabled={status !== 'ready'} onclick={() => canvas?.zoomBy(1)} />
+        <IconButton icon="minus" label={t.zoomOut} variant="glass" tip="left" disabled={status !== 'ready'} onclick={() => canvas?.zoomBy(-1)} />
         <span class="north" style:rotate="{-view.bearing}deg">
-          <IconButton icon="compass" label="Voltar pro norte" variant="glass" tip="left" disabled={status !== 'ready'} onclick={() => canvas?.resetNorth()} />
+          <IconButton icon="compass" label={t.north} variant="glass" tip="left" disabled={status !== 'ready'} onclick={() => canvas?.resetNorth()} />
         </span>
       </div>
     </div>
 
     {#if street}
-      <section class="street" aria-label="Street View" use:layer={closeStreet}>
+      <section class="street" aria-label={t.streetView} use:layer={closeStreet}>
         <div class="street-head">
           <Icon name="person-standing" size={16} class="street-icon" />
-          <span class="street-title">Street View</span>
+          <span class="street-title">{t.streetView}</span>
           {#if together.length}
-            <span class="street-with" use:tooltip={{ text: `Olhando aqui também: ${together.map((id) => guild.displayName(id)).join(', ')}`, placement: 'bottom' }}>
+            <span class="street-with" use:tooltip={{ text: t.together(together.map((id) => guild.displayName(id)).join(', ')), placement: 'bottom' }}>
               {#each together.slice(0, 3) as id (id)}
                 <Avatar {id} name={guild.displayName(id)} size={20} src={client.avatarOf(id, guild.id)} cutout="var(--bg-raised)" />
               {/each}
             </span>
           {/if}
-          <a class="gmaps small" href={streetPageUrl(street)} target="_blank" rel="noreferrer noopener" use:tooltip={{ text: 'Abrir no navegador, com tudo do Google Maps', placement: 'bottom' }}>
+          <a class="gmaps small" href={streetPageUrl(street)} target="_blank" rel="noreferrer noopener" use:tooltip={{ text: t.streetBrowser, placement: 'bottom' }}>
             Google Maps <Icon name="arrow-up-right" size={14} />
           </a>
-          <IconButton icon="x" label="Fechar o Street View" size="sm" tip="bottom" onclick={closeStreet} />
+          <IconButton icon="x" label={t.closeStreet} size="sm" tip="bottom" onclick={closeStreet} />
         </div>
         {#key streetEmbedUrl(street)}
           <!-- Sem allow-top-navigation: a página do Google não consegue tirar o app do lugar. -->
           <iframe
             class="street-frame"
-            title="Street View"
+            title={t.streetView}
             src={streetEmbedUrl(street)}
             sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox"
             allow="fullscreen"
@@ -559,18 +561,18 @@
             referrerpolicy="strict-origin-when-cross-origin"
           ></iframe>
         {/key}
-        <p class="street-note">Andar aqui dentro não mexe nos outros; eles veem onde você abriu e podem vir junto.</p>
+        <p class="street-note">{t.streetNote}</p>
       </section>
     {/if}
 
     {#if pinsOpen}
-      <aside class="aside" aria-label="Marcadores">
+      <aside class="aside" aria-label={t.pins}>
         <div class="aside-head">
-          <span>Marcadores</span>
+          <span>{t.pins}</span>
           <span class="count">{shared.pins.length}</span>
         </div>
         {#if pins.length === 0}
-          <EmptyState icon="map-pin" title="Nenhum marcador ainda" description="Clique em Marcar lugar (ou com o botão direito no mapa) pra deixar um." />
+          <EmptyState icon="map-pin" title={t.noPins} description={t.noPinsHint} />
         {:else}
           <ul class="pins">
             {#each pins as pin (pin.id)}
@@ -584,13 +586,13 @@
                 </button>
                 {#if canDelete(pin)}
                   <span class="pin-delete">
-                    <IconButton icon="trash" label="Apagar marcador" size="sm" tip="left" onclick={(e) => deletePin(pin, e)} />
+                    <IconButton icon="trash" label={t.deletePin} size="sm" tip="left" onclick={(e) => deletePin(pin, e)} />
                   </span>
                 {/if}
               </li>
             {/each}
           </ul>
-          <p class="aside-foot">{plural(shared.pins.length, 'marcador', 'marcadores')} de 200</p>
+          <p class="aside-foot">{t.pinCount(shared.pins.length, MAX_MAP_PINS)}</p>
         {/if}
       </aside>
     {/if}

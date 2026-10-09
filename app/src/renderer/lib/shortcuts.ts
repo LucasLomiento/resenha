@@ -2,14 +2,17 @@
 // que o processo principal registra como atalho global no sistema.
 
 import type { ShortcutAction } from '../../preload/api'
+import { m } from './i18n.svelte'
 
-export const ACTIONS: { id: ShortcutAction; label: string }[] = [
-  { id: 'toggle-mute', label: 'Mutar / desmutar o microfone' },
-  { id: 'toggle-deafen', label: 'Ensurdecer / voltar a ouvir' },
-  { id: 'toggle-share', label: 'Compartilhar / parar a tela' },
-  { id: 'leave-call', label: 'Sair da call' },
-  { id: 'show-window', label: 'Mostrar o Resenha' },
-]
+/** As ações com atalho; o nome sai do catálogo na hora de mostrar. */
+export const ACTIONS: { id: ShortcutAction; readonly label: string }[] = (
+  ['toggle-mute', 'toggle-deafen', 'toggle-share', 'leave-call', 'show-window'] as ShortcutAction[]
+).map((id) => ({
+  id,
+  get label() {
+    return m.lib.shortcuts.actions[id]
+  },
+}))
 
 const NAMED: Record<string, string> = {
   Space: 'Space',
@@ -68,7 +71,7 @@ export function acceleratorFrom(event: KeyboardEvent): string | null {
 }
 
 export function describeAccelerator(accelerator: string | null, platform: string): string {
-  if (!accelerator) return 'Nenhum'
+  if (!accelerator) return m.lib.shortcuts.none
   return accelerator
     .split('+')
     .map((part) =>

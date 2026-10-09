@@ -3,6 +3,7 @@
 //
 // Uso: npx electron-vite build && node test/proto-shots.mjs <pasta> [tela ...]
 //   PROTO_SMALL=1  também captura na janela mínima (940x560)
+//   PROTO_LANG=en  no idioma escolhido (pt, en ou es; o padrão é pt)
 
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
@@ -24,7 +25,8 @@ rmSync(join(homedir(), '.config', `resenha-${PROFILE}`), { recursive: true, forc
 const app = await electron.launch({
   executablePath: electronPath,
   args: [APP_DIR],
-  env: { ...process.env, RESENHA_PROFILE: PROFILE, RESENHA_HIDDEN: '1' },
+  // Perfil novo segue o idioma do sistema: o LANGUAGE escolhe (os dados de exemplo continuam em português).
+  env: { ...process.env, RESENHA_PROFILE: PROFILE, RESENHA_HIDDEN: '1', LANGUAGE: { en: 'en_US', es: 'es' }[process.env.PROTO_LANG] ?? 'pt_BR' },
 })
 const page = await app.firstWindow()
 page.on('pageerror', (err) => console.log(`   pageerror: ${err.message}`))

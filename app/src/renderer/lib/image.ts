@@ -3,6 +3,7 @@
 
 import { MAX_ANIMATED_BYTES, MAX_AVATAR_BYTES, MAX_BANNER_BYTES } from '../../../../shared/protocol'
 import { isAnimated } from '../../../../shared/media'
+import { m } from './i18n.svelte'
 
 /** Limite do servidor pra foto e ícone. */
 export const MAX_IMAGE_BYTES = MAX_AVATAR_BYTES
@@ -11,7 +12,7 @@ async function open(file: Blob): Promise<ImageBitmap> {
   try {
     return await createImageBitmap(file)
   } catch {
-    throw new Error('Não deu pra abrir essa imagem. Use PNG, JPEG, WebP ou GIF.')
+    throw new Error(m.lib.image.unreadable)
   }
 }
 
@@ -20,7 +21,7 @@ async function webp(canvas: OffscreenCanvas, maxBytes: number): Promise<Blob> {
     const blob = await canvas.convertToBlob({ type: 'image/webp', quality })
     if (blob.size <= maxBytes) return blob
   }
-  throw new Error('A imagem ficou grande demais. Tente outra.')
+  throw new Error(m.lib.image.tooBig)
 }
 
 /**
@@ -55,14 +56,14 @@ export async function animatedImage(file: Blob): Promise<boolean> {
  */
 export async function avatarImages(file: File): Promise<{ image: Blob; still: Blob | null }> {
   if (!(await animatedImage(file))) return { image: await squareImage(file, 256), still: null }
-  if (file.size > MAX_ANIMATED_BYTES) throw new Error('A foto animada pode ter até 1,5 MB.')
+  if (file.size > MAX_ANIMATED_BYTES) throw new Error(m.lib.image.animatedAvatar)
   return { image: file, still: await squareImage(file, 256) }
 }
 
 /** Banner: 5:2, até 1200 px de largura, em WebP. Animado vai como está (até 1,5 MB). */
 export async function bannerImage(file: File): Promise<Blob> {
   if (await animatedImage(file)) {
-    if (file.size > MAX_BANNER_BYTES) throw new Error('O banner animado pode ter até 1,5 MB.')
+    if (file.size > MAX_BANNER_BYTES) throw new Error(m.lib.image.animatedBanner)
     return file
   }
   const full = await open(file)

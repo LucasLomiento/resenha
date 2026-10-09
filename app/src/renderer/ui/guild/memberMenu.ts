@@ -2,6 +2,7 @@ import { outranks } from '../../../../../shared/permissions'
 import { P, has } from '../../../../../shared/protocol'
 import { client } from '../../lib/client.svelte'
 import type { GuildState } from '../../lib/guild.svelte'
+import { m } from '../../lib/i18n.svelte'
 import { confirmAction, openProfile, ui, type Anchor } from '../../lib/ui.svelte'
 import type { MenuItem } from '../kit'
 
@@ -26,24 +27,25 @@ export function memberMenu(guild: GuildState, userId: string, anchor: Anchor): M
   const member = guild.members[userId]
   const voice = guild.voice.find((v) => v.userId === userId)
   const moderate = canModerate(guild, userId)
-  const items: MenuItem[] = [{ label: 'Perfil', icon: 'user', onselect: () => openProfile(userId, guild.id, anchor) }]
-  if (!self) items.push({ label: 'Mensagem', icon: 'message', onselect: () => client.openDm(userId) })
+  const t = m.guild.memberMenu
+  const items: MenuItem[] = [{ label: t.profile, icon: 'user', onselect: () => openProfile(userId, guild.id, anchor) }]
+  if (!self) items.push({ label: t.message, icon: 'message', onselect: () => client.openDm(userId) })
   if (self && can(P.CHANGE_NICKNAME)) {
-    items.push({ label: 'Mudar meu apelido', icon: 'pencil', onselect: () => openProfile(userId, guild.id, anchor) })
+    items.push({ label: t.changeMyNick, icon: 'pencil', onselect: () => openProfile(userId, guild.id, anchor) })
   }
 
   if (voice && (moderate || self)) {
     const voiceItems: MenuItem[] = []
     if (can(P.MUTE_MEMBERS)) {
       voiceItems.push({
-        label: member?.serverMuted ? 'Desmutar pra todos' : 'Mutar pra todos',
+        label: member?.serverMuted ? t.unmuteAll : t.muteAll,
         icon: member?.serverMuted ? 'mic' : 'mic-off',
         onselect: () => guild.moderateVoice(userId, { serverMuted: !member?.serverMuted }),
       })
     }
     if (can(P.DEAFEN_MEMBERS)) {
       voiceItems.push({
-        label: member?.serverDeafened ? 'Voltar a ouvir (pra todos)' : 'Ensurdecer pra todos',
+        label: member?.serverDeafened ? t.undeafenAll : t.deafenAll,
         icon: member?.serverDeafened ? 'headphones' : 'headphones-off',
         onselect: () => guild.moderateVoice(userId, { serverDeafened: !member?.serverDeafened }),
       })
@@ -51,9 +53,9 @@ export function memberMenu(guild: GuildState, userId: string, anchor: Anchor): M
     if (can(P.MOVE_MEMBERS)) {
       const others = guild.orderedChannels.filter((c) => c.kind === 'voice' && c.id !== voice.channelId && guild.can(c.id, P.CONNECT))
       for (const channel of others.slice(0, 6)) {
-        voiceItems.push({ label: `Mover pra ${channel.name}`, icon: 'move', onselect: () => guild.moderateVoice(userId, { moveTo: channel.id }) })
+        voiceItems.push({ label: t.moveTo(channel.name), icon: 'move', onselect: () => guild.moderateVoice(userId, { moveTo: channel.id }) })
       }
-      voiceItems.push({ label: 'Desconectar da call', icon: 'phone-off', onselect: () => guild.moderateVoice(userId, { disconnect: true }) })
+      voiceItems.push({ label: t.disconnect, icon: 'phone-off', onselect: () => guild.moderateVoice(userId, { disconnect: true }) })
     }
     if (voiceItems.length) items.push({ kind: 'separator' }, ...voiceItems)
   }
@@ -61,46 +63,46 @@ export function memberMenu(guild: GuildState, userId: string, anchor: Anchor): M
   if (moderate) {
     const modItems: MenuItem[] = []
     if (can(P.MANAGE_ROLES)) {
-      modItems.push({ label: 'Cargos…', icon: 'shield', onselect: () => (ui.guildSettings = { guildId: guild.id, page: 'members' }) })
+      modItems.push({ label: t.roles, icon: 'shield', onselect: () => (ui.guildSettings = { guildId: guild.id, page: 'members' }) })
     }
     if (can(P.MODERATE_MEMBERS)) {
       const timedOut = !!member?.timeoutUntil && member.timeoutUntil > Date.now()
       if (timedOut) {
-        modItems.push({ label: 'Tirar o castigo', icon: 'clock', onselect: () => guild.timeout(userId, 0) })
+        modItems.push({ label: t.removeTimeout, icon: 'clock', onselect: () => guild.timeout(userId, 0) })
       } else {
         for (const [minutes, label] of [
-          [10, '10 minutos'],
-          [60, '1 hora'],
-          [1440, '1 dia'],
+          [10, t.timeout10m],
+          [60, t.timeout1h],
+          [1440, t.timeout1d],
         ] as const) {
-          modItems.push({ label: `Castigar por ${label}`, icon: 'clock', onselect: () => guild.timeout(userId, minutes) })
+          modItems.push({ label, icon: 'clock', onselect: () => guild.timeout(userId, minutes) })
         }
       }
     }
     if (can(P.KICK_MEMBERS)) {
       modItems.push({
-        label: 'Expulsar',
+        label: t.kick,
         icon: 'user-x',
         danger: true,
         onselect: () =>
           confirmAction({
-            title: `Expulsar ${name}?`,
-            description: 'A pessoa sai do servidor, mas pode voltar com um convite.',
-            confirm: 'Expulsar',
+            title: m.guild.memberMenu.kickTitle(name),
+            description: m.guild.memberMenu.kickDescription,
+            confirm: m.guild.memberMenu.kick,
             onconfirm: () => guild.kick(userId),
           }),
       })
     }
     if (can(P.BAN_MEMBERS)) {
       modItems.push({
-        label: 'Banir',
+        label: t.ban,
         icon: 'ban',
         danger: true,
         onselect: () =>
           confirmAction({
-            title: `Banir ${name}?`,
-            description: 'A pessoa sai e não volta, nem com convite, até alguém desbanir.',
-            confirm: 'Banir',
+            title: m.guild.memberMenu.banTitle(name),
+            description: m.guild.memberMenu.banDescription,
+            confirm: m.guild.memberMenu.ban,
             onconfirm: () => guild.ban(userId),
           }),
       })

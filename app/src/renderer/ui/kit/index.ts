@@ -1,5 +1,6 @@
 // Kit de interface do Resenha. Tudo aqui é visual e sem estado global:
-// nada importa o store, então serve tanto pro app quanto pros protótipos.
+// nada importa o store (só os textos, de lib/i18n), então serve tanto pro app
+// quanto pros protótipos.
 
 export { default as Avatar } from './Avatar.svelte'
 export { default as AvatarDecoration } from './AvatarDecoration.svelte'

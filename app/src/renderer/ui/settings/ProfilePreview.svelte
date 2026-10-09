@@ -1,7 +1,8 @@
 <script lang="ts">
   import type { Presence, ProfileStyle } from '../../../../../shared/protocol'
+  import { fmt, m } from '../../lib/i18n.svelte'
   import { badgeOf, nameStyle } from '../../lib/profile'
-  import { Avatar, UserBadge, Icon, STATUS_LABEL } from '../kit'
+  import { Avatar, UserBadge, Icon } from '../kit'
   import ProfileShell from '../profile/ProfileShell.svelte'
 
   let {
@@ -32,16 +33,15 @@
     since: number
   } = $props()
 
-  const sinceFmt = new Intl.DateTimeFormat('pt-BR', { day: 'numeric', month: 'short', year: 'numeric' })
-
+  const t = $derived(m.settings.profile)
   const user = $derived({ id, accent, style })
   const styledName = $derived(nameStyle(user))
-  // "5 de out. de 2026" vira "5 out 2026", igual ao cartão de perfil.
-  const sinceText = $derived(sinceFmt.format(since).replaceAll(' de ', ' ').replace('.', ''))
+  // No português, "5 de out. de 2026" vira "5 out 2026", igual ao cartão de perfil (os outros idiomas já vêm curtos).
+  const sinceText = $derived(fmt.date(since, { day: 'numeric', month: 'short', year: 'numeric' }).replaceAll(' de ', ' ').replace('.', ''))
 </script>
 
 <!-- Prévia do cartão de perfil (como os outros te veem), sem os botões. -->
-<ProfileShell {user} {banner} variant="preview" label="Prévia do perfil">
+<ProfileShell {user} {banner} variant="preview" label={t.previewLabel}>
   <div class="top">
     <Avatar {id} name={name || username} size={80} src={avatar} decoration={style?.decoration} play status={presence.status} cutout="var(--card-cut)" />
   </div>
@@ -55,18 +55,18 @@
     {#if presence.text}
       <p class="custom"><span class="bubble">{presence.text}</span></p>
     {:else}
-      <p class="custom muted">{STATUS_LABEL[presence.status]}</p>
+      <p class="custom muted">{m.common.presence[presence.status]}</p>
     {/if}
 
     {#if bio.trim()}
       <section>
-        <h3>Sobre mim</h3>
+        <h3>{t.bio}</h3>
         <p class="bio">{bio.trim()}</p>
       </section>
     {/if}
 
     <section>
-      <h3>No Resenha desde</h3>
+      <h3>{t.since}</h3>
       <p class="since"><Icon name="calendar" size={14} />{sinceText}</p>
     </section>
   </div>

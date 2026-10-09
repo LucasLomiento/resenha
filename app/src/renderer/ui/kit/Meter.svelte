@@ -1,11 +1,13 @@
 <script lang="ts">
+  import { m } from '../../lib/i18n.svelte'
+
   let {
     level,
     passing = false,
     idle = false,
     threshold = $bindable(null),
     onthreshold,
-    label = 'Nível do microfone',
+    label,
   }: {
     /** 0..1 */
     level: number
@@ -16,12 +18,13 @@
     /** 0..1 ou null. Com valor, aparece a marca arrastável do limiar. */
     threshold?: number | null
     onthreshold?: (value: number) => void
+    /** Sem rótulo: "Nível do microfone". */
     label?: string
   } = $props()
 </script>
 
 <div class={['meter', { passing, idle, adjustable: threshold !== null }]}>
-  <div class="track" role="meter" aria-label={label} aria-valuemin={0} aria-valuemax={1} aria-valuenow={level}>
+  <div class="track" role="meter" aria-label={label ?? m.kit.meter.label} aria-valuemin={0} aria-valuemax={1} aria-valuenow={level}>
     <div class="fill" style:width="{level * 100}%"></div>
   </div>
   {#if threshold !== null}
@@ -30,7 +33,7 @@
       min="0"
       max="1"
       step="0.0125"
-      aria-label="Sensibilidade"
+      aria-label={m.kit.meter.threshold}
       bind:value={threshold}
       oninput={() => onthreshold?.(threshold ?? 0)}
     />

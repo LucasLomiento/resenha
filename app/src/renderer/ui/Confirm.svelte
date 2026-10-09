@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { m } from '../lib/i18n.svelte'
   import { ui } from '../lib/ui.svelte'
   import { Button, Modal } from './kit'
 
@@ -20,7 +21,7 @@
 {#if request}
 <Modal title={request.title} description={request.description} size="sm" onclose={close}>
   {#snippet footer()}
-    <Button variant="ghost" onclick={close}>Cancelar</Button>
+    <Button variant="ghost" onclick={close}>{m.common.cancel}</Button>
     <Button variant="danger" onclick={confirm} autofocus>{request.confirm}</Button>
   {/snippet}
 </Modal>

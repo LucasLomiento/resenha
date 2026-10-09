@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { m } from '../../lib/i18n.svelte'
   import { tooltip } from './tooltip'
 
   let {
@@ -14,15 +15,13 @@
 
   const level = $derived(rtt == null ? 0 : rtt < 80 ? 3 : rtt < 160 ? 2 : 1)
   const tone = $derived(level === 3 ? 'good' : level === 2 ? 'ok' : level === 1 ? 'bad' : 'idle')
-  const text = $derived(
-    rtt == null ? 'Medindo a conexão…' : `${rtt} ms · ${route === 'relay' ? 'pelo servidor (relay)' : 'conexão direta'}`,
-  )
+  const text = $derived(rtt == null ? m.kit.signal.measuring : route === 'relay' ? m.kit.signal.relay(rtt) : m.kit.signal.direct(rtt))
 </script>
 
 <!-- Qualidade da conexão: três barras com a cor do ping; o número fica na dica. -->
 <span class={['signal', tone, className]} use:tooltip={text} role="img" aria-label={text}>
   <i class:on={level >= 1}></i><i class:on={level >= 2}></i><i class:on={level >= 3}></i>
-  <span class="sr-only">{rtt ?? '?'} ms · {route ?? ''}</span>
+  <span class="sr-only">{text}</span>
 </span>
 
 <style>

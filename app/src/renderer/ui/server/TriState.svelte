@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { m } from '../../lib/i18n.svelte'
   import { Icon, tooltip, type IconName } from '../kit'
   import type { TriValue } from './permissions'
 
@@ -15,11 +16,11 @@
     onchange: (value: TriValue) => void
   } = $props()
 
-  const OPTIONS: { value: TriValue; label: string; icon: IconName }[] = [
-    { value: 'deny', label: 'Negar', icon: 'x' },
-    { value: 'neutral', label: 'Neutro', icon: 'slash' },
-    { value: 'allow', label: 'Permitir', icon: 'check' },
-  ]
+  const OPTIONS = $derived<{ value: TriValue; label: string; icon: IconName }[]>([
+    { value: 'deny', label: m.server.tri.deny, icon: 'x' },
+    { value: 'neutral', label: m.server.tri.neutral, icon: 'slash' },
+    { value: 'allow', label: m.server.tri.allow, icon: 'check' },
+  ])
 
   function onkeydown(event: KeyboardEvent) {
     if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return

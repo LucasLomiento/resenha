@@ -2,8 +2,9 @@
   import { P, type Friend, type User, type VisibleStatus } from '../../../../../shared/protocol'
   import { client } from '../../lib/client.svelte'
   import type { GuildState } from '../../lib/guild.svelte'
+  import { around, fmt, m } from '../../lib/i18n.svelte'
   import { confirmAction, openProfile } from '../../lib/ui.svelte'
-  import { Avatar, Badge, Button, EmptyState, Icon, IconButton, Menu, Spinner, STATUS_LABEL, Tabs, TextField, type MenuItem } from '../kit'
+  import { Avatar, Badge, Button, EmptyState, Icon, IconButton, Menu, Spinner, Tabs, TextField, type MenuItem } from '../kit'
 
   type Tab = 'online' | 'all' | 'pending' | 'blocked' | 'add'
 
@@ -13,17 +14,18 @@
 
   const home = $derived(client.home)
   const me = $derived(client.me)
+  const t = $derived(m.home.friends)
 
   // ---------- Listas ----------
 
   const fold = (text: string) => text.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
-  const byName = (a: Friend, b: Friend) => a.user.name.localeCompare(b.user.name, 'pt-BR')
+  const byName = (a: Friend, b: Friend) => fmt.compare(a.user.name, b.user.name)
 
   const accepted = $derived((home?.friends ?? []).filter((f) => f.state === 'friends').sort(byName))
   const online = $derived(accepted.filter((f) => client.presenceOf(f.user.id).status !== 'offline'))
   const incoming = $derived((home?.friends ?? []).filter((f) => f.state === 'incoming').sort(byName))
   const outgoing = $derived((home?.friends ?? []).filter((f) => f.state === 'outgoing').sort(byName))
-  const blocked = $derived([...(home?.blocked ?? [])].sort((a, b) => a.name.localeCompare(b.name, 'pt-BR')))
+  const blocked = $derived([...(home?.blocked ?? [])].sort((a, b) => fmt.compare(a.name, b.name)))
 
   const term = $derived(fold(search.trim()))
   const matches = (user: User) => !term || fold(user.name).includes(term) || user.username.includes(term)
@@ -97,18 +99,18 @@
 
   function unfriend(user: User) {
     confirmAction({
-      title: `Desfazer amizade com ${user.name}?`,
-      description: 'Pra voltar, alguém manda outro pedido.',
-      confirm: 'Desfazer',
+      title: t.unfriendTitle(user.name),
+      description: t.unfriendDescription,
+      confirm: t.unfriendConfirm,
       onconfirm: () => act(user.id, (api) => api.friendRemove(user.id)),
     })
   }
 
   function block(user: User) {
     confirmAction({
-      title: `Bloquear ${user.name}?`,
-      description: 'A amizade acaba, e a pessoa não consegue te mandar mensagem privada nem pedido.',
-      confirm: 'Bloquear',
+      title: t.blockTitle(user.name),
+      description: t.blockDescription,
+      confirm: t.block,
       onconfirm: () => act(user.id, (api) => api.block(user.id)),
     })
   }
@@ -121,10 +123,10 @@
 
   function menuItems(user: User, anchor: HTMLElement): MenuItem[] {
     return [
-      { label: 'Perfil', icon: 'user', onselect: () => openProfile(user.id, null, anchor) },
-      { label: 'Desfazer amizade', icon: 'user-x', onselect: () => unfriend(user) },
+      { label: t.profile, icon: 'user', onselect: () => openProfile(user.id, null, anchor) },
+      { label: t.unfriend, icon: 'user-x', onselect: () => unfriend(user) },
       { kind: 'separator' },
-      { label: 'Bloquear', icon: 'ban', danger: true, onselect: () => block(user) },
+      { label: t.block, icon: 'ban', danger: true, onselect: () => block(user) },
     ]
   }
 
@@ -142,7 +144,7 @@
   /** Nome do botão da linha pra leitor de tela: nome, status e o resto, sem repetir. */
   function describe(user: User, sub: string, status: VisibleStatus | null): string {
     const parts = [user.name]
-    if (status && STATUS_LABEL[status] !== sub) parts.push(STATUS_LABEL[status])
+    if (status && m.common.presence[status] !== sub) parts.push(m.common.presence[status])
     return [...parts, sub].join(', ')
   }
 
@@ -167,7 +169,7 @@
     addError = null
     added = null
     if (username === me?.username) {
-      addError = 'Esse é o seu nome de usuário.'
+      addError = t.selfUsername
       return
     }
     adding = true
@@ -188,7 +190,7 @@
       copied = true
       setTimeout(() => (copied = false), 1500)
     } catch {
-      client.toast('Não deu pra copiar.')
+      client.toast(t.copyFailed)
     }
   }
 </script>
@@ -210,9 +212,9 @@
   {@const presence = client.presenceOf(user.id)}
   {@const channel = inCall.get(user.id)}
   <div class="person" class:open={menu?.user.id === user.id}>
-    {@render who(user, channel ? `Na call · ${channel}` : (presence.text ?? STATUS_LABEL[presence.status]), presence.status, !!channel)}
-    <IconButton icon="message" label="Mensagem" disabled={busy[user.id]} onclick={() => client.openDm(user.id)} />
-    <IconButton icon="ellipsis" label="Mais" disabled={busy[user.id]} onclick={(e) => toggleMenu(user, e.currentTarget)} />
+    {@render who(user, channel ? t.inCall(channel) : (presence.text ?? m.common.presence[presence.status]), presence.status, !!channel)}
+    <IconButton icon="message" label={t.message} disabled={busy[user.id]} onclick={() => client.openDm(user.id)} />
+    <IconButton icon="ellipsis" label={m.common.more} disabled={busy[user.id]} onclick={(e) => toggleMenu(user, e.currentTarget)} />
   </div>
 {/snippet}
 
@@ -225,44 +227,44 @@
 {/snippet}
 
 {#snippet noMatch()}
-  <p class="no-match">Ninguém com esse nome.</p>
+  <p class="no-match">{t.noMatch}</p>
 {/snippet}
 
 <div class="page">
   <section class="main">
     <header>
       <Icon name="users" size={20} class="header-icon" />
-      <h1>Amigos</h1>
+      <h1>{t.title}</h1>
       <span class="divider" aria-hidden="true"></span>
       <Tabs
-        label="Amigos"
+        label={t.title}
         class="friend-tabs"
         value={tab}
         onchange={select}
         tabs={[
-          { value: 'online', label: 'Online' },
-          { value: 'all', label: 'Todos' },
-          { value: 'pending', label: 'Pendentes', count: incoming.length, alert: true },
-          { value: 'blocked', label: 'Bloqueados' },
+          { value: 'online', label: t.tabs.online },
+          { value: 'all', label: t.tabs.all },
+          { value: 'pending', label: t.tabs.pending, count: incoming.length, alert: true },
+          { value: 'blocked', label: t.tabs.blocked },
         ]}
       />
       <div class="spacer"></div>
-      <Button size="sm" variant={tab === 'add' ? 'secondary' : 'primary'} icon="user-plus" onclick={() => select('add')}>Adicionar amigo</Button>
+      <Button size="sm" variant={tab === 'add' ? 'secondary' : 'primary'} icon="user-plus" onclick={() => select('add')}>{t.add}</Button>
     </header>
 
     <div class="content">
       {#if !home?.loaded}
-        <div class="loading" role="status" aria-label="Carregando"><Spinner size={20} /></div>
+        <div class="loading" role="status" aria-label={m.common.loading}><Spinner size={20} /></div>
       {:else if tab === 'add'}
         <div class="add">
-          <h2>Adicionar amigo</h2>
-          <p class="add-lead">Pelo nome de usuário. A pessoa recebe o pedido e aceita.</p>
+          <h2>{t.add}</h2>
+          <p class="add-lead">{t.addLead}</p>
           <form class="add-form" onsubmit={sendRequest}>
             <TextField
               size="lg"
               icon="at"
-              placeholder="nome.de.usuario"
-              aria-label="Nome de usuário"
+              placeholder={t.usernamePlaceholder}
+              aria-label={t.usernameLabel}
               spellcheck={false}
               autocomplete="off"
               maxlength={64}
@@ -271,39 +273,36 @@
               error={addError}
               oninput={() => (addError = null)}
             />
-            <Button variant="primary" size="lg" type="submit" loading={adding} disabled={!addName.trim()}>Mandar pedido</Button>
+            <Button variant="primary" size="lg" type="submit" loading={adding} disabled={!addName.trim()}>{t.sendRequest}</Button>
           </form>
           {#if added}
+            {@const [before, after] = around(added.state === 'friends' ? t.nowFriends : t.requestSent, '{name}')}
             <p class="add-ok" role="status">
               <Icon name="circle-check" size={16} />
-              {#if added.state === 'friends'}
-                <span>Agora você e <b>{added.username}</b> são amigos.</span>
-              {:else}
-                <span>Pedido enviado pra <b>{added.username}</b>.</span>
-              {/if}
+              <span>{before}<b>{added.username}</b>{after}</span>
             </p>
           {/if}
           {#if me}
             <div class="share">
-              <span>Seu nome de usuário</span>
+              <span>{t.yourUsername}</span>
               <code class="selectable">{me.username}</code>
-              <IconButton icon={copied ? 'check' : 'copy'} label={copied ? 'Copiado' : 'Copiar'} size="sm" onclick={copyUsername} />
+              <IconButton icon={copied ? 'check' : 'copy'} label={copied ? m.common.copied : m.common.copy} size="sm" onclick={copyUsername} />
             </div>
           {/if}
         </div>
       {:else if tab === 'pending'}
         {#if incoming.length || outgoing.length}
-          {@render searchField('Buscar pedidos')}
+          {@render searchField(t.searchRequests)}
           {@const inc = incoming.filter((f) => matches(f.user))}
           {@const out = outgoing.filter((f) => matches(f.user))}
           {#if inc.length}
-            {@render label('Recebidos', inc.length)}
+            {@render label(t.received, inc.length)}
             {#each inc as friend (friend.user.id)}
               <div class="person">
-                {@render who(friend.user, `${friend.user.username} · quer ser seu amigo`, null)}
+                {@render who(friend.user, t.wantsFriend(friend.user.username), null)}
                 <IconButton
                   icon="check"
-                  label="Aceitar"
+                  label={t.accept}
                   variant="subtle"
                   tone="success"
                   active
@@ -312,7 +311,7 @@
                 />
                 <IconButton
                   icon="x"
-                  label="Recusar"
+                  label={t.decline}
                   variant="subtle"
                   disabled={busy[friend.user.id]}
                   onclick={() => act(friend.user.id, (api) => api.friendRemove(friend.user.id))}
@@ -321,13 +320,13 @@
             {/each}
           {/if}
           {#if out.length}
-            {@render label('Enviados', out.length)}
+            {@render label(t.sent, out.length)}
             {#each out as friend (friend.user.id)}
               <div class="person">
-                {@render who(friend.user, `${friend.user.username} · aguardando`, null)}
+                {@render who(friend.user, t.waiting(friend.user.username), null)}
                 <IconButton
                   icon="x"
-                  label="Cancelar pedido"
+                  label={t.cancelRequest}
                   variant="subtle"
                   disabled={busy[friend.user.id]}
                   onclick={() => act(friend.user.id, (api) => api.friendRemove(friend.user.id))}
@@ -337,32 +336,32 @@
           {/if}
           {#if !inc.length && !out.length}{@render noMatch()}{/if}
         {:else}
-          <EmptyState icon="inbox" title="Nenhum pedido" description="Os pedidos que você recebe e manda aparecem aqui." class="empty" />
+          <EmptyState icon="inbox" title={t.noRequestsTitle} description={t.noRequestsDescription} class="empty" />
         {/if}
       {:else if tab === 'blocked'}
         {#if blocked.length}
-          {@render searchField('Buscar bloqueados')}
+          {@render searchField(t.searchBlocked)}
           {@const list = blocked.filter(matches)}
-          {@render label('Bloqueados', list.length)}
+          {@render label(t.tabs.blocked, list.length)}
           {#each list as user (user.id)}
             <div class="person">
               {@render who(user, user.username, null)}
-              <Button size="sm" loading={busy[user.id]} onclick={() => act(user.id, (api) => api.unblock(user.id))}>Desbloquear</Button>
+              <Button size="sm" loading={busy[user.id]} onclick={() => act(user.id, (api) => api.unblock(user.id))}>{t.unblock}</Button>
             </div>
           {:else}
             {@render noMatch()}
           {/each}
         {:else}
-          <EmptyState icon="ban" title="Ninguém bloqueado" description="Quem você bloquear aparece aqui." class="empty" />
+          <EmptyState icon="ban" title={t.noBlockedTitle} description={t.noBlockedDescription} class="empty" />
         {/if}
       {:else if !accepted.length}
-        <EmptyState icon="users" title="Nenhum amigo ainda" description="Mande um pedido pelo nome de usuário." class="empty" />
+        <EmptyState icon="users" title={t.noFriendsTitle} description={t.noFriendsDescription} class="empty" />
       {:else if tab === 'online' && !online.length}
-        <EmptyState icon="moon" title="Ninguém online agora" description="Seus amigos aparecem aqui quando entrarem." class="empty" />
+        <EmptyState icon="moon" title={t.noOnlineTitle} description={t.noOnlineDescription} class="empty" />
       {:else}
-        {@render searchField('Buscar amigos')}
+        {@render searchField(t.searchFriends)}
         {@const list = (tab === 'online' ? online : accepted).filter((f) => matches(f.user))}
-        {@render label(tab === 'online' ? 'Online' : 'Todos', list.length)}
+        {@render label(tab === 'online' ? t.tabs.online : t.tabs.all, list.length)}
         {#each list as friend (friend.user.id)}
           {@render friendRow(friend)}
         {:else}
@@ -373,7 +372,7 @@
   </section>
 
   <aside class="now" aria-labelledby="{uid}-now">
-    <h2 id="{uid}-now">Agora</h2>
+    <h2 id="{uid}-now">{t.now}</h2>
     {#each calls as call (`${call.guild.id}:${call.channelId}`)}
       {@const mine = inMyCall(call)}
       <div class="now-card">
@@ -400,30 +399,30 @@
         </div>
         {#if call.sharing.length}
           <span class="now-live">
-            <Badge tone="live">AO VIVO</Badge>
+            <Badge tone="live">{t.live}</Badge>
             <span class="truncate">{names(call, call.sharing)}</span>
           </span>
         {/if}
         {#if mine}
-          <Button size="sm" full icon="audio-lines" onclick={() => client.openChannel(call.guild.id, call.channelId)}>Ver call</Button>
+          <Button size="sm" full icon="audio-lines" onclick={() => client.openChannel(call.guild.id, call.channelId)}>{t.viewCall}</Button>
         {:else}
           <Button
             size="sm"
             full
             icon="phone"
             disabled={!call.guild.can(call.channelId, P.CONNECT)}
-            onclick={() => client.joinVoice(call.guild.id, call.channelId)}>Entrar</Button
+            onclick={() => client.joinVoice(call.guild.id, call.channelId)}>{t.join}</Button
           >
         {/if}
       </div>
     {:else}
-      <EmptyState icon="headphones" title="Tudo quieto" description="Quando um amigo entrar numa call, aparece aqui." class="now-empty" />
+      <EmptyState icon="headphones" title={t.quietTitle} description={t.quietDescription} class="now-empty" />
     {/each}
   </aside>
 </div>
 
 {#if menu}
-  <Menu items={menuItems(menu.user, menu.anchor)} anchor={menu.anchor} placement="bottom-end" label="Mais" onclose={() => (menu = null)} />
+  <Menu items={menuItems(menu.user, menu.anchor)} anchor={menu.anchor} placement="bottom-end" label={m.common.more} onclose={() => (menu = null)} />
 {/if}
 
 <style>

@@ -2,6 +2,7 @@
 // converte pra MP3 (que abre em qualquer lugar, e dá pra baixar) num worker, e
 // desenha a "onda" do áudio pro player do chat.
 
+import { m } from './i18n.svelte'
 import { settings } from './settings.svelte'
 import type { Mp3Job } from './mp3-worker'
 import Mp3Worker from './mp3-worker.ts?worker'
@@ -16,7 +17,7 @@ export const VOICE_PREFIX = 'mensagem-de-voz'
 export const isVoiceNote = (name: string) => name.startsWith(VOICE_PREFIX)
 
 /** Como um anexo aparece em resumos (aviso, busca, fixadas). */
-export const attachmentLabel = (attachment: { name: string }) => (isVoiceNote(attachment.name) ? '🎤 Mensagem de voz' : `📎 ${attachment.name}`)
+export const attachmentLabel = (attachment: { name: string }) => (isVoiceNote(attachment.name) ? m.lib.voiceNote.label : `📎 ${attachment.name}`)
 
 /** Uma gravação em andamento. */
 export class VoiceRecording {
@@ -118,7 +119,7 @@ function encodeMp3(pcm: Float32Array, sampleRate: number): Promise<Uint8Array<Ar
     }
     worker.onerror = (event) => {
       worker.terminate()
-      reject(new Error(event.message || 'não deu pra converter o áudio'))
+      reject(new Error(event.message || m.lib.voiceNote.convertFailed))
     }
     const job: Mp3Job = { pcm, sampleRate, kbps: KBPS }
     worker.postMessage(job, [pcm.buffer])

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { client } from '../../../lib/client.svelte'
   import type { GuildState } from '../../../lib/guild.svelte'
+  import { fmt, m } from '../../../lib/i18n.svelte'
   import { confirmAction } from '../../../lib/ui.svelte'
   import { Avatar, Button, Modal, TextField } from '../../kit'
   import { settled } from '../settle.svelte'
@@ -8,6 +9,7 @@
 
   let { guild, onclose }: { guild: GuildState; onclose: () => void } = $props()
 
+  const t = $derived(m.server.transfer)
   let query = $state('')
   let chosen = $state<string | null>(null)
   let busy = $state(false)
@@ -18,7 +20,7 @@
       .filter((m) => m.userId !== guild.meId && !guild.users[m.userId]?.deleted)
       .map((m) => ({ id: m.userId, name: guild.displayName(m.userId), username: guild.users[m.userId]?.username ?? '' }))
       .filter((p) => !q || fold(p.name).includes(q) || fold(p.username).includes(q))
-      .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'))
+      .sort((a, b) => fmt.compare(a.name, b.name))
   })
 
   function transfer() {
@@ -26,25 +28,25 @@
     if (!id) return
     const name = guild.displayName(id)
     confirmAction({
-      title: `Transferir pra ${name}?`,
-      description: 'O servidor passa a ser dessa pessoa. Depois, só ela consegue devolver.',
-      confirm: 'Transferir',
+      title: t.confirmTitle(name),
+      description: t.confirmDescription,
+      confirm: t.confirm,
       onconfirm: async () => {
         busy = true
         guild.transfer(id)
         const ok = await settled(() => guild.info.ownerId === id)
         busy = false
         if (!ok) return
-        client.toast(`Agora o servidor é de ${name}.`, 'info')
+        client.toast(m.server.transfer.done(name), 'info')
         onclose()
       },
     })
   }
 </script>
 
-<Modal title="Transferir o servidor" description="Escolha quem fica com ele. Você continua como membro." {onclose} dismissible={!busy}>
-  <TextField icon="search" placeholder="Buscar pessoa" aria-label="Buscar pessoa" bind:value={query} spellcheck={false} />
-  <div class="people" role="radiogroup" aria-label="Quem fica com o servidor">
+<Modal title={t.title} description={t.description} {onclose} dismissible={!busy}>
+  <TextField icon="search" placeholder={t.search} aria-label={t.search} bind:value={query} spellcheck={false} />
+  <div class="people" role="radiogroup" aria-label={t.who}>
     {#each people as person (person.id)}
       <button type="button" role="radio" aria-checked={chosen === person.id} class:on={chosen === person.id} onclick={() => (chosen = person.id)}>
         <Avatar id={person.id} name={person.name} size={32} src={client.avatarOf(person.id, guild.id)} cutout="var(--bg-raised)" />
@@ -55,12 +57,12 @@
         <span class="dot" aria-hidden="true"></span>
       </button>
     {:else}
-      <p class="empty">Ninguém com esse nome.</p>
+      <p class="empty">{t.none}</p>
     {/each}
   </div>
   {#snippet footer()}
-    <Button variant="ghost" onclick={onclose} disabled={busy}>Cancelar</Button>
-    <Button variant="primary" disabled={!chosen} loading={busy} onclick={transfer}>Transferir</Button>
+    <Button variant="ghost" onclick={onclose} disabled={busy}>{m.common.cancel}</Button>
+    <Button variant="primary" disabled={!chosen} loading={busy} onclick={transfer}>{t.confirm}</Button>
   {/snippet}
 </Modal>
 

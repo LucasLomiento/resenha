@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { ShortcutAction } from '../../preload/api'
   import { client } from '../lib/client.svelte'
+  import { m } from '../lib/i18n.svelte'
   import { settings } from '../lib/settings.svelte'
   import { acceleratorFrom } from '../lib/shortcuts'
   import { ui } from '../lib/ui.svelte'
@@ -165,7 +166,7 @@
       class="sidebar-resize"
       role="separator"
       aria-orientation="vertical"
-      aria-label="Largura da lista de canais"
+      aria-label={m.app.shell.sidebarWidth}
       aria-valuemin={SIDEBAR.min}
       aria-valuemax={SIDEBAR.max}
       aria-valuenow={clampWidth(settings.sidebarWidth)}
@@ -207,7 +208,7 @@
     {#if client.connection !== 'open'}
       <div class="offline" role="status">
         <Spinner size={14} />
-        {client.connection === 'connecting' ? 'Conectando…' : 'Sem conexão. Tentando de novo…'}
+        {client.connection === 'connecting' ? m.app.shell.connecting : m.app.shell.offline}
       </div>
     {/if}
   </main>

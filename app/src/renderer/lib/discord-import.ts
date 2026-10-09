@@ -3,6 +3,7 @@
 // antes de criar (channel.import).
 
 import type { ImportedStructure } from '../../../../shared/protocol'
+import { m } from './i18n.svelte'
 
 export interface DraftChannel {
   key: number
@@ -40,7 +41,7 @@ export async function preparePrint(file: Blob): Promise<Blob> {
     const jpeg = await canvas.convertToBlob({ type: 'image/jpeg', quality })
     if (jpeg.size <= MAX_BYTES) return jpeg
   }
-  throw new Error('O print é grande demais. Tire o print só da lista de canais.')
+  throw new Error(m.lib.discordImport.printTooBig)
 }
 
 /** O Discord mostra categoria em CAIXA ALTA; aqui elas ficam em caixa normal ("BATE-PAPO" vira "Bate-papo"). */

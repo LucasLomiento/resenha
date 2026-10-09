@@ -9,6 +9,7 @@
 // Tudo passa por um reverb curto e um compressor, e o volume de cada som foi
 // medido e acertado pra nenhum sair mais alto que os outros.
 
+import { m } from './i18n.svelte'
 import { settings } from './settings.svelte'
 
 export type SoundName =
@@ -39,27 +40,32 @@ export type SoundName =
   /** Chamando a outra pessoa (repete enquanto ninguém atende). */
   | 'ringback'
 
-/** Nome de cada som, pra prévia nas configurações. */
-export const SOUND_LABELS: [SoundName, string][] = [
-  ['self-join', 'Você entra'],
-  ['self-leave', 'Você sai'],
-  ['join', 'Alguém entra'],
-  ['leave', 'Alguém sai'],
-  ['founder-join', 'O dono do Resenha entra'],
-  ['pioneer-join', 'O melhor amigo do dono entra'],
-  ['mute', 'Mutar'],
-  ['unmute', 'Desmutar'],
-  ['deafen', 'Ensurdecer'],
-  ['undeafen', 'Voltar a ouvir'],
-  ['live', 'Ao vivo'],
-  ['stream-end', 'Fim da transmissão'],
-  ['viewer-join', 'Alguém assiste'],
-  ['viewer-leave', 'Parou de assistir'],
-  ['message', 'Mensagem'],
-  ['mention', 'Menção'],
-  ['ring', 'Ligação'],
-  ['ringback', 'Chamando'],
+/** Os sons na ordem da prévia nas configurações. */
+const SOUND_ORDER: SoundName[] = [
+  'self-join',
+  'self-leave',
+  'join',
+  'leave',
+  'founder-join',
+  'pioneer-join',
+  'mute',
+  'unmute',
+  'deafen',
+  'undeafen',
+  'live',
+  'stream-end',
+  'viewer-join',
+  'viewer-leave',
+  'message',
+  'mention',
+  'ring',
+  'ringback',
 ]
+
+/** Nome de cada som, pra prévia nas configurações: [som, nome], com o nome lido do catálogo na hora. */
+export const SOUND_LABELS: [SoundName, string][] = SOUND_ORDER.map((name) =>
+  Object.defineProperty([name] as unknown as [SoundName, string], 1, { get: () => m.lib.sounds[name], enumerable: true }),
+)
 
 const NOTE = {
   C5: 523.25,

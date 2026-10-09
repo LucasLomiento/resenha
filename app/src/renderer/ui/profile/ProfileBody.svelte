@@ -2,10 +2,11 @@
   import { P } from '../../../../../shared/protocol'
   import { client } from '../../lib/client.svelte'
   import { formatDay } from '../../lib/format'
+  import { m } from '../../lib/i18n.svelte'
   import { confirmAction, ui } from '../../lib/ui.svelte'
   import { canModerate, memberMenu } from '../guild/memberMenu'
   import { badgeOf, nameStyle } from '../../lib/profile'
-  import { Avatar, Badge, Button, UserBadge, Icon, IconButton, Menu, STATUS_LABEL, tooltip, type MenuItem } from '../kit'
+  import { Avatar, Badge, Button, UserBadge, Icon, IconButton, Menu, tooltip, type MenuItem } from '../kit'
   import ProfileShell from './ProfileShell.svelte'
 
   /**
@@ -19,6 +20,7 @@
   const presence = $derived(client.presenceOf(userId))
   const member = $derived(guild?.members[userId] ?? null)
   const self = $derived(userId === client.me?.id)
+  const t = $derived(m.home.profile)
   const hex = (color: number | null) => (color === null ? null : `#${color.toString(16).padStart(6, '0')}`)
   const style = $derived(profile?.deleted ? undefined : profile?.style)
   const styledName = $derived(nameStyle(profile))
@@ -53,38 +55,39 @@
           guild.setRoles(userId, next)
         },
       }))
-    if (!items.length) items.push({ label: 'Nenhum cargo criado ainda', disabled: true })
+    if (!items.length) items.push({ label: t.noRoles, disabled: true })
     menu = { items, anchor }
   }
 
   function moreMenu(anchor: HTMLElement) {
-    const items: MenuItem[] = guild ? memberMenu(guild, userId, anchor).filter((i) => !('label' in i) || i.label !== 'Perfil') : []
+    // Sem o "Perfil" do menu do membro (já está nele): é o único item com o ícone de pessoa.
+    const items: MenuItem[] = guild ? memberMenu(guild, userId, anchor).filter((i) => !('icon' in i) || i.icon !== 'user') : []
     if (!self && profile) {
       if (items.length) items.push({ kind: 'separator' })
       if (friend?.state === 'friends') {
         items.push({
-          label: 'Desfazer amizade',
+          label: t.unfriend,
           icon: 'user-x',
           onselect: () =>
             confirmAction({
-              title: `Desfazer a amizade com ${profile.name}?`,
-              confirm: 'Desfazer',
+              title: t.unfriendTitle(profile.name),
+              confirm: t.unfriendConfirm,
               onconfirm: () => client.api?.friendRemove(userId).catch((e) => client.toast((e as Error).message)),
             }),
         })
       }
       items.push(
         blocked
-          ? { label: 'Desbloquear', icon: 'ban', onselect: () => client.api?.unblock(userId).catch((e) => client.toast((e as Error).message)) }
+          ? { label: t.unblock, icon: 'ban', onselect: () => client.api?.unblock(userId).catch((e) => client.toast((e as Error).message)) }
           : {
-              label: 'Bloquear',
+              label: t.block,
               icon: 'ban',
               danger: true,
               onselect: () =>
                 confirmAction({
-                  title: `Bloquear ${profile.name}?`,
-                  description: 'Vocês não vão poder trocar mensagens privadas, e a amizade acaba.',
-                  confirm: 'Bloquear',
+                  title: t.blockTitle(profile.name),
+                  description: t.blockDescription,
+                  confirm: t.block,
                   onconfirm: () => client.api?.block(userId).catch((e) => client.toast((e as Error).message)),
                 }),
             },
@@ -98,7 +101,7 @@
     try {
       if (friend?.state === 'incoming') await client.api.friendAccept(userId)
       else await client.api.friendRequest(profile.username)
-      client.toast(friend?.state === 'incoming' ? 'Agora vocês são amigos.' : 'Pedido de amizade enviado.', 'info')
+      client.toast(friend?.state === 'incoming' ? t.nowFriends : t.requestSent, 'info')
     } catch (err) {
       client.toast((err as Error).message)
     }
@@ -139,9 +142,9 @@
       {#if !profile.deleted}
         <div class="top-actions">
           {#if self}
-            <IconButton icon="pencil" label="Editar perfil" size="sm" variant="subtle" onclick={() => ((ui.settings = 'profile'), onaction?.())} />
+            <IconButton icon="pencil" label={t.editProfile} size="sm" variant="subtle" onclick={() => ((ui.settings = 'profile'), onaction?.())} />
           {:else}
-            <IconButton icon="ellipsis" label="Mais" size="sm" variant="subtle" onclick={(e) => moreMenu(e.currentTarget)} />
+            <IconButton icon="ellipsis" label={m.common.more} size="sm" variant="subtle" onclick={(e) => moreMenu(e.currentTarget)} />
           {/if}
         </div>
       {/if}
@@ -154,7 +157,7 @@
           bind:value={nick}
           maxlength={32}
           placeholder={profile.name}
-          aria-label="Apelido no servidor"
+          aria-label={t.nickLabel}
           data-own-escape
           onkeydown={(e) => {
             if (e.key === 'Enter') saveNick()
@@ -171,14 +174,14 @@
           <span class={styledName.class} style={styledName.style}>{guild ? guild.displayName(userId) : profile.name}</span>
           <UserBadge badge={badgeOf(profile)} size={18} />
           {#if canEditNick}
-            <button class="nick-edit" aria-label="Mudar apelido" use:tooltip={'Apelido neste servidor'} onclick={() => ((nick = member?.nick ?? ''), (editingNick = true))}>
+            <button class="nick-edit" aria-label={t.changeNick} use:tooltip={t.nickTip} onclick={() => ((nick = member?.nick ?? ''), (editingNick = true))}>
               <Icon name="pencil" size={13} />
             </button>
           {/if}
         </h2>
       {/if}
       <p class="username">
-        {profile.deleted ? 'Conta excluída' : `@${profile.username}`}{#if member?.nick}<span> · {profile.name}</span>{/if}{#if style?.pronouns}<span
+        {profile.deleted ? t.deleted : `@${profile.username}`}{#if member?.nick}<span> · {profile.name}</span>{/if}{#if style?.pronouns}<span
             class="pronouns">{style.pronouns}</span
           >{/if}
       </p>
@@ -186,31 +189,31 @@
         {#if presence.text}
           <p class="custom"><span class="bubble">{presence.text}</span></p>
         {:else}
-          <p class="custom muted">{STATUS_LABEL[presence.status]}</p>
+          <p class="custom muted">{m.common.presence[presence.status]}</p>
         {/if}
       {/if}
 
       {#if profile.bio}
         <section>
-          <h3>Sobre mim</h3>
+          <h3>{t.about}</h3>
           <p class="bio selectable">{profile.bio}</p>
         </section>
       {/if}
 
       {#if guild && member}
         <section>
-          <h3>Membro desde</h3>
+          <h3>{t.memberSince}</h3>
           <p class="since"><Icon name="calendar" size={14} />{formatDay(member.joinedAt)}</p>
         </section>
         {#if ownRoles.length || canEditRoles}
           <section>
-            <h3>Cargos</h3>
+            <h3>{t.roles}</h3>
             <div class="roles">
               {#each ownRoles as role (role.id)}
                 <Badge dot={hex(role.color) ?? undefined}>{role.name}</Badge>
               {/each}
               {#if canEditRoles}
-                <button class="add-role" aria-label="Dar ou tirar cargos" use:tooltip={'Cargos'} onclick={(e) => rolesMenu(e.currentTarget)}>
+                <button class="add-role" aria-label={t.editRoles} use:tooltip={t.roles} onclick={(e) => rolesMenu(e.currentTarget)}>
                   <Icon name="plus" size={14} />
                 </button>
               {/if}
@@ -221,7 +224,7 @@
 
       {#if !guild && mutual.length}
         <section>
-          <h3>Servidores em comum</h3>
+          <h3>{t.mutual}</h3>
           <div class="mutual">
             {#each mutual.slice(0, 5) as g (g.id)}
               <button class="mutual-item" onclick={() => ((onaction?.(), client.openGuild(g.id)))}>
@@ -234,15 +237,15 @@
 
       {#if !self && !profile.deleted && !flat}
         <div class="actions">
-          <Button variant="primary" icon="message" onclick={message} disabled={blocked}>Mensagem</Button>
-          <IconButton icon="phone" label="Ligar" variant="subtle" size="lg" disabled={blocked} onclick={call} />
+          <Button variant="primary" icon="message" onclick={message} disabled={blocked}>{t.message}</Button>
+          <IconButton icon="phone" label={t.call} variant="subtle" size="lg" disabled={blocked} onclick={call} />
           {#if !friend || friend.state === 'incoming'}
-            <IconButton icon="user-plus" label={friend?.state === 'incoming' ? 'Aceitar amizade' : 'Adicionar amigo'} variant="subtle" size="lg" onclick={addFriend} />
+            <IconButton icon="user-plus" label={friend?.state === 'incoming' ? t.acceptFriend : t.addFriend} variant="subtle" size="lg" onclick={addFriend} />
           {/if}
         </div>
       {:else if self && !flat}
         <div class="actions">
-          <Button variant="secondary" icon="pencil" onclick={() => ((ui.settings = 'profile'), onaction?.())}>Editar perfil</Button>
+          <Button variant="secondary" icon="pencil" onclick={() => ((ui.settings = 'profile'), onaction?.())}>{t.editProfile}</Button>
         </div>
       {/if}
     </div>

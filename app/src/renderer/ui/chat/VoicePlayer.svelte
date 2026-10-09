@@ -5,6 +5,7 @@
 
 <script lang="ts">
   import { formatSize } from '../../lib/format'
+  import { fmt, m } from '../../lib/i18n.svelte'
   import { settings } from '../../lib/settings.svelte'
   import { clock, isVoiceNote, voiceWave } from '../../lib/voice-note'
   import { Icon, IconButton } from '../kit'
@@ -29,6 +30,7 @@
   let failed = $state(false)
   const voice = $derived(isVoiceNote(name))
   const progress = $derived(duration ? Math.min(1, current / duration) : 0)
+  const t = $derived(m.chat.voicePlayer)
 
   // A onda só quando o áudio aparece na tela (uma conversa cheia de áudios não baixa tudo de uma vez).
   $effect(() => {
@@ -96,7 +98,7 @@
 </script>
 
 <div class="voice" class:playing class:file={!voice}>
-  <button class="play" aria-label={playing ? 'Pausar' : 'Ouvir'} disabled={failed} onclick={toggle}>
+  <button class="play" aria-label={playing ? t.pause : t.play} disabled={failed} onclick={toggle}>
     <Icon name={playing ? 'pause' : 'play'} size={16} />
   </button>
   <div class="middle">
@@ -106,7 +108,7 @@
       class="wave"
       role="slider"
       tabindex="0"
-      aria-label="Posição no áudio"
+      aria-label={t.position}
       aria-valuemin={0}
       aria-valuemax={Math.round(duration)}
       aria-valuenow={Math.round(current)}
@@ -119,9 +121,9 @@
       {/each}
     </div>
   </div>
-  <span class="time tabular">{failed ? 'erro' : clock(playing || current > 0 ? current : duration)}</span>
-  <button class="speed tabular" aria-label="Velocidade: {speed}×" onclick={nextSpeed}>{String(speed).replace('.', ',')}×</button>
-  <IconButton icon="download" label={voice ? 'Baixar o áudio (.mp3)' : `Baixar (${formatSize(size)})`} onclick={() => window.resenha.download(src)} />
+  <span class="time tabular">{failed ? t.error : clock(playing || current > 0 ? current : duration)}</span>
+  <button class="speed tabular" aria-label={t.speed(fmt.number(speed))} onclick={nextSpeed}>{fmt.number(speed)}×</button>
+  <IconButton icon="download" label={voice ? t.downloadVoice : t.downloadFile(formatSize(size))} onclick={() => window.resenha.download(src)} />
   <audio
     bind:this={audio}
     {src}

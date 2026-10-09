@@ -4,6 +4,7 @@
   import { P, has, type Channel, type Overwrite, type Role } from '../../../../../../shared/protocol'
   import { client } from '../../../lib/client.svelte'
   import type { GuildState } from '../../../lib/guild.svelte'
+  import { around, fmt, m } from '../../../lib/i18n.svelte'
   import { confirmAction } from '../../../lib/ui.svelte'
   import { Avatar, Button, Icon, IconButton, PageHeader, Popover, Row, Section, Switch, TextField } from '../../kit'
   import { channelPermissionGroups, hex, isAdmin, permContext, sameRules, triOf, withTri, type TriValue } from '../permissions'
@@ -16,6 +17,8 @@
   let { guild, channel, unsaved }: { guild: GuildState; channel: Channel; unsaved: Unsaved } = $props()
 
   type Target = { type: 'role' | 'member'; id: string }
+
+  const t = $derived(m.server.channelPermissions)
 
   const groups = $derived(channelPermissionGroups(channel.kind))
   const admin = $derived(isAdmin(guild, guild.meId))
@@ -92,7 +95,7 @@
     rules
       .filter((o) => o.type === 'member' && guild.members[o.id])
       .map((o) => o.id)
-      .sort((a, b) => guild.displayName(a).localeCompare(guild.displayName(b), 'pt-BR')),
+      .sort((a, b) => fmt.compare(guild.displayName(a), guild.displayName(b))),
   )
 
   const isSelected = (t: Target) => target.type === t.type && target.id === t.id
@@ -119,7 +122,7 @@
     return Object.keys(guild.members)
       .filter((id) => !find(rules, { type: 'member', id }))
       .filter((id) => !q || fold(guild.displayName(id)).includes(q) || fold(guild.users[id]?.username ?? '').includes(q))
-      .sort((a, b) => guild.displayName(a).localeCompare(guild.displayName(b), 'pt-BR'))
+      .sort((a, b) => fmt.compare(guild.displayName(a), guild.displayName(b)))
       .slice(0, 40)
   })
 
@@ -178,44 +181,36 @@
     const list = draft
     if (keepsAccess(list)) return void commit(list)
     confirmAction({
-      title: 'Você vai perder acesso',
-      description: 'Com essas permissões, você deixa de ver ou de editar este canal.',
-      confirm: 'Salvar mesmo assim',
+      title: t.loseAccessTitle,
+      description: t.loseAccessDescription,
+      confirm: t.saveAnyway,
       onconfirm: () => commit(list),
     })
   }
 </script>
 
-<PageHeader
-  title="Permissões"
-  description={channel.kind === 'category' ? 'Exceções desta categoria, por cima do que os cargos dão.' : 'Exceções deste canal, por cima do que os cargos dão.'}
-/>
+<PageHeader title={t.title} description={channel.kind === 'category' ? t.descriptionCategory : t.descriptionChannel} />
 
 {#if parent}
+  {@const [before, after] = around(synced ? t.synced : t.notSynced, '{category}')}
   <div class="sync" class:synced>
     <Icon name={synced ? 'check' : 'info'} size={16} />
-    <span>
-      {#if synced}
-        Igual às permissões de <b>{parent.name}</b>. Mudar aqui separa o canal da categoria.
-      {:else}
-        Diferente das permissões de <b>{parent.name}</b>.
-      {/if}
-    </span>
+    <span>{before}<b>{parent.name}</b>{after}</span>
     {#if !synced}
-      <Button size="sm" icon="restart" loading={syncing} onclick={sync}>Sincronizar</Button>
+      <Button size="sm" icon="restart" loading={syncing} onclick={sync}>{t.sync}</Button>
     {/if}
   </div>
 {:else if channel.kind === 'category'}
   <div class="sync synced">
     <Icon name="info" size={16} />
-    <span>Os canais com as mesmas permissões da categoria acompanham o que mudar aqui.</span>
+    <span>{t.categoryNote}</span>
   </div>
 {/if}
 
 <Section>
   <Row
-    label={channel.kind === 'category' ? 'Categoria privada' : 'Canal privado'}
-    description="Só os cargos e as pessoas liberados aqui veem."
+    label={channel.kind === 'category' ? m.server.shared.privateCategory : m.server.shared.privateChannel}
+    description={t.privateDescription}
     for="channel-private"
   >
     <Switch id="channel-private" checked={isPrivate} disabled={!canChange(P.VIEW_CHANNEL)} onchange={(e) => setPrivate(e.currentTarget.checked)} />
@@ -225,10 +220,10 @@
 <div class="perms">
   <div class="targets">
     <div class="targets-head">
-      <span>Cargos e pessoas</span>
-      <IconButton icon="plus" label="Adicionar cargo ou pessoa" size="sm" active={!!adding} onclick={openPicker} />
+      <span>{t.targets}</span>
+      <IconButton icon="plus" label={t.add} size="sm" active={!!adding} onclick={openPicker} />
     </div>
-    <div class="target-list" role="listbox" aria-label="Cargos e pessoas com exceção">
+    <div class="target-list" role="listbox" aria-label={t.targetsLabel}>
       {#each roleRules as role (role.id)}
         <button
           type="button"
@@ -278,11 +273,11 @@
       {:else}
         {@const role = guild.roles.find((r) => r.id === target.id)}
         <span class="dot big" class:everyone={target.id === guild.id} style:background={target.id === guild.id ? null : (hex(role?.color) ?? 'var(--fg-3)')}></span>
-        <h3>{target.id === guild.id ? '@everyone' : (role?.name ?? 'Cargo')}</h3>
+        <h3>{target.id === guild.id ? '@everyone' : (role?.name ?? t.role)}</h3>
       {/if}
       <span class="grow"></span>
       {#if target.id !== guild.id}
-        <Button size="sm" variant="ghost" icon="trash" onclick={() => remove(target)}>Tirar exceção</Button>
+        <Button size="sm" variant="ghost" icon="trash" onclick={() => remove(target)}>{t.removeOverride}</Button>
       {/if}
     </div>
 
@@ -303,18 +298,18 @@
 {/if}
 
 {#if adding}
-  <Popover anchor={adding} placement="bottom-start" width={260} label="Adicionar cargo ou pessoa" onclose={() => (adding = null)}>
+  <Popover anchor={adding} placement="bottom-start" width={260} label={t.add} onclose={() => (adding = null)}>
     <div class="picker">
-      <TextField icon="search" placeholder="Buscar cargo ou pessoa" aria-label="Buscar cargo ou pessoa" bind:value={pick} bind:input={pickInput} spellcheck={false} />
+      <TextField icon="search" placeholder={t.search} aria-label={t.search} bind:value={pick} bind:input={pickInput} spellcheck={false} />
       <div class="picker-list">
-        {#if roleOptions.length}<p class="picker-label">Cargos</p>{/if}
+        {#if roleOptions.length}<p class="picker-label">{t.roles}</p>{/if}
         {#each roleOptions as role (role.id)}
           <button type="button" onclick={() => add({ type: 'role', id: role.id })}>
             <span class="dot" style:background={hex(role.color) ?? 'var(--fg-3)'}></span>
             <span class="target-name">{role.name}</span>
           </button>
         {/each}
-        {#if memberOptions.length}<p class="picker-label">Pessoas</p>{/if}
+        {#if memberOptions.length}<p class="picker-label">{t.people}</p>{/if}
         {#each memberOptions as userId (userId)}
           <button type="button" onclick={() => add({ type: 'member', id: userId })}>
             <Avatar id={userId} name={guild.displayName(userId)} size={20} src={client.avatarOf(userId, guild.id)} cutout="var(--bg-raised)" />
@@ -322,7 +317,7 @@
           </button>
         {/each}
         {#if !roleOptions.length && !memberOptions.length}
-          <p class="picker-empty">Nada encontrado.</p>
+          <p class="picker-empty">{t.nothing}</p>
         {/if}
       </div>
     </div>

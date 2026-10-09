@@ -1,12 +1,15 @@
 <script lang="ts" module>
+  import { m } from '../../lib/i18n.svelte'
+
   export type Status = 'online' | 'idle' | 'dnd' | 'offline'
 
-  export const STATUS_LABEL: Record<Status, string> = {
-    online: 'Online',
-    idle: 'Ausente',
-    dnd: 'Não perturbe',
-    offline: 'Offline',
-  }
+  /**
+   * Nome de cada status no idioma em uso (lido na hora, então acompanha a troca de idioma).
+   * O texto fica em `m.common.presence`; isto é só um atalho pra quem já usava a tabela.
+   */
+  export const STATUS_LABEL: Record<Status, string> = new Proxy({} as Record<Status, string>, {
+    get: (_, status) => m.common.presence[status as Status],
+  })
 </script>
 
 <script lang="ts">
@@ -30,7 +33,7 @@
   style:--d="{size}px"
   style:--cut={cutout}
   role="img"
-  aria-label={STATUS_LABEL[status]}
+  aria-label={m.common.presence[status]}
 ></span>
 
 <style>

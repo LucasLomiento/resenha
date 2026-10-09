@@ -1,28 +1,37 @@
 <script lang="ts">
   import { client } from '../../lib/client.svelte'
-  import { Button, IconButton, PageHeader, Row, Section, Switch } from '../kit'
+  import { i18n, LOCALES, m } from '../../lib/i18n.svelte'
+  import { settings } from '../../lib/settings.svelte'
+  import { Button, IconButton, PageHeader, Row, Section, Select, Switch } from '../kit'
 
   const desktop = $derived(client.desktop)
   const update = $derived(client.update)
+  const t = $derived(m.settings.app)
+
+  /** Automático primeiro (com o idioma do sistema entre parênteses), depois cada idioma no próprio nome. */
+  const languages = $derived([
+    { value: 'auto' as const, label: t.language.auto(LOCALES.find((l) => l.id === i18n.system)!.name) },
+    ...LOCALES.map((l) => ({ value: l.id, label: l.name })),
+  ])
 
   const updateText = $derived.by(() => {
     switch (update.status) {
       case 'none':
-        return 'Você está na versão mais nova.'
+        return t.updates.none
       case 'checking':
-        return 'Procurando…'
+        return t.updates.checking
       case 'available':
-        return `A versão ${update.version} saiu.`
+        return t.updates.available(update.version)
       case 'downloading':
-        return `Baixando a ${update.version} (${update.percent}%).`
+        return t.updates.downloading(update.version, update.percent)
       case 'ready':
-        return `A ${update.version} está pronta pra instalar.`
+        return t.updates.ready(update.version)
       case 'installing':
-        return 'Instalando…'
+        return t.updates.installing
       case 'unsupported':
-        return 'Este jeito de instalar não se atualiza sozinho.'
+        return t.updates.unsupported
       case 'error':
-        return `Não deu pra atualizar: ${update.message}`
+        return t.updates.error(update.message)
       default:
         return undefined
     }
@@ -34,14 +43,20 @@
   }
 </script>
 
-<PageHeader title="Aplicativo" />
+<PageHeader title={t.title} />
+
+<Section title={t.language.section} setting="app.language">
+  <Row label={t.language.label} description={t.language.description}>
+    <Select label={t.language.label} options={languages} bind:value={settings.language} />
+  </Row>
+</Section>
 
 {#if desktop}
-  <Section title="Ao ligar o computador">
-    <Row label="Abrir o Resenha" for="app-autostart" setting="app.autostart">
+  <Section title={t.startup.section}>
+    <Row label={t.startup.open} for="app-autostart" setting="app.autostart">
       <Switch id="app-autostart" checked={desktop.autostart} onchange={(e) => client.setDesktop({ autostart: e.currentTarget.checked })} />
     </Row>
-    <Row label="Começar minimizado" setting="app.hidden" for="app-hidden" indent disabled={!desktop.autostart}>
+    <Row label={t.startup.hidden} setting="app.hidden" for="app-hidden" indent disabled={!desktop.autostart}>
       <Switch
         id="app-hidden"
         checked={desktop.startHidden}
@@ -51,11 +66,11 @@
     </Row>
   </Section>
 
-  <Section title="Janela">
-    <Row label="Ícone na bandeja" setting="app.tray" for="app-tray" description="Mutar, ensurdecer e sair da call pelo ícone.">
+  <Section title={t.window.section}>
+    <Row label={t.window.tray} setting="app.tray" for="app-tray" description={t.window.trayDescription}>
       <Switch id="app-tray" checked={desktop.tray} onchange={(e) => client.setDesktop({ tray: e.currentTarget.checked })} />
     </Row>
-    <Row label="Fechar só esconde a janela" setting="app.close" for="app-close" description="A call continua." indent disabled={!desktop.tray}>
+    <Row label={t.window.close} setting="app.close" for="app-close" description={t.window.closeDescription} indent disabled={!desktop.tray}>
       <Switch
         id="app-close"
         checked={desktop.closeToTray}
@@ -63,27 +78,27 @@
         onchange={(e) => client.setDesktop({ closeToTray: e.currentTarget.checked })}
       />
     </Row>
-    <Row label="Tamanho da interface" setting="app.zoom">
+    <Row label={t.window.zoom} setting="app.zoom">
       <div class="zoom">
-        <IconButton icon="minus" label="Diminuir" shortcut="Ctrl −" size="sm" onclick={() => zoom(-0.1)} />
+        <IconButton icon="minus" label={t.window.zoomOut} shortcut="Ctrl −" size="sm" onclick={() => zoom(-0.1)} />
         <span class="tabular">{Math.round(desktop.zoom * 100)}%</span>
-        <IconButton icon="plus" label="Aumentar" shortcut="Ctrl +" size="sm" onclick={() => zoom(0.1)} />
-        <Button size="sm" variant="ghost" disabled={desktop.zoom === 1} onclick={() => client.setDesktop({ zoom: 1 })}>Padrão</Button>
+        <IconButton icon="plus" label={t.window.zoomIn} shortcut="Ctrl +" size="sm" onclick={() => zoom(0.1)} />
+        <Button size="sm" variant="ghost" disabled={desktop.zoom === 1} onclick={() => client.setDesktop({ zoom: 1 })}>{t.window.zoomReset}</Button>
       </div>
     </Row>
   </Section>
 {/if}
 
-<Section title="Atualizações" setting="app.update">
+<Section title={t.updates.section} setting="app.update">
   <Row label="Resenha {client.platform?.version ?? ''}" description={updateText}>
     {#if update.status === 'available'}
-      <Button variant="primary" icon="download" onclick={() => window.resenha.update.download()}>Baixar</Button>
+      <Button variant="primary" icon="download" onclick={() => window.resenha.update.download()}>{t.updates.download}</Button>
     {:else if update.status === 'ready'}
-      <Button variant="primary" icon="restart" onclick={() => client.installUpdate()}>Reiniciar e atualizar</Button>
+      <Button variant="primary" icon="restart" onclick={() => client.installUpdate()}>{t.updates.install}</Button>
     {:else if update.status !== 'unsupported'}
       <Button
         loading={update.status === 'checking' || update.status === 'downloading' || update.status === 'installing'}
-        onclick={() => window.resenha.update.check()}>Procurar atualização</Button
+        onclick={() => window.resenha.update.check()}>{t.updates.check}</Button
       >
     {/if}
   </Row>

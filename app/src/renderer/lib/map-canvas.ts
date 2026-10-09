@@ -4,6 +4,7 @@ import { Map as MapLibre, Marker, Popup, setWorkerUrl, type PositionAnchor } fro
 import 'maplibre-gl/dist/maplibre-gl.css'
 import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url'
 import type { MapPin, MapView, StreetSpot } from '../../../../shared/protocol'
+import { m } from './i18n.svelte'
 
 // O worker do MapLibre vem do próprio app: nada de blob:, a CSP continua fechada.
 setWorkerUrl(workerUrl)
@@ -444,8 +445,8 @@ export class SharedMap {
       entry.el.style.setProperty('--c', walker.color)
       entry.el.style.setProperty('--heading', `${walker.at.heading}deg`)
       entry.el.classList.toggle('mine', walker.mine)
-      entry.el.setAttribute('aria-label', walker.mine ? 'Você no Street View' : `${walker.name} no Street View: ver junto`)
-      const label = walker.mine ? 'Você' : walker.name
+      entry.el.setAttribute('aria-label', walker.mine ? m.map.walkerMine : m.map.walker(walker.name))
+      const label = walker.mine ? m.common.you : walker.name
       if (entry.name.textContent !== label) entry.name.textContent = label
     }
   }

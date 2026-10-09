@@ -57,7 +57,8 @@ async function launch(profile) {
     executablePath: electronPath,
     args: [APP_DIR],
     // RESENHA_INK_DRY: a camada dos rabiscos não abre de verdade, só registra o que chegou.
-    env: { ...process.env, RESENHA_PROFILE: profile, RESENHA_HIDDEN: '1', RESENHA_INK_DRY: '1' },
+    // LANGUAGE: perfil novo segue o idioma do sistema; o teste procura os textos em português.
+    env: { ...process.env, RESENHA_PROFILE: profile, RESENHA_HIDDEN: '1', RESENHA_INK_DRY: '1', LANGUAGE: 'pt_BR' },
   })
   const page = await app.firstWindow()
   // As conexões com os servidores passam pelo teste, pra dar pra derrubar uma no meio (queda de rede).
@@ -1229,6 +1230,88 @@ try {
     ['platform.invites', 'platform.signup', 'platform.accounts'].map((id) => a.page.locator(`.settings-content [data-setting="${id}"]`).count()),
   )
   check(ownerPanel.join(',') === '1,1,1', 'o dono vê a Plataforma inteira: números, convites, cadastro e contas', ownerPanel.join(','))
+  // Idiomas: Aplicativo → Idioma troca a interface na hora (inglês, espanhol) e volta pro português.
+  await a.page.locator('.settings-nav button', { hasText: 'Aplicativo' }).first().click({ force: true })
+  const pageTitle = () => a.page.locator('.settings-content h1').innerText()
+  await a.page.getByLabel('Idioma do Resenha').selectOption('en')
+  const inEnglish = [await pageTitle(), await a.page.evaluate(() => document.documentElement.lang)]
+  await shot(a, '6d-idioma-ingles')
+  await a.page.getByLabel('Resenha language').selectOption('es')
+  const inSpanish = await pageTitle()
+  await shot(a, '6e-idioma-espanhol')
+  await a.page.getByLabel('Idioma de Resenha').selectOption('pt')
+  const backInPortuguese = await pageTitle()
+  check(
+    inEnglish.join('/') === 'App/en-US' && inSpanish === 'Aplicación' && backInPortuguese === 'Aplicativo',
+    'trocar o idioma muda a interface na hora (inglês, espanhol) e volta pro português',
+    `${inEnglish.join('/')} · ${inSpanish} · ${backInPortuguese}`,
+  )
+  // Inglês e espanhol de ponta a ponta: em cada um, passa pelas configurações, pela tela do servidor,
+  // pelas configurações do servidor e pelo início, procurando texto que ficou em português.
+  const UI_IN = {
+    en: { settings: 'Settings', app: 'App', serverSettings: 'Server settings', home: 'Home' },
+    es: { settings: 'Configuración', app: 'Aplicación', serverSettings: 'Configuración del servidor', home: 'Inicio' },
+  }
+  const portugueseOnScreen = (where) =>
+    a.page.evaluate((where) => {
+      // Palavras e letras que só o português tem (nem o inglês nem o espanhol usam).
+      const word = /(?<![\p{L}])(não|você|pra|mensagens?|configurações|configuração|sair|ligar|chamada|tela|salvar|fechar|voltar|aparelhos?|notificações|atalhos|ouvir|mutar|ensurdecer|compartilhar|assistir|convidar|convites?|membros|excluir|carregando|digitando|agora|ontem|hoje|nenhuma?|também|quem|onde|senha|contas?|uma|um|sem|já|só|isso|esse|essa|pessoas?)(?![\p{L}])/iu
+      const letters = /[ãõçêâôà]/i
+      const visible = (el) => !!el && el.getClientRects().length > 0 && getComputedStyle(el).visibility !== 'hidden'
+      // O que as pessoas escreveram (mensagens e a citação da resposta) é dado, não texto do app.
+      const written = (el) => !!el?.closest('.md, .reply-text')
+      const found = new Set()
+      const test = (text) => {
+        const clean = text.replace(/\s+/g, ' ').trim()
+        if (clean && (word.test(clean) || letters.test(clean))) found.add(clean.slice(0, 90))
+      }
+      const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT)
+      for (let node = walker.nextNode(); node; node = walker.nextNode()) if (visible(node.parentElement) && !written(node.parentElement)) test(node.textContent ?? '')
+      for (const el of document.querySelectorAll('[aria-label], [title], [placeholder], [alt]')) {
+        if (!visible(el) || written(el)) continue
+        for (const attr of ['aria-label', 'title', 'placeholder', 'alt']) if (el.getAttribute(attr)) test(el.getAttribute(attr))
+      }
+      return [...found].map((text) => `${where}: ${text}`)
+    }, where)
+  const leftovers = []
+  for (const lang of ['en', 'es']) {
+    const ui = UI_IN[lang]
+    await a.page.locator('[data-setting="app.language"] select').selectOption(lang)
+    for (const button of await a.page.locator('.settings-nav button').all()) {
+      const name = (await button.innerText()).trim()
+      if (/log out|cerrar sesi/i.test(name)) continue
+      await button.click({ force: true })
+      await a.page.waitForTimeout(150)
+      leftovers.push(...(await portugueseOnScreen(`${lang} · ${name}`)))
+      await shot(a, `7-${lang}-config-${name.toLowerCase().replace(/\W+/g, '-')}`)
+    }
+    const closeSettings = () => a.page.locator('.settings .close button').click({ force: true })
+    await closeSettings()
+    await a.page.waitForTimeout(200)
+    leftovers.push(...(await portugueseOnScreen(`${lang} · servidor`)))
+    await shot(a, `7-${lang}-servidor`)
+    await a.page.locator('header button.server').click({ force: true })
+    await a.page.getByRole('menuitem', { name: ui.serverSettings }).click({ force: true })
+    for (const button of await a.page.locator('.settings-nav button').all()) {
+      const name = (await button.innerText()).trim()
+      if (!name) continue
+      await button.click({ force: true })
+      await a.page.waitForTimeout(150)
+      leftovers.push(...(await portugueseOnScreen(`${lang} · ${name}`)))
+      await shot(a, `7-${lang}-servidor-${name.toLowerCase().replace(/\W+/g, '-')}`)
+    }
+    await closeSettings()
+    await a.page.locator('nav.rail button.home').click({ force: true })
+    await a.page.waitForTimeout(200)
+    leftovers.push(...(await portugueseOnScreen(`${lang} · início`)))
+    await shot(a, `7-${lang}-inicio`)
+    await a.page.locator('nav.rail').getByRole('button', { name: 'Turma', exact: true }).click({ force: true })
+    await a.page.locator('.dock').getByRole('button', { name: ui.settings, exact: true }).click({ force: true })
+    await a.page.locator('.settings-nav').getByRole('button', { name: ui.app, exact: true }).click({ force: true })
+  }
+  await a.page.locator('[data-setting="app.language"] select').selectOption('pt')
+  console.log(leftovers.length ? `   português que sobrou:\n     ${leftovers.join('\n     ')}` : '   nada em português no inglês e no espanhol')
+  check(leftovers.length === 0, 'em inglês e em espanhol não sobra texto em português na tela', `${leftovers.length} trechos`)
   // Busca nas configurações: "ruido" (sem acento) leva pra "Redução de ruído", que pisca.
   const settingsSearch = a.page.getByLabel('Buscar nas configurações')
   await settingsSearch.fill('ruido')

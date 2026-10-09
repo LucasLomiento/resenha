@@ -1,25 +1,27 @@
 <script lang="ts">
   import { client } from '../lib/client.svelte'
+  import { m } from '../lib/i18n.svelte'
   import { Avatar, IconButton, layer, portal } from './kit'
 
   // Pode virar null no meio de um clique (atendeu ou recusou).
   const incoming = $derived(client.incomingCall)
   const caller = $derived(incoming ? (client.user(incoming.from) ?? client.home?.dm(incoming.channelId)?.user) : undefined)
+  const t = $derived(m.app.incoming)
 </script>
 
 <!-- Ligação chegando: cartão no canto, por cima de tudo, até atender ou recusar. -->
 {#if incoming}
-<div class="ring" use:portal use:layer={() => client.declineCall()} role="alertdialog" aria-label="Ligação de {caller?.name ?? 'alguém'}">
+<div class="ring" use:portal use:layer={() => client.declineCall()} role="alertdialog" aria-label={t.label(caller?.name)}>
   <div class="who">
     <span class="halo"><Avatar id={incoming.from} name={caller?.name ?? '?'} size={56} src={client.avatarOf(incoming.from)} cutout="var(--bg-raised)" /></span>
     <div class="text">
-      <strong>{caller?.name ?? 'Alguém'}</strong>
-      <span>{incoming.video ? 'Chamada de vídeo' : 'Ligando pra você'}…</span>
+      <strong>{caller?.name ?? m.app.someone}</strong>
+      <span>{incoming.video ? t.video : t.voice}</span>
     </div>
   </div>
   <div class="actions">
-    <IconButton icon="phone-off" label="Recusar" size="xl" variant="subtle" tone="danger" active onclick={() => client.declineCall()} />
-    <IconButton icon="phone" label="Atender" size="xl" variant="subtle" tone="success" active onclick={() => client.acceptCall()} />
+    <IconButton icon="phone-off" label={t.decline} size="xl" variant="subtle" tone="danger" active onclick={() => client.declineCall()} />
+    <IconButton icon="phone" label={t.accept} size="xl" variant="subtle" tone="success" active onclick={() => client.acceptCall()} />
   </div>
 </div>
 {/if}

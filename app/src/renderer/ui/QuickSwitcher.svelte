@@ -1,13 +1,14 @@
 <script lang="ts">
   import { client } from '../lib/client.svelte'
+  import { around, i18n, m } from '../lib/i18n.svelte'
   import { seesPlatform } from '../lib/profile'
-  import { PAGE_LABEL, searchSettings } from '../lib/settings-search'
+  import { searchSettings } from '../lib/settings-search'
   import { openSetting, ui } from '../lib/ui.svelte'
   import { Avatar, Icon, Kbd, layer, portal, type IconName } from './kit'
 
   interface Item {
     key: string
-    group: 'Conversas' | 'Canais' | 'Pessoas' | 'Servidores' | 'Configurações'
+    group: 'dms' | 'channels' | 'people' | 'servers' | 'settings'
     name: string
     hint: string
     unread?: boolean
@@ -21,6 +22,14 @@
   let index = $state(0)
   let input = $state<HTMLInputElement>()
   let list = $state<HTMLDivElement>()
+
+  const t = $derived(m.app.quickSwitcher)
+  /** A dica do rodapé, com o @ e o # em negrito no lugar dos marcadores. */
+  const tip = $derived.by(() => {
+    const [beforeAt, rest] = around(t.tip, '{at}')
+    const [beforeHash, end] = around(rest, '{hash}')
+    return { beforeAt, beforeHash, end }
+  })
 
   const fold = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
 
@@ -48,7 +57,7 @@
       for (const dm of (client.home?.sortedDms ?? []).slice(0, 5)) {
         out.push({
           key: `dm:${dm.id}`,
-          group: 'Conversas',
+          group: 'dms',
           name: dm.user.name,
           hint: `@${dm.user.username}`,
           unread: dm.unread > 0,
@@ -67,9 +76,9 @@
           const inCall = channel.kind === 'voice' ? guild.voiceIn(channel.id).length : 0
           out.push({
             key: `c:${channel.id}`,
-            group: 'Canais',
+            group: 'channels',
             name: channel.name,
-            hint: inCall ? `${guild.info.name} · ${inCall} na call` : guild.info.name,
+            hint: inCall ? t.inCall(guild.info.name, inCall) : guild.info.name,
             unread: channel.kind === 'text' && guild.unread(channel.id) && !guild.channelMuted(channel.id),
             icon: channel.kind === 'voice' ? 'volume' : 'hash',
             score: s + (client.route.kind === 'guild' && client.route.guildId === guild.id ? 0.5 : 0),
@@ -93,7 +102,7 @@
         if (!s) continue
         out.push({
           key: `u:${person.id}`,
-          group: 'Pessoas',
+          group: 'people',
           name: person.name,
           hint: `@${person.username}`,
           avatar: { id: person.id, name: person.name, src: client.api?.avatar(person) ?? null, status: client.presenceOf(person.id).status },
@@ -110,9 +119,9 @@
         const count = Object.keys(guild.members).length
         out.push({
           key: `g:${guild.id}`,
-          group: 'Servidores',
+          group: 'servers',
           name: guild.info.name,
-          hint: count === 1 ? '1 membro' : `${count} membros`,
+          hint: t.members(count),
           unread: guild.hasUnread,
           avatar: { id: guild.id, name: guild.info.name, src: client.api?.media(guild.info.icon) ?? null, square: true },
           score: s,
@@ -122,13 +131,19 @@
     }
 
     if (!only && q) {
-      const context = { staff: !!client.me?.staff, platform: seesPlatform(client.me), desktop: !!client.desktop, hyprland: !!client.platform?.hyprland }
+      const context = {
+        staff: !!client.me?.staff,
+        platform: seesPlatform(client.me),
+        desktop: !!client.desktop,
+        hyprland: !!client.platform?.hyprland,
+        locale: i18n.locale,
+      }
       for (const [i, entry] of searchSettings(raw, context).slice(0, 5).entries()) {
         out.push({
           key: `s:${entry.id}`,
-          group: 'Configurações',
+          group: 'settings',
           name: entry.label,
-          hint: entry.section ? `${PAGE_LABEL[entry.page]} · ${entry.section}` : PAGE_LABEL[entry.page],
+          hint: entry.where,
           icon: 'settings',
           score: 5 - i,
           open: () => openSetting(entry),
@@ -136,7 +151,7 @@
       }
     }
 
-    const order = { Conversas: 0, Canais: 1, Pessoas: 2, Servidores: 3, Configurações: 4 }
+    const order = { dms: 0, channels: 1, people: 2, servers: 3, settings: 4 }
     return out
       .sort((a, b) => order[a.group] - order[b.group] || b.score - a.score || Number(!!b.unread) - Number(!!a.unread))
       .slice(0, 40)
@@ -188,14 +203,14 @@
 
 <!-- Ctrl+K: vai pra qualquer canal, conversa ou servidor digitando um pedaço do nome. -->
 <div class="backdrop" use:portal use:layer={close} onmousedown={(e) => e.target === e.currentTarget && close()} role="presentation">
-  <div class="switcher" role="dialog" aria-label="Ir para">
+  <div class="switcher" role="dialog" aria-label={t.label}>
     <div class="input">
       <Icon name="search" size={18} />
       <input
         bind:this={input}
         bind:value={query}
-        placeholder="Pra onde você quer ir?"
-        aria-label="Pra onde você quer ir?"
+        placeholder={t.placeholder}
+        aria-label={t.placeholder}
         onkeydown={onKeydown}
         use:autofocus
       />
@@ -205,7 +220,7 @@
     <div class="results" role="listbox" bind:this={list}>
       {#each items as item, i (item.key)}
         {#if i === 0 || items[i - 1].group !== item.group}
-          <div class="group">{item.group}</div>
+          <div class="group">{t.groups[item.group]}</div>
         {/if}
         <button class="item" class:on={i === index} role="option" aria-selected={i === index} onmouseenter={() => (index = i)} onclick={() => pick(item)}>
           {#if item.avatar}
@@ -220,14 +235,14 @@
           {#if i === index}<Kbd keys="Enter" />{/if}
         </button>
       {:else}
-        <p class="empty">{query.trim() ? 'Nada com esse nome.' : 'Digite o nome de um canal, pessoa ou servidor.'}</p>
+        <p class="empty">{query.trim() ? t.noMatch : t.empty}</p>
       {/each}
     </div>
 
     <div class="foot">
-      <span><Kbd keys="↑" /><Kbd keys="↓" /> escolher</span>
-      <span><Kbd keys="Enter" /> abrir</span>
-      <span class="tip">Dica: comece com <b>@</b> pra pessoas, <b>#</b> pra canais</span>
+      <span><Kbd keys="↑" /><Kbd keys="↓" /> {t.pick}</span>
+      <span><Kbd keys="Enter" /> {t.open}</span>
+      <span class="tip">{tip.beforeAt}<b>@</b>{tip.beforeHash}<b>#</b>{tip.end}</span>
     </div>
   </div>
 </div>

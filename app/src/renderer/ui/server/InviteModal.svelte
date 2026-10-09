@@ -9,10 +9,12 @@
   import { onMount } from 'svelte'
   import { P } from '../../../../../shared/protocol'
   import { client } from '../../lib/client.svelte'
+  import { m } from '../../lib/i18n.svelte'
   import { ui } from '../../lib/ui.svelte'
   import { Button, EmptyState, Icon, Modal, Select } from '../kit'
-  import { INVITE_AGES, INVITE_USES, copyText, inviteOptions, relative } from './util'
+  import { copyText, inviteAges, inviteOptions, inviteUses, relative } from './util'
 
+  const t = $derived(m.server.invite)
   const request = $derived(ui.invite)
   const guild = $derived(request ? (client.guilds[request.guildId] ?? null) : null)
   const canInvite = $derived(!!guild && guild.canGuild(P.CREATE_INVITE))
@@ -35,8 +37,8 @@
   const link = $derived(invite && client.api ? `${client.api.server}/i/${invite.code}` : '')
   const summary = $derived.by(() => {
     if (!invite) return ''
-    const expiry = invite.expiresAt ? `vence ${relative(invite.expiresAt, client.now)}` : 'não vence'
-    const limit = invite.maxUses ? `até ${invite.maxUses} ${invite.maxUses === 1 ? 'pessoa' : 'pessoas'}` : 'sem limite de usos'
+    const expiry = invite.expiresAt ? t.expires(relative(invite.expiresAt, client.now)) : t.never
+    const limit = invite.maxUses ? t.upTo(invite.maxUses) : t.unlimited
     return `${expiry} · ${limit}`
   })
 
@@ -83,7 +85,7 @@
 
   async function copy() {
     if (!link) return
-    if (!(await copyText(link))) return client.toast('Não deu pra copiar o link.')
+    if (!(await copyText(link))) return client.toast(m.server.shared.copyFailed)
     shared = true
     copied = true
     clearTimeout(copiedTimer)
@@ -92,46 +94,46 @@
 </script>
 
 {#if guild}
-  <Modal title="Convidar pessoas pra {guild.info.name}" description="Quem abrir o link entra no servidor." onclose={close}>
+  <Modal title={t.title(guild.info.name)} description={t.description} onclose={close}>
     {#if !canInvite}
-      <EmptyState icon="lock" title="Sem permissão pra convidar" description="Peça pra alguém da moderação criar um convite." />
+      <EmptyState icon="lock" title={t.noPermissionTitle} description={t.noPermissionDescription} />
     {:else}
       <!-- Copiou na mão (Ctrl + C) também conta: esse link pode ter saído daqui. -->
       <div class="box" class:failed oncopy={() => (shared = true)}>
         <span class="link selectable" class:muted={!invite}>
-          {#if invite}{link}{:else if failed}Não deu pra gerar o link.{:else}Gerando link…{/if}
+          {#if invite}{link}{:else if failed}{t.failed}{:else}{t.generating}{/if}
         </span>
         {#if failed && !invite}
-          <Button size="sm" icon="restart" onclick={generate} loading={busy}>Tentar de novo</Button>
+          <Button size="sm" icon="restart" onclick={generate} loading={busy}>{m.common.retry}</Button>
         {:else}
           <Button class="copy" size="sm" variant={copied ? 'secondary' : 'primary'} icon={copied ? 'check' : 'copy'} disabled={!invite || busy} onclick={copy}>
-            {copied ? 'Copiado' : 'Copiar'}
+            {copied ? m.common.copied : m.common.copy}
           </Button>
         {/if}
       </div>
 
       <p class="meta">
         {#if invite}
-          <span>Código <code class="selectable">{invite.code}</code> · {summary}</span>
+          <span>{t.code} <code class="selectable">{invite.code}</code> · {summary}</span>
         {/if}
         <button type="button" class="edit" aria-expanded={editing} onclick={() => (editing = !editing)}>
-          <Icon name="settings" size={14} />Mudar
+          <Icon name="settings" size={14} />{t.change}
         </button>
       </p>
 
       {#if editing}
         <div class="options">
           <label class="mini-field">
-            <span>Vale por</span>
-            <Select label="Vale por" bind:value={age} options={INVITE_AGES} />
+            <span>{t.validFor}</span>
+            <Select label={t.validFor} bind:value={age} options={inviteAges()} />
           </label>
           <label class="mini-field">
-            <span>Usos</span>
-            <Select label="Usos" bind:value={uses} options={INVITE_USES} />
+            <span>{t.uses}</span>
+            <Select label={t.uses} bind:value={uses} options={inviteUses()} />
           </label>
-          <Button onclick={generate} loading={busy}>Gerar novo link</Button>
+          <Button onclick={generate} loading={busy}>{t.newLink}</Button>
         </div>
-        {#if failed && invite}<p class="error">Não deu pra gerar o link novo. Tente de novo.</p>{/if}
+        {#if failed && invite}<p class="error">{t.newFailed}</p>{/if}
       {/if}
     {/if}
   </Modal>

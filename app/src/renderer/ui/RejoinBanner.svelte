@@ -1,5 +1,6 @@
 <script lang="ts">
   import { client } from '../lib/client.svelte'
+  import { around, m } from '../lib/i18n.svelte'
   import { Button, Icon, IconButton } from './kit'
 
   /**
@@ -8,17 +9,19 @@
    * outra call.
    */
   const offer = $derived(client.rejoinOffer)
+  const t = $derived(m.app.rejoin)
+  const text = $derived(around(t.text, '{call}'))
 </script>
 
 {#if offer}
-  <div class="rejoin" role="alertdialog" aria-label="Voltar pra call">
+  <div class="rejoin" role="alertdialog" aria-label={t.label}>
     <span class="icon"><Icon name={offer.kind === 'dm' ? 'phone' : 'volume'} size={16} /></span>
     <p>
-      Você estava em <strong>{offer.label}</strong>
-      <span class="place">· {offer.place}</span> antes de atualizar.
+      {text[0]}<strong>{offer.label}</strong>
+      <span class="place">· {offer.place}</span>{text[1]}
     </p>
-    <Button size="sm" variant="primary" icon="phone" onclick={() => client.acceptRejoin()}>Reconectar</Button>
-    <IconButton size="sm" icon="x" label="Agora não" onclick={() => client.dismissRejoin()} />
+    <Button size="sm" variant="primary" icon="phone" onclick={() => client.acceptRejoin()}>{t.reconnect}</Button>
+    <IconButton size="sm" icon="x" label={t.notNow} onclick={() => client.dismissRejoin()} />
   </div>
 {/if}
 

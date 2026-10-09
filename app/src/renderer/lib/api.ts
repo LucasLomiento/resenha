@@ -12,6 +12,7 @@ import type {
   StatusResponse,
   User,
 } from '../../../../shared/protocol'
+import { m, serverText } from './i18n.svelte'
 
 export class HttpError extends Error {
   constructor(
@@ -20,6 +21,12 @@ export class HttpError extends Error {
   ) {
     super(message)
   }
+}
+
+/** O erro que o servidor mandou (em português), no idioma do app; sem texto, só o código. */
+function errorText(body: unknown, status: number): string {
+  const error = (body as ApiError | null)?.error
+  return typeof error === 'string' && error ? serverText(error) : m.lib.api.status(status)
 }
 
 export function normalizeServer(input: string): string {
@@ -96,10 +103,10 @@ export class Api {
         },
       })
     } catch {
-      throw new HttpError(0, 'Não deu pra falar com o servidor. Confira a internet.')
+      throw new HttpError(0, m.lib.api.offline)
     }
     const body = await res.json().catch(() => ({}))
-    if (!res.ok) throw new HttpError(res.status, (body as ApiError).error ?? `Erro ${res.status}`)
+    if (!res.ok) throw new HttpError(res.status, errorText(body, res.status))
     return body as T
   }
 
@@ -174,7 +181,7 @@ export class Api {
 
   async exportData(): Promise<Blob> {
     const res = await fetch(`${this.server}/api/me/export`, { headers: { Authorization: `Bearer ${this.token}` } })
-    if (!res.ok) throw new HttpError(res.status, 'Não deu pra exportar agora.')
+    if (!res.ok) throw new HttpError(res.status, m.lib.api.exportFailed)
     return res.blob()
   }
 
@@ -320,10 +327,10 @@ export class Api {
           // resposta sem JSON
         }
         if (xhr.status === 200) resolve(body as Attachment)
-        else reject(new HttpError(xhr.status, (body as ApiError).error ?? `Erro ${xhr.status}`))
+        else reject(new HttpError(xhr.status, errorText(body, xhr.status)))
       }
-      xhr.onerror = () => reject(new HttpError(0, 'Falha de rede no envio.'))
-      xhr.onabort = () => reject(new HttpError(0, 'Envio cancelado.'))
+      xhr.onerror = () => reject(new HttpError(0, m.lib.api.uploadNetwork))
+      xhr.onabort = () => reject(new HttpError(0, m.lib.api.uploadCanceled))
       xhr.send(file)
     })
     return { promise, abort: () => xhr.abort() }

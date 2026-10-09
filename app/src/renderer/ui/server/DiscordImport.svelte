@@ -2,7 +2,7 @@
   import { P, type ImportedStructure } from '../../../../../shared/protocol'
   import { client } from '../../lib/client.svelte'
   import { countDraft, fromDraft, plainName, preparePrint, toDraft, type Draft, type DraftChannel } from '../../lib/discord-import'
-  import { plural } from '../../lib/format'
+  import { fmt, m } from '../../lib/i18n.svelte'
   import { ui } from '../../lib/ui.svelte'
   import { Button, Icon, IconButton, Kbd, Modal, Spinner, Switch, TextField } from '../kit'
   import { settled } from './settle.svelte'
@@ -13,6 +13,7 @@
    * os canais entram no fim da lista; no modo "servidor novo", o servidor é
    * criado com o nome do print e fica só com os canais importados.
    */
+  const t = $derived(m.server.discord)
   const request = $derived(ui.discordImport)
   const guild = $derived(request && 'guildId' in request ? (client.guilds[request.guildId] ?? null) : null)
   const newServer = $derived(!!request && 'newServer' in request)
@@ -39,14 +40,13 @@
   const counts = $derived(countDraft(draft))
   const channels = $derived(counts.text + counts.voice)
   const summary = $derived(
-    [
-      counts.categories ? plural(counts.categories, 'categoria', 'categorias') : null,
-      counts.text ? plural(counts.text, 'canal de texto', 'canais de texto') : null,
-      counts.voice ? plural(counts.voice, 'canal de voz', 'canais de voz') : null,
-    ]
-      .filter(Boolean)
-      .join(', ')
-      .replace(/, ([^,]*)$/, ' e $1'),
+    fmt.list(
+      [
+        counts.categories ? t.countCategories(counts.categories) : null,
+        counts.text ? t.countText(counts.text) : null,
+        counts.voice ? t.countVoice(counts.voice) : null,
+      ].filter((part): part is string => !!part),
+    ),
   )
 
   function close() {
@@ -57,7 +57,7 @@
 
   async function read(file: Blob) {
     if (!file.type.startsWith('image/')) {
-      error = 'Isso não é uma imagem.'
+      error = t.notImage
       return
     }
     const mine = ++run
@@ -126,9 +126,9 @@
       let target = guild
       if (newServer) {
         const name = serverName.trim()
-        if (name.length < 2) throw new Error('O nome do servidor precisa de pelo menos 2 letras.')
+        if (name.length < 2) throw new Error(t.nameTooShort)
         const info = await client.createGuild(name)
-        if (!info || !(await settled(() => !!client.guilds[info.id]?.loaded, 20_000))) throw new Error('O servidor foi criado, mas não deu pra abrir ele agora.')
+        if (!info || !(await settled(() => !!client.guilds[info.id]?.loaded, 20_000))) throw new Error(t.openFailed)
         target = client.guilds[info.id]
       }
       if (!target) return
@@ -144,7 +144,7 @@
         await settled(() => before.every((id) => !g.channel(id)), 10_000)
       }
       const made = want - structure.categories.length
-      client.toast(`${plural(made, 'canal criado', 'canais criados')}${structure.categories.length ? ` em ${plural(structure.categories.length, 'categoria', 'categorias')}` : ''}.`, 'info')
+      client.toast(t.created(made, structure.categories.length), 'info')
       const first = g.firstTextChannel
       close()
       if (first) client.openChannel(g.id, first.id)
@@ -160,8 +160,8 @@
 
 {#if request && (guild || newServer)}
   <Modal
-    title={newServer ? 'Trazer servidor do Discord' : 'Importar canais do Discord'}
-    description={step === 'review' ? 'Confira antes de criar. Dá pra mudar nome, tipo e tirar o que não quiser.' : undefined}
+    title={newServer ? t.titleNew : t.titleImport}
+    description={step === 'review' ? t.reviewDescription : undefined}
     size={step === 'review' ? 'xl' : 'md'}
     onclose={close}
     dismissible={!busy}
@@ -184,14 +184,14 @@
         }}
       >
         <span class="drop-icon"><Icon name="image-plus" size={26} /></span>
-        <strong>Cole o print aqui <Kbd keys="Ctrl + V" /></strong>
-        <span>ou arraste a imagem, ou clique pra escolher</span>
+        <strong>{t.paste} <Kbd keys="Ctrl + V" /></strong>
+        <span>{t.pasteAlt}</span>
       </button>
       <input bind:this={fileInput} type="file" accept="image/png,image/jpeg,image/webp" hidden onchange={(e) => pickFrom(e.currentTarget.files)} />
       <ul class="tips">
-        <li>Tire o print só da lista de canais, a coluna da esquerda do Discord.</li>
-        <li>Abra as categorias fechadas antes: o que não aparece no print não entra.</li>
-        <li>{newServer ? 'O servidor e os canais só são criados depois de você conferir.' : 'Os canais entram no fim da lista, depois de você conferir.'}</li>
+        <li>{t.tipList}</li>
+        <li>{t.tipOpen}</li>
+        <li>{newServer ? t.tipNew : t.tipExisting}</li>
       </ul>
       {#if error}<p class="error" role="alert"><Icon name="circle-alert" size={14} />{error}</p>{/if}
     {:else if step === 'reading'}
@@ -200,30 +200,30 @@
           {#if print}<img src={print} alt="" />{/if}
           <span class="beam"></span>
         </div>
-        <p><Spinner size={14} /> Lendo os canais do print… leva uns 10 segundos.</p>
+        <p><Spinner size={14} /> {t.reading}</p>
       </div>
     {:else}
       <div class="review">
-        {#if print}<img class="print" src={print} alt="O print" />{/if}
+        {#if print}<img class="print" src={print} alt={t.printAlt} />{/if}
         <div class="draft">
           <div class="draft-head">
-            <span class="summary">{summary || 'Nada pra criar'}</span>
-            <label class="emoji">Manter os emojis <Switch size="sm" checked={keepEmoji} onchange={(e) => setEmoji(e.currentTarget.checked)} /></label>
+            <span class="summary">{summary || t.nothing}</span>
+            <label class="emoji">{t.keepEmoji} <Switch size="sm" checked={keepEmoji} onchange={(e) => setEmoji(e.currentTarget.checked)} /></label>
           </div>
           {#if newServer}
-            <TextField label="Nome do servidor" bind:value={serverName} maxlength={64} spellcheck={false} />
+            <TextField label={m.server.shared.serverName} bind:value={serverName} maxlength={64} spellcheck={false} />
           {/if}
           <div class="tree">
             {#snippet row(channel: DraftChannel)}
               <div class="row">
                 <IconButton
                   icon={channel.kind === 'text' ? 'hash' : 'volume'}
-                  label={channel.kind === 'text' ? 'Texto (clique pra trocar pra voz)' : 'Voz (clique pra trocar pra texto)'}
+                  label={channel.kind === 'text' ? t.textToggle : t.voiceToggle}
                   size="sm"
                   onclick={() => (channel.kind = channel.kind === 'text' ? 'voice' : 'text')}
                 />
-                <input class="name" bind:value={channel.name} maxlength={100} spellcheck="false" aria-label="Nome do canal" />
-                <IconButton icon="x" label="Não criar este canal" size="sm" onclick={() => removeChannel(channel.key)} />
+                <input class="name" bind:value={channel.name} maxlength={100} spellcheck="false" aria-label={m.server.shared.channelName} />
+                <IconButton icon="x" label={t.skipChannel} size="sm" onclick={() => removeChannel(channel.key)} />
               </div>
             {/snippet}
             {#each draft.channels as channel (channel.key)}
@@ -232,8 +232,8 @@
             {#each draft.categories as category (category.key)}
               <div class="category">
                 <Icon name="chevron-down" size={14} />
-                <input class="name cat" bind:value={category.name} maxlength={100} spellcheck="false" aria-label="Nome da categoria" />
-                <IconButton icon="x" label="Não criar esta categoria (nem os canais dela)" size="sm" onclick={() => removeCategory(category.key)} />
+                <input class="name cat" bind:value={category.name} maxlength={100} spellcheck="false" aria-label={m.server.shared.categoryName} />
+                <IconButton icon="x" label={t.skipCategory} size="sm" onclick={() => removeCategory(category.key)} />
               </div>
               {#each category.channels as channel (channel.key)}
                 {@render row(channel)}
@@ -246,13 +246,13 @@
 
     {#snippet footer()}
       {#if step === 'review'}
-        <Button variant="ghost" icon="restart" onclick={() => (step = 'pick')} disabled={busy}>Outro print</Button>
+        <Button variant="ghost" icon="restart" onclick={() => (step = 'pick')} disabled={busy}>{t.another}</Button>
         <span class="grow"></span>
         <Button variant="primary" onclick={create} loading={busy} disabled={!channels && !counts.categories}>
-          {newServer ? 'Criar servidor' : `Criar ${plural(channels, 'canal', 'canais')}`}
+          {newServer ? t.createServer : t.createChannels(channels)}
         </Button>
       {:else}
-        <Button variant="ghost" onclick={close}>Cancelar</Button>
+        <Button variant="ghost" onclick={close}>{m.common.cancel}</Button>
       {/if}
     {/snippet}
   </Modal>

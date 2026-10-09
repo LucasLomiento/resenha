@@ -1,0 +1,97 @@
+// Textos da coluna de um servidor (ui/guild): canais, call, menus e lista de membros.
+// Português é a fonte: en e es seguem estas chaves.
+
+export default {
+  // Menu do nome do servidor, no topo.
+  menu: {
+    invite: 'Convidar pessoas',
+    settings: 'Configurações do servidor',
+    createChannel: 'Criar canal',
+    createCategory: 'Criar categoria',
+    importDiscord: 'Importar canais do Discord',
+    notifications: 'Notificações',
+    levels: {
+      all: 'Todas as mensagens',
+      mentions: 'Só menções',
+      none: 'Nada',
+    },
+    notifyAgain: 'Voltar a notificar',
+    muteServer: 'Silenciar servidor',
+    markAllRead: 'Marcar tudo como lido',
+    leave: 'Sair do servidor',
+    leaveTitle: (name: string) => `Sair de ${name}?`,
+    leaveDescription: 'Pra voltar, você vai precisar de um convite.',
+    leaveConfirm: 'Sair',
+  },
+
+  // Menu de um canal ou categoria (botão direito).
+  channelMenu: {
+    markRead: 'Marcar como lido',
+    notifyAgain: 'Voltar a notificar',
+    muteChannel: 'Silenciar canal',
+    sameAsServer: 'Igual ao servidor',
+    relay: 'Passar pelo Cloudflare',
+    createHere: 'Criar canal aqui',
+    editCategory: 'Editar categoria',
+    editChannel: 'Editar canal',
+    deleteCategory: 'Apagar categoria',
+    deleteChannel: 'Apagar canal',
+    deleteCategoryTitle: (name: string) => `Apagar a categoria ${name}?`,
+    deleteChannelTitle: (name: string) => `Apagar #${name}?`,
+    deleteCategoryDescription: 'Os canais dela continuam, fora da categoria.',
+    deleteChannelDescription: 'As mensagens e os arquivos desse canal somem pra sempre.',
+    deleteConfirm: 'Apagar',
+  },
+
+  sidebar: {
+    channels: 'Canais',
+    map: 'Mapa',
+    mapPeople: (n: number) => (n === 1 ? 'Mapa: 1 pessoa agora' : `Mapa: ${n} pessoas agora`),
+    createChannel: 'Criar canal',
+    editChannel: 'Editar canal',
+    openCall: (channel: string) => `${channel}: abrir a call`,
+    joinCall: (channel: string) => `${channel}: entrar na call`,
+    relay: 'Pelo Cloudflare: voz, câmera e tela passam pelos servidores dele, não direto entre os PCs',
+    volume: 'Volume',
+    volumeOf: (name: string) => `Volume de ${name}`,
+    deafenedByMod: 'Ensurdecido por um moderador',
+    deafened: 'Ensurdecido',
+    mutedByMod: 'Mutado por um moderador',
+    muted: 'Mutado',
+    watchMine: 'Ver minha tela',
+    watch: 'Assistir',
+    joinToWatch: 'Entre na call pra assistir',
+    live: 'AO VIVO',
+  },
+
+  members: {
+    label: 'Membros',
+    inCall: (channel: string) => `Na call · ${channel}`,
+    owner: 'Dono do servidor',
+    timedOut: 'De castigo',
+  },
+
+  // Menu de uma pessoa no servidor (lista de membros, call, chat).
+  memberMenu: {
+    profile: 'Perfil',
+    message: 'Mensagem',
+    changeMyNick: 'Mudar meu apelido',
+    muteAll: 'Mutar pra todos',
+    unmuteAll: 'Desmutar pra todos',
+    deafenAll: 'Ensurdecer pra todos',
+    undeafenAll: 'Voltar a ouvir (pra todos)',
+    moveTo: (channel: string) => `Mover pra ${channel}`,
+    disconnect: 'Desconectar da call',
+    roles: 'Cargos…',
+    removeTimeout: 'Tirar o castigo',
+    timeout10m: 'Castigar por 10 minutos',
+    timeout1h: 'Castigar por 1 hora',
+    timeout1d: 'Castigar por 1 dia',
+    kick: 'Expulsar',
+    kickTitle: (name: string) => `Expulsar ${name}?`,
+    kickDescription: 'A pessoa sai do servidor, mas pode voltar com um convite.',
+    ban: 'Banir',
+    banTitle: (name: string) => `Banir ${name}?`,
+    banDescription: 'A pessoa sai e não volta, nem com convite, até alguém desbanir.',
+  },
+}

@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte'
+  import { m } from '../../lib/i18n.svelte'
   import { getCameraStream, getMicTrack } from '../../lib/media'
   import { MicPipeline } from '../../lib/mic'
   import { settings, type VideoCodec } from '../../lib/settings.svelte'
@@ -9,6 +10,7 @@
   import VideoTile from '../VideoTile.svelte'
 
   const call = client.call
+  const t = $derived(m.settings.voice)
 
   let inputs = $state<MediaDeviceInfo[]>([])
   let outputs = $state<MediaDeviceInfo[]>([])
@@ -16,7 +18,7 @@
 
   function options(list: MediaDeviceInfo[], fallback: string) {
     return [
-      { value: 'default', label: 'Padrão do sistema' },
+      { value: 'default', label: t.systemDefault },
       ...list.filter((d) => d.deviceId && d.deviceId !== 'default').map((d) => ({ value: d.deviceId, label: d.label || fallback })),
     ]
   }
@@ -81,7 +83,7 @@
       loadDevices()
     } catch (err) {
       stopTest()
-      client.toast(`Sem acesso ao microfone: ${(err as Error).message}`)
+      client.toast(t.noMic((err as Error).message))
     }
   }
 
@@ -105,7 +107,7 @@
       preview = await getCameraStream()
       loadDevices()
     } catch (err) {
-      client.toast(`Não deu pra abrir a câmera: ${(err as Error).message}`)
+      client.toast(t.noCamera((err as Error).message))
     }
   }
 
@@ -149,19 +151,23 @@
   })
 </script>
 
-<PageHeader title="Voz e vídeo" />
+<PageHeader title={m.settings.pages.voice} />
 
-<Section title="Áudio">
-  <Row label="Microfone" setting="voice.input">
-    <div class="select"><Select label="Microfone" options={options(inputs, 'Microfone')} bind:value={settings.inputDevice} onchange={micChanged} /></div>
+<Section title={t.audio.section}>
+  <Row label={t.audio.input} setting="voice.input">
+    <div class="select">
+      <Select label={t.audio.input} options={options(inputs, t.audio.input)} bind:value={settings.inputDevice} onchange={micChanged} />
+    </div>
   </Row>
-  <Row label="Saída" setting="voice.output">
-    <div class="select"><Select label="Saída de áudio" options={options(outputs, 'Alto-falante')} bind:value={settings.outputDevice} onchange={() => call.applyOutput()} /></div>
+  <Row label={t.audio.output} setting="voice.output">
+    <div class="select">
+      <Select label={t.audio.outputLabel} options={options(outputs, t.audio.speaker)} bind:value={settings.outputDevice} onchange={() => call.applyOutput()} />
+    </div>
   </Row>
-  <Row stack setting="voice.test" description={testing ? 'Você está se ouvindo. Use fone pra não dar eco.' : undefined}>
+  <Row stack setting="voice.test" description={testing ? t.audio.testing : undefined}>
     <div class="test">
       <Button icon={testing ? 'x' : 'mic'} onclick={() => (testing ? stopTest() : startTest())}>
-        {testing ? 'Parar teste' : 'Testar microfone'}
+        {testing ? t.audio.stopTest : t.audio.test}
       </Button>
       <Meter
         level={toMeter(levelDb)}
@@ -175,32 +181,28 @@
       />
     </div>
   </Row>
-  <Row label="Redução de ruído" setting="voice.noise" description="Já filtra o ruído no sistema? Deixe desligada.">
+  <Row label={t.audio.noise} setting="voice.noise" description={t.audio.noiseDescription}>
     <Segmented
-      label="Redução de ruído"
+      label={t.audio.noise}
       options={[
-        { value: 'rnnoise', label: 'Forte' },
-        { value: 'browser', label: 'Leve' },
-        { value: 'off', label: 'Desligada' },
+        { value: 'rnnoise', label: t.audio.noiseStrong },
+        { value: 'browser', label: t.audio.noiseLight },
+        { value: 'off', label: t.audio.noiseOff },
       ]}
       value={settings.noiseReduction}
       onchange={setNoise}
     />
   </Row>
-  <Row label="Só transmitir quando eu falar" setting="voice.gate" for="voice-gate" description="O resto vira silêncio.">
+  <Row label={t.audio.gate} setting="voice.gate" for="voice-gate" description={t.audio.gateDescription}>
     <Switch id="voice-gate" bind:checked={settings.gate.enabled} onchange={processingChanged} />
   </Row>
   {#if settings.gate.enabled}
-    <Row
-      label="Detecção"
-      indent
-      description={settings.gate.auto ? 'Reconhece a sua voz sozinho.' : 'Arraste a marca branca na barra do teste.'}
-    >
+    <Row label={t.audio.detection} indent description={settings.gate.auto ? t.audio.detectionAuto : t.audio.detectionManual}>
       <Segmented
-        label="Detecção"
+        label={t.audio.detection}
         options={[
-          { value: 'auto', label: 'Automática' },
-          { value: 'manual', label: 'Manual' },
+          { value: 'auto', label: t.audio.auto },
+          { value: 'manual', label: t.audio.manual },
         ]}
         value={settings.gate.auto ? 'auto' : 'manual'}
         onchange={(value) => {
@@ -212,25 +214,22 @@
   {/if}
 </Section>
 
-<Section title="Câmera">
-  <Row label="Dispositivo" setting="voice.camera">
-    <div class="select"><Select label="Câmera" options={options(cameras, 'Câmera')} bind:value={settings.cameraDevice} onchange={cameraChanged} /></div>
+<Section title={t.camera.section}>
+  <Row label={t.camera.device} setting="voice.camera">
+    <div class="select">
+      <Select label={t.camera.label} options={options(cameras, t.camera.label)} bind:value={settings.cameraDevice} onchange={cameraChanged} />
+    </div>
   </Row>
-  <Row label="Prévia" setting="voice.preview">
-    <Button icon={preview ? 'camera-off' : 'camera'} onclick={togglePreview}>{preview ? 'Fechar prévia' : 'Ver prévia'}</Button>
+  <Row label={t.camera.preview} setting="voice.preview">
+    <Button icon={preview ? 'camera-off' : 'camera'} onclick={togglePreview}>{preview ? t.camera.close : t.camera.open}</Button>
   </Row>
   {#if preview}
     <div class="preview"><VideoTile stream={preview} mirror /></div>
   {/if}
 </Section>
 
-<Section title="Transmissão">
-  <Row
-    label="Quem assiste pode rabiscar na minha tela"
-    for="voice-ink"
-    setting="voice.ink"
-    description="Desenham por cima da transmissão e você vê no seu monitor. Só com a tela inteira."
-  >
+<Section title={t.stream.section}>
+  <Row label={t.stream.ink} for="voice-ink" setting="voice.ink" description={t.stream.inkDescription}>
     <Switch id="voice-ink" checked={settings.inkAllowed} onchange={(e) => call.ink.setEnabled(e.currentTarget.checked)} />
   </Row>
 </Section>
@@ -238,25 +237,25 @@
 <section class="advanced">
   <button class="advanced-toggle" aria-expanded={advanced} onclick={() => (advanced = !advanced)}>
     <Icon name="chevron-right" size={16} />
-    Avançado
+    {t.advanced.section}
   </button>
   {#if advanced}
     <Section>
-      <Row label="Cancelamento de eco" setting="voice.echo" for="voice-echo" description="Útil pra quem usa caixa de som.">
+      <Row label={t.advanced.echo} setting="voice.echo" for="voice-echo" description={t.advanced.echoDescription}>
         <Switch id="voice-echo" bind:checked={settings.echoCancellation} onchange={micChanged} />
       </Row>
-      <Row label="Ganho automático" setting="voice.agc" for="voice-agc" description="Ajusta o volume da sua voz sozinho.">
+      <Row label={t.advanced.agc} setting="voice.agc" for="voice-agc" description={t.advanced.agcDescription}>
         <Switch id="voice-agc" bind:checked={settings.autoGainControl} onchange={micChanged} />
       </Row>
-      <Row label="Codec da transmissão" setting="voice.codec" description="VP8 e H264 pesam menos no computador.">
+      <Row label={t.advanced.codec} setting="voice.codec" description={t.advanced.codecDescription}>
         <Segmented
-          label="Codec da transmissão"
+          label={t.advanced.codec}
           options={(['VP9', 'VP8', 'H264', 'AV1'] as VideoCodec[]).map((codec) => ({ value: codec, label: codec }))}
           bind:value={settings.codec}
           onchange={() => call.updateShare()}
         />
       </Row>
-      <Row label="Estatísticas no player" setting="voice.stats" for="voice-stats" description="Resolução, fps e ping da transmissão.">
+      <Row label={t.advanced.stats} setting="voice.stats" for="voice-stats" description={t.advanced.statsDescription}>
         <Switch id="voice-stats" bind:checked={settings.showStats} />
       </Row>
     </Section>
@@ -275,8 +274,10 @@
     width: 100%;
   }
 
+  /* Largura mínima: o botão não pula entre "testar" e "parar", e cabe o texto mais longo (espanhol). */
   .test :global(.btn) {
-    width: 156px;
+    flex: none;
+    min-width: 156px;
   }
 
   .test :global(.meter) {

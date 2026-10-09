@@ -1,7 +1,9 @@
-## 1.8.2: a moldura do melhor amigo
+## 1.9.0: o Resenha em inglês e espanhol
 
-- **Moldura do Pioneiro com o coração:** a bandeira que ficava no alto da moldura virou o mesmo coração branco com chifrinhos vermelhos do selo, batendo (só no cartão de perfil e com o mouse em cima, como as outras molduras).
-- Vindo da 1.8.0: a 1.8.1 trouxe o selo novo do melhor amigo (texto e ícone) e a página Plataforma pra ele ver os números do Resenha.
+- **Três idiomas:** português, inglês e espanhol, no app inteiro: telas, menus, avisos, notificações do sistema, bandeja e as mensagens de erro do servidor. Troque em Configurações → Aplicativo → Idioma; a interface muda na hora, sem reiniciar e sem cair da call.
+- **Automático:** quem instalar agora começa no idioma do sistema (fora desses três, em inglês). Quem já usava continua em português.
+- Datas, horas e números seguem o idioma escolhido, e a busca das configurações (e do Ctrl+K) acha a opção escrevendo em qualquer um dos três.
+- O botão "Testar microfone" não corta mais o texto quando ele é mais longo, e a lista de aparelhos mostra o nome do aparelho no idioma escolhido.
 
 ## Como atualizar
 

@@ -2,13 +2,14 @@
   import { onDestroy, tick, untrack } from 'svelte'
   import { P, type Role } from '../../../../../../shared/protocol'
   import type { GuildState } from '../../../lib/guild.svelte'
+  import { m } from '../../../lib/i18n.svelte'
   import { confirmAction } from '../../../lib/ui.svelte'
   import { Button, Icon, PageHeader, Row, Section, Switch, TextField, tooltip } from '../../kit'
-  import { ROLE_PERMISSIONS, ROLE_SWATCHES, colorValue, grantable, hex, isAdmin, myTop } from '../permissions'
+  import { ROLE_SWATCHES, colorValue, grantable, hex, isAdmin, myTop, rolePermissions } from '../permissions'
   import SaveBar from '../SaveBar.svelte'
   import { settled } from '../settle.svelte'
   import type { Unsaved } from '../unsaved.svelte'
-  import { cleanName, plural } from '../util'
+  import { cleanName } from '../util'
 
   let { guild, unsaved }: { guild: GuildState; unsaved: Unsaved } = $props()
 
@@ -19,6 +20,10 @@
     mentionable: boolean
     permissions: number
   }
+
+  const t = $derived(m.server.roles)
+  const people = $derived(m.server.shared.people)
+  const groups = $derived(rolePermissions())
 
   const everyone = $derived(guild.roles.find((r) => r.id === guild.id) ?? null)
   const sorted = $derived(guild.roles.filter((r) => r.id !== guild.id).sort((a, b) => b.position - a.position))
@@ -76,7 +81,7 @@
         draft.mentionable !== base.mentionable ||
         draft.permissions !== base.permissions),
   )
-  const nameError = $derived(draft && !isEveryone && !cleanName(draft.name) ? 'Dê um nome pro cargo.' : null)
+  const nameError = $derived(draft && !isEveryone && !cleanName(draft.name) ? t.nameMissing : null)
   let saving = $state(false)
 
   $effect(() => {
@@ -142,7 +147,7 @@
     if (creating || unsaved.blocked()) return
     creating = true
     const before = new Set(guild.roles.map((r) => r.id))
-    guild.createRole('Novo cargo')
+    guild.createRole(t.newRole)
     const ok = await settled(() => guild.roles.some((r) => !before.has(r.id)))
     creating = false
     const fresh = guild.roles.find((r) => !before.has(r.id))
@@ -159,9 +164,9 @@
     const { id, name } = role
     const count = counts.get(id) ?? 0
     confirmAction({
-      title: `Apagar o cargo ${name}?`,
-      description: count ? `${plural(count, 'pessoa perde', 'pessoas perdem')} o que ele dá.` : 'Ninguém tem esse cargo agora.',
-      confirm: 'Apagar',
+      title: t.deleteTitle(name),
+      description: count ? t.deleteLoses(count) : t.deleteNobody,
+      confirm: m.server.shared.delete,
       onconfirm: () => {
         draft = null
         guild.deleteRole(id)
@@ -240,14 +245,14 @@
   <span class="warn"><Icon name="triangle-alert" size={18} /></span>
 {/snippet}
 
-<PageHeader title="Cargos" description="Quem pode o quê. Cargos mais altos mandam nos de baixo.">
+<PageHeader title={t.title} description={t.description}>
   {#snippet actions()}
-    <Button variant="primary" icon="plus" size="sm" loading={creating} onclick={create}>Criar cargo</Button>
+    <Button variant="primary" icon="plus" size="sm" loading={creating} onclick={create}>{t.create}</Button>
   {/snippet}
 </PageHeader>
 
 <div class="roles">
-  <div class="role-list" role="listbox" aria-label="Cargos" bind:this={list}>
+  <div class="role-list" role="listbox" aria-label={t.title} bind:this={list}>
     {#each ordered as r, i (r.id)}
       {@const shown = r.id === role?.id && draft ? draft : r}
       {@const canMove = editable(r)}
@@ -269,12 +274,12 @@
         ondragend={ondragend}
         onkeydown={(e) => onkeydown(e, r, i)}
       >
-        <span class="grip" use:tooltip={canMove ? null : { text: 'Só quem está acima mexe nesse cargo', placement: 'right' }}>
+        <span class="grip" use:tooltip={canMove ? null : { text: t.locked, placement: 'right' }}>
           <Icon name={canMove ? 'grip' : 'lock'} size={14} />
         </span>
         <span class="role-dot" style:background={hex(shown.color) ?? 'var(--fg-3)'}></span>
-        <span class="role-name">{cleanName(shown.name) || 'Sem nome'}</span>
-        <span class="role-count tabular" use:tooltip={plural(counts.get(r.id) ?? 0, 'pessoa', 'pessoas')}>{counts.get(r.id) ?? 0}</span>
+        <span class="role-name">{cleanName(shown.name) || t.unnamed}</span>
+        <span class="role-count tabular" use:tooltip={people(counts.get(r.id) ?? 0)}>{counts.get(r.id) ?? 0}</span>
       </button>
     {/each}
     {#if ordered.length}<div class="role-sep" role="separator"></div>{/if}
@@ -291,26 +296,26 @@
         <span class="grip"></span>
         <span class="role-dot everyone"></span>
         <span class="role-name">@everyone</span>
-        <span class="role-count tabular" use:tooltip={plural(total, 'pessoa', 'pessoas')}>{total}</span>
+        <span class="role-count tabular" use:tooltip={people(total)}>{total}</span>
       </button>
     {/if}
-    {#if canReorder}<p class="role-tip">Arraste pra mudar a ordem.</p>{/if}
+    {#if canReorder}<p class="role-tip">{t.dragTip}</p>{/if}
   </div>
 
   <div class="role-editor">
     {#if role && view}
       {#if readOnly}
-        <p class="notice"><Icon name="lock" size={16} />Esse cargo está no seu nível ou acima. Só quem está mais alto mexe nele.</p>
+        <p class="notice"><Icon name="lock" size={16} />{t.readOnly}</p>
       {/if}
 
       {#if isEveryone}
-        <p class="notice soft"><Icon name="users" size={16} />Vale pra todo mundo do servidor, antes de qualquer cargo.</p>
+        <p class="notice soft"><Icon name="users" size={16} />{t.everyoneNote}</p>
       {:else}
         <Section>
-          <Row label="Nome">
+          <Row label={t.name}>
             <div class="w240">
               <TextField
-                aria-label="Nome do cargo"
+                aria-label={t.nameLabel}
                 bind:value={() => view.name, (v) => edit({ name: v })}
                 bind:input={nameInput}
                 maxlength={100}
@@ -320,8 +325,8 @@
               />
             </div>
           </Row>
-          <Row label="Cor" stack>
-            <div class="swatches" role="radiogroup" aria-label="Cor do cargo">
+          <Row label={t.color} stack>
+            <div class="swatches" role="radiogroup" aria-label={t.colorLabel}>
               {#each [...ROLE_SWATCHES, ...(view.color !== null && !ROLE_SWATCHES.includes(hex(view.color)!) ? [hex(view.color)!] : []), null] as color (color)}
                 {@const on = hex(view.color) === color}
                 <button
@@ -332,9 +337,9 @@
                   style:background={color}
                   role="radio"
                   aria-checked={on}
-                  aria-label={color ?? 'Sem cor'}
+                  aria-label={color ?? t.noColor}
                   disabled={readOnly}
-                  use:tooltip={color ? null : 'Sem cor'}
+                  use:tooltip={color ? null : t.noColor}
                   onclick={() => edit({ color: colorValue(color) })}
                 >
                   {#if on}<Icon name="check" size={14} stroke={2.25} />{/if}
@@ -342,13 +347,13 @@
               {/each}
             </div>
           </Row>
-          <Row label="Mostrar separado na lista de membros" for="role-hoist">
+          <Row label={t.hoist} for="role-hoist">
             <Switch id="role-hoist" checked={view.hoist} disabled={readOnly} onchange={(e) => edit({ hoist: e.currentTarget.checked })} />
           </Row>
           <Row
-            label="Qualquer um pode mencionar"
+            label={t.mentionable}
             for="role-mention"
-            description="Com @{cleanName(view.name) || 'cargo'}, todo mundo do cargo é avisado."
+            description={t.mentionDescription(cleanName(view.name) || t.mentionFallback)}
           >
             <Switch
               id="role-mention"
@@ -360,13 +365,13 @@
         </Section>
       {/if}
 
-      {#each ROLE_PERMISSIONS as group (group.title)}
+      {#each groups as group (group.title)}
         <Section title={group.title}>
           {#each group.items as item (item.bit)}
             {@const isAdminBit = item.bit === P.ADMINISTRATOR}
             <Row
               label={item.label}
-              description={isAdminBit ? `${item.hint} Dê só pra quem confia muito.` : item.hint}
+              description={isAdminBit && item.hint ? t.adminDescription(item.hint) : item.hint}
               for="perm-{item.bit}"
               leading={isAdminBit ? warning : undefined}
             >
@@ -383,8 +388,8 @@
 
       {#if !isEveryone && !readOnly}
         <Section>
-          <Row label="Apagar o cargo" description="Quem tem o cargo perde o que ele dá.">
-            <Button variant="danger-soft" icon="trash" onclick={remove}>Apagar</Button>
+          <Row label={t.deleteRow} description={t.deleteRowDescription}>
+            <Button variant="danger-soft" icon="trash" onclick={remove}>{m.server.shared.delete}</Button>
           </Row>
         </Section>
       {/if}

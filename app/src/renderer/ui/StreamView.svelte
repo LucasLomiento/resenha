@@ -1,5 +1,6 @@
 <script lang="ts">
   import { formatBitrate, userColor } from '../lib/format'
+  import { m } from '../lib/i18n.svelte'
   import type { VideoStats } from '../lib/peer'
   import { settings } from '../lib/settings.svelte'
   import { client } from '../lib/client.svelte'
@@ -14,6 +15,7 @@
   const sharer = $derived(client.callMembers.find((m) => m.connId === call.watching))
   const user = $derived(sharer ? client.user(sharer.userId, call.guildId) : null)
   const link = $derived(call.watching ? call.links[call.watching] : undefined)
+  const t = $derived(m.app.stream)
 
   let video = $state<HTMLVideoElement>()
   let container = $state<HTMLDivElement>()
@@ -27,9 +29,8 @@
   /** Lápis apagado, com o motivo: quem compartilha desligou, ou é janela em vez de monitor. */
   const inkBlocked = $derived.by(() => {
     if (self || !stream || !inkPolicy || inkPolicy.allowed) return null
-    const who = user?.name ?? 'Quem compartilha'
-    if (inkPolicy.reason === 'disabled') return `${who} não deixou rabiscar`
-    if (inkPolicy.reason === 'window') return `Só dá pra rabiscar quando ${who} compartilha a tela inteira`
+    if (inkPolicy.reason === 'disabled') return t.inkDisabled(user?.name)
+    if (inkPolicy.reason === 'window') return t.inkWindow(user?.name)
     return null
   })
   const myName = $derived(client.me ? (client.user(client.me.id, call.guildId)?.name ?? client.me.name) : '')
@@ -103,7 +104,7 @@
   async function togglePip() {
     if (!video) return
     if (document.pictureInPictureElement) await document.exitPictureInPicture()
-    else await video.requestPictureInPicture().catch(() => client.toast('Não deu pra abrir a janela flutuante.'))
+    else await video.requestPictureInPicture().catch(() => client.toast(m.app.stream.pipFailed))
   }
 
   function describe(s: VideoStats) {
@@ -181,9 +182,9 @@
   <video bind:this={video} autoplay playsinline ondblclick={toggleFullscreen}></video>
 
   {#if !stream}
-    <div class="waiting"><Spinner size={18} /> Conectando à transmissão…</div>
+    <div class="waiting"><Spinner size={18} /> {t.connecting}</div>
   {:else if nativePip}
-    <div class="waiting"><Icon name="pip" size={18} /> Na janela flutuante</div>
+    <div class="waiting"><Icon name="pip" size={18} /> {t.inPip}</div>
   {/if}
 
   {#if !self && video && call.watching}
@@ -203,28 +204,28 @@
   {/if}
   {#if inking}
     <div class="ink-bar">
-      <span class="ink-title">Rabiscando na tela de {user?.name ?? 'alguém'}</span>
-      <div class="ink-tools" role="radiogroup" aria-label="Ferramenta">
+      <span class="ink-title">{t.inking(user?.name)}</span>
+      <div class="ink-tools" role="radiogroup" aria-label={t.tool}>
         <button role="radio" aria-checked={settings.inkTool === 'laser'} class:on={settings.inkTool === 'laser'} onclick={() => (settings.inkTool = 'laser')}>
-          <Icon name="laser" size={14} /> Laser
+          <Icon name="laser" size={14} /> {t.laser}
         </button>
         <button role="radio" aria-checked={settings.inkTool === 'pen'} class:on={settings.inkTool === 'pen'} onclick={() => (settings.inkTool = 'pen')}>
-          <Icon name="pen" size={14} /> Caneta
+          <Icon name="pen" size={14} /> {t.pen}
         </button>
       </div>
-      <IconButton variant="glass" size="sm" icon="x" label="Parar de rabiscar (Esc)" onclick={() => (inking = false)} />
+      <IconButton variant="glass" size="sm" icon="x" label={t.stopInkEsc} onclick={() => (inking = false)} />
     </div>
   {/if}
 
   {#if !full}
-    <button class="drag-surface" aria-label="Abrir a transmissão (arraste pra mover)" onpointerdown={(e) => startDrag(e, 'move')}></button>
+    <button class="drag-surface" aria-label={t.open} onpointerdown={(e) => startDrag(e, 'move')}></button>
   {/if}
 
   {#if user && sharer}
     <div class="who">
       <Avatar id={sharer.userId} name={user.name} size={20} src={client.avatarOf(sharer.userId, call.guildId)} />
-      <span>{self ? 'Sua tela' : user.name}</span>
-      <Badge tone="live">AO VIVO</Badge>
+      <span>{self ? t.yourScreen : user.name}</span>
+      <Badge tone="live">{m.app.liveBadge}</Badge>
     </div>
   {/if}
 
@@ -235,12 +236,12 @@
         <IconButton
           variant="glass"
           icon={self || silent ? 'volume-off' : 'volume'}
-          label={self ? 'Sua prévia fica sem som' : silent ? 'Ativar o som' : 'Tirar o som'}
+          label={self ? t.previewMuted : silent ? t.soundOn : t.soundOff}
           disabled={self}
           onclick={toggleSound}
         />
         <Slider
-          label="Volume da transmissão"
+          label={t.volume}
           disabled={self}
           value={settings.streamMuted ? 0 : settings.streamVolume}
           oninput={(e) => setVolume(Number(e.currentTarget.value))}
@@ -250,29 +251,29 @@
       <IconButton
         variant="glass"
         icon="activity"
-        label="Estatísticas"
+        label={t.stats}
         active={settings.showStats}
         onclick={() => (settings.showStats = !settings.showStats)}
       />
     {/if}
     {#if canInk}
-      <IconButton variant="glass" icon="pen" label={inking ? 'Parar de rabiscar' : 'Rabiscar na tela'} active={inking} onclick={() => (inking = !inking)} />
+      <IconButton variant="glass" icon="pen" label={inking ? t.stopInk : t.ink} active={inking} onclick={() => (inking = !inking)} />
     {:else if inkBlocked}
       <IconButton variant="glass" icon="pen" label={inkBlocked} class="ink-blocked" onclick={() => client.toast(inkBlocked, 'info')} />
     {/if}
-    <IconButton variant="glass" icon="pip" label="Janela flutuante" active={nativePip} onclick={togglePip} />
+    <IconButton variant="glass" icon="pip" label={t.pip} active={nativePip} onclick={togglePip} />
     {#if full}
-      <IconButton variant="glass" icon="minimize" label="Minimizar" onclick={() => (client.view = 'chat')} />
-      <IconButton variant="glass" icon="fullscreen" label={fullscreen ? 'Sair da tela cheia' : 'Tela cheia'} onclick={toggleFullscreen} />
+      <IconButton variant="glass" icon="minimize" label={t.minimize} onclick={() => (client.view = 'chat')} />
+      <IconButton variant="glass" icon="fullscreen" label={fullscreen ? t.exitFullscreen : t.fullscreen} onclick={toggleFullscreen} />
     {:else}
-      <IconButton variant="glass" icon="maximize" label="Ampliar" onclick={() => (client.view = 'stream')} />
+      <IconButton variant="glass" icon="maximize" label={t.expand} onclick={() => (client.view = 'stream')} />
     {/if}
     <span class="divider"></span>
-    <IconButton variant="glass" icon="x" label="Parar de assistir" tone="danger" onclick={() => call.unwatch()} />
+    <IconButton variant="glass" icon="x" label={t.stopWatching} tone="danger" onclick={() => call.unwatch()} />
   </div>
 
   {#if !full}
-    <button class="resize" aria-label="Redimensionar" onpointerdown={(e) => startDrag(e, 'resize')}></button>
+    <button class="resize" aria-label={t.resize} onpointerdown={(e) => startDrag(e, 'resize')}></button>
   {/if}
 
   {#if stats}
@@ -280,19 +281,19 @@
       {#if stats.inbound}
         <div>{describe(stats.inbound)}</div>
         <div>
-          {#if stats.inbound.implementation !== '?'}decodificador {stats.inbound.implementation} ·{/if}
-          buffer {stats.inbound.jitterBuffer ?? 0} ms
-          {#if stats.inbound.dropped}· {stats.inbound.dropped} quadros perdidos{/if}
+          {#if stats.inbound.implementation !== '?'}{t.decoder(stats.inbound.implementation)}{/if}
+          {t.buffer(stats.inbound.jitterBuffer ?? 0)}
+          {#if stats.inbound.dropped}{t.dropped(stats.inbound.dropped)}{/if}
         </div>
-        {#if call.viaSfu}<div>tela via Cloudflare (SFU)</div>{:else if link?.rtt != null}<div>ping {link.rtt} ms · {link.route}</div>{/if}
+        {#if call.viaSfu}<div>{t.viaSfu}</div>{:else if link?.rtt != null}<div>{t.ping(link.rtt, link.route ? t.routes[link.route] : '')}</div>{/if}
       {/if}
       {#each stats.outbound as out (out.userId)}
         <div>
           → {out.label ?? client.displayName(out.userId, call.guildId)}: {describe(out.stats)}{out.stats.implementation !== '?' ? ` · ${out.stats.implementation}` : ''}
-          {#if out.stats.limitation && out.stats.limitation !== 'none'}· limitado por {out.stats.limitation}{/if}
+          {#if out.stats.limitation && out.stats.limitation !== 'none'}{t.limited(out.stats.limitation)}{/if}
         </div>
       {/each}
-      {#if self && stats.outbound.length === 0}<div>Ninguém assistindo agora.</div>{/if}
+      {#if self && stats.outbound.length === 0}<div>{t.nobody}</div>{/if}
     </div>
   {/if}
 </div>

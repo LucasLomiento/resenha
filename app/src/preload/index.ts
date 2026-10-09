@@ -34,6 +34,7 @@ const api: ResenhaApi = {
   },
   turnstile: (server) => ipcRenderer.invoke('turnstile:verify', server),
   download: (url) => ipcRenderer.send('download', url),
+  setLocale: (locale) => ipcRenderer.send('locale', locale),
   desktop: {
     get: () => ipcRenderer.invoke('desktop:get'),
     set: (patch) => ipcRenderer.invoke('desktop:set', patch),

@@ -1,5 +1,8 @@
 // Emojis do seletor (reações e campo de texto), com nomes em português pra
-// busca. Só Unicode: aparece igual em qualquer computador.
+// busca. Só Unicode: aparece igual em qualquer computador. O nome das
+// categorias sai do catálogo (`m.lib.emoji`) na hora de mostrar.
+
+import { m } from './i18n.svelte'
 
 export interface EmojiEntry {
   e: string
@@ -9,7 +12,7 @@ export interface EmojiEntry {
 
 export interface EmojiCategory {
   id: string
-  label: string
+  readonly label: string
   icon: string
   list: EmojiEntry[]
 }
@@ -26,7 +29,9 @@ const parse = (text: string): EmojiEntry[] =>
 export const CATEGORIES: EmojiCategory[] = [
   {
     id: 'smileys',
-    label: 'Carinhas',
+    get label() {
+      return m.lib.emoji.smileys
+    },
     icon: '😀',
     list: parse(`
 😀 sorriso feliz
@@ -142,7 +147,9 @@ export const CATEGORIES: EmojiCategory[] = [
   },
   {
     id: 'people',
-    label: 'Gestos',
+    get label() {
+      return m.lib.emoji.people
+    },
     icon: '👋',
     list: parse(`
 👋 tchau oi acenando
@@ -222,7 +229,9 @@ export const CATEGORIES: EmojiCategory[] = [
   },
   {
     id: 'nature',
-    label: 'Bichos e natureza',
+    get label() {
+      return m.lib.emoji.nature
+    },
     icon: '🐶',
     list: parse(`
 🐶 cachorro
@@ -311,7 +320,9 @@ export const CATEGORIES: EmojiCategory[] = [
   },
   {
     id: 'food',
-    label: 'Comida',
+    get label() {
+      return m.lib.emoji.food
+    },
     icon: '🍔',
     list: parse(`
 🍎 maca
@@ -381,7 +392,9 @@ export const CATEGORIES: EmojiCategory[] = [
   },
   {
     id: 'activity',
-    label: 'Atividades',
+    get label() {
+      return m.lib.emoji.activity
+    },
     icon: '⚽',
     list: parse(`
 ⚽ futebol bola
@@ -430,7 +443,9 @@ export const CATEGORIES: EmojiCategory[] = [
   },
   {
     id: 'objects',
-    label: 'Objetos',
+    get label() {
+      return m.lib.emoji.objects
+    },
     icon: '💡',
     list: parse(`
 💻 notebook computador
@@ -486,7 +501,9 @@ export const CATEGORIES: EmojiCategory[] = [
   },
   {
     id: 'symbols',
-    label: 'Símbolos',
+    get label() {
+      return m.lib.emoji.symbols
+    },
     icon: '❤️',
     list: parse(`
 ❤️ coracao vermelho amor
@@ -560,7 +577,9 @@ export const CATEGORIES: EmojiCategory[] = [
   },
   {
     id: 'flags',
-    label: 'Bandeiras',
+    get label() {
+      return m.lib.emoji.flags
+    },
     icon: '🏳️',
     list: parse(`
 🇧🇷 brasil

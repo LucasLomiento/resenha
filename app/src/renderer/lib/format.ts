@@ -1,3 +1,5 @@
+import { fmt, i18n, m } from './i18n.svelte'
+
 // Cores das pessoas: um degradê por id, sempre o mesmo. As duplas seguem o
 // ícone do app (violeta, roxo, coral) e vão até o verde e o azul pra variar.
 const GRADIENTS: [string, string][] = [
@@ -47,19 +49,20 @@ export function initials(name: string): string {
   return (first + second).toUpperCase()
 }
 
-const timeFmt = new Intl.DateTimeFormat('pt-BR', { hour: '2-digit', minute: '2-digit' })
-const fullFmt = new Intl.DateTimeFormat('pt-BR', { dateStyle: 'full', timeStyle: 'short' })
-const dayFmt = new Intl.DateTimeFormat('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })
-const dayYearFmt = new Intl.DateTimeFormat('pt-BR', { day: 'numeric', month: 'long', year: 'numeric' })
-const shortDateFmt = new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit' })
+// Datas no idioma em uso (o `fmt` guarda um formatador por idioma e opções).
+const FULL = { dateStyle: 'full', timeStyle: 'short' } as const
+const DAY = { weekday: 'long', day: 'numeric', month: 'long' } as const
+const DAY_YEAR = { day: 'numeric', month: 'long', year: 'numeric' } as const
+const SHORT_DATE = { day: '2-digit', month: '2-digit', year: '2-digit' } as const
 
-export function formatTime(ms: number): string {
-  return timeFmt.format(ms)
+/** "14:32" em português; em inglês e espanhol a hora vai sem zero na frente ("2:32 PM"). */
+export function formatTime(ms: number | Date): string {
+  return fmt.date(ms, { hour: i18n.locale === 'pt' ? '2-digit' : 'numeric', minute: '2-digit' })
 }
 
 /** Data e hora por extenso, pra dica do horário da mensagem. */
 export function formatFull(ms: number): string {
-  const text = fullFmt.format(ms)
+  const text = fmt.date(ms, FULL)
   return text.charAt(0).toUpperCase() + text.slice(1)
 }
 
@@ -71,34 +74,33 @@ function sameDay(a: Date, b: Date) {
 export function formatStamp(ms: number): string {
   const date = new Date(ms)
   const today = new Date()
-  if (sameDay(date, today)) return timeFmt.format(date)
-  if (sameDay(date, new Date(today.getTime() - 86_400_000))) return `Ontem ${timeFmt.format(date)}`
-  return `${shortDateFmt.format(date)} ${timeFmt.format(date)}`
+  if (sameDay(date, today)) return formatTime(date)
+  if (sameDay(date, new Date(today.getTime() - 86_400_000))) return m.lib.format.yesterdayAt(formatTime(date))
+  return `${fmt.date(date, SHORT_DATE)} ${formatTime(date)}`
 }
 
 /** Divisória de dia no chat: "Hoje", "Ontem", "sexta, 3 de outubro" ou com ano, se for de outro ano. */
 export function formatDay(ms: number): string {
   const date = new Date(ms)
   const today = new Date()
-  if (sameDay(date, today)) return 'Hoje'
-  if (sameDay(date, new Date(today.getTime() - 86_400_000))) return 'Ontem'
-  const text = date.getFullYear() === today.getFullYear() ? dayFmt.format(date) : dayYearFmt.format(date)
+  if (sameDay(date, today)) return m.lib.format.today
+  if (sameDay(date, new Date(today.getTime() - 86_400_000))) return m.lib.format.yesterday
+  const text = fmt.date(date, date.getFullYear() === today.getFullYear() ? DAY : DAY_YEAR)
+  // "sexta-feira" vira "sexta" (só existe em português).
   return text.replace('-feira', '')
 }
+
+/** Uma casa depois da vírgula (do ponto, em inglês), sem separar milhar: "1,5 MB", "4096,0 MB". */
+const SIZE_MB = { minimumFractionDigits: 1, maximumFractionDigits: 1, useGrouping: false } as const
 
 export function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`
-  return `${(bytes / 1024 / 1024).toFixed(1).replace('.', ',')} MB`
+  return `${fmt.number(bytes / 1024 / 1024, SIZE_MB)} MB`
 }
 
 export function formatBitrate(bps: number): string {
   return bps >= 1_000_000 ? `${(bps / 1_000_000).toFixed(1)} Mbps` : `${Math.round(bps / 1000)} kbps`
-}
-
-/** "1 pessoa", "3 pessoas". */
-export function plural(count: number, one: string, many: string): string {
-  return `${count} ${count === 1 ? one : many}`
 }
 
 export type Segment =

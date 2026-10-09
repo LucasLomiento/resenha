@@ -1,17 +1,20 @@
 <script lang="ts">
   import type { Status } from '../../../../shared/protocol'
   import { client } from '../lib/client.svelte'
+  import { m } from '../lib/i18n.svelte'
   import { ui } from '../lib/ui.svelte'
   import { Icon, Popover, StatusDot } from './kit'
 
   let { anchor, onclose }: { anchor: HTMLElement; onclose: () => void } = $props()
 
-  const OPTIONS: { status: Status; label: string; hint?: string }[] = [
-    { status: 'online', label: 'Online' },
-    { status: 'idle', label: 'Ausente', hint: 'Fica assim sozinho depois de 10 min parado.' },
-    { status: 'dnd', label: 'Não perturbe', hint: 'Sem notificações nem toque de ligação.' },
-    { status: 'invisible', label: 'Invisível', hint: 'Aparece offline, mas usa tudo normal.' },
-  ]
+  const t = $derived(m.app.statusMenu)
+  const options = $derived(
+    (['online', 'idle', 'dnd', 'invisible'] as const).map((status): { status: Status; label: string; hint?: string } => ({
+      status,
+      label: m.common.presence[status],
+      hint: status === 'online' ? undefined : t.hints[status],
+    })),
+  )
 
   let editing = $state(false)
   let text = $state(client.statusText ?? '')
@@ -33,15 +36,15 @@
 </script>
 
 <!-- Abre ao clicar no seu avatar no dock. -->
-<Popover {anchor} placement="top-start" width={272} label="Status" {onclose}>
+<Popover {anchor} placement="top-start" width={272} label={t.label} {onclose}>
   <div class="menu" role="menu">
     {#if editing}
       <div class="custom-edit">
         <input
           bind:value={text}
           maxlength={128}
-          placeholder="O que você está fazendo?"
-          aria-label="Status personalizado"
+          placeholder={t.placeholder}
+          aria-label={t.custom}
           data-own-escape
           use:autofocus
           onkeydown={(e) => {
@@ -52,24 +55,24 @@
             }
           }}
         />
-        <button class="save" onclick={saveText}>Salvar</button>
+        <button class="save" onclick={saveText}>{m.common.save}</button>
       </div>
     {:else}
       <div class="custom-row">
         <button class="custom" role="menuitem" onclick={() => ((text = client.statusText ?? ''), (editing = true))}>
           <span class="bubble" class:empty={!client.statusText}>
             <Icon name="emoji" size={16} />
-            {client.statusText ?? 'Definir um status'}
+            {client.statusText ?? t.set}
           </span>
           <Icon name="pencil" size={14} />
         </button>
         {#if client.statusText}
-          <button class="clear" aria-label="Tirar status" onclick={() => client.setStatus(client.status, null)}><Icon name="x" size={14} /></button>
+          <button class="clear" aria-label={t.clear} onclick={() => client.setStatus(client.status, null)}><Icon name="x" size={14} /></button>
         {/if}
       </div>
     {/if}
     <div class="sep"></div>
-    {#each OPTIONS as option (option.status)}
+    {#each options as option (option.status)}
       {@const on = client.status === option.status}
       <button class="option" class:on role="menuitemradio" aria-checked={on} onclick={() => choose(option.status)}>
         <StatusDot status={option.status === 'invisible' ? 'offline' : option.status} size={10} cutout="var(--bg-raised)" />
@@ -90,7 +93,7 @@
       }}
     >
       <Icon name="user" size={16} />
-      <span class="text"><span class="label">Editar perfil</span></span>
+      <span class="text"><span class="label">{t.editProfile}</span></span>
     </button>
   </div>
 </Popover>
