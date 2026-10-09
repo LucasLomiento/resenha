@@ -174,12 +174,18 @@ export class Peer {
     readonly connId: string,
     readonly userId: string,
     private polite: boolean,
-    iceServers: RTCIceServer[],
+    ice: { servers: RTCIceServer[]; relay: boolean },
     micStream: MediaStream,
     private codec: VideoCodec,
     private events: PeerEvents,
   ) {
-    this.pc = new RTCPeerConnection({ iceServers, bundlePolicy: 'max-bundle', rtcpMuxPolicy: 'require' })
+    // Sala pelo Cloudflare: só caminhos pelo TURN dele (nada direto entre os PCs).
+    this.pc = new RTCPeerConnection({
+      iceServers: ice.servers,
+      iceTransportPolicy: ice.relay ? 'relay' : 'all',
+      bundlePolicy: 'max-bundle',
+      rtcpMuxPolicy: 'require',
+    })
     this.audio.autoplay = true
 
     this.localStreams[micStream.id] = 'mic'
@@ -508,6 +514,13 @@ export class Peer {
 
   async videoStats(direction: 'inbound' | 'outbound'): Promise<VideoStats | null> {
     return videoStatsFrom(await this.pc.getStats(), direction, direction === 'inbound' ? this.lastIn : this.lastOut)
+  }
+
+  /** A sala passou (ou deixou de passar) pelo Cloudflare: troca a política e refaz o ICE, sem derrubar a conexão. */
+  setRelay(relay: boolean, servers: RTCIceServer[]) {
+    if (this.closed) return
+    this.pc.setConfiguration({ ...this.pc.getConfiguration(), iceServers: servers, iceTransportPolicy: relay ? 'relay' : 'all' })
+    this.pc.restartIce()
   }
 
   close() {

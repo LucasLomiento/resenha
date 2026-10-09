@@ -11,6 +11,7 @@ import type {
   VoiceMember,
 } from '../../../../shared/protocol'
 import type { DesktopPrefs, PlatformInfo, SavedSession, ShortcutAction, UpdateState } from '../../preload/api'
+import { untrack } from 'svelte'
 import { Api, HttpError } from './api'
 import { Call, type CallTransport } from './call.svelte'
 import { GuildState, type GuildHost } from './guild.svelte'
@@ -140,9 +141,18 @@ class Client implements GuildHost, HomeHost {
     toast: (text, kind) => this.toast(text, kind),
     name: (userId): string => this.user(userId, this.call.guildId)?.name ?? 'Alguém',
     badge: (userId) => badgeOf(userId ? this.user(userId, this.call.guildId) : this.me),
+    relayWanted: (transport) => transport.kind === 'guild' && !!this.guilds[transport.scopeId]?.channel(transport.channelId)?.relay,
   })
 
   constructor() {
+    // O dono marcou (ou desmarcou) a sala da call: as conexões trocam de caminho na hora.
+    $effect.root(() => {
+      $effect(() => {
+        const { guildId, channelId } = this.call
+        void (guildId && channelId && this.guilds[guildId]?.channel(channelId)?.relay)
+        untrack(() => this.call.updateRelay())
+      })
+    })
     setInterval(() => {
       this.now = Date.now()
       this.checkIdle()

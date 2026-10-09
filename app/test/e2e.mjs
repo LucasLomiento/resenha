@@ -1252,6 +1252,23 @@ try {
   await a.page.locator('.share-panel').getByRole('button', { name: 'Parar', exact: true }).click({ force: true })
   await b.page.locator('.stream').waitFor({ state: 'detached', timeout: 5000 })
   check(true, 'parar de compartilhar fecha o player de B')
+
+  // Sala pelo Cloudflare: só o dono do Resenha (A) tem a opção; os dois veem a nuvem. Sem TURN no
+  // servidor do teste, a call continua direta e avisa (o caminho de verdade só existe em produção).
+  // "Geral" com G maiúsculo (a busca por texto comum ignora maiúsculas e pegaria o canal de texto "geral").
+  const voiceRow = (page) => page.getByRole('navigation', { name: 'Canais' }).locator('.channel-row', { hasText: /Geral/ }).first()
+  await voiceRow(b.page).click({ button: 'right', force: true })
+  const bHasOption = await b.page.getByRole('menuitem', { name: /Passar pelo Cloudflare/ }).count()
+  await b.page.keyboard.press('Escape')
+  await voiceRow(a.page).click({ button: 'right', force: true })
+  await a.page.getByRole('menuitem', { name: /Passar pelo Cloudflare/ }).click({ force: true })
+  const cloudForB = await voiceRow(b.page).locator('.relay').waitFor({ timeout: 5000 }).then(() => true, () => false)
+  const warned = await a.page.locator('.toast', { hasText: 'não está disponível agora' }).waitFor({ timeout: 5000 }).then(() => true, () => false)
+  const stillInCall = await a.page.getByRole('button', { name: 'Sair da call', exact: true }).isEnabled()
+  check(bHasOption === 0 && cloudForB && warned && stillInCall, 'sala pelo Cloudflare: só o dono liga, todo mundo vê a nuvem, e sem TURN a call segue direta avisando', `${bHasOption}/${cloudForB}/${warned}/${stillInCall}`)
+  await voiceRow(a.page).click({ button: 'right', force: true })
+  await a.page.getByRole('menuitem', { name: /Passar pelo Cloudflare/ }).click({ force: true })
+  await voiceRow(b.page).locator('.relay').waitFor({ state: 'detached', timeout: 5000 })
   if (withAudio) {
     await a.page.waitForTimeout(500)
     check(venmicSources() === null, 'venmic desfez o microfone virtual ao parar')

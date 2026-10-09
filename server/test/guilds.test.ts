@@ -539,6 +539,26 @@ describe('voz', () => {
     await b.next('voice.state', (m) => m.members.length === 2)
   })
 
+  it('sala pelo Cloudflare: só o dono do Resenha liga, e todo mundo fica sabendo', async () => {
+    const { a, b, friend, voice, text } = await world()
+    a.send({ t: 'channel.update', id: voice.id, relay: true })
+    const on = await b.next('channel.upsert', (m) => m.channel.id === voice.id)
+    expect(on.channel.relay).toBe(true)
+    // Canal de texto não tem isso; desligar volta a ir direto.
+    a.send({ t: 'channel.update', id: text.id, relay: true })
+    a.send({ t: 'channel.update', id: voice.id, relay: false })
+    const off = await b.next('channel.upsert', (m) => m.channel.id === voice.id)
+    expect(off.channel.relay).toBeUndefined()
+
+    // Nem o dono de outro servidor (que não é o dono do Resenha) consegue.
+    const own = await createGuild(friend.token, 'Do Duarte')
+    const socket = await guildSocket(own.id, friend.token)
+    const ready = await socket.next('ready')
+    const room = ready.channels.find((c) => c.kind === 'voice')!
+    socket.send({ t: 'channel.update', id: room.id, relay: true })
+    expect((await socket.next('error')).message).toMatch(/dono do Resenha/)
+  })
+
   it('a call sobrevive à hibernação e cair da conexão tira da call', async () => {
     const { a, b, readyA, readyB, voice } = await world()
     a.send({ t: 'voice.join', channelId: voice.id, muted: false, deafened: false })

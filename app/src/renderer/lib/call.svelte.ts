@@ -23,6 +23,8 @@ interface CallDeps {
   name(userId: string): string
   /** Selo de alguém (Fundador, Pioneiro: entram com som próprio). Sem `userId`, o meu. */
   badge(userId?: string): Badge | null
+  /** A sala dessa call passa pelo Cloudflare (o dono do Resenha marcou)? */
+  relayWanted(transport: CallTransport): boolean
 }
 
 /**
@@ -103,6 +105,10 @@ export class Call {
   /** Microfone já processado (RNNoise + limiar); `micTrack` é a saída dele. */
   mic: MicPipeline | null = null
   private ice: { servers: RTCIceServer[]; at: number } | null = null
+  /** A mídia desta call vai só pelo TURN do Cloudflare (sala marcada pelo dono, com o TURN disponível). */
+  relay = $state(false)
+  /** Se a sala estava marcada da última vez que olhou (o aviso só sai quando isso muda). */
+  private relayAsked = false
   private ticker: ReturnType<typeof setInterval> | null = null
   private statsTicker: ReturnType<typeof setInterval> | null = null
   private mutedBeforeDeafen = false
@@ -174,6 +180,8 @@ export class Call {
         this.ice = { servers: await api.iceServers(), at: Date.now() }
       }
       if (!this.micTrack) await this.openMic()
+      this.relayAsked = this.deps.relayWanted(transport)
+      this.relay = this.relayFor(transport, true)
       this.transport = transport
       this.channelId = transport.channelId
       this.guildId = transport.kind === 'guild' ? transport.scopeId : null
@@ -230,6 +238,8 @@ export class Call {
 
   /** Sai da call. `notify = false`: o servidor já tirou (moderador, canal apagado). */
   leave(notify = true) {
+    this.relay = false
+    this.relayAsked = false
     if (!this.transport) return
     playSound('self-leave')
     if (notify) this.transport.leave()
@@ -437,7 +447,7 @@ export class Call {
   private createPeer(member: VoiceMember): Peer | undefined {
     const me = this.connId()
     if (!me || !this.ice || !this.micTrack) return
-    const peer = new Peer(member.connId, member.userId, me > member.connId, this.ice.servers, this.micStream, settings.codec, {
+    const peer = new Peer(member.connId, member.userId, me > member.connId, { servers: this.ice.servers, relay: this.relay }, this.micStream, settings.codec, {
       signal: (data) => this.sendSignal(member.connId, data),
       screen: (stream) => {
         // Puxando a tela dele pelo SFU: a cópia direta (que para logo) não substitui.
@@ -738,6 +748,35 @@ export class Call {
   /** A tela que eu assisto chega pelo SFU do Cloudflare (não direto). */
   get viaSfu(): boolean {
     return !!this.sfuWatch && this.sfuWatch.connId === this.watching
+  }
+
+  // ---------- Sala pelo Cloudflare ----------
+
+  /** Tem TURN do Cloudflare nas credenciais (sem chave, ou com a cota do mês no fim, não tem). */
+  private hasTurn(): boolean {
+    return !!this.ice?.servers.some((s) => [s.urls].flat().some((url) => String(url).startsWith('turn')))
+  }
+
+  /** Essa sala vai pelo Cloudflare? Marcada mas sem TURN agora: vai direto, avisando. */
+  private relayFor(transport: CallTransport, warn: boolean): boolean {
+    if (!this.deps.relayWanted(transport)) return false
+    if (this.hasTurn()) return true
+    if (warn) this.deps.toast('Essa sala passa pelo Cloudflare, mas ele não está disponível agora: a call vai direto (P2P).', 'info')
+    return false
+  }
+
+  /** O dono mudou a sala no meio da call: as conexões passam (ou deixam de passar) pelo Cloudflare, sem cair. */
+  updateRelay() {
+    const transport = this.transport
+    if (!transport || !this.ice) return
+    const wanted = this.deps.relayWanted(transport)
+    if (wanted === this.relayAsked) return
+    this.relayAsked = wanted
+    const relay = this.relayFor(transport, true)
+    if (relay === this.relay) return
+    this.relay = relay
+    for (const peer of this.peers.values()) peer.setRelay(relay, this.ice.servers)
+    this.deps.toast(relay ? 'A sala agora passa pelo Cloudflare.' : 'A sala voltou a ir direto (P2P).', 'info')
   }
 
   // ---------- Tela pelo SFU ----------

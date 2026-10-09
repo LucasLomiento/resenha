@@ -91,6 +91,8 @@ interface ConnState {
   text?: string | null
   /** Mandou chave no `auth`: se cair, dá pra voltar na call (ver resume.ts). */
   resumable?: boolean
+  /** Dono do Resenha (da plataforma, não do servidor): pode passar uma sala pelo Cloudflare. */
+  staff?: boolean
   /** Outra conexão com a mesma chave tomou o lugar desta: ao fechar, não mexe em nada. */
   replaced?: boolean
   /** Desde quando está com o mapa aberto (ms). */
@@ -117,6 +119,7 @@ interface ChannelRow {
   overwrites: string
   user_limit: number
   slowmode: number
+  relay: number
   [key: string]: SqlStorageValue
 }
 
@@ -210,7 +213,8 @@ const channelTable = (name: string) => `CREATE TABLE ${name} (
   topic TEXT NOT NULL DEFAULT '',
   overwrites TEXT NOT NULL DEFAULT '[]',
   user_limit INTEGER NOT NULL DEFAULT 0,
-  slowmode INTEGER NOT NULL DEFAULT 0
+  slowmode INTEGER NOT NULL DEFAULT 0,
+  relay INTEGER NOT NULL DEFAULT 0
 )`
 
 function parseOverwrites(text: string): Overwrite[] {
@@ -370,6 +374,8 @@ export class Guild extends DurableObject<Env> {
     } else if (channelCols.size === 0) {
       this.sql.exec(channelTable('channels'))
     }
+    // 1.8: sala de voz pelo Cloudflare (coluna nova, desligada em todo canal que já existia).
+    if (!columns(this.sql, 'channels').has('relay')) this.sql.exec('ALTER TABLE channels ADD COLUMN relay INTEGER NOT NULL DEFAULT 0')
     this.store.migrate()
     this.id = this.meta('guild_id') ?? ''
   }
@@ -531,6 +537,7 @@ export class Guild extends DurableObject<Env> {
               overwrites: parseOverwrites(r.overwrites),
               userLimit: r.user_limit,
               slowmode: r.slowmode,
+              ...(r.relay ? { relay: true } : {}),
             },
           ]),
       )
@@ -1170,6 +1177,7 @@ export class Guild extends DurableObject<Env> {
       ...pending,
       connId,
       resumable: !!key,
+      staff: !!auth.me.staff,
       userId: auth.me.id,
       session: auth.tokenHash,
       pending: false,
@@ -1787,10 +1795,21 @@ export class Guild extends DurableObject<Env> {
   private async updateChannel(ws: WebSocket, userId: string, msg: Extract<ClientMessage, { t: 'channel.update' }>) {
     const channel = this.channel(msg.id)
     if (!channel) return
-    if (!this.can(userId, channel.id, P.MANAGE_CHANNELS)) return this.error(ws, 'Você não pode editar esse canal.')
+    // Passar a sala pelo Cloudflare é do dono do Resenha (gasta a cota do mês), não de quem administra o servidor.
+    const onlyRelay = msg.relay !== undefined && Object.keys(msg).every((key) => key === 't' || key === 'id' || key === 'relay')
+    if (!onlyRelay && !this.can(userId, channel.id, P.MANAGE_CHANNELS)) return this.error(ws, 'Você não pode editar esse canal.')
     const sets: string[] = []
     const args: SqlStorageValue[] = []
     const changes: string[] = []
+    if (msg.relay !== undefined) {
+      if (!this.state(ws).staff) return this.error(ws, 'Só o dono do Resenha pode passar uma sala pelo Cloudflare.')
+      if (channel.kind !== 'voice' || typeof msg.relay !== 'boolean') return
+      if (msg.relay !== !!channel.relay) {
+        sets.push('relay = ?')
+        args.push(msg.relay ? 1 : 0)
+        changes.push(msg.relay ? 'mídia pelo Cloudflare' : 'mídia direta (P2P)')
+      }
+    }
     if (msg.name !== undefined) {
       const name = cleanLine(msg.name, 1, 100)
       if (!name) return this.error(ws, 'O nome precisa ter de 1 a 100 caracteres.')

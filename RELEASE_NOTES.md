@@ -1,7 +1,6 @@
-## 1.7.0: "Reconectar?" depois de atualizar, e o Pioneiro
+## 1.8.0: sala pelo Cloudflare
 
-- **Voltar pra call depois de atualizar:** quem atualiza no meio de uma call vê, ao abrir o app, uma pílula em cima: "Você estava em Geral · Turma antes de atualizar", com **Reconectar** (volta com o microfone e o som como estavam) e **Agora não**. Na atualização da 1.5.1 pra 1.6.0 isso falhava porque a 1.6.0 procurava a call gravada no lugar errado. Agora ela é achada nos dois lugares.
-- **Pioneiro:** a primeira pessoa que chegou no Resenha depois do dono ganha o selo de **Pioneiro**, com a bandeira fincada. Também ganha a moldura "Pioneiro" (anel do mar, um cometa em volta e a bandeira balançando), o nome "Horizonte" (nascer do sol sobre o mar passando pelas letras), um som próprio ao entrar na call e um brilho prata e azul na lista. São só dele. O dono confere e, se precisar, troca quem é em Configurações → Plataforma.
+- **Sala pelo Cloudflare:** o dono do Resenha pode marcar uma sala de voz pra passar pelo Cloudflare em vez de ir direto entre os PCs. É só clicar com o botão direito na sala e escolher "Passar pelo Cloudflare". Numa sala assim, voz, câmera e tela vão pelos servidores do Cloudflare. A conexão funciona em qualquer rede, e o IP de ninguém aparece pros outros. Uma nuvem ao lado do nome mostra quais salas estão assim. Dá pra ligar e desligar no meio da call sem ninguém cair. Usa a mesma cota grátis do mês. Se ela acabar, a sala volta a ir direto sozinha e avisa.
 
 ## Como atualizar
 

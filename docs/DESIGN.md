@@ -242,6 +242,12 @@ Tudo passa por um reverb curto e um compressor. O volume de cada som foi medido 
 - **No chat** (`ui/chat/VoicePlayer.svelte`, também pra qualquer anexo de áudio): play/pausa redondo na cor de destaque, a onda (barras cinza que ficam violeta conforme toca; clicar ou setas pulam), o tempo (total parado, corrido tocando), velocidade 1× / 1,5× / 2× e baixar (o .mp3). Arquivo de áudio que não é mensagem de voz mostra o nome em cima da onda. Um toca por vez, pela saída de som escolhida.
 - **Nos resumos** (aviso do sistema, busca, fixadas): "🎤 Mensagem de voz".
 
+### Sala pelo Cloudflare
+
+- **Na lista de canais:** nuvem na cor de destaque à direita do nome da sala de voz, com a dica "Pelo Cloudflare: voz, câmera e tela passam pelos servidores dele, não direto entre os PCs".
+- **Ligar e desligar:** só o dono do Resenha, no menu de contexto da sala: "Passar pelo Cloudflare" (marcável). Pra mais ninguém o item existe.
+- **Na call:** um aviso quando muda ("A sala agora passa pelo Cloudflare." / "A sala voltou a ir direto (P2P).") e, sem o TURN disponível, "Essa sala passa pelo Cloudflare, mas ele não está disponível agora: a call vai direto (P2P)." O ping de cada um mostra "relay" como rota.
+
 ## Telas que vão chegar (protótipos)
 
 Cada uma tem um protótipo estático com dados de exemplo em `ui/proto`. Os nomes de campo dos exemplos (`proto/data.ts`) seguem o protocolo novo (`shared/protocol.ts` da 0.6+), então ligar nos dados é trocar `data.ts` pelo store.

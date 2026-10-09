@@ -232,6 +232,11 @@ export interface Channel {
   userLimit: number
   /** Texto: segundos entre mensagens da mesma pessoa (0 = livre). */
   slowmode: number
+  /**
+   * Voz: a mídia da sala passa pelo Cloudflare (voz e câmera pelo TURN, tela pelo SFU)
+   * em vez de ir direto entre os PCs. Só o dono do Resenha liga (gasta a cota do mês).
+   */
+  relay?: boolean
 }
 
 export interface Invite {
@@ -539,6 +544,8 @@ export type ClientMessage =
       syncWithCategory?: boolean
       userLimit?: number
       slowmode?: number
+      /** Só o dono do Resenha: a sala de voz passa (ou deixa de passar) pelo Cloudflare. */
+      relay?: boolean
     }
   /** Nova ordem: lista completa de [id, posição, categoria]. */
   | { t: 'channel.reorder'; order: { id: string; position: number; parentId: string | null }[] }

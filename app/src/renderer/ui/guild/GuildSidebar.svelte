@@ -114,6 +114,15 @@
       items.push({ label: 'Igual ao servidor', checked: !own?.level, onselect: () => setChannel({ level: null }) })
       for (const { level, label } of LEVELS) items.push({ label, checked: own?.level === level, onselect: () => setChannel({ level }) })
     }
+    // Só o dono do Resenha: a sala de voz passa pelo Cloudflare (gasta a cota do mês dele).
+    if (channel.kind === 'voice' && client.me?.staff) {
+      items.push({
+        label: 'Passar pelo Cloudflare',
+        icon: 'cloud',
+        checked: !!channel.relay,
+        onselect: () => guild.updateChannel(channel.id, { relay: !channel.relay }),
+      })
+    }
     if (guild.can(channel.id, P.MANAGE_CHANNELS) || (channel.kind === 'category' && manageChannels)) {
       if (items.length) items.push({ kind: 'separator' })
       if (channel.kind === 'category') {
@@ -406,6 +415,11 @@
             >
               {#snippet trailing()}
                 {#if call.joining && !here}<Spinner size={14} />{/if}
+                {#if channel.relay}
+                  <span class="relay" use:tooltip={{ text: 'Pelo Cloudflare: voz, câmera e tela passam pelos servidores dele, não direto entre os PCs', placement: 'right' }}>
+                    <Icon name="cloud" size={14} />
+                  </span>
+                {/if}
                 {#if channel.userLimit}
                   <span class="limit">{members.length}/{channel.userLimit}</span>
                 {/if}
@@ -687,6 +701,11 @@
 
   .drop-end.drop-before::before {
     top: 4px;
+  }
+
+  .relay {
+    display: inline-flex;
+    color: var(--accent-fg);
   }
 
   .limit {

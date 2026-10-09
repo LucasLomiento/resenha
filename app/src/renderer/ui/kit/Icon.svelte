@@ -19,6 +19,7 @@
   import CircleAlert from '@lucide/svelte/icons/circle-alert'
   import CircleCheck from '@lucide/svelte/icons/circle-check'
   import Clock from '@lucide/svelte/icons/clock'
+  import Cloud from '@lucide/svelte/icons/cloud'
   import Compass from '@lucide/svelte/icons/compass'
   import Copy from '@lucide/svelte/icons/copy'
   import Crown from '@lucide/svelte/icons/crown'
@@ -127,6 +128,7 @@
     'circle-alert': CircleAlert,
     'circle-check': CircleCheck,
     clock: Clock,
+    cloud: Cloud,
     compass: Compass,
     copy: Copy,
     crown: Crown,
