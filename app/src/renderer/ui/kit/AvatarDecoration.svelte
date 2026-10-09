@@ -14,6 +14,10 @@
   const SPARKLE = 'M0 -10C1.2 -2.6 2.6 -1.2 10 0C2.6 1.2 1.2 2.6 0 10C-1.2 2.6 -2.6 1.2 -10 0C-2.6 -1.2 -1.2 -2.6 0 -10Z'
   const FLAME = 'M0 0C-6.5 0 -9 -6 -6 -11.5C-4.2 -14.8 -2 -17 -0.6 -22C1.6 -17.4 5.4 -14.6 6.8 -9.6C8.2 -4.4 5.6 0 0 0Z'
   const PETAL = 'M0 0C-2.6 -2.4 -2.4 -6.6 0 -8C2.4 -6.6 2.6 -2.4 0 0Z'
+  /** Coração com chifrinhos do Pioneiro, o mesmo do selo (caixa 20 × 20). */
+  const HEART =
+    'M10 15.4C10 15.4 5.3 12.5 5.3 9.4C5.3 7.9 6.5 6.8 7.9 6.8C8.9 6.8 9.6 7.3 10 8.1C10.4 7.3 11.1 6.8 12.1 6.8C13.5 6.8 14.7 7.9 14.7 9.4C14.7 12.5 10 15.4 10 15.4Z'
+  const HORNS = ['M6.1 7.8C4.5 6.6 4.6 4.6 6.3 3.4C5.8 4.9 6.6 6.2 8.5 6.9Z', 'M13.9 7.8C15.5 6.6 15.4 4.6 13.7 3.4C14.2 4.9 13.4 6.2 11.5 6.9Z']
 
   /** Chamas dos dois lados: [x, y, inclinação, tamanho, atraso]. */
   const FLAMES: [number, number, number, number, number][] = [
@@ -231,7 +235,7 @@
           <path d="M-0.9 -0.2Q0.6 1.4 2.1 -0.2" fill="none" stroke="#6a5cf6" stroke-width="1.1" stroke-linecap="round" />
         </g>
       {:else if kind === 'pioneer'}
-        <!-- Só do Pioneiro (a primeira pessoa que chegou): anel do mar, um cometa em volta e a bandeira fincada. -->
+        <!-- Só do Pioneiro (o melhor amigo do dono): anel do mar, um cometa em volta e o coração com chifrinhos do selo. -->
         <defs>
           <linearGradient id="{uid}-a" x1="0" y1="0" x2="1" y2="1">
             <stop offset="0" stop-color="#5ab8ff" />
@@ -241,6 +245,10 @@
           <linearGradient id="{uid}-s" x1="0" y1="0" x2="0" y2="1">
             <stop offset="0" stop-color="#ffffff" />
             <stop offset="1" stop-color="#b8c7d9" />
+          </linearGradient>
+          <linearGradient id="{uid}-h" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="#ff8a7a" />
+            <stop offset="1" stop-color="#e8243f" />
           </linearGradient>
           <filter id="{uid}-b" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="2.4" /></filter>
         </defs>
@@ -259,12 +267,15 @@
             <g class="twinkle" style:--d="{d}s"><path d={SPARKLE} fill="#d6ecff" /></g>
           </g>
         {/each}
-        <!-- A bandeira, fincada no alto do anel à direita. -->
-        <path d="M96.8 23.2V-5" stroke="#1b1730" stroke-width="4" stroke-linecap="round" />
-        <path d="M96.8 23.2V-5" stroke="url(#{uid}-s)" stroke-width="2.2" stroke-linecap="round" />
-        <g class="flag">
-          <path d="M98 -4.2Q106.4 -7.6 116.4 -2.8Q109.6 2 116.4 8Q106.6 4.6 98 8.8Z" fill="url(#{uid}-a)" stroke="#1b1730" stroke-width="1.3" stroke-linejoin="round" />
-          <path d="M101.6 -0.6L105.8 2L101.6 4.6Z" fill="#fff" />
+        <!-- O coração com chifrinhos (o mesmo desenho do selo), preso no alto do anel à direita, batendo. -->
+        <g transform="translate(98 20) rotate(14) scale(2.6) translate(-10 -10.5)">
+          <g class="beat">
+            <path d={HEART} fill="#ff5c8a" filter="url(#{uid}-b)" opacity="0.55" transform="translate(10 11) scale(1.15) translate(-10 -11)" />
+            {#each HORNS as horn (horn)}
+              <path d={horn} fill="url(#{uid}-h)" stroke="#1b1730" stroke-width="0.7" stroke-linejoin="round" />
+            {/each}
+            <path d={HEART} fill="url(#{uid}-s)" stroke="#1b1730" stroke-width="0.7" stroke-linejoin="round" />
+          </g>
         </g>
       {:else if kind === 'cat'}
         {#each [-1, 1] as side (side)}
@@ -316,18 +327,25 @@
     animation: deco-spin 7s linear infinite;
   }
 
-  .flag {
-    transform-origin: 98px 2.3px;
-    animation: flag-wave 1.6s ease-in-out infinite;
+  .beat {
+    transform-box: fill-box;
+    transform-origin: 50% 60%;
+    animation: heart-beat 1.4s ease-in-out infinite;
   }
 
-  @keyframes flag-wave {
+  /* Tum-tum e uma pausa. */
+  @keyframes heart-beat {
     0%,
+    28%,
+    70%,
     100% {
-      transform: skewY(0deg) scaleX(1);
+      transform: scale(1);
     }
-    50% {
-      transform: skewY(-6deg) scaleX(0.92);
+    14% {
+      transform: scale(1.12);
+    }
+    42% {
+      transform: scale(1.07);
     }
   }
 
