@@ -415,7 +415,7 @@ export default {
     failed: 'El sistema no dejó usar este atajo fuera de la app. Con Resenha abierto, funciona.',
     hyprland: {
       section: 'En Hyprland',
-      text: 'Para que funcione con la app en segundo plano, crea un bind en tu config que llame a {command}. También sirven {toggle-deafen}, {toggle-share}, {leave-call} y {show-window}.',
+      text: 'Resenha crea estos atajos en Hyprland por su cuenta mientras está abierto (aparecen en la lista de atajos del sistema). Si una tecla ya tiene uso en tu config, no la toca y te avisa aquí. Para asignarlos de otra forma, también sirve {command}, igual que {toggle-deafen}, {toggle-share}, {leave-call} y {show-window}.',
     },
   },
 

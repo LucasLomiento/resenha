@@ -411,7 +411,7 @@ export default {
     failed: "The system didn't let this shortcut work outside the app. It works while Resenha is open.",
     hyprland: {
       section: 'On Hyprland',
-      text: 'To make it work with the app in the background, add a bind to your config that runs {command}. {toggle-deafen}, {toggle-share}, {leave-call} and {show-window} work too.',
+      text: "Resenha sets these shortcuts up in Hyprland by itself while it's open (they show up in your system's keybindings list). If a key is already used in your config, it leaves it alone and warns you here. To bind them another way, {command} also works, as do {toggle-deafen}, {toggle-share}, {leave-call} and {show-window}.",
     },
   },
 

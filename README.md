@@ -121,7 +121,9 @@ VITE_DEFAULT_SERVER=... npm run dist:win:zip                                    
 
 Os atalhos de Configurações → Atalhos são registrados no sistema: direto no Windows e no X11, e pelo portal `GlobalShortcuts` no Wayland (KDE, GNOME).
 
-No **Hyprland** o portal não usa as teclas escolhidas pelo app, então lá o jeito é um bind no seu config chamando o app:
+No **Hyprland** o portal registra o atalho mas não liga tecla nenhuma, então o app cria os binds sozinho (`app/src/main/hyprland.ts`): ao abrir, faz `hl.bind(teclas, hl.dsp.event("resenha:<ação>"))` pelo `hyprctl eval` e escuta esses eventos no socket2 do Hyprland. Os binds têm a descrição "Resenha: …" (aparecem na lista de atalhos do Omarchy), voltam sozinhos quando a config recarrega e saem quando o app fecha. Tecla que a sua config já usa fica de fora, e a página de atalhos avisa.
+
+Pra ligar de outro jeito (ou noutro lugar), o app também aceita a ação pela linha de comando:
 
 ```
 resenha --action=toggle-mute      # também: toggle-deafen, toggle-share, leave-call, show-window

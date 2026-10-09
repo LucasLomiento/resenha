@@ -1,9 +1,8 @@
-## 1.9.0: o Resenha em inglês e espanhol
+## 1.10.0: atalhos com o app em segundo plano e a dock mais esperta
 
-- **Três idiomas:** português, inglês e espanhol, no app inteiro: telas, menus, avisos, notificações do sistema, bandeja e as mensagens de erro do servidor. Troque em Configurações → Aplicativo → Idioma; a interface muda na hora, sem reiniciar e sem cair da call.
-- **Automático:** quem instalar agora começa no idioma do sistema (fora desses três, em inglês). Quem já usava continua em português.
-- Datas, horas e números seguem o idioma escolhido, e a busca das configurações (e do Ctrl+K) acha a opção escrevendo em qualquer um dos três.
-- O botão "Testar microfone" não corta mais o texto quando ele é mais longo, e a lista de aparelhos mostra o nome do aparelho no idioma escolhido.
+- **Atalhos funcionando fora do app no Hyprland:** mutar, ensurdecer, compartilhar a tela, sair da call e mostrar a janela agora funcionam com outra janela em foco. O Resenha cria os atalhos no Hyprland sozinho enquanto está aberto (eles aparecem na lista de atalhos do sistema). Se a tecla já tiver outro uso na sua config, ele não mexe e avisa em Configurações → Atalhos.
+- **Sua foto fica verde quando você fala**, também na dock, embaixo, inclusive com moldura (antes a moldura cobria o anel).
+- **Setinha no microfone e no fone da dock:** escolha o microfone e a saída de áudio sem abrir as configurações, e o perfil do microfone: **Isolar voz** (tira ruído e eco) ou **Estúdio** (som puro, sem processamento nenhum, pra quem usa fone). O botão direito no microfone ou no fone abre o mesmo menu.
 
 ## Como atualizar
 

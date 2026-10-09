@@ -33,6 +33,14 @@ const pt = {
     deafen: 'Ensurdecer',
     undeafen: 'Voltar a ouvir',
   },
+  /** Nome dos atalhos globais (a descrição dos binds do Hyprland, na lista de atalhos do sistema). */
+  shortcuts: {
+    'toggle-mute': 'mutar ou desmutar',
+    'toggle-deafen': 'ensurdecer ou voltar a ouvir',
+    'toggle-share': 'compartilhar ou parar a tela',
+    'leave-call': 'sair da call',
+    'show-window': 'mostrar a janela',
+  },
   update: {
     /** Título da janela do terminal que pede a senha. */
     terminalTitle: 'Atualizar Resenha',
@@ -63,6 +71,13 @@ const en: typeof pt = {
     deafen: 'Deafen',
     undeafen: 'Undeafen',
   },
+  shortcuts: {
+    'toggle-mute': 'mute or unmute',
+    'toggle-deafen': 'deafen or undeafen',
+    'toggle-share': 'start or stop screen share',
+    'leave-call': 'leave call',
+    'show-window': 'show window',
+  },
   update: {
     terminalTitle: 'Update Resenha',
     terminalPrompt: (version: string) => `Updating Resenha to version ${version}. Enter your password:`,
@@ -90,6 +105,13 @@ const es: typeof pt = {
     unmute: 'Quitar silencio',
     deafen: 'Ensordecer',
     undeafen: 'Volver a escuchar',
+  },
+  shortcuts: {
+    'toggle-mute': 'silenciar o activar micrófono',
+    'toggle-deafen': 'ensordecer o volver a escuchar',
+    'toggle-share': 'compartir o dejar de compartir pantalla',
+    'leave-call': 'salir de la llamada',
+    'show-window': 'mostrar la ventana',
   },
   update: {
     terminalTitle: 'Actualizar Resenha',

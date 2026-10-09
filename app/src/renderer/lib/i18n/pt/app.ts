@@ -59,6 +59,24 @@ export default {
     deafen: 'Ensurdecer',
     undeafen: 'Voltar a ouvir',
     settings: 'Configurações',
+    /** Menus da setinha ao lado do microfone e do fone. */
+    devices: {
+      micOptions: 'Opções do microfone',
+      audioOptions: 'Opções de áudio',
+      input: 'Microfone',
+      output: 'Saída de áudio',
+      systemDefault: 'Padrão do sistema',
+      microphone: 'Microfone',
+      speaker: 'Alto-falante',
+      profile: 'Perfil do microfone',
+      isolation: 'Isolar voz',
+      studio: 'Estúdio',
+      custom: 'Personalizado',
+      /** Dica de cada perfil, à direita no menu. */
+      isolationHint: 'tira ruído e eco',
+      studioHint: 'som puro, use fone',
+      voiceSettings: 'Configurações de voz',
+    },
   },
 
   statusMenu: {

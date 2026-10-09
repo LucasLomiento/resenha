@@ -17,6 +17,7 @@ import { dirname, join } from 'node:path'
 import type { CallState, CaptureSource, DesktopPrefs, PlatformInfo, SavedSession, ShortcutAction } from '../preload/api'
 import { appIcon, hasTray, registerShortcuts, setAutostart, setTray, showCallState } from './desktop'
 import { isLocale, localeFrom, mainLocale, setMainLocale, tm, type Locale } from './i18n'
+import { clearHyprShortcuts } from './hyprland'
 import { inkEvent, inkMonitors, inkStart, inkStop, onInkClosed } from './ink'
 import { isHyprland, loadPrefs, savePrefs } from './prefs'
 import {
@@ -340,21 +341,26 @@ handle('turnstile:verify', (_event, server: string): Promise<string | null> => {
 
 // ---------- Bandeja, atalhos, início automático, zoom ----------
 
-function applyPrefs(previous: DesktopPrefs | null): ShortcutAction[] {
+/** Os atalhos que o sistema recusou da última vez (a página de atalhos mostra ao abrir). */
+let shortcutFailures: ShortcutAction[] = []
+
+async function applyPrefs(previous: DesktopPrefs | null): Promise<ShortcutAction[]> {
   setTray(prefs.tray, showWindow, dispatch)
   if (!previous || previous.autostart !== prefs.autostart) setAutostart(prefs.autostart)
   win?.webContents.setZoomFactor(prefs.zoom)
-  return registerShortcuts(prefs.shortcuts, dispatch)
+  shortcutFailures = await registerShortcuts(prefs.shortcuts, dispatch)
+  return shortcutFailures
 }
 
 handle('desktop:get', () => prefs)
+handle('desktop:failed', () => shortcutFailures)
 
-handle('desktop:set', (_event, patch: Partial<DesktopPrefs>) => {
+handle('desktop:set', async (_event, patch: Partial<DesktopPrefs>) => {
   const previous = prefs
   prefs = { ...prefs, ...patch, shortcuts: { ...prefs.shortcuts, ...patch.shortcuts } }
   prefs.zoom = Math.min(2, Math.max(0.5, Number(prefs.zoom) || 1))
   savePrefs(prefs)
-  return { prefs, failed: applyPrefs(previous) }
+  return { prefs, failed: await applyPrefs(previous) }
 })
 
 listen('call-state', (_event, state: CallState) => {
@@ -437,7 +443,7 @@ app.whenReady().then(() => {
   setSpellCheck(mainLocale())
   setupDisplayMedia()
   createWindow()
-  applyPrefs(null)
+  void applyPrefs(null)
   if (!hidden) setupUpdater((state) => win?.webContents.send('update:state', state))
 })
 
@@ -454,6 +460,7 @@ app.on('before-quit', () => {
 })
 
 app.on('will-quit', () => {
+  clearHyprShortcuts()
   stopScreenAudio()
   inkStop()
 })

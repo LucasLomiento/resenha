@@ -885,6 +885,44 @@ try {
   await a.page.waitForTimeout(800)
   const speaking = await a.page.locator('.member', { hasText: 'Duarte' }).locator('.avatar.speaking').count()
   check(speaking === 1, 'A vê o indicador de fala de B')
+  // Na dock, a sua foto também fica verde ao falar, por cima da moldura (A tem a do Fundador).
+  const dockAvatar = a.page.locator('.dock .me .avatar').first()
+  const dockRing = await dockAvatar.evaluate((el) => [el.className, getComputedStyle(el, '::after').borderTopColor])
+  check(/\bspeaking\b/.test(dockRing[0]) && /\bdecorated\b/.test(dockRing[0]) && /^rgb/.test(dockRing[1]), 'a foto na dock fica verde quando você fala, por cima da moldura', dockRing.join(' · '))
+  // Setinha do microfone: aparelho e perfil (o teste nunca escolhe aparelho: abriria o microfone de verdade).
+  const savedMic = () => a.page.evaluate(() => {
+    const s = JSON.parse(localStorage.getItem('resenha.settings') ?? '{}')
+    return [s.noiseReduction, s.echoCancellation, s.autoGainControl, s.gate?.enabled].join(',')
+  })
+  const micMenu = () => a.page.locator('.dock').getByRole('button', { name: 'Opções do microfone', exact: true }).click({ force: true })
+  // O menu abre depois de listar os aparelhos: espera o item antes de olhar a marca.
+  const checkedIn = async (name) => {
+    const item = a.page.getByRole('menuitem', { name })
+    await item.waitFor({ timeout: 3000 })
+    return item.locator('.check').count()
+  }
+  await micMenu()
+  await a.page.getByRole('menuitem', { name: 'Estúdio' }).waitFor({ timeout: 3000 })
+  const defaultListed = await a.page.getByRole('menu').getByText('Padrão do sistema').count()
+  const customBefore = await checkedIn('Personalizado')
+  await shot(a, '4c-menu-microfone')
+  await a.page.getByRole('menuitem', { name: 'Estúdio' }).click({ force: true })
+  await a.page.waitForTimeout(300)
+  const studio = await savedMic()
+  await micMenu()
+  const studioChecked = await checkedIn('Estúdio')
+  await a.page.keyboard.press('Escape')
+  check(
+    defaultListed === 1 && customBefore === 1 && studio === 'off,false,false,false' && studioChecked === 1,
+    'setinha do microfone: lista os aparelhos e o modo estúdio desliga todo o processamento',
+    `${defaultListed}/${customBefore}/${studio}/${studioChecked}`,
+  )
+  await a.page.locator('.dock').getByRole('button', { name: 'Opções de áudio', exact: true }).click({ force: true })
+  const outputDefault = await checkedIn('Padrão do sistema')
+  await a.page.keyboard.press('Escape')
+  await a.page.waitForTimeout(800)
+  const stillSpeaking = await b.page.locator('.member', { hasText: 'Lucas' }).locator('.avatar.speaking').count()
+  check(outputDefault === 1 && stillSpeaking === 1, 'setinha do fone mostra a saída, e a voz continua chegando depois de trocar o perfil', `${outputDefault}/${stillSpeaking}`)
   check(micFallbacks.length === 0, 'microfone passa pelo processador (RNNoise/limiar) carregado no AudioWorklet')
 
   // Webcam: B liga, A abre a tela da call e vê o vídeo; B desliga e volta o avatar.

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy } from 'svelte'
+  import { onDestroy, onMount } from 'svelte'
   import type { ShortcutAction } from '../../../preload/api'
   import { ACTIONS, acceleratorFrom, describeAccelerator } from '../../lib/shortcuts'
   import { client } from '../../lib/client.svelte'
@@ -14,6 +14,11 @@
 
   let recording = $state<ShortcutAction | null>(null)
   let failed = $state<ShortcutAction[]>([])
+
+  // Recusados ao abrir o app (no Hyprland, tecla que a config já usa).
+  onMount(async () => {
+    if (client.desktop) failed = await window.resenha.desktop.failed()
+  })
 
   // O Esc (pilha de camadas) cancela a gravação pelo ui.recordingShortcut.
   $effect(() => {

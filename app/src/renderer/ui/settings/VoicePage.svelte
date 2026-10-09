@@ -5,6 +5,7 @@
   import { MicPipeline } from '../../lib/mic'
   import { settings, type VideoCodec } from '../../lib/settings.svelte'
   import { client } from '../../lib/client.svelte'
+  import { listDevices, namedDevices } from '../../lib/devices'
   import { ui } from '../../lib/ui.svelte'
   import { Button, Icon, Meter, PageHeader, Row, Section, Segmented, Select, Switch } from '../kit'
   import VideoTile from '../VideoTile.svelte'
@@ -19,26 +20,15 @@
   function options(list: MediaDeviceInfo[], fallback: string) {
     return [
       { value: 'default', label: t.systemDefault },
-      ...list.filter((d) => d.deviceId && d.deviceId !== 'default').map((d) => ({ value: d.deviceId, label: d.label || fallback })),
+      ...namedDevices(list).map((d) => ({ value: d.deviceId, label: d.label || fallback })),
     ]
   }
 
   async function loadDevices() {
-    let devices = await navigator.mediaDevices.enumerateDevices()
-    // Sem nenhum acesso ao microfone ainda, o Chromium esconde os nomes: pede uma vez e solta.
-    if (!devices.some((d) => d.label)) {
-      try {
-        const probe = await navigator.mediaDevices.getUserMedia({ audio: true })
-        for (const track of probe.getTracks()) track.stop()
-        devices = await navigator.mediaDevices.enumerateDevices()
-      } catch {
-        // sem permissão: fica a lista sem nomes
-      }
-    }
-    // O microfone virtual do áudio da tela não serve como microfone de voz.
-    inputs = devices.filter((d) => d.kind === 'audioinput' && d.deviceId !== 'communications' && !d.label.includes('vencord-screen-share'))
-    outputs = devices.filter((d) => d.kind === 'audiooutput' && d.deviceId !== 'communications')
-    cameras = devices.filter((d) => d.kind === 'videoinput')
+    const found = await listDevices()
+    inputs = found.inputs
+    outputs = found.outputs
+    cameras = found.cameras
   }
 
   onMount(() => {

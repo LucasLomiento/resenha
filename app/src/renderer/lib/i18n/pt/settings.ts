@@ -430,7 +430,7 @@ export default {
     hyprland: {
       section: 'No Hyprland',
       // {command} e {ação} viram código: o comando inteiro e o nome de cada ação.
-      text: 'Pra funcionar com o app em segundo plano, crie um bind no seu config chamando {command}. Também vale {toggle-deafen}, {toggle-share}, {leave-call} e {show-window}.',
+      text: 'O Resenha cria esses atalhos no Hyprland sozinho enquanto está aberto (eles aparecem na lista de atalhos do sistema). Se a tecla já tiver uso na sua config, ele não mexe e avisa aqui. Pra ligar de outro jeito, {command} também funciona, assim como {toggle-deafen}, {toggle-share}, {leave-call} e {show-window}.',
     },
   },
 

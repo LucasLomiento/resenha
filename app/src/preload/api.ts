@@ -119,6 +119,8 @@ export interface ResenhaApi {
     get(): Promise<DesktopPrefs>
     /** Aplica e salva; devolve as preferências e os atalhos que o sistema recusou. */
     set(patch: Partial<DesktopPrefs>): Promise<{ prefs: DesktopPrefs; failed: ShortcutAction[] }>
+    /** Os atalhos que o sistema recusou da última vez (tecla já usada, por exemplo). */
+    failed(): Promise<ShortcutAction[]>
   }
   /** Estado da call, pra bandeja e barra de tarefas. */
   callState(state: CallState): void

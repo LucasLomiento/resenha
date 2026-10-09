@@ -7,6 +7,7 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { CallState, DesktopPrefs, ShortcutAction } from '../preload/api'
 import { onLocaleChange, tm } from './i18n'
+import { hasHyprland, setHyprShortcuts } from './hyprland'
 
 type Dispatch = (action: ShortcutAction) => void
 
@@ -162,9 +163,14 @@ onLocaleChange(() => {
 
 // ---------- Atalhos globais ----------
 
-/** Registra os atalhos no sistema e devolve os que não deu (conflito ou formato inválido). */
-export function registerShortcuts(shortcuts: DesktopPrefs['shortcuts'], dispatch: Dispatch): ShortcutAction[] {
+/**
+ * Registra os atalhos no sistema e devolve os que não deu (conflito ou formato inválido).
+ * No Hyprland vão como binds do próprio Hyprland (ver hyprland.ts): o portal registra mas
+ * não liga tecla nenhuma, e o atalho só funcionava com a janela em foco.
+ */
+export async function registerShortcuts(shortcuts: DesktopPrefs['shortcuts'], dispatch: Dispatch): Promise<ShortcutAction[]> {
   globalShortcut.unregisterAll()
+  if (hasHyprland()) return setHyprShortcuts(shortcuts, dispatch)
   const failed: ShortcutAction[] = []
   for (const [action, accelerator] of Object.entries(shortcuts) as [ShortcutAction, string | null][]) {
     if (!accelerator) continue

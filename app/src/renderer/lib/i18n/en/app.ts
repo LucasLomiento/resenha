@@ -58,6 +58,22 @@ export default {
     deafen: 'Deafen',
     undeafen: 'Undeafen',
     settings: 'Settings',
+    devices: {
+      micOptions: 'Microphone options',
+      audioOptions: 'Audio options',
+      input: 'Microphone',
+      output: 'Audio output',
+      systemDefault: 'System default',
+      microphone: 'Microphone',
+      speaker: 'Speaker',
+      profile: 'Microphone profile',
+      isolation: 'Voice isolation',
+      studio: 'Studio',
+      custom: 'Custom',
+      isolationHint: 'cuts noise and echo',
+      studioHint: 'pure sound, use headphones',
+      voiceSettings: 'Voice settings',
+    },
   },
 
   statusMenu: {

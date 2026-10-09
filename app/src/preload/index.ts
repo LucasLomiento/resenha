@@ -38,6 +38,7 @@ const api: ResenhaApi = {
   desktop: {
     get: () => ipcRenderer.invoke('desktop:get'),
     set: (patch) => ipcRenderer.invoke('desktop:set', patch),
+    failed: () => ipcRenderer.invoke('desktop:failed'),
   },
   callState: (state) => ipcRenderer.send('call-state', state),
   unread: (count) => ipcRenderer.send('unread', count),

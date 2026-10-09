@@ -1,8 +1,11 @@
 <script lang="ts">
   import { client } from '../lib/client.svelte'
+  import { listDevices, namedDevices } from '../lib/devices'
   import { m } from '../lib/i18n.svelte'
-  import { ui } from '../lib/ui.svelte'
-  import { Avatar, Icon, IconButton, SignalBars, Spinner, tooltip } from './kit'
+  import { micProfile, setMicProfile } from '../lib/mic-profile'
+  import { settings } from '../lib/settings.svelte'
+  import { openSetting, ui } from '../lib/ui.svelte'
+  import { Avatar, Icon, IconButton, Menu, SignalBars, Spinner, tooltip, type MenuItem } from './kit'
   import SharePanel from './SharePanel.svelte'
   import StatusMenu from './StatusMenu.svelte'
 
@@ -39,6 +42,57 @@
     if (!mapGuild) return
     if (mapOpen) client.view = 'chat'
     else client.openMap(mapGuild.id)
+  }
+
+  // ---------- Setinha do microfone e do fone: aparelho, perfil do microfone ----------
+
+  let deviceMenu = $state<{ kind: 'input' | 'output'; anchor: HTMLElement; items: MenuItem[] } | null>(null)
+
+  async function openDevices(kind: 'input' | 'output', anchor: HTMLElement) {
+    if (deviceMenu?.kind === kind) return void (deviceMenu = null)
+    const devices = await listDevices()
+    deviceMenu = { kind, anchor, items: kind === 'input' ? inputMenu(devices.inputs) : outputMenu(devices.outputs) }
+  }
+
+  function inputMenu(inputs: MediaDeviceInfo[]): MenuItem[] {
+    const d = m.app.dock.devices
+    const profile = micProfile()
+    // Trocou o microfone ou o processamento: na call, reabre na hora.
+    const pick = (id: string) => () => {
+      settings.inputDevice = id
+      void call.reloadMic()
+    }
+    const choose = (next: 'isolation' | 'studio') => () => {
+      setMicProfile(next)
+      void call.reloadMic()
+    }
+    return [
+      { kind: 'label', label: d.input },
+      { label: d.systemDefault, checked: settings.inputDevice === 'default', onselect: pick('default') },
+      ...namedDevices(inputs).map((device) => ({ label: device.label || d.microphone, checked: settings.inputDevice === device.deviceId, onselect: pick(device.deviceId) })),
+      { kind: 'separator' },
+      { kind: 'label', label: d.profile },
+      { label: d.isolation, hint: d.isolationHint, checked: profile === 'isolation', onselect: choose('isolation') },
+      { label: d.studio, hint: d.studioHint, checked: profile === 'studio', onselect: choose('studio') },
+      { label: d.custom, checked: profile === 'custom', onselect: () => openSetting({ id: 'voice.noise', page: 'voice' }) },
+      { kind: 'separator' },
+      { label: d.voiceSettings, icon: 'settings', onselect: () => (ui.settings = 'voice') },
+    ]
+  }
+
+  function outputMenu(outputs: MediaDeviceInfo[]): MenuItem[] {
+    const d = m.app.dock.devices
+    const pick = (id: string) => () => {
+      settings.outputDevice = id
+      call.applyOutput()
+    }
+    return [
+      { kind: 'label', label: d.output },
+      { label: d.systemDefault, checked: settings.outputDevice === 'default', onselect: pick('default') },
+      ...namedDevices(outputs).map((device) => ({ label: device.label || d.speaker, checked: settings.outputDevice === device.deviceId, onselect: pick(device.deviceId) })),
+      { kind: 'separator' },
+      { label: d.voiceSettings, icon: 'settings', onselect: () => (ui.settings = 'voice') },
+    ]
   }
 
   function screenClick() {
@@ -143,7 +197,7 @@
           play={meHover}
           cutout="var(--bg-raised)"
           status={client.presenceOf(client.me.id).status}
-          speaking={!!client.callConnId && call.speaking[client.callConnId]}
+          speaking={inCall && call.selfSpeaking}
         />
         <span class="me-text">
           <span class="me-name">{client.me.name}</span>
@@ -151,25 +205,61 @@
         </span>
       </button>
     {/if}
-    <IconButton
-      icon={call.muted ? 'mic-off' : 'mic'}
-      label={call.muted ? t.unmute : t.mute}
-      tone="danger"
-      active={call.muted}
-      aria-pressed={call.muted}
-      onclick={() => call.toggleMute()}
-    />
-    <IconButton
-      icon={call.deafened ? 'headphones-off' : 'headphones'}
-      label={call.deafened ? t.undeafen : t.deafen}
-      tone="danger"
-      active={call.deafened}
-      aria-pressed={call.deafened}
-      onclick={() => call.toggleDeafen()}
-    />
+    <!-- Clique muta/ensurdece; a setinha (ou o botão direito) abre o aparelho e o perfil. -->
+    <div class="split" oncontextmenu={(e) => (e.preventDefault(), openDevices('input', e.currentTarget as HTMLElement))} role="group">
+      <IconButton
+        icon={call.muted ? 'mic-off' : 'mic'}
+        label={call.muted ? t.unmute : t.mute}
+        tone="danger"
+        active={call.muted}
+        aria-pressed={call.muted}
+        onclick={() => call.toggleMute()}
+      />
+      <button
+        class="chevron"
+        aria-label={t.devices.micOptions}
+        aria-haspopup="menu"
+        aria-expanded={deviceMenu?.kind === 'input'}
+        use:tooltip={t.devices.micOptions}
+        onclick={(e) => openDevices('input', e.currentTarget.parentElement!)}
+      >
+        <Icon name="chevron-down" size={12} />
+      </button>
+    </div>
+    <div class="split" oncontextmenu={(e) => (e.preventDefault(), openDevices('output', e.currentTarget as HTMLElement))} role="group">
+      <IconButton
+        icon={call.deafened ? 'headphones-off' : 'headphones'}
+        label={call.deafened ? t.undeafen : t.deafen}
+        tone="danger"
+        active={call.deafened}
+        aria-pressed={call.deafened}
+        onclick={() => call.toggleDeafen()}
+      />
+      <button
+        class="chevron"
+        aria-label={t.devices.audioOptions}
+        aria-haspopup="menu"
+        aria-expanded={deviceMenu?.kind === 'output'}
+        use:tooltip={t.devices.audioOptions}
+        onclick={(e) => openDevices('output', e.currentTarget.parentElement!)}
+      >
+        <Icon name="chevron-down" size={12} />
+      </button>
+    </div>
     <IconButton icon="settings" label={t.settings} onclick={() => (ui.settings = 'profile')} />
   </div>
 </div>
+
+{#if deviceMenu}
+  <Menu
+    items={deviceMenu.items}
+    anchor={deviceMenu.anchor}
+    placement="top-start"
+    width={300}
+    label={deviceMenu.kind === 'input' ? t.devices.micOptions : t.devices.audioOptions}
+    onclose={() => (deviceMenu = null)}
+  />
+{/if}
 
 {#if statusOpen && meButton}
   <StatusMenu anchor={meButton} onclose={() => (statusOpen = false)} />
@@ -315,6 +405,38 @@
   }
 
   /* ---------- Você ---------- */
+
+  /* Microfone e fone com a setinha colada: um bloco só no hover. */
+  .split {
+    display: flex;
+    align-items: center;
+    border-radius: var(--r-md);
+  }
+
+  .split:hover {
+    background: var(--hover);
+  }
+
+  .chevron {
+    display: grid;
+    place-items: center;
+    width: 14px;
+    height: 32px;
+    margin-left: -4px;
+    border-radius: var(--r-sm);
+    color: var(--fg-3);
+    opacity: 0.7;
+    transition:
+      opacity var(--t-fast) var(--ease),
+      color var(--t-fast) var(--ease);
+  }
+
+  .split:hover .chevron,
+  .chevron:focus-visible,
+  .chevron[aria-expanded='true'] {
+    color: var(--fg);
+    opacity: 1;
+  }
 
   .me {
     display: flex;

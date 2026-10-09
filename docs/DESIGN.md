@@ -87,7 +87,7 @@ Rótulos de seção em caixa normal (não em CAIXA ALTA), 12 px, peso 500, `--fg
 
 - **Barra lateral e trilho direto no fundo** da janela; só o conteúdo é um painel. Menos caixas, cara de app novo.
 - O cabeçalho da barra lateral e o do painel têm a mesma altura (52) e o mesmo centro (y = 34), e o dock termina na mesma linha do painel (8 px da borda).
-- **Dock** (rodapé do trilho e da barra lateral, de ponta a ponta): um cartão só com a call em cima (status, sinal, sair; Câmera e Tela) e você embaixo (avatar com status, nome, mutar, ensurdecer, configurações). A call aparece por cima sem mexer na sua linha.
+- **Dock** (rodapé do trilho e da barra lateral, de ponta a ponta): um cartão só com a call em cima (status, sinal, sair; Câmera e Tela) e você embaixo (avatar com status, nome, mutar, ensurdecer, configurações). A call aparece por cima sem mexer na sua linha. Mutar e ensurdecer têm uma setinha colada (e o botão direito) com o menu do aparelho de entrada/saída e o perfil do microfone (Isolar voz, Estúdio, Personalizado). Falando, a sua foto ganha o anel verde, por cima da moldura quando tem.
 - **Janela mínima (940 × 560):** tudo cabe. Nos protótipos, abaixo de ~780 px de painel a lista de membros e o tópico do canal saem (container query) e a coluna "Agora" do início some.
 - **Tela da call:** blocos 16:9 que crescem até ocupar a área toda (pela largura ou pela altura), sempre centralizados; foto de cada um quando não tem câmera.
 - **Configurações em tela cheia:** navegação à esquerda (236), página à direita (até 660), fechar no canto com "Esc". A navegação e o título nunca mudam de lugar entre páginas (o e2e confere).

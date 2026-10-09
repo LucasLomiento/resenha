@@ -43,7 +43,7 @@
 </script>
 
 <span
-  class={['avatar', className, { speaking, square }]}
+  class={['avatar', className, { speaking, square, decorated: !!decoration && !square }]}
   style:--size="{size}px"
   style:--cut={cutout}
   role="img"
@@ -105,10 +105,22 @@
     line-height: 1;
   }
 
-  .speaking {
+  .speaking:not(.decorated) {
     box-shadow:
       0 0 0 2px var(--cut),
       0 0 0 4px var(--green);
+  }
+
+  /* Com moldura, o anel verde vai por cima dela (por baixo a moldura cobria e ninguém via). */
+  .speaking.decorated::after {
+    content: '';
+    position: absolute;
+    inset: -4px;
+    z-index: 1;
+    border: 2px solid var(--green);
+    border-radius: 50%;
+    box-shadow: inset 0 0 0 2px var(--cut);
+    pointer-events: none;
   }
 
   .avatar :global(.avatar-status) {
