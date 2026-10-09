@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { test } from 'node:test'
 import { SETTINGS, searchSettings } from '../src/renderer/lib/settings-search.ts'
 
-const everyone = { staff: false, desktop: true, hyprland: true }
+const everyone = { staff: false, platform: false, desktop: true, hyprland: true }
 const first = (query: string, context = everyone) => searchSettings(query, context)[0]?.id
 
 test('acha pelo nome, sem acento e sem maiúscula', () => {
@@ -43,7 +43,11 @@ test('várias palavras: todas precisam bater', () => {
 
 test('esconde o que não vale pra pessoa', () => {
   assert.equal(first('cadastro'), undefined)
-  assert.equal(first('cadastro', { ...everyone, staff: true }), 'platform.signup')
+  assert.equal(first('cadastro', { ...everyone, staff: true, platform: true }), 'platform.signup')
+  // O melhor amigo do dono vê os números, mas não o cadastro nem as contas.
+  assert.equal(first('convites', { ...everyone, platform: true }), 'platform.invites')
+  assert.equal(first('cadastro', { ...everyone, platform: true }), undefined)
+  assert.equal(first('banir', { ...everyone, platform: true }), undefined)
   assert.equal(first('bandeja', { ...everyone, desktop: false }), undefined)
   assert.ok(!searchSettings('hyprland', { ...everyone, hyprland: false }).some((e) => e.id === 'shortcuts.hyprland'))
 })

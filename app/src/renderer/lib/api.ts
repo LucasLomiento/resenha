@@ -37,6 +37,8 @@ export interface AdminPanel {
   signup: 'invite' | 'open'
   users: number
   guilds: number
+  /** Convites que ainda dá pra usar (sem vencer e sem esgotar). */
+  invites: number
   storageUsed: number
   storageLimit: number
   /** Mídia pelo Cloudflare (SFU + TURN) no mês, contada pelos apps. */

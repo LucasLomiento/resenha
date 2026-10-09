@@ -16,6 +16,8 @@ export interface SettingEntry {
   keywords: string[]
   /** Só pra quem é dono da plataforma. */
   staff?: boolean
+  /** Pra quem vê os números da plataforma (o dono e o melhor amigo dele). */
+  platform?: boolean
   /** Só no app de computador (as opções que dependem do sistema). */
   desktop?: boolean
   /** Só no Hyprland. */
@@ -99,11 +101,12 @@ export const SETTINGS: SettingEntry[] = [
   { id: 'app.zoom', page: 'app', section: 'Janela', label: 'Tamanho da interface', keywords: ['zoom', 'escala', 'tamanho da letra', 'fonte', 'aumentar', 'diminuir', 'ctrl +'], desktop: true },
   { id: 'app.update', page: 'app', section: 'Atualizações', label: 'Atualizações', keywords: ['atualizar', 'versão', 'update', 'nova versão', 'baixar atualização', 'novidades'] },
 
-  // Plataforma (dono)
+  // Plataforma (os números: dono e melhor amigo; cadastro e contas: só o dono)
   { id: 'platform.signup', page: 'platform', label: 'Cadastro', keywords: ['convite', 'cadastro aberto', 'registro', 'criar conta', 'turnstile'], staff: true },
   { id: 'platform.accounts', page: 'platform', label: 'Contas', keywords: ['usuários', 'banir', 'moderação', 'pessoas'], staff: true },
-  { id: 'platform.storage', page: 'platform', label: 'Espaço usado', keywords: ['armazenamento', 'anexos', 'disco', 'arquivos', 'storage'], staff: true },
-  { id: 'platform.media', page: 'platform', label: 'Mídia pelo Cloudflare', keywords: ['sfu', 'turn', 'cota', 'gb', 'banda', 'transmissão', 'tela', 'relay'], staff: true },
+  { id: 'platform.storage', page: 'platform', label: 'Espaço usado', keywords: ['armazenamento', 'anexos', 'disco', 'arquivos', 'storage'], platform: true },
+  { id: 'platform.invites', page: 'platform', label: 'Convites ativos', keywords: ['convites', 'quantos convites', 'links de convite'], platform: true },
+  { id: 'platform.media', page: 'platform', label: 'Mídia pelo Cloudflare', keywords: ['sfu', 'turn', 'cota', 'gb', 'banda', 'transmissão', 'tela', 'relay'], platform: true },
 ]
 
 /** Sem acento, minúsculo, só letras/números (o resto vira espaço). */
@@ -152,6 +155,7 @@ function wordScore(term: string, words: string[]): number {
 
 export interface SettingContext {
   staff: boolean
+  platform: boolean
   desktop: boolean
   hyprland: boolean
 }
@@ -163,7 +167,7 @@ export function searchSettings(query: string, context: SettingContext): SettingE
   if (terms.length === 0) return []
   const results: { entry: SettingEntry; score: number }[] = []
   for (const entry of SETTINGS) {
-    if ((entry.staff && !context.staff) || (entry.desktop && !context.desktop) || (entry.hyprland && !context.hyprland)) continue
+    if ((entry.staff && !context.staff) || (entry.platform && !context.platform) || (entry.desktop && !context.desktop) || (entry.hyprland && !context.hyprland)) continue
     const label = fold(entry.label).split(' ')
     const place = fold(`${PAGE_LABEL[entry.page]} ${entry.section ?? ''}`).split(' ')
     const keywords = fold(entry.keywords.join(' ')).split(' ')

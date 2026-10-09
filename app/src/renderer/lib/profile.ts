@@ -53,6 +53,8 @@ export const NAME_EFFECT_LABEL: Record<NameEffect, string> = {
 /** Selo da pessoa (o servidor põe no perfil): Fundador (o dono do Resenha) ou Pioneiro (a primeira pessoa que chegou). */
 export const badgeOf = (user: Styled | null | undefined): Badge | null => (user && !user.deleted && user.style?.badge) || null
 export const isFounder = (user: Styled | null | undefined) => badgeOf(user) === 'founder'
+/** Quem abre o painel da plataforma: o dono (tudo) e o melhor amigo dele (só os números). */
+export const seesPlatform = (user: (Styled & { staff?: boolean }) | null | undefined) => !!user?.staff || badgeOf(user) === 'pioneer'
 
 /** Temas prontos: [principal, destaque]. */
 export const THEME_PRESETS: { name: string; colors: [number, number] }[] = [

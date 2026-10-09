@@ -1,6 +1,7 @@
 <script lang="ts">
   import { tick } from 'svelte'
   import { client } from '../../lib/client.svelte'
+  import { seesPlatform } from '../../lib/profile'
   import { PAGE_LABEL, searchSettings, type SettingEntry } from '../../lib/settings-search'
   import { confirmAction, openSetting, ui, type SettingsPage } from '../../lib/ui.svelte'
   import { Icon, SettingsLayout, type SettingsNavEntry } from '../kit'
@@ -16,7 +17,7 @@
 
   const ADMIN: SettingsNavEntry[] = [{ heading: 'Administração' }, { id: 'platform', label: 'Plataforma', icon: 'shield' }]
 
-  // Conta em cima, app embaixo; o painel da plataforma só pro dono dela.
+  // Conta em cima, app embaixo; o painel da plataforma só pro dono dela (e, só pra ver, pro melhor amigo dele).
   const nav = $derived<SettingsNavEntry[]>([
     { heading: 'Conta' },
     { id: 'profile', label: 'Perfil', icon: 'user' },
@@ -28,7 +29,7 @@
     { id: 'notifications', label: 'Notificações', icon: 'bell' },
     { id: 'shortcuts', label: 'Atalhos', icon: 'keyboard' },
     { id: 'app', label: 'Aplicativo', icon: 'sliders' },
-    ...(client.me?.staff ? ADMIN : []),
+    ...(seesPlatform(client.me) ? ADMIN : []),
     { separator: true },
     { id: 'logout', label: 'Sair da conta', icon: 'log-out', tone: 'danger' },
   ])
@@ -48,7 +49,7 @@
 
   const results = $derived(
     query.trim()
-      ? searchSettings(query, { staff: !!client.me?.staff, desktop: !!client.desktop, hyprland: !!client.platform?.hyprland })
+      ? searchSettings(query, { staff: !!client.me?.staff, platform: seesPlatform(client.me), desktop: !!client.desktop, hyprland: !!client.platform?.hyprland })
       : null,
   )
   const icons = $derived(Object.fromEntries(nav.filter((e) => 'id' in e).map((e) => [e.id, e.icon])))

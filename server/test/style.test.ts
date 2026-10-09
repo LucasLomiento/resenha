@@ -136,7 +136,7 @@ describe('personalização do perfil', () => {
     expect(mine.body.style).toEqual({ decoration: 'pioneer', nameEffect: 'horizon', ...PIONEER })
     const notOwner = await call('PATCH', '/api/me', { style: { decoration: 'pioneer' } }, owner.token)
     expect(notOwner.status).toBe(400)
-    expect(notOwner.body.error).toContain('Pioneiro')
+    expect(notOwner.body.error).toContain('melhor amigo')
     expect((await call('PATCH', '/api/me', { style: { nameEffect: 'horizon' } }, third.token)).status).toBe(400)
     expect((await call('GET', '/api/me', undefined, third.token)).body.style).toBeUndefined()
     const update = await a.next('member.upsert', (m) => m.user.id === friend.user.id)
@@ -150,6 +150,20 @@ describe('personalização do perfil', () => {
     expect((await call('GET', '/api/me', undefined, friend.token)).body.style).toBeUndefined()
     const moved = await a.next('member.upsert', (m) => m.user.id === friend.user.id && !m.user.style)
     expect(moved.user.style).toBeUndefined()
+  })
+
+  it('melhor amigo (Pioneiro) vê os números da plataforma, mas não mexe em nada', async () => {
+    const { owner, friend, a } = await world()
+    const third = await signup('bia', await invite(a), 'Bia')
+    const panel = await call('GET', '/api/admin', undefined, friend.token)
+    expect(panel.status).toBe(200)
+    expect(panel.body).toMatchObject({ users: 3, guilds: 1, invites: 2 })
+    expect((await call('GET', '/api/admin', undefined, third.token)).status).toBe(403)
+    // As ações continuam só do dono.
+    expect((await call('PUT', '/api/admin/signup', { mode: 'invite' }, friend.token)).status).toBe(403)
+    expect((await call('GET', '/api/admin/users', undefined, friend.token)).status).toBe(403)
+    expect((await call('POST', `/api/admin/users/${third.user.id}/ban`, { banned: true }, friend.token)).status).toBe(403)
+    expect((await call('GET', '/api/admin', undefined, owner.token)).body.invites).toBe(2)
   })
 
   it('banner: só imagem, até 1,5 MB; trocar e remover apagam o anterior', async () => {

@@ -109,7 +109,7 @@ export function applyStylePatch(
     const value = input[key] === null ? null : clean(input[key])
     if (value === undefined) return { ok: false, error }
     const owner = exclusiveOf(key, value)
-    if (owner && owner !== badge) return { ok: false, error: owner === 'founder' ? 'Só o dono do Resenha pode usar essa.' : 'Só o Pioneiro do Resenha pode usar essa.' }
+    if (owner && owner !== badge) return { ok: false, error: owner === 'founder' ? 'Só o dono do Resenha pode usar essa.' : 'Só o melhor amigo do dono do Resenha pode usar essa.' }
     if (value === null || value === '') delete next[key]
     else next[key] = value
   }

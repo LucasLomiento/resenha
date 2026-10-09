@@ -155,9 +155,11 @@ describe('perfil', () => {
 })
 
 describe('dono da plataforma', () => {
-  it('só a dona vê o painel e pode suspender contas', async () => {
+  it('só a dona mexe no painel e pode suspender contas', async () => {
     const { owner, friend } = await world()
-    expect((await call('GET', '/api/admin', undefined, friend.token)).status).toBe(403)
+    // O amigo é a primeira conta depois da dona (o Pioneiro): lê os números (ver style.test), mas não mexe em nada.
+    expect((await call('PUT', '/api/admin/signup', { mode: 'invite' }, friend.token)).status).toBe(403)
+    expect((await post(`/api/admin/users/${owner.user.id}/ban`, { banned: true }, friend.token)).status).toBe(403)
     const panel = await call('GET', '/api/admin', undefined, owner.token)
     expect(panel.body).toMatchObject({ signup: 'invite', users: 2, guilds: 1 })
     // Sem Turnstile configurado, o cadastro aberto não liga.

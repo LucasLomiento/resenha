@@ -46,7 +46,7 @@ export const SOUND_LABELS: [SoundName, string][] = [
   ['join', 'Alguém entra'],
   ['leave', 'Alguém sai'],
   ['founder-join', 'O dono do Resenha entra'],
-  ['pioneer-join', 'O Pioneiro entra'],
+  ['pioneer-join', 'O melhor amigo do dono entra'],
   ['mute', 'Mutar'],
   ['unmute', 'Desmutar'],
   ['deafen', 'Ensurdecer'],

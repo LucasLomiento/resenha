@@ -1,5 +1,6 @@
 <script lang="ts">
   import { client } from '../lib/client.svelte'
+  import { seesPlatform } from '../lib/profile'
   import { PAGE_LABEL, searchSettings } from '../lib/settings-search'
   import { openSetting, ui } from '../lib/ui.svelte'
   import { Avatar, Icon, Kbd, layer, portal, type IconName } from './kit'
@@ -121,7 +122,7 @@
     }
 
     if (!only && q) {
-      const context = { staff: !!client.me?.staff, desktop: !!client.desktop, hyprland: !!client.platform?.hyprland }
+      const context = { staff: !!client.me?.staff, platform: seesPlatform(client.me), desktop: !!client.desktop, hyprland: !!client.platform?.hyprland }
       for (const [i, entry] of searchSettings(raw, context).slice(0, 5).entries()) {
         out.push({
           key: `s:${entry.id}`,

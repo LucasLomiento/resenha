@@ -1375,19 +1375,30 @@ export class Directory extends DurableObject<Env> {
     return !!row && (row.flags & FLAG_STAFF) !== 0
   }
 
-  adminSettings(staffId: string): Result<{
+  /**
+   * Os números da plataforma. Além do dono, o melhor amigo dele (o Pioneiro) também vê,
+   * só pra ler: as ações (cadastro, contas, selo) continuam só do dono.
+   */
+  adminSettings(viewerId: string): Result<{
     signup: 'invite' | 'open'
     users: number
     guilds: number
+    /** Convites que ainda valem (sem vencer nem esgotar; os outros o alarme apaga). */
+    invites: number
     storageUsed: number
     storageLimit: number
     mediaUsed: number
     mediaLimit: number
   }> {
-    if (!this.isStaff(staffId)) return fail(403, 'Só o dono da plataforma.')
+    if (!this.isStaff(viewerId) && this.pioneerId() !== viewerId) return fail(403, 'Só o dono da plataforma.')
+    const now = Date.now()
+    const invites = this.sql
+      .exec<{ n: number }>('SELECT COUNT(*) AS n FROM invites WHERE (expires_at IS NULL OR expires_at > ?) AND (max_uses IS NULL OR uses < max_uses)', now)
+      .one().n
     return ok({
       ...this.status(),
       guilds: this.sql.exec<{ n: number }>('SELECT COUNT(*) AS n FROM guilds').one().n,
+      invites,
       storageUsed: this.storageUsed(),
       storageLimit: STORAGE_LIMIT,
       mediaUsed: this.mediaUsage().bytes,

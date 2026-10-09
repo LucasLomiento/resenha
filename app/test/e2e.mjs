@@ -1222,6 +1222,13 @@ try {
     await shot(a, `6-configuracoes-${page.trim().toLowerCase().replace(/\s+/g, '-').normalize('NFD').replace(/[\u0300-\u036f]/g, '')}`)
   }
   check(new Set(tops).size === 1, 'navegação e título das configurações ficam no mesmo lugar em todas as páginas', tops.join(','))
+  // A última página é a Plataforma: o dono vê os números (com os convites), o cadastro e as contas.
+  // Os números e o cadastro esperam o /api/admin; a lista de contas aparece antes.
+  await a.page.locator('.settings-content [data-setting="platform.invites"]').waitFor({ timeout: 5000 }).catch(() => {})
+  const ownerPanel = await Promise.all(
+    ['platform.invites', 'platform.signup', 'platform.accounts'].map((id) => a.page.locator(`.settings-content [data-setting="${id}"]`).count()),
+  )
+  check(ownerPanel.join(',') === '1,1,1', 'o dono vê a Plataforma inteira: números, convites, cadastro e contas', ownerPanel.join(','))
   // Busca nas configurações: "ruido" (sem acento) leva pra "Redução de ruído", que pisca.
   const settingsSearch = a.page.getByLabel('Buscar nas configurações')
   await settingsSearch.fill('ruido')
@@ -1246,6 +1253,22 @@ try {
   if (listed) await settingItem.click({ force: true })
   check(listed && (await flashed('voice.echo')), 'Ctrl+K acha configuração e abre direto nela (até dentro do "Avançado")')
   await a.page.keyboard.press('Escape')
+  // O melhor amigo do dono (B, o Pioneiro) abre a Plataforma só pra ver: os números, sem cadastro nem contas.
+  await b.page.getByRole('button', { name: 'Configurações', exact: true }).click({ force: true })
+  await b.page.locator('.settings-nav button', { hasText: 'Plataforma' }).first().click({ force: true })
+  const invitesForB = b.page.locator('.settings-content [data-setting="platform.invites"] .stat-value')
+  const invitesText = await invitesForB.waitFor({ timeout: 5000 }).then(() => invitesForB.innerText(), () => null)
+  const ownerOnly = await Promise.all([
+    b.page.locator('.settings-content [data-setting="platform.signup"]').count(),
+    b.page.locator('.settings-content [data-setting="platform.accounts"]').count(),
+  ])
+  await shot(b, '6c-plataforma-melhor-amigo')
+  await b.page.keyboard.press('Escape')
+  check(
+    invitesText !== null && Number(invitesText) >= 1 && ownerOnly.join(',') === '0,0',
+    'o melhor amigo do dono vê os números da Plataforma (com os convites ativos), sem cadastro nem contas',
+    `${invitesText}/${ownerOnly.join(',')}`,
+  )
 
   // Parar de compartilhar some com o player de B.
   await livePanel()

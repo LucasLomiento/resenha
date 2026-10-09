@@ -1,6 +1,8 @@
-## 1.8.0: sala pelo Cloudflare
+## 1.8.1: o selo do melhor amigo
 
-- **Sala pelo Cloudflare:** o dono do Resenha pode marcar uma sala de voz pra passar pelo Cloudflare em vez de ir direto entre os PCs. É só clicar com o botão direito na sala e escolher "Passar pelo Cloudflare". Numa sala assim, voz, câmera e tela vão pelos servidores do Cloudflare. A conexão funciona em qualquer rede, e o IP de ninguém aparece pros outros. Uma nuvem ao lado do nome mostra quais salas estão assim. Dá pra ligar e desligar no meio da call sem ninguém cair. Usa a mesma cota grátis do mês. Se ela acabar, a sala volta a ir direto sozinha e avisa.
+- **Selo do Pioneiro com texto novo:** passando o mouse no selo aparece "Melhor amigo do dono do Resenha, o cara mais pika que já conheci. Às vezes puto demais, às vezes puta demais." Em Configurações → Plataforma ele aparece como "Melhor amigo".
+- **Ícone novo no selo:** no lugar da bandeira, um coração branco com chifrinhos vermelhos de diabo, no mesmo medalhão azul de borda prateada.
+- **O melhor amigo vê a Plataforma:** em Configurações → Plataforma ele vê os números do Resenha inteiro (contas, servidores, convites ativos, espaço usado e mídia pelo Cloudflare no mês), só pra ler. Cadastro, lista de contas e suspensões continuam só com o dono. O painel agora mostra também quantos convites ainda valem.
 
 ## Como atualizar
 
