@@ -19,6 +19,7 @@ import { appIcon, hasTray, registerShortcuts, setAutostart, setTray, showCallSta
 import { isLocale, localeFrom, mainLocale, setMainLocale, tm, type Locale } from './i18n'
 import { clearHyprShortcuts } from './hyprland'
 import { inkEvent, inkMonitors, inkStart, inkStop, onInkClosed } from './ink'
+import { clearPortalShortcuts } from './portal-shortcuts'
 import { isHyprland, loadPrefs, savePrefs } from './prefs'
 import {
   listPlayingApps,
@@ -55,8 +56,10 @@ app.commandLine.appendSwitch(
     'WebRtcHideLocalIpsWithMdns',
   ].join(','),
 )
-// No Wayland os atalhos globais passam pelo portal do desktop (KDE, GNOME, Hyprland).
-if (isLinux) app.commandLine.appendSwitch('enable-features', 'WebRTCPipeWireCapturer,GlobalShortcutsPortal')
+// Captura de tela pelo PipeWire. Os atalhos globais no Wayland não vão pelo portal do Chromium
+// (o GlobalShortcutsPortal pula o bind e no KDE 6.7.4+ o atalho fica inativo): o app fala com o
+// portal sozinho (portal-shortcuts.ts) ou, no Hyprland, cria os binds (hyprland.ts).
+if (isLinux) app.commandLine.appendSwitch('enable-features', 'WebRTCPipeWireCapturer')
 if (isWindows) app.setAppUserModelId('com.lucasreis.resenha')
 // Login salvo criptografado pelo chaveiro do sistema. KDE e GNOME o Chromium acha
 // sozinho; nos outros (Hyprland, Sway...) ele cairia em texto puro, então aponta
@@ -461,6 +464,7 @@ app.on('before-quit', () => {
 
 app.on('will-quit', () => {
   clearHyprShortcuts()
+  clearPortalShortcuts()
   stopScreenAudio()
   inkStop()
 })

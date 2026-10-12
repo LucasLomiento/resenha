@@ -1,8 +1,6 @@
-## 1.10.0: atalhos com o app em segundo plano e a dock mais esperta
+## 1.10.1: atalhos com o app em segundo plano no KDE
 
-- **Atalhos funcionando fora do app no Hyprland:** mutar, ensurdecer, compartilhar a tela, sair da call e mostrar a janela agora funcionam com outra janela em foco. O Resenha cria os atalhos no Hyprland sozinho enquanto está aberto (eles aparecem na lista de atalhos do sistema). Se a tecla já tiver outro uso na sua config, ele não mexe e avisa em Configurações → Atalhos.
-- **Sua foto fica verde quando você fala**, também na dock, embaixo, inclusive com moldura (antes a moldura cobria o anel).
-- **Setinha no microfone e no fone da dock:** escolha o microfone e a saída de áudio sem abrir as configurações, e o perfil do microfone: **Isolar voz** (tira ruído e eco) ou **Estúdio** (som puro, sem processamento nenhum, pra quem usa fone). O botão direito no microfone ou no fone abre o mesmo menu.
+- **Atalhos fora do app no KDE Plasma (Wayland):** desde o KDE 6.7.4, mutar, ensurdecer e os outros atalhos só funcionavam na primeira vez que o Resenha abria. Agora o app registra os atalhos no sistema toda vez que abre, e eles voltam a funcionar com outra janela em foco. Se você trocar a tecla de um atalho, o KDE pode pedir pra confirmar uma vez.
 
 ## Como atualizar
 

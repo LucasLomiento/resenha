@@ -11,6 +11,7 @@ import { connect, type Socket } from 'node:net'
 import { join } from 'node:path'
 import type { DesktopPrefs, ShortcutAction } from '../preload/api'
 import { onLocaleChange, tm } from './i18n'
+import { keyCombo, type Modifier } from './keysym'
 
 const PREFIX = 'resenha:'
 /** Descrição dos binds do app: é por ela que ele reconhece os seus (o resto é da config da pessoa). */
@@ -18,51 +19,8 @@ const DESCRIPTION = 'Resenha: '
 
 const ACTIONS: ShortcutAction[] = ['toggle-mute', 'toggle-deafen', 'toggle-share', 'leave-call', 'show-window']
 
-const MODS: Record<string, { name: string; bit: number }> = {
-  Shift: { name: 'SHIFT', bit: 1 },
-  CommandOrControl: { name: 'CTRL', bit: 4 },
-  Control: { name: 'CTRL', bit: 4 },
-  Ctrl: { name: 'CTRL', bit: 4 },
-  Alt: { name: 'ALT', bit: 8 },
-  Super: { name: 'SUPER', bit: 64 },
-  Meta: { name: 'SUPER', bit: 64 },
-}
-
-/** Tecla do accelerator do Electron -> nome do keysym do xkb (o que o Hyprland entende). */
-const KEYS: Record<string, string> = {
-  Space: 'space',
-  Tab: 'Tab',
-  Backspace: 'BackSpace',
-  Delete: 'Delete',
-  Insert: 'Insert',
-  Home: 'Home',
-  End: 'End',
-  PageUp: 'Prior',
-  PageDown: 'Next',
-  Up: 'Up',
-  Down: 'Down',
-  Left: 'Left',
-  Right: 'Right',
-  '`': 'grave',
-  '-': 'minus',
-  '=': 'equal',
-  '[': 'bracketleft',
-  ']': 'bracketright',
-  '\\': 'backslash',
-  ';': 'semicolon',
-  "'": 'apostrophe',
-  ',': 'comma',
-  '.': 'period',
-  '/': 'slash',
-  Pause: 'Pause',
-  Scrolllock: 'Scroll_Lock',
-  PrintScreen: 'Print',
-  numadd: 'KP_Add',
-  numsub: 'KP_Subtract',
-  nummult: 'KP_Multiply',
-  numdiv: 'KP_Divide',
-  numdec: 'KP_Decimal',
-}
+/** Bit de cada modificador no `modmask` que o `hyprctl binds -j` mostra. */
+const BITS: Record<Modifier, number> = { SHIFT: 1, CTRL: 4, ALT: 8, SUPER: 64 }
 
 export interface HyprCombo {
   /** Como vai no `hl.bind`: "CTRL + SHIFT + M". */
@@ -73,22 +31,10 @@ export interface HyprCombo {
 
 /** "CommandOrControl+Shift+M" -> { keys: "CTRL + SHIFT + M", modmask: 5, key: "M" }; null se não der. */
 export function hyprCombo(accelerator: string): HyprCombo | null {
-  const parts = accelerator.split('+')
-  // "+" sozinho como tecla não existe no app (vira "numadd" ou "=" com Shift).
-  const last = parts.pop()
-  if (!last) return null
-  let modmask = 0
-  const mods: string[] = []
-  for (const part of parts) {
-    const mod = MODS[part]
-    if (!mod) return null
-    if (modmask & mod.bit) continue
-    modmask |= mod.bit
-    mods.push(mod.name)
-  }
-  const key = /^[A-Z0-9]$/.test(last) || /^F\d{1,2}$/.test(last) ? last : /^num\d$/.test(last) ? `KP_${last.slice(3)}` : KEYS[last]
-  if (!key) return null
-  return { keys: [...mods, key].join(' + '), modmask, key }
+  const combo = keyCombo(accelerator)
+  if (!combo) return null
+  const modmask = combo.mods.reduce((mask, mod) => mask | BITS[mod], 0)
+  return { keys: [...combo.mods, combo.key].join(' + '), modmask, key: combo.key }
 }
 
 interface HyprBind {

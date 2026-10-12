@@ -119,7 +119,7 @@ VITE_DEFAULT_SERVER=... npm run dist:win:zip                                    
 
 ## Atalhos globais e linha de comando
 
-Os atalhos de Configurações → Atalhos são registrados no sistema: direto no Windows e no X11, e pelo portal `GlobalShortcuts` no Wayland (KDE, GNOME).
+Os atalhos de Configurações → Atalhos são registrados no sistema: direto no Windows e no X11, e pelo portal `GlobalShortcuts` no Wayland (KDE, GNOME). No Wayland o app fala com o portal sozinho pelo D-Bus (`app/src/main/portal-shortcuts.ts`, com o `dbus-next`), sem o portal do Chromium: o do Chromium pula o `BindShortcuts` quando o `ListShortcuts` já devolve os atalhos, e desde o xdg-desktop-portal-kde 6.7.4 o atalho só fica ativo com `BindShortcuts` na sessão atual (no KDE funcionava só na primeira vez). Aqui o bind é feito toda vez que o app abre, como o KeePassXC faz. O id de cada atalho leva a tecla (`toggle-mute@CTRL+SHIFT+M`): trocar a tecla vira um atalho novo, que o KDE pede pra confirmar uma vez. O portal pede o nome do app (`Registry.Register`), que precisa de um `.desktop` instalado com esse nome (`resenha.desktop`, que o pacote instala).
 
 No **Hyprland** o portal registra o atalho mas não liga tecla nenhuma, então o app cria os binds sozinho (`app/src/main/hyprland.ts`): ao abrir, faz `hl.bind(teclas, hl.dsp.event("resenha:<ação>"))` pelo `hyprctl eval` e escuta esses eventos no socket2 do Hyprland. Os binds têm a descrição "Resenha: …" (aparecem na lista de atalhos do Omarchy), voltam sozinhos quando a config recarrega e saem quando o app fecha. Tecla que a sua config já usa fica de fora, e a página de atalhos avisa.
 
