@@ -144,16 +144,20 @@
   // ---------- Pôr o meu Spotify na call ----------
 
   let status = $state<SpotifyStatus | null>(null)
-  /** Client ID do app do Spotify, que o servidor informa (null: o servidor não tem). */
-  let clientId = $state<string | null | undefined>(undefined)
-  let busy = $state<'install' | 'connect' | null>(null)
+  let busy = $state<'install' | 'connect' | 'own' | null>(null)
   let error = $state<string | null>(null)
   const linux = $derived(client.platform?.platform === 'linux')
-  const account = $derived(status?.account && status.account.clientId === clientId ? status.account : null)
+  const account = $derived(status?.account ?? null)
+  /** "Melhorar a conexão": o app próprio da pessoa no Spotify (aberto quando já usa um). */
+  let improve = $state(false)
+  let ownClientId = $state('')
 
   async function loadSetup() {
     status = await window.resenha.spotify.status()
-    if (clientId === undefined) clientId = (await client.api?.status().catch(() => null))?.spotifyClientId ?? null
+    if (status.account?.own) {
+      improve = true
+      ownClientId ||= status.account.own
+    }
   }
   $effect(() => {
     if (!hostConnId) void loadSetup()
@@ -168,14 +172,20 @@
     await loadSetup()
   }
 
-  async function connect() {
-    if (!clientId) return
-    busy = 'connect'
+  /** Conecta a conta: com o app próprio (o client ID colado) ou, sem ele, do jeito padrão. */
+  async function connect(own: string | null) {
+    busy = own ? 'own' : 'connect'
     error = null
-    const result = await window.resenha.spotify.connect(clientId)
+    const result = await window.resenha.spotify.connect(own)
     busy = null
     if (!result.ok) error = t.errors[result.error]
     await loadSetup()
+  }
+
+  async function copyRedirect() {
+    if (!status) return
+    await navigator.clipboard.writeText(status.ownRedirect).catch(() => {})
+    client.toast(t.setup.copied, 'info')
   }
 
   async function disconnect() {
@@ -350,9 +360,7 @@
         <p>{t.setup.intro}</p>
       </div>
 
-      {#if clientId === null}
-        <p class="hint">{t.setup.noClientId}</p>
-      {:else if status && clientId}
+      {#if status}
         <div class="step">
           <div class="text">
             <strong>{t.setup.librespot}</strong>
@@ -373,9 +381,45 @@
           {#if account}
             <Button size="sm" variant="ghost" onclick={disconnect}>{t.setup.disconnect}</Button>
           {:else}
-            <Button size="sm" icon="log-in" loading={busy === 'connect'} onclick={connect}>{t.setup.connect}</Button>
+            <Button size="sm" icon="log-in" loading={busy === 'connect'} disabled={!!busy} onclick={() => connect(null)}>{t.setup.connect}</Button>
           {/if}
         </div>
+
+        <!-- App próprio no Spotify: opcional. Os pedidos do bot passam a usar uma cota só da pessoa. -->
+        <button class="improve-toggle" aria-expanded={improve} onclick={() => (improve = !improve)}>
+          <Icon name="chevron-right" size={16} />
+          {t.setup.improve}
+          {#if account?.own}<span class="own-badge">{t.setup.ownOn}</span>{/if}
+        </button>
+        {#if improve}
+          <div class="improve">
+            <p>{t.setup.improveIntro}</p>
+            <ol>
+              <li>
+                {t.setup.improveStep1}
+                <a href="https://developer.spotify.com/dashboard" target="_blank" rel="noreferrer">{t.setup.improveOpen}</a>
+              </li>
+              <li>
+                {t.setup.improveStep2}
+                <span class="redirect">
+                  <code>{status.ownRedirect}</code>
+                  <IconButton icon="copy" size="sm" label={t.setup.copy} onclick={copyRedirect} />
+                </span>
+              </li>
+              <li>{t.setup.improveStep3}</li>
+            </ol>
+            <form class="own" onsubmit={(e) => (e.preventDefault(), void connect(ownClientId.trim()))}>
+              <TextField placeholder={t.setup.clientId} aria-label={t.setup.clientId} bind:value={ownClientId} mono spellcheck={false} />
+              <Button type="submit" size="sm" loading={busy === 'own'} disabled={!!busy || !ownClientId.trim()}>{t.setup.connectOwn}</Button>
+            </form>
+            {#if account?.own}
+              <div class="own-on">
+                <span>{t.setup.usingOwn}</span>
+                <Button size="sm" variant="ghost" disabled={!!busy} onclick={() => connect(null)}>{t.setup.backToDefault}</Button>
+              </div>
+            {/if}
+          </div>
+        {/if}
 
         {#if bot.status === 'starting'}
           <p class="hint starting">
@@ -393,7 +437,7 @@
   {#snippet footer()}
     {#if share && mine}
       <Button variant="danger-soft" icon="log-out" onclick={() => call.stopMusic()}>{t.player.stop}</Button>
-    {:else if !share && call.channelId && linux && clientId}
+    {:else if !share && call.channelId && linux}
       <Button
         variant="primary"
         icon="music"
@@ -732,6 +776,88 @@
   .step .text span {
     color: var(--fg-3);
     font-size: var(--text-sm);
+  }
+
+  .improve-toggle {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    padding: 12px 0 4px;
+    border-top: 1px solid var(--line);
+    color: var(--fg-2);
+    font-size: var(--text-sm);
+    font-weight: 500;
+  }
+
+  .improve-toggle :global(svg) {
+    transition: rotate var(--t) var(--ease);
+  }
+
+  .improve-toggle[aria-expanded='true'] :global(svg) {
+    rotate: 90deg;
+  }
+
+  .own-badge {
+    margin-left: 4px;
+    padding: 1px 8px;
+    border-radius: var(--r-full);
+    background: var(--spotify-soft);
+    color: var(--spotify);
+    font-size: var(--text-xs);
+  }
+
+  .improve {
+    padding: 6px 0 4px 22px;
+    color: var(--fg-2);
+    font-size: var(--text-sm);
+  }
+
+  .improve ol {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin: 10px 0 12px;
+    padding-left: 18px;
+  }
+
+  .improve a {
+    color: var(--accent-fg);
+  }
+
+  .redirect {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-left: 4px;
+  }
+
+  .redirect code {
+    padding: 2px 6px;
+    border-radius: var(--r-sm);
+    background: var(--bg-input);
+    color: var(--fg);
+    font-family: var(--mono);
+    font-size: var(--text-xs);
+  }
+
+  .own {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+
+  .own :global(.field) {
+    flex: 1;
+  }
+
+  .own-on {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-top: 10px;
+    color: var(--spotify);
   }
 
   .ok {

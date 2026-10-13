@@ -13,10 +13,15 @@
 // librespot fechar e reabrir o lado dele (faz isso ao pausar) não vira "fim".
 //
 // Os controles (tocar, pausar, pular, buscar, fila, playlists) vão pela Web API
-// do Spotify, com o app do Resenha (client ID que o servidor informa) e login
-// PKCE no navegador: só o refresh token fica guardado, criptografado como a
-// sessão. O librespot entra na conta com o token desse login; se o Spotify
-// recusar, ele faz o login dele no navegador uma vez e guarda a credencial.
+// do Spotify, com login PKCE no navegador: só o refresh token fica guardado,
+// criptografado como a sessão. Por padrão o login é o mesmo que o próprio
+// librespot faz, com o client ID do app de computador do Spotify (o
+// "keymaster"): ninguém precisa criar nada no site do Spotify. Quem quiser cria
+// o app dele em developer.spotify.com e cola o client ID no painel ("melhorar a
+// conexão"): os pedidos passam a contar numa cota só dele, em vez da dividida
+// com todo mundo que usa clientes alternativos do Spotify. O librespot entra na
+// conta com o token do login; se o Spotify recusar (acontece com app próprio),
+// ele faz o login dele no navegador uma vez e guarda a credencial.
 //
 // No e2e: RESENHA_LIBRESPOT (librespot de mentira), RESENHA_SPOTIFY_ACCOUNTS e
 // RESENHA_SPOTIFY_API (Spotify de mentira) e RESENHA_SPOTIFY_BROWSER=fetch (o
@@ -39,7 +44,19 @@ const API = process.env.RESENHA_SPOTIFY_API || 'https://api.spotify.com/v1'
 const fakeBrowser = process.env.RESENHA_SPOTIFY_BROWSER === 'fetch'
 /** Nome do aparelho do bot no Spotify Connect (aparece no celular de quem pôs o bot). */
 const DEVICE_NAME = 'Resenha'
-const SCOPES = [
+/** O app de computador do Spotify: o mesmo login que o librespot faz sozinho (e o token dele também serve pra Web API). */
+const BUILTIN_CLIENT_ID = '65b708073fc0480ea92a077233ca87bd'
+/** As permissões que o app de computador pede (as mesmas do librespot: algumas só existem pra ele). */
+const BUILTIN_SCOPES = [
+  'app-remote-control', 'playlist-modify', 'playlist-modify-private', 'playlist-modify-public', 'playlist-read',
+  'playlist-read-collaborative', 'playlist-read-private', 'streaming', 'ugc-image-upload', 'user-follow-modify',
+  'user-follow-read', 'user-library-modify', 'user-library-read', 'user-modify', 'user-modify-playback-state',
+  'user-modify-private', 'user-personalized', 'user-read-birthdate', 'user-read-currently-playing', 'user-read-email',
+  'user-read-play-history', 'user-read-playback-position', 'user-read-playback-state', 'user-read-private',
+  'user-read-recently-played', 'user-top-read',
+].join(' ')
+/** O que o bot usa, no app próprio de quem quiser criar um. */
+const OWN_SCOPES = [
   'streaming',
   'user-read-playback-state',
   'user-modify-playback-state',
@@ -47,6 +64,12 @@ const SCOPES = [
   'playlist-read-private',
   'playlist-read-collaborative',
 ].join(' ')
+/** O redirect que o app de computador aceita (o do librespot); se a porta estiver ocupada, outra qualquer. */
+const BUILTIN_PORT = 5588
+/** O que quem cria o próprio app cadastra lá (sem porta: o Spotify aceita a que estiver livre). */
+const OWN_REDIRECT = 'http://127.0.0.1/spotify'
+/** Client ID de app do Spotify: 32 letras e números. */
+const CLIENT_ID = /^[0-9a-fA-F]{32}$/
 /** Um quadro do PCM do librespot: 2 canais de 16 bits. */
 const FRAME = 4
 /** Mais que isso pedido de uma vez é engano: o librespot dispararia na frente do som (2 s). */
@@ -66,6 +89,8 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
 interface Account {
   clientId: string
+  /** App próprio da pessoa (criado em developer.spotify.com), em vez do padrão. */
+  own?: boolean
   /** Id e nome da pessoa no Spotify. */
   id: string
   name: string
@@ -169,8 +194,11 @@ async function followRedirects(url: string) {
   }
 }
 
-function authorize(clientId: string): Promise<TokenResponse> {
+/** Login no navegador. Sem `ownClientId`, com o app de computador do Spotify (o padrão). */
+function authorize(ownClientId: string | null): Promise<TokenResponse> {
   pendingLogin?.close()
+  const clientId = ownClientId ?? BUILTIN_CLIENT_ID
+  const path = ownClientId ? '/spotify' : '/login'
   const verifier = randomBytes(48).toString('base64url')
   const challenge = createHash('sha256').update(verifier).digest('base64url')
   const state = randomBytes(16).toString('base64url')
@@ -179,7 +207,7 @@ function authorize(clientId: string): Promise<TokenResponse> {
     let settled = false
     const server = createServer((req, res) => {
       const url = new URL(req.url ?? '/', 'http://127.0.0.1')
-      if (url.pathname !== '/spotify' || url.searchParams.get('state') !== state) {
+      if (url.pathname !== path || url.searchParams.get('state') !== state) {
         res.writeHead(404).end()
         return
       }
@@ -204,10 +232,8 @@ function authorize(clientId: string): Promise<TokenResponse> {
       if (err) reject(err)
     }
     server.on('close', () => finish(new SpotifyError('timeout')))
-    server.on('error', () => finish(new SpotifyError('failed')))
-    // O app do Spotify tem o redirect cadastrado sem porta (http://127.0.0.1/spotify): a porta vale qualquer uma.
-    server.listen(0, '127.0.0.1', () => {
-      redirect = `http://127.0.0.1:${(server.address() as AddressInfo).port}/spotify`
+    const opened = () => {
+      redirect = `http://127.0.0.1:${(server.address() as AddressInfo).port}${path}`
       const url = `${ACCOUNTS}/authorize?${new URLSearchParams({
         client_id: clientId,
         response_type: 'code',
@@ -215,18 +241,27 @@ function authorize(clientId: string): Promise<TokenResponse> {
         code_challenge_method: 'S256',
         code_challenge: challenge,
         state,
-        scope: SCOPES,
+        scope: ownClientId ? OWN_SCOPES : BUILTIN_SCOPES,
       })}`
       if (fakeBrowser) void followRedirects(url)
       else void shell.openExternal(url)
+    }
+    // Padrão: a porta do librespot (5588); ocupada, outra qualquer. App próprio: o redirect foi
+    // cadastrado sem porta, então qualquer uma serve.
+    server.once('error', () => {
+      server.on('error', () => finish(new SpotifyError('failed')))
+      server.listen(0, '127.0.0.1', opened)
     })
+    server.listen(ownClientId ? 0 : BUILTIN_PORT, '127.0.0.1', opened)
   })
 }
 
-export async function spotifyConnect(clientId: unknown): Promise<{ ok: true; name: string } | { ok: false; error: MusicError }> {
-  if (typeof clientId !== 'string' || !/^[0-9a-zA-Z]{16,64}$/.test(clientId)) return { ok: false, error: 'failed' }
+/** Conecta a conta. `ownClientId`: o client ID do app próprio da pessoa; null, o padrão (sem criar nada). */
+export async function spotifyConnect(ownClientId: unknown): Promise<{ ok: true; name: string } | { ok: false; error: MusicError }> {
+  if (ownClientId !== null && (typeof ownClientId !== 'string' || !CLIENT_ID.test(ownClientId.trim()))) return { ok: false, error: 'client-id' }
+  const own = ownClientId === null ? null : ownClientId.trim().toLowerCase()
   try {
-    const tokens = await authorize(clientId)
+    const tokens = await authorize(own)
     if (!tokens.refresh_token) throw new SpotifyError('auth')
     access = { token: tokens.access_token, until: Date.now() + (tokens.expires_in - 60) * 1000 }
     const me = (await api('GET', '/me')) as { id?: string; display_name?: string } | null
@@ -235,7 +270,7 @@ export async function spotifyConnect(clientId: unknown): Promise<{ ok: true; nam
     // Outra conta: a credencial que o librespot guardou é da anterior.
     if (before && before.id !== me.id) await spotifyStop().then(() => rmSync(cacheDir(), { recursive: true, force: true }))
     const name = me.display_name || me.id
-    saveAccount({ clientId, id: me.id, name, refresh: tokens.refresh_token })
+    saveAccount({ clientId: own ?? BUILTIN_CLIENT_ID, own: !!own, id: me.id, name, refresh: tokens.refresh_token })
     return { ok: true, name }
   } catch (err) {
     access = null
@@ -752,7 +787,8 @@ export function spotifyStatus(): SpotifyStatus {
   return {
     librespot: !!librespotPath(),
     installable: installable(),
-    account: saved ? { name: saved.name, clientId: saved.clientId } : null,
+    account: saved ? { name: saved.name, own: saved.own ? saved.clientId : null } : null,
+    ownRedirect: OWN_REDIRECT,
     running: live,
   }
 }

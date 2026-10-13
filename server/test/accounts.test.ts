@@ -6,7 +6,7 @@ const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0
 
 describe('cadastro e login', () => {
   it('a primeira conta é a dona da plataforma e as próximas precisam de convite', async () => {
-    expect((await api('/api/status')).body).toEqual({ needsInvite: false, signup: 'invite', turnstileSiteKey: null, spotifyClientId: null })
+    expect((await api('/api/status')).body).toEqual({ needsInvite: false, signup: 'invite', turnstileSiteKey: null })
     const owner = await signup('lucas')
     expect(owner.user.staff).toBe(true)
     expect(owner.user.username).toBe('lucas')

@@ -495,8 +495,6 @@ export interface StatusResponse {
   signup: 'invite' | 'open'
   /** Chave pública do Turnstile, quando o cadastro aberto usa anti-robô. */
   turnstileSiteKey: string | null
-  /** Client ID do app do Spotify (bot de música na call). null: o bot fica desligado. */
-  spotifyClientId?: string | null
 }
 
 export interface SessionInfo {

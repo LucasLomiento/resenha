@@ -30,10 +30,7 @@
   "ai": { "binding": "AI" },
   "vars": {
     // Chave pública do Turnstile (anti-robô do cadastro aberto). Vazia = cadastro aberto desligado.
-    "TURNSTILE_SITE_KEY": "0x4AAAAAAFVsDyL4yB1S7LxH",
-    // Client ID do app do Spotify (developer.spotify.com), pro bot de música na call. Vazio = bot desligado.
-    // É público (o app entra pelo PKCE, sem segredo); o redirect cadastrado lá é http://127.0.0.1/spotify.
-    "SPOTIFY_CLIENT_ID": ""
+    "TURNSTILE_SITE_KEY": "0x4AAAAAAFVsDyL4yB1S7LxH"
   },
   "observability": { "enabled": true }
   // Secrets (wrangler secret put):

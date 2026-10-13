@@ -44,7 +44,7 @@ const URI = /^spotify:(track|album|playlist|artist|episode|show):[A-Za-z0-9]{1,4
 /** Capas só dos servidores de imagem do Spotify (a CSP também só deixa esses). */
 const COVER = /^https:\/\/([a-z0-9-]+\.)*(scdn\.co|spotifycdn\.com)\/[^\s"'<>]{1,400}$/
 const MUSIC_ERRORS: MusicError[] = [
-  'not-connected', 'premium', 'allowlist', 'muted', 'no-device', 'rate', 'network', 'auth', 'missing', 'login', 'off', 'timeout', 'failed',
+  'not-connected', 'premium', 'allowlist', 'muted', 'client-id', 'no-device', 'rate', 'network', 'auth', 'missing', 'login', 'off', 'timeout', 'failed',
 ]
 
 type Raw = Record<string, unknown>

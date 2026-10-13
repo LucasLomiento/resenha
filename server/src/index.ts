@@ -356,7 +356,6 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
       needsInvite: status.users > 0 && !open,
       signup: open ? 'open' : 'invite',
       turnstileSiteKey: open ? env.TURNSTILE_SITE_KEY : null,
-      spotifyClientId: env.SPOTIFY_CLIENT_ID || null,
     } satisfies StatusResponse)
   }
 

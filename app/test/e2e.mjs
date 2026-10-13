@@ -382,16 +382,15 @@ function channel(page, name) {
 const PORT = Number(process.env.RESENHA_E2E_PORT ?? 8797)
 const SERVER = `http://127.0.0.1:${PORT}`
 const PASSWORD = 'senha-de-teste-1'
-const SPOTIFY_CLIENT_ID = '0123456789abcdef0123456789abcdef'
+/** App próprio no Spotify ("Melhorar a conexão"), no Spotify de mentira. */
+const OWN_SPOTIFY_APP = '0123456789abcdef0123456789abcdef'
 
 async function startServer() {
   const state = mkdtempSync(join(tmpdir(), 'resenha-e2e-server-'))
   let proc = null
   let log = ''
   const up = async () => {
-    // Client ID do app do Spotify (o bot conversa com o Spotify de mentira, test/fake-spotify.mjs).
-    const vars = ['--var', `SPOTIFY_CLIENT_ID:${SPOTIFY_CLIENT_ID}`]
-    proc = spawn('npx', ['wrangler', 'dev', '--local', '--port', String(PORT), '--ip', '127.0.0.1', '--persist-to', state, ...vars], {
+    proc = spawn('npx', ['wrangler', 'dev', '--local', '--port', String(PORT), '--ip', '127.0.0.1', '--persist-to', state], {
       cwd: new URL('../../server', import.meta.url).pathname,
       stdio: ['ignore', 'pipe', 'pipe'],
       detached: true,
@@ -1473,9 +1472,29 @@ try {
   await a.page.locator('.dock').getByRole('button', { name: 'Spotify', exact: true }).click({ force: true })
   const panelA = a.page.locator('.music-panel')
   await panelA.getByText('Instalado').waitFor({ timeout: 8000 })
+  // Conectar não pede nada: é o login do app de computador do Spotify (o mesmo do librespot).
   await panelA.getByRole('button', { name: 'Conectar', exact: true }).click({ force: true })
   await panelA.getByText('Conectado como Lucas no Spotify').waitFor({ timeout: 10_000 })
+  const builtin = spotify.state.logins.at(-1)
+  // "Melhorar a conexão": a pessoa cola o client ID do app dela (o que não é client ID é recusado).
+  await panelA.getByRole('button', { name: /Melhorar a conexão/ }).click({ force: true })
+  await panelA.getByPlaceholder('Client ID').fill('nao-e-um-client-id')
+  await panelA.getByRole('button', { name: 'Conectar com o meu app', exact: true }).click({ force: true })
+  const refused = await panelA.getByText('Esse não parece um Client ID', { exact: false }).waitFor({ timeout: 5000 }).then(() => true, () => false)
+  await panelA.getByPlaceholder('Client ID').fill(OWN_SPOTIFY_APP)
+  await panelA.getByRole('button', { name: 'Conectar com o meu app', exact: true }).click({ force: true })
+  await panelA.getByText('Usando o seu app do Spotify.').waitFor({ timeout: 10_000 })
+  const own = spotify.state.logins.at(-1)
   await shot(a, '7a-spotify-conectar')
+  check(
+    builtin?.clientId === '65b708073fc0480ea92a077233ca87bd' &&
+      /^http:\/\/127\.0\.0\.1:\d+\/login$/.test(builtin.redirect) &&
+      refused &&
+      own?.clientId === OWN_SPOTIFY_APP &&
+      /^http:\/\/127\.0\.0\.1:\d+\/spotify$/.test(own.redirect),
+    'Spotify: conectar não pede configuração nenhuma, e o app próprio ("melhorar a conexão") entra pelo client ID colado',
+    `${builtin?.clientId} ${builtin?.redirect} · ${own?.clientId} ${own?.redirect}`,
+  )
   await panelA.getByRole('button', { name: 'Pôr o Spotify na call', exact: true }).click({ force: true })
   await panelA.getByText('Nada tocando ainda', { exact: false }).waitFor({ timeout: 20_000 })
   const librespotArgs = spotify.state.started?.args ?? []

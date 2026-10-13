@@ -37,6 +37,8 @@ export async function startFakeSpotify() {
     repeat: 'off',
     /** Comandos do player que chegaram (método + caminho + corpo). */
     log: [],
+    /** Logins pedidos: com que app e pra onde o navegador volta. */
+    logins: [],
     /** O librespot de mentira: com que argumentos subiu, e quanto som escreveu x quanto tempo tocou. */
     started: null,
     written: null,
@@ -71,6 +73,7 @@ export async function startFakeSpotify() {
     switch (route) {
       // ---------- Login ----------
       case 'GET /authorize': {
+        state.logins.push({ clientId: url.searchParams.get('client_id'), redirect: url.searchParams.get('redirect_uri'), scope: url.searchParams.get('scope') })
         const redirect = new URL(url.searchParams.get('redirect_uri'))
         redirect.searchParams.set('code', 'codigo-de-teste')
         redirect.searchParams.set('state', url.searchParams.get('state'))
