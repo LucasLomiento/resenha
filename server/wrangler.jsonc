@@ -30,7 +30,7 @@
   "ai": { "binding": "AI" },
   "vars": {
     // Chave pública do Turnstile (anti-robô do cadastro aberto). Vazia = cadastro aberto desligado.
-    "TURNSTILE_SITE_KEY": ""
+    "TURNSTILE_SITE_KEY": "0x4AAAAAAFVsDyL4yB1S7LxH"
   },
   "observability": { "enabled": true }
   // Secrets (wrangler secret put):
