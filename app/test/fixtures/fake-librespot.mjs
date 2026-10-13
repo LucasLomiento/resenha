@@ -9,7 +9,7 @@
 // (o de verdade fecha a saída ao pausar). Escreve o mais rápido que o FIFO
 // deixa: quem segura o ritmo é o app (o teste confere quanto ele andou na frente).
 
-import { closeSync, existsSync, mkdirSync, openSync, writeFileSync, writeSync } from 'node:fs'
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync, writeFileSync, writeSync } from 'node:fs'
 import { join } from 'node:path'
 
 const args = process.argv.slice(2)
@@ -27,12 +27,20 @@ if (!token && !existsSync(credentials)) {
   console.error('[ERROR librespot] Credentials are required if discovery and oauth login are disabled.')
   process.exit(1)
 }
-mkdirSync(cache, { recursive: true })
-writeFileSync(credentials, JSON.stringify({ username: 'teste', auth_type: 1 }))
-console.error("[2026-10-13T00:00:00Z INFO  librespot_core::session] Authenticated as 'teste' !")
-
 const post = (path, body) => fetch(`${base}/__fake/${path}`, { method: 'POST', body: JSON.stringify(body) }).catch(() => {})
 await post('started', { args, token: process.env.LIBRESPOT_ACCESS_TOKEN ?? null })
+
+// Como o Spotify de verdade desde 08/2026: entra na conta, mas com credencial antiga (ou token do
+// app de computador pedido do jeito antigo) não deixa abrir o Spotify Connect, e o librespot sai.
+const old = token ? token !== 'token-do-player' : JSON.parse(readFileSync(credentials, 'utf8')).old === true
+console.error("[2026-10-13T00:00:00Z INFO  librespot_core::session] Authenticated as 'teste' !")
+if (old) {
+  console.error('[2026-10-13T00:00:00Z ERROR librespot] could not initialize spirc: Invalid state { Login request was denied: INVALID_CREDENTIALS }')
+  process.exit(1)
+}
+mkdirSync(cache, { recursive: true })
+writeFileSync(credentials, JSON.stringify({ username: 'teste', auth_type: 1 }))
+console.error('[2026-10-13T00:00:00Z INFO  librespot_connect::spirc] active device is <> with session <teste>')
 
 const RATE = 44_100
 const FRAMES = 2205

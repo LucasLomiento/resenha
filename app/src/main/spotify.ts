@@ -19,10 +19,14 @@
 //   por ele, com uma cota só dela. Com o app de computador do Spotify a Web API
 //   vive em 429 desde dezembro de 2025: a cota dele é dividida por todo mundo
 //   que usa librespot no mundo.
-// - O app de computador do Spotify (o "keymaster", o mesmo login que o
-//   librespot faz sozinho): só pro librespot entrar na conta. O Spotify recusa
-//   pro librespot o token de outros apps. Se esse login faltar, o librespot faz
-//   o dele no navegador na primeira vez que o bot liga.
+// - O app de computador do Spotify (o "keymaster"): só pro librespot entrar na
+//   conta. Desde 10/08/2026 o Spotify só aceita pro Spotify Connect o token
+//   desse app pedido do jeito do app de verdade: retorno em
+//   http://127.0.0.1:8898/login e só a permissão `streaming` (o exemplo
+//   get_creds.rs do librespot, PR #1744). Do jeito antigo (porta 5588 e todas
+//   as permissões, que o librespot 0.8.0 do Arch ainda usa no `--enable-oauth`),
+//   ele entra mas cai logo em seguida com "could not initialize spirc: Login
+//   request was denied: INVALID_CREDENTIALS".
 //
 // No e2e: RESENHA_LIBRESPOT (librespot de mentira), RESENHA_SPOTIFY_ACCOUNTS e
 // RESENHA_SPOTIFY_API (Spotify de mentira) e RESENHA_SPOTIFY_BROWSER=fetch (o
@@ -47,15 +51,8 @@ const fakeBrowser = process.env.RESENHA_SPOTIFY_BROWSER === 'fetch'
 const DEVICE_NAME = 'Resenha'
 /** O app de computador do Spotify: o login que o librespot aceita (a Web API dele não serve: vive em 429). */
 const BUILTIN_CLIENT_ID = '65b708073fc0480ea92a077233ca87bd'
-/** As permissões que o app de computador pede (as mesmas do librespot: algumas só existem pra ele). */
-const BUILTIN_SCOPES = [
-  'app-remote-control', 'playlist-modify', 'playlist-modify-private', 'playlist-modify-public', 'playlist-read',
-  'playlist-read-collaborative', 'playlist-read-private', 'streaming', 'ugc-image-upload', 'user-follow-modify',
-  'user-follow-read', 'user-library-modify', 'user-library-read', 'user-modify', 'user-modify-playback-state',
-  'user-modify-private', 'user-personalized', 'user-read-birthdate', 'user-read-currently-playing', 'user-read-email',
-  'user-read-play-history', 'user-read-playback-position', 'user-read-playback-state', 'user-read-private',
-  'user-read-recently-played', 'user-top-read',
-].join(' ')
+/** Só tocar: com mais permissões, o Spotify não deixa o librespot abrir o Spotify Connect (desde 08/2026). */
+const BUILTIN_SCOPES = 'streaming'
 /** O que o bot usa da Web API, no app da pessoa. */
 const OWN_SCOPES = [
   'streaming',
@@ -65,8 +62,8 @@ const OWN_SCOPES = [
   'playlist-read-private',
   'playlist-read-collaborative',
 ].join(' ')
-/** O redirect que o app de computador aceita (o do librespot); se a porta estiver ocupada, outra qualquer. */
-const BUILTIN_PORT = 5588
+/** O retorno do app de computador de verdade: com outro (o 5588 do librespot 0.8.0), o token não serve pro Spotify Connect. */
+const BUILTIN_PORT = 8898
 /**
  * O que a pessoa cadastra no app dela. Com porta fixa: a doc do Spotify diz que dá pra
  * cadastrar sem porta, mas o painel deles recusa ("not secure").
@@ -99,8 +96,8 @@ interface Account {
   /** O app da pessoa no Spotify: a Web API vai por ele. */
   clientId: string
   refresh: string
-  /** Refresh token do login do app de computador do Spotify: só pro librespot entrar (null: ele faz o login dele). */
-  player: string | null
+  /** Refresh token do login do app de computador do Spotify, só pro librespot entrar (null: falta fazer). */
+  desktop: string | null
 }
 
 const dir = () => join(app.getPath('userData'), 'spotify')
@@ -118,9 +115,15 @@ function loadAccount(): Account | null {
   try {
     const saved = JSON.parse(readFileSync(accountFile(), 'utf8')) as { encrypted: boolean; data: string }
     const raw = Buffer.from(saved.data, 'base64')
-    const parsed = JSON.parse(saved.encrypted ? safeStorage.decryptString(raw) : raw.toString('utf8')) as Account & { own?: boolean }
+    const parsed = JSON.parse(saved.encrypted ? safeStorage.decryptString(raw) : raw.toString('utf8')) as Record<string, unknown>
     // A 1.11.1 guardava o login do app de computador como se fosse da Web API: esse não serve mais.
-    if (parsed.clientId !== BUILTIN_CLIENT_ID && 'player' in parsed) account = parsed
+    if (parsed.clientId !== BUILTIN_CLIENT_ID && ('desktop' in parsed || 'player' in parsed)) {
+      // A 1.11.2 fazia o login do app de computador do jeito antigo: o token e a credencial
+      // que o librespot guardou com ele não abrem o Spotify Connect. Refaz na próxima vez.
+      if (!('desktop' in parsed)) rmSync(join(cacheDir(), 'credentials.json'), { force: true })
+      const { player: _, ...rest } = parsed
+      account = { ...(rest as unknown as Account), desktop: typeof parsed.desktop === 'string' ? parsed.desktop : null }
+    }
   } catch {
     // sem conta (ou o chaveiro mudou): conecta de novo
   }
@@ -184,18 +187,27 @@ async function refresh(): Promise<string> {
   }
 }
 
-/** Token do app de computador, pro librespot entrar na conta (null: sem esse login, ele faz o dele). */
-async function playerToken(): Promise<string | null> {
+/** Token do app de computador, pro librespot entrar na conta (null: falta o login dele, ou não vale mais). */
+async function desktopToken(): Promise<string | null> {
   const saved = loadAccount()
-  if (!saved?.player) return null
+  if (!saved?.desktop) return null
   try {
-    const data = await tokenRequest({ grant_type: 'refresh_token', refresh_token: saved.player, client_id: BUILTIN_CLIENT_ID })
-    if (data.refresh_token && data.refresh_token !== saved.player) saveAccount({ ...saved, player: data.refresh_token })
+    const data = await tokenRequest({ grant_type: 'refresh_token', refresh_token: saved.desktop, client_id: BUILTIN_CLIENT_ID })
+    if (data.refresh_token && data.refresh_token !== saved.desktop) saveAccount({ ...saved, desktop: data.refresh_token })
     return data.access_token
   } catch (err) {
-    if (codeOf(err) === 'auth') saveAccount({ ...saved, player: null })
+    if (codeOf(err) === 'auth') saveAccount({ ...saved, desktop: null })
     return null
   }
+}
+
+/** Login do app de computador no navegador, na hora de ligar o bot (faltava, ou o Spotify recusou o que tinha). */
+async function desktopLogin(): Promise<string> {
+  if (target && !target.isDestroyed()) target.send('spotify:browser', null)
+  const tokens = await authorize(null)
+  const saved = loadAccount()
+  if (saved) saveAccount({ ...saved, desktop: tokens.refresh_token ?? null })
+  return tokens.access_token
 }
 
 // ---------- Login (PKCE, com o navegador voltando pro 127.0.0.1) ----------
@@ -269,13 +281,9 @@ function authorize(ownClientId: string | null): Promise<TokenResponse> {
       if (fakeBrowser) void followRedirects(url)
       else void shell.openExternal(url)
     }
-    // App de computador: a porta do librespot (5588), ou outra se estiver ocupada. App da pessoa:
-    // a porta que ela cadastrou (ocupada, não tem jeito: o Spotify só volta pra ela).
-    server.once('error', () => {
-      server.on('error', () => finish(new SpotifyError('port')))
-      if (ownClientId) finish(new SpotifyError('port'))
-      else server.listen(0, '127.0.0.1', opened)
-    })
+    // As duas portas são fixas (a cadastrada no app da pessoa e a do app de computador):
+    // ocupada, não tem jeito, o Spotify só volta pra ela.
+    server.on('error', () => finish(new SpotifyError('port')))
     server.listen(ownClientId ? OWN_PORT : BUILTIN_PORT, '127.0.0.1', opened)
   })
 }
@@ -298,10 +306,10 @@ export async function spotifyConnect(clientId: unknown): Promise<{ ok: true; nam
     const sameAccount = before?.id === me.id
     if (before && !sameAccount) await spotifyStop().then(() => rmSync(cacheDir(), { recursive: true, force: true }))
     const name = me.display_name || me.id
-    // O login do player só falta na primeira vez (ou se a conta mudou).
-    let player = sameAccount ? (before?.player ?? null) : null
-    if (!player && !existsSync(join(cacheDir(), 'credentials.json'))) player = (await authorize(null)).refresh_token ?? null
-    saveAccount({ id: me.id, name, clientId: own, refresh: tokens.refresh_token, player })
+    // O login do app de computador (pro librespot) só falta na primeira vez (ou se a conta mudou).
+    let desktop = sameAccount ? (before?.desktop ?? null) : null
+    if (!desktop) desktop = (await authorize(null)).refresh_token ?? null
+    saveAccount({ id: me.id, name, clientId: own, refresh: tokens.refresh_token, desktop })
     return { ok: true, name }
   } catch (err) {
     access = null
@@ -504,8 +512,6 @@ export async function spotifyRequest(op: unknown): Promise<MusicReply> {
 let child: ChildProcess | null = null
 /** O librespot que entrou na conta e está tocando agora. */
 let running: ChildProcess | null = null
-/** O librespot fazendo o login dele no navegador (só na primeira vez, se o Spotify recusar o token). */
-let loginProc: ChildProcess | null = null
 let deviceId: string | null = null
 let target: WebContents | null = null
 /** Bytes de som que o renderer pediu e ainda não foram. */
@@ -586,9 +592,16 @@ function args(extra: string[]): string[] {
 const FREE_ACCOUNT = /does not support .*accounts|premium/i
 
 /**
- * Sobe o librespot e espera ele entrar na conta. `true`: entrou (o som já
- * vem pelo FIFO); `false`: saiu sem entrar (credencial que não vale).
- * `token`: entra com ele (vai pelo ambiente, que só a própria pessoa lê; a linha de comando todo mundo vê).
+ * Depois de entrar, o librespot abre o Spotify Connect e avisa ("librespot_connect::spirc] active
+ * device is ..."); se o Spotify recusar, é logo em seguida. Sem aviso nenhum, vale depois de 3 s.
+ */
+const CONNECT_GRACE = 3000
+
+/**
+ * Sobe o librespot e espera ele entrar na conta e abrir o Spotify Connect.
+ * `true`: pronto (o som vem pelo FIFO); `false`: a credencial não vale (outra
+ * pode valer). `token`: entra com ele (vai pelo ambiente, que só a própria
+ * pessoa lê; a linha de comando todo mundo vê).
  */
 function launch(bin: string, token: string | null): Promise<boolean> {
   return new Promise((resolve, reject) => {
@@ -607,14 +620,16 @@ function launch(bin: string, token: string | null): Promise<boolean> {
     let log = ''
     let settled = false
     let failure: MusicError | null = null
+    let ready: ReturnType<typeof setTimeout> | null = null
     const settle = (ok: boolean, err?: SpotifyError) => {
       if (settled) return
       settled = true
       clearTimeout(timer)
+      if (ready) clearTimeout(ready)
       if (err) reject(err)
       else resolve(ok)
     }
-    // Não entrou nem disse por quê: desiste deste jeito (o próximo é outro).
+    // Não ficou pronto nem disse por quê: desiste deste jeito (o próximo é outro).
     const giveUp = () => {
       proc.kill('SIGKILL')
       settle(false)
@@ -627,7 +642,19 @@ function launch(bin: string, token: string | null): Promise<boolean> {
         failure = 'premium'
         proc.kill('SIGKILL')
         settle(false, new SpotifyError('premium'))
-      } else if (/Authenticated as/i.test(text)) settle(true)
+      } else if (/could not initialize spirc/i.test(text)) {
+        // Entrou, mas o Spotify não deixou abrir o Spotify Connect: credencial do jeito antigo
+        // (outra pode valer) ou o Spotify fora do ar pra clientes como o librespot (503).
+        const outage = /503|service unavailable/i.test(text)
+        failure = outage ? 'unavailable' : 'failed'
+        proc.kill('SIGKILL')
+        if (outage) settle(false, new SpotifyError('unavailable'))
+        else settle(false)
+      } else if (/librespot_connect::spirc/i.test(text)) {
+        settle(true)
+      } else if (/Authenticated as/i.test(text)) {
+        ready ??= setTimeout(() => settle(true), CONNECT_GRACE)
+      }
       // Credencial recusada: alguns librespot ficam tentando de novo em vez de sair.
       else if (!settled && /bad ?credentials|login failed|permission ?denied/i.test(text)) giveUp()
     })
@@ -635,7 +662,7 @@ function launch(bin: string, token: string | null): Promise<boolean> {
     proc.on('exit', (code, signal) => {
       if (child === proc) child = null
       if (!settled) {
-        console.warn(`spotify: librespot saiu antes de entrar (${code ?? signal})\n${log.slice(-1500)}`)
+        console.warn(`spotify: librespot saiu antes de ficar pronto (${code ?? signal})\n${log.slice(-1500)}`)
         return settle(false)
       }
       // Desligado de propósito (o `spotifyStop` já limpou tudo).
@@ -654,40 +681,6 @@ function launch(bin: string, token: string | null): Promise<boolean> {
         live = false
         target.send('spotify:stopped', why)
       }
-    })
-  })
-}
-
-/** O login do próprio librespot no navegador (quando o Spotify recusa o token do app do Resenha). Só na primeira vez. */
-function librespotLogin(bin: string): Promise<void> {
-  return new Promise((resolve, reject) => {
-    mkdirSync(cacheDir(), { recursive: true })
-    const devNull = process.platform === 'win32' ? 'NUL' : '/dev/null'
-    const proc = spawn(bin, [...args(['--enable-oauth']), '--device', devNull], { stdio: ['ignore', 'pipe', 'pipe'] })
-    loginProc = proc
-    const notify = (url: string | null) => target && !target.isDestroyed() && target.send('spotify:browser', url)
-    notify(null)
-    const timer = setTimeout(() => proc.kill('SIGKILL'), 5 * 60_000)
-    let done = false
-    proc.stderr!.setEncoding('utf8')
-    proc.stderr!.on('data', (text: string) => {
-      if (done || !/Authenticated as/i.test(text)) return
-      done = true
-      // Um respiro pra ele gravar a credencial antes de fechar (grava logo depois de avisar).
-      setTimeout(() => proc.kill('SIGTERM'), 1500)
-    })
-    // Ele abre o navegador sozinho e também escreve o endereço: vai pro painel, caso o navegador não abra.
-    proc.stdout!.setEncoding('utf8')
-    proc.stdout!.on('data', (text: string) => {
-      const url = text.match(/https:\/\/accounts\.spotify\.com\/\S+/)?.[0]
-      if (url) notify(url)
-    })
-    proc.on('error', () => reject(new SpotifyError('missing')))
-    proc.on('exit', () => {
-      clearTimeout(timer)
-      if (loginProc === proc) loginProc = null
-      if (done) resolve()
-      else reject(new SpotifyError('login'))
     })
   })
 }
@@ -725,18 +718,19 @@ async function start(gen: number): Promise<{ ok: true } | { ok: false; error: Mu
     let ok = existsSync(credentials) && (await launch(bin, null))
     stale()
     if (!ok) {
-      // Sem credencial guardada (ou ela não vale mais): entra com o login do app de computador do Spotify.
+      // Sem credencial guardada (ou o Spotify não aceita mais): entra com o login do app de computador.
       rmSync(credentials, { force: true })
-      const token = await playerToken()
+      const token = await desktopToken()
       stale()
       if (token) ok = await launch(bin, token)
       stale()
     }
     if (!ok) {
-      // Sem esse login (ou o Spotify recusou): login do próprio librespot no navegador, uma vez só.
-      await librespotLogin(bin)
+      // Faltava esse login (ou o que tinha não serve mais): pede de novo no navegador, uma vez só.
+      rmSync(credentials, { force: true })
+      const token = await desktopLogin()
       stale()
-      ok = await launch(bin, null)
+      ok = await launch(bin, token)
       stale()
     }
     if (!ok || !child) throw new SpotifyError(lastFailure ?? 'login')
@@ -766,8 +760,8 @@ export async function spotifyStop() {
   const proc = child
   const device = deviceId
   const fifo = pcm
-  loginProc?.kill('SIGKILL')
-  child = running = loginProc = null
+  pendingLogin?.close()
+  child = running = null
   deviceId = null
   pcm = null
   wanted = 0
@@ -783,8 +777,8 @@ export async function spotifyStop() {
 export function spotifyKill() {
   generation++
   live = false
-  for (const proc of [child, running, loginProc]) proc?.kill('SIGTERM')
-  child = running = loginProc = null
+  for (const proc of [child, running]) proc?.kill('SIGTERM')
+  child = running = null
   deviceId = null
   closePcm(pcm)
 }

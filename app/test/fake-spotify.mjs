@@ -42,8 +42,9 @@ export async function startFakeSpotify() {
     log: [],
     /** Logins pedidos: com que app e pra onde o navegador volta. */
     logins: [],
-    /** O librespot de mentira: com que argumentos subiu, e quanto som escreveu x quanto tempo tocou. */
+    /** O librespot de mentira: com que argumentos subiu (o último e todos), e quanto som escreveu x quanto tempo tocou. */
     started: null,
+    starts: [],
     written: null,
     tokens: 0,
   }
@@ -83,7 +84,10 @@ export async function startFakeSpotify() {
       case 'GET /authorize': {
         state.logins.push({ clientId: url.searchParams.get('client_id'), redirect: url.searchParams.get('redirect_uri'), scope: url.searchParams.get('scope') })
         const redirect = new URL(url.searchParams.get('redirect_uri'))
-        redirect.searchParams.set('code', 'codigo-de-teste')
+        // Como no Spotify de verdade (desde 08/2026): o token do app de computador só serve pro Spotify
+        // Connect se veio do jeito do app de verdade (retorno na porta 8898, só a permissão streaming).
+        const desktopLike = redirect.port === '8898' && url.searchParams.get('scope') === 'streaming'
+        redirect.searchParams.set('code', desktopLike ? 'codigo-de-teste' : 'codigo-antigo')
         redirect.searchParams.set('state', url.searchParams.get('state'))
         res.writeHead(302, { Location: redirect.toString() })
         return res.end()
@@ -96,7 +100,8 @@ export async function startFakeSpotify() {
         const ok = form.get('grant_type') === 'refresh_token' ? form.get('refresh_token') === refresh : !!form.get('code_verifier')
         if (!ok) return json(400, { error: 'invalid_grant' })
         state.tokens++
-        return json(200, { access_token: desktop ? 'token-do-player' : 'token-de-teste', token_type: 'Bearer', expires_in: 3600, refresh_token: refresh })
+        const player = form.get('code') === 'codigo-antigo' ? 'token-do-player-antigo' : 'token-do-player'
+        return json(200, { access_token: desktop ? player : 'token-de-teste', token_type: 'Bearer', expires_in: 3600, refresh_token: refresh })
       }
       // ---------- Web API ----------
       case 'GET /v1/me':
@@ -166,6 +171,7 @@ export async function startFakeSpotify() {
       // ---------- O librespot de mentira ----------
       case 'POST /__fake/started':
         state.started = JSON.parse(body)
+        state.starts.push(state.started)
         return json(200, {})
       case 'POST /__fake/written':
         state.written = JSON.parse(body)

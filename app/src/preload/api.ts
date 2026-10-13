@@ -144,8 +144,10 @@ export type MusicError =
   | 'muted'
   /** O client ID colado não tem o formato de um (32 letras e números). */
   | 'client-id'
-  /** A porta do endereço cadastrado no app do Spotify (5589) está ocupada por outro programa. */
+  /** Uma porta que o login do Spotify precisa (5589, a do app da pessoa, ou 8898, a do app de computador) está ocupada. */
   | 'port'
+  /** O Spotify está recusando clientes como o librespot agora (503 do lado dele). */
+  | 'unavailable'
   | 'no-device'
   | 'rate'
   | 'network'

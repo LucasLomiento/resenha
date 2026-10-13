@@ -1,8 +1,7 @@
-## 1.11.2: Spotify conectando de verdade
+## 1.11.3: o bot do Spotify entra na call
 
-- **Conectar o Spotify voltou a funcionar:** na 1.11.1 o login abria, mas o Spotify respondia "muitos pedidos". A busca e os controles agora vão por um app seu no Spotify, que tem a cota só sua.
-- **O painel mostra como criar o app** (uns 2 minutos, uma vez só, precisa de Premium): abrir o painel de desenvolvedor do Spotify, criar o app, cadastrar o endereço `http://127.0.0.1:5589/spotify` (tem botão de copiar) e colar o Client ID. Depois é só **Conectar**: o navegador pede pra confirmar duas vezes na primeira vez (o seu app e o Spotify).
-- **Se o Spotify pedir um tempo**, o Resenha espera o tempo que ele mandou em vez de insistir.
+- **"Pôr o Spotify na call" voltou a funcionar:** na 1.11.2 o bot entrava na sua conta, mas o Spotify não deixava ele virar um aparelho (o erro "Não deu certo"). O Spotify mudou em agosto o jeito que aceita esse tipo de player, e o Resenha agora entra do jeito novo. Testado com uma conta de verdade.
+- **Quem já tinha conectado na 1.11.2** não precisa fazer nada: na primeira vez que pôr o bot, o navegador pede pra confirmar o Spotify de novo (uma vez só), e pronto.
 
 ## Como atualizar
 

@@ -13,7 +13,7 @@
 // Uso: npm run dev:server (em outro terminal) e depois npm -w app run e2e
 
 import { execFileSync, spawn } from 'node:child_process'
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import electronPath from 'electron'
@@ -1490,13 +1490,25 @@ try {
       own?.clientId === OWN_SPOTIFY_APP &&
       own.redirect === 'http://127.0.0.1:5589/spotify' &&
       desktop?.clientId === '65b708073fc0480ea92a077233ca87bd' &&
-      /^http:\/\/127\.0\.0\.1:\d+\/login$/.test(desktop.redirect),
+      desktop.redirect === 'http://127.0.0.1:8898/login' &&
+      desktop.scope === 'streaming',
     'Spotify: com o client ID do app da pessoa, conectar faz os dois logins (o app dela e o do Spotify, pro librespot)',
     `${redirectShown} · ${own?.clientId} ${own?.redirect} · ${desktop?.clientId} ${desktop?.redirect}`,
   )
+  // Sobrou credencial do librespot de antes de 08/2026 (como na 1.11.2): o Spotify recusa o Spotify Connect
+  // com ela, e o app tem que apagar e entrar de novo com o login do app de computador, sozinho.
+  const librespotCache = join(homedir(), '.config', `resenha-${PROFILE}-a`, 'spotify', 'librespot')
+  mkdirSync(librespotCache, { recursive: true })
+  writeFileSync(join(librespotCache, 'credentials.json'), JSON.stringify({ old: true }))
   await panelA.getByRole('button', { name: 'Pôr o Spotify na call', exact: true }).click({ force: true })
   await panelA.getByText('Nada tocando ainda', { exact: false }).waitFor({ timeout: 20_000 })
   const librespotArgs = spotify.state.started?.args ?? []
+  const attempts = spotify.state.starts.map((s) => s.token ?? 'credencial guardada')
+  check(
+    attempts.join(',') === 'credencial guardada,token-do-player',
+    'credencial antiga que o Spotify não aceita mais: o app apaga e entra de novo com o login do app de computador',
+    attempts.join(' → '),
+  )
   check(
     // O librespot entra com o login do app de computador (a Web API, que dá 429 com ele, vai pelo app da pessoa).
     spotify.state.started?.token === 'token-do-player' &&
@@ -1574,8 +1586,9 @@ try {
   await panelB.getByRole('button', { name: 'Tocar', exact: true }).waitFor({ timeout: 8000 })
   const quiet = await b.page.locator('nav li.bot .bot-song.paused').waitFor({ timeout: 8000 }).then(() => true, () => false)
   // O som para (o que estava guardado vai fora): o bot "apaga" na lista de B.
-  const silent = await b.page.locator('nav li.bot .bot-face.playing').waitFor({ state: 'detached', timeout: 3000 }).then(() => true, () => false)
-  check(quiet && silent, 'pausar pelo painel de B pausa o bot de A: o som para e a lista do canal mostra', `${quiet}/${silent}`)
+  const silent = await b.page.locator('nav li.bot .bot-face.playing').waitFor({ state: 'detached', timeout: 6000 }).then(() => true, () => false)
+  const levelAfter = await b.page.evaluate(() => window.__call.peerList.map((p) => p.musicLevel().toFixed(3)).join(','))
+  check(quiet && silent, 'pausar pelo painel de B pausa o bot de A: o som para e a lista do canal mostra', `${quiet}/${silent}, nível ${levelAfter}`)
   await b.page.keyboard.press('Escape')
 
   // A tira o bot: some da call pros dois.
