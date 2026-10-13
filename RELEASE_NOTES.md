@@ -1,7 +1,7 @@
-## 1.11.3: o bot do Spotify entra na call
+## 1.11.4: o painel do Spotify cabe na tela
 
-- **"Pôr o Spotify na call" voltou a funcionar:** na 1.11.2 o bot entrava na sua conta, mas o Spotify não deixava ele virar um aparelho (o erro "Não deu certo"). O Spotify mudou em agosto o jeito que aceita esse tipo de player, e o Resenha agora entra do jeito novo. Testado com uma conta de verdade.
-- **Quem já tinha conectado na 1.11.2** não precisa fazer nada: na primeira vez que pôr o bot, o navegador pede pra confirmar o Spotify de novo (uma vez só), e pronto.
+- **Painel do Spotify com rolagem:** com muitos resultados na busca (ou uma fila grande), o painel passava da tela. Agora ele cabe na janela, o player fica parado em cima e só a lista rola.
+- **Vale pros outros diálogos também:** qualquer janela do Resenha que ficasse mais alta que a tela agora rola em vez de cortar.
 
 ## Como atualizar
 

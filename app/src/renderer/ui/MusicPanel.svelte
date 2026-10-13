@@ -199,7 +199,7 @@
   }
 </script>
 
-<Modal title={hostConnId && !mine ? t.botOf(hostName) : t.title} size="lg" onclose={close} class="music-panel">
+<Modal title={hostConnId && !mine ? t.botOf(hostName) : t.title} size="lg" onclose={close} class={share ? 'music-panel playing' : 'music-panel'}>
   {#if Object.keys(bots).length > 1}
     <div class="hosts" role="group">
       {#each Object.keys(bots) as connId (connId)}
@@ -626,13 +626,38 @@
     margin-top: 8px;
   }
 
+  /* Com o bot tocando, o player fica parado em cima e só a lista (busca, fila, playlists) rola.
+     Numa janela muito baixa, a lista não passa de 200 px e o diálogo inteiro rola. */
+  :global(.music-panel.playing .body) {
+    display: flex;
+    flex-direction: column;
+  }
+
+  :global(.music-panel.playing .body > *) {
+    flex-shrink: 0;
+  }
+
   .pane {
     min-height: 220px;
     padding-top: 12px;
   }
 
+  :global(.music-panel.playing .body) > .pane {
+    flex: 1 1 auto;
+    min-height: 200px;
+    overflow-y: auto;
+    /* A barra de rolagem fica na borda, não em cima dos botões das músicas. */
+    margin-right: -16px;
+    padding-right: 16px;
+  }
+
   .search {
+    position: sticky;
+    top: 0;
+    z-index: 1;
     margin-bottom: 8px;
+    padding-bottom: 4px;
+    background: var(--bg-raised);
   }
 
   h3 {

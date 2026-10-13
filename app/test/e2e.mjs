@@ -1577,6 +1577,24 @@ try {
   await panelB.getByRole('tab', { name: /Fila/ }).click({ force: true })
   const queued = await panelB.locator('.item', { hasText: 'Tempo Perdido' }).waitFor({ timeout: 8000 }).then(() => true, () => false)
   check(queued && spotify.state.queue.some((t) => t.uri === TRACKS[2].uri), 'B busca pelo bot de A e põe na fila, e a fila aparece pra B', `${queued}`)
+  // Muitos resultados: o diálogo não passa da tela, o player fica parado em cima e só a lista rola.
+  await panelB.getByRole('tab', { name: 'Buscar', exact: true }).click({ force: true })
+  await panelB.getByPlaceholder('Música, artista, playlist ou álbum').fill('lista')
+  await panelB.getByPlaceholder('Música, artista, playlist ou álbum').press('Enter')
+  await panelB.locator('.item', { hasText: 'Playlist 09' }).waitFor({ timeout: 8000 })
+  const fits = await b.page.evaluate(() => {
+    const panel = document.querySelector('.music-panel').getBoundingClientRect()
+    const pane = document.querySelector('.music-panel .pane')
+    const player = document.querySelector('.music-panel .controls').getBoundingClientRect()
+    const before = pane.scrollTop
+    pane.scrollTop = 400
+    const scrolled = pane.scrollTop > before
+    const playerAfter = document.querySelector('.music-panel .controls').getBoundingClientRect().top
+    pane.scrollTop = 0
+    return { inside: panel.top >= 0 && panel.bottom <= innerHeight, scrolled, playerStays: Math.abs(playerAfter - player.top) < 1 }
+  })
+  await shot(b, '7e-spotify-muitos-resultados')
+  check(fits.inside && fits.scrolled && fits.playerStays, 'painel do Spotify com muitos resultados: cabe na tela, a lista rola e o player fica parado', JSON.stringify(fits))
   await panelB.getByRole('tab', { name: 'Playlists', exact: true }).click({ force: true })
   const playlistsOfA = await panelB.locator('.item', { hasText: 'Resenha de sexta' }).waitFor({ timeout: 8000 }).then(() => true, () => false)
   check(playlistsOfA, 'B vê as playlists da conta de A pelo bot')

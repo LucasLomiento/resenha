@@ -81,6 +81,9 @@
     inset: 0;
     z-index: var(--z-modal);
     display: grid;
+    /* Linha e coluna do tamanho da tela: sem isso a linha cresce com o conteúdo, o max-height do
+       diálogo nunca vale e um diálogo comprido passa da tela sem rolar. */
+    grid-template: minmax(0, 1fr) / minmax(0, 1fr);
     place-items: center;
     padding: var(--s-6);
     background: rgb(4 4 8 / 0.66);

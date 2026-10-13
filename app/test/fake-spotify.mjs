@@ -158,6 +158,15 @@ export async function startFakeSpotify() {
       }
       case 'GET /v1/search': {
         const q = fold(url.searchParams.get('q') ?? '')
+        // Muitos resultados (o painel tem que rolar sem passar da tela).
+        if (q === 'lista') {
+          const many = (n, make) => Array.from({ length: n }, (_, i) => make(String(i).padStart(2, '0')))
+          return json(200, {
+            tracks: { items: many(10, (i) => track(`lista${i}00000000000000000`, `Música ${i}`, 'Artista', 'Álbum', 200_000)) },
+            playlists: { items: many(10, (i) => ({ ...PLAYLIST, uri: `spotify:playlist:lista${i}00000000000000000`, name: `Playlist ${i}` })) },
+            albums: { items: [] },
+          })
+        }
         const match = (x) => fold(`${x.name} ${(x.artists ?? []).map((a) => a.name).join(' ')}`).includes(q)
         return json(200, {
           tracks: { items: TRACKS.filter(match) },
