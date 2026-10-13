@@ -31,6 +31,8 @@ export interface Settings {
   streamVolume: number
   /** Volume do bot do Spotify (0..1): cada um ouve o bot no seu. */
   musicVolume: number
+  /** Client ID do app do Spotify que a pessoa criou (o painel guarda enquanto ela ainda não conectou). */
+  spotifyClientId: string
   /** Som da transmissão tirado pelo botão (o volume continua guardado pra quando voltar). */
   streamMuted: boolean
   /** Quem assiste a minha tela pode rabiscar nela. */
@@ -77,6 +79,7 @@ const defaults: Settings = {
   userVolumes: {},
   streamVolume: 1,
   musicVolume: 0.5,
+  spotifyClientId: '',
   streamMuted: false,
   inkAllowed: true,
   voiceDoubleClick: false,

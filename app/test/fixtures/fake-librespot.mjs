@@ -32,7 +32,7 @@ writeFileSync(credentials, JSON.stringify({ username: 'teste', auth_type: 1 }))
 console.error("[2026-10-13T00:00:00Z INFO  librespot_core::session] Authenticated as 'teste' !")
 
 const post = (path, body) => fetch(`${base}/__fake/${path}`, { method: 'POST', body: JSON.stringify(body) }).catch(() => {})
-await post('started', { args, tokenFromEnv: !!process.env.LIBRESPOT_ACCESS_TOKEN })
+await post('started', { args, token: process.env.LIBRESPOT_ACCESS_TOKEN ?? null })
 
 const RATE = 44_100
 const FRAMES = 2205

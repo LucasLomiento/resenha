@@ -1472,34 +1472,34 @@ try {
   await a.page.locator('.dock').getByRole('button', { name: 'Spotify', exact: true }).click({ force: true })
   const panelA = a.page.locator('.music-panel')
   await panelA.getByText('Instalado').waitFor({ timeout: 8000 })
-  // Conectar não pede nada: é o login do app de computador do Spotify (o mesmo do librespot).
-  await panelA.getByRole('button', { name: 'Conectar', exact: true }).click({ force: true })
-  await panelA.getByText('Conectado como Lucas no Spotify').waitFor({ timeout: 10_000 })
-  const builtin = spotify.state.logins.at(-1)
-  // "Melhorar a conexão": a pessoa cola o client ID do app dela (o que não é client ID é recusado).
-  await panelA.getByRole('button', { name: /Melhorar a conexão/ }).click({ force: true })
+  // O app da pessoa no Spotify (a busca e os controles vão por ele): o passo a passo mostra o endereço
+  // pra cadastrar, e "Conectar" só libera com um client ID de verdade.
+  const connectA = panelA.getByRole('button', { name: 'Conectar', exact: true })
+  const redirectShown = await panelA.locator('code').innerText()
   await panelA.getByPlaceholder('Client ID').fill('nao-e-um-client-id')
-  await panelA.getByRole('button', { name: 'Conectar com o meu app', exact: true }).click({ force: true })
-  const refused = await panelA.getByText('Esse não parece um Client ID', { exact: false }).waitFor({ timeout: 5000 }).then(() => true, () => false)
+  const refused = await connectA.isDisabled()
   await panelA.getByPlaceholder('Client ID').fill(OWN_SPOTIFY_APP)
-  await panelA.getByRole('button', { name: 'Conectar com o meu app', exact: true }).click({ force: true })
-  await panelA.getByText('Usando o seu app do Spotify.').waitFor({ timeout: 10_000 })
-  const own = spotify.state.logins.at(-1)
   await shot(a, '7a-spotify-conectar')
+  // Dois logins em seguida: o app da pessoa (Web API) e o app de computador do Spotify (só pro librespot).
+  await connectA.click({ force: true })
+  await panelA.getByText('Conectado como Lucas no Spotify').waitFor({ timeout: 10_000 })
+  const [own, desktop] = spotify.state.logins.slice(-2)
   check(
-    builtin?.clientId === '65b708073fc0480ea92a077233ca87bd' &&
-      /^http:\/\/127\.0\.0\.1:\d+\/login$/.test(builtin.redirect) &&
+    redirectShown === 'http://127.0.0.1:5589/spotify' &&
       refused &&
       own?.clientId === OWN_SPOTIFY_APP &&
-      /^http:\/\/127\.0\.0\.1:\d+\/spotify$/.test(own.redirect),
-    'Spotify: conectar não pede configuração nenhuma, e o app próprio ("melhorar a conexão") entra pelo client ID colado',
-    `${builtin?.clientId} ${builtin?.redirect} · ${own?.clientId} ${own?.redirect}`,
+      own.redirect === 'http://127.0.0.1:5589/spotify' &&
+      desktop?.clientId === '65b708073fc0480ea92a077233ca87bd' &&
+      /^http:\/\/127\.0\.0\.1:\d+\/login$/.test(desktop.redirect),
+    'Spotify: com o client ID do app da pessoa, conectar faz os dois logins (o app dela e o do Spotify, pro librespot)',
+    `${redirectShown} · ${own?.clientId} ${own?.redirect} · ${desktop?.clientId} ${desktop?.redirect}`,
   )
   await panelA.getByRole('button', { name: 'Pôr o Spotify na call', exact: true }).click({ force: true })
   await panelA.getByText('Nada tocando ainda', { exact: false }).waitFor({ timeout: 20_000 })
   const librespotArgs = spotify.state.started?.args ?? []
   check(
-    !!spotify.state.started?.tokenFromEnv &&
+    // O librespot entra com o login do app de computador (a Web API, que dá 429 com ele, vai pelo app da pessoa).
+    spotify.state.started?.token === 'token-do-player' &&
       !librespotArgs.includes('--access-token') &&
       librespotArgs.includes('--device') &&
       spotify.state.log.some((c) => c.route === 'PUT /v1/me/player'),

@@ -24,6 +24,9 @@ const PLAYLIST = { type: 'playlist', uri: 'spotify:playlist:sertanejoraiz0000000
 const MINE = { type: 'playlist', uri: 'spotify:playlist:resenhadasexta000000001', name: 'Resenha de sexta', owner: { display_name: 'Lucas no Spotify' }, images: [] }
 const ALBUM = { type: 'album', uri: 'spotify:album:cowboydoasfalto00000001', name: 'Cowboy do Asfalto', artists: [{ name: 'Chitãozinho & Xororó' }], images: [] }
 
+/** O app de computador do Spotify (o login que o librespot aceita). */
+const DESKTOP_APP = '65b708073fc0480ea92a077233ca87bd'
+
 const fold = (text) => text.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase()
 
 export async function startFakeSpotify() {
@@ -68,6 +71,11 @@ export async function startFakeSpotify() {
     const path = url.pathname
     const route = `${req.method} ${path}`
     if (path.startsWith('/v1/me/player') && req.method !== 'GET') state.log.push({ route, query: Object.fromEntries(url.searchParams), body: body ? JSON.parse(body) : null })
+    // Como no Spotify de verdade: com o token do app de computador, a Web API só dá 429 (a cota dele vive estourada).
+    if (path.startsWith('/v1/') && req.headers.authorization === 'Bearer token-do-player') {
+      res.writeHead(429, { 'Retry-After': '30' })
+      return res.end()
+    }
     if (path.startsWith('/v1/') && req.headers.authorization !== 'Bearer token-de-teste') return json(401, { error: { status: 401, message: 'Invalid access token' } })
 
     switch (route) {
@@ -81,11 +89,14 @@ export async function startFakeSpotify() {
         return res.end()
       }
       case 'POST /api/token': {
+        // Um token pra cada app: o da pessoa (Web API) e o do app de computador (só pro librespot).
         const form = new URLSearchParams(body)
-        const ok = form.get('grant_type') === 'refresh_token' ? form.get('refresh_token') === 'refresh-de-teste' : !!form.get('code_verifier')
+        const desktop = form.get('client_id') === DESKTOP_APP
+        const refresh = desktop ? 'refresh-do-player' : 'refresh-de-teste'
+        const ok = form.get('grant_type') === 'refresh_token' ? form.get('refresh_token') === refresh : !!form.get('code_verifier')
         if (!ok) return json(400, { error: 'invalid_grant' })
         state.tokens++
-        return json(200, { access_token: 'token-de-teste', token_type: 'Bearer', expires_in: 3600, refresh_token: 'refresh-de-teste' })
+        return json(200, { access_token: desktop ? 'token-do-player' : 'token-de-teste', token_type: 'Bearer', expires_in: 3600, refresh_token: refresh })
       }
       // ---------- Web API ----------
       case 'GET /v1/me':

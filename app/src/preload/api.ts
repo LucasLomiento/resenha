@@ -144,6 +144,8 @@ export type MusicError =
   | 'muted'
   /** O client ID colado não tem o formato de um (32 letras e números). */
   | 'client-id'
+  /** A porta do endereço cadastrado no app do Spotify (5589) está ocupada por outro programa. */
+  | 'port'
   | 'no-device'
   | 'rate'
   | 'network'
@@ -161,9 +163,9 @@ export interface SpotifyStatus {
   librespot: boolean
   /** Dá pra instalar por aqui (Arch e derivados: pacman). */
   installable: boolean
-  /** Conta conectada (nome no Spotify) e, se for com app próprio, o client ID dele. */
-  account: { name: string; own: string | null } | null
-  /** O redirect que quem cria o próprio app cadastra no site do Spotify. */
+  /** Conta conectada (nome no Spotify) e o client ID do app da pessoa. */
+  account: { name: string; clientId: string } | null
+  /** O redirect que a pessoa cadastra no app dela no site do Spotify. */
   ownRedirect: string
   /** O bot está ligado agora. */
   running: boolean
@@ -220,8 +222,8 @@ export interface ResenhaApi {
   /** Bot do Spotify na call. */
   spotify: {
     status(): Promise<SpotifyStatus>
-    /** Login no navegador (PKCE). `ownClientId`: o app próprio da pessoa; null, o padrão (sem criar nada no Spotify). */
-    connect(ownClientId: string | null): Promise<{ ok: true; name: string } | { ok: false; error: MusicError }>
+    /** Login no navegador (PKCE): o app da pessoa (Web API) e o app de computador do Spotify (pro librespot), em seguida. */
+    connect(clientId: string): Promise<{ ok: true; name: string } | { ok: false; error: MusicError }>
     disconnect(): Promise<void>
     /** Instala o librespot (pkexec, ou terminal com sudo). */
     install(): Promise<boolean>

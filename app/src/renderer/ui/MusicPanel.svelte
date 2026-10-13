@@ -144,20 +144,18 @@
   // ---------- Pôr o meu Spotify na call ----------
 
   let status = $state<SpotifyStatus | null>(null)
-  let busy = $state<'install' | 'connect' | 'own' | null>(null)
+  let busy = $state<'install' | 'connect' | null>(null)
   let error = $state<string | null>(null)
   const linux = $derived(client.platform?.platform === 'linux')
   const account = $derived(status?.account ?? null)
-  /** "Melhorar a conexão": o app próprio da pessoa no Spotify (aberto quando já usa um). */
-  let improve = $state(false)
-  let ownClientId = $state('')
+  /** Trocando o app do Spotify (já conectado): o passo a passo abre de novo. */
+  let changingApp = $state(false)
+  const appSteps = $derived(!account || changingApp)
+  const validId = $derived(/^[0-9a-fA-F]{32}$/.test(settings.spotifyClientId.trim()))
 
   async function loadSetup() {
     status = await window.resenha.spotify.status()
-    if (status.account?.own) {
-      improve = true
-      ownClientId ||= status.account.own
-    }
+    if (status.account && !settings.spotifyClientId) settings.spotifyClientId = status.account.clientId
   }
   $effect(() => {
     if (!hostConnId) void loadSetup()
@@ -172,13 +170,14 @@
     await loadSetup()
   }
 
-  /** Conecta a conta: com o app próprio (o client ID colado) ou, sem ele, do jeito padrão. */
-  async function connect(own: string | null) {
-    busy = own ? 'own' : 'connect'
+  /** Os dois logins em seguida: o app da pessoa (busca e controles) e o do Spotify (pro librespot). */
+  async function connect() {
+    busy = 'connect'
     error = null
-    const result = await window.resenha.spotify.connect(own)
+    const result = await window.resenha.spotify.connect(settings.spotifyClientId.trim())
     busy = null
     if (!result.ok) error = t.errors[result.error]
+    else changingApp = false
     await loadSetup()
   }
 
@@ -375,51 +374,44 @@
 
         <div class="step">
           <div class="text">
-            <strong>{t.setup.account}</strong>
-            <span>{account ? t.setup.connected(account.name) : busy === 'connect' ? t.setup.connecting : t.setup.premium}</span>
+            <strong>{t.setup.app}</strong>
+            <span>{appSteps ? t.setup.appHint : t.setup.appReady(account?.clientId ?? '')}</span>
           </div>
-          {#if account}
-            <Button size="sm" variant="ghost" onclick={disconnect}>{t.setup.disconnect}</Button>
-          {:else}
-            <Button size="sm" icon="log-in" loading={busy === 'connect'} disabled={!!busy} onclick={() => connect(null)}>{t.setup.connect}</Button>
+          {#if !appSteps}
+            <Button size="sm" variant="ghost" onclick={() => (changingApp = true)}>{t.setup.appChange}</Button>
           {/if}
         </div>
-
-        <!-- App próprio no Spotify: opcional. Os pedidos do bot passam a usar uma cota só da pessoa. -->
-        <button class="improve-toggle" aria-expanded={improve} onclick={() => (improve = !improve)}>
-          <Icon name="chevron-right" size={16} />
-          {t.setup.improve}
-          {#if account?.own}<span class="own-badge">{t.setup.ownOn}</span>{/if}
-        </button>
-        {#if improve}
-          <div class="improve">
-            <p>{t.setup.improveIntro}</p>
+        {#if appSteps}
+          <div class="app-steps">
             <ol>
               <li>
-                {t.setup.improveStep1}
-                <a href="https://developer.spotify.com/dashboard" target="_blank" rel="noreferrer">{t.setup.improveOpen}</a>
+                {t.setup.appStep1}
+                <a href="https://developer.spotify.com/dashboard" target="_blank" rel="noreferrer">{t.setup.appOpen}</a>
               </li>
               <li>
-                {t.setup.improveStep2}
+                {t.setup.appStep2}
                 <span class="redirect">
                   <code>{status.ownRedirect}</code>
                   <IconButton icon="copy" size="sm" label={t.setup.copy} onclick={copyRedirect} />
                 </span>
               </li>
-              <li>{t.setup.improveStep3}</li>
+              <li>{t.setup.appStep3}</li>
             </ol>
-            <form class="own" onsubmit={(e) => (e.preventDefault(), void connect(ownClientId.trim()))}>
-              <TextField placeholder={t.setup.clientId} aria-label={t.setup.clientId} bind:value={ownClientId} mono spellcheck={false} />
-              <Button type="submit" size="sm" loading={busy === 'own'} disabled={!!busy || !ownClientId.trim()}>{t.setup.connectOwn}</Button>
-            </form>
-            {#if account?.own}
-              <div class="own-on">
-                <span>{t.setup.usingOwn}</span>
-                <Button size="sm" variant="ghost" disabled={!!busy} onclick={() => connect(null)}>{t.setup.backToDefault}</Button>
-              </div>
-            {/if}
+            <TextField placeholder={t.setup.clientId} aria-label={t.setup.clientId} bind:value={settings.spotifyClientId} mono spellcheck={false} />
           </div>
         {/if}
+
+        <div class="step">
+          <div class="text">
+            <strong>{t.setup.account}</strong>
+            <span>{account && !changingApp ? t.setup.connected(account.name) : busy === 'connect' ? t.setup.connecting : t.setup.premium}</span>
+          </div>
+          {#if account && !changingApp}
+            <Button size="sm" variant="ghost" onclick={disconnect}>{t.setup.disconnect}</Button>
+          {:else}
+            <Button size="sm" icon="log-in" loading={busy === 'connect'} disabled={!!busy || !validId} onclick={connect}>{t.setup.connect}</Button>
+          {/if}
+        </div>
 
         {#if bot.status === 'starting'}
           <p class="hint starting">
@@ -778,50 +770,21 @@
     font-size: var(--text-sm);
   }
 
-  .improve-toggle {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    width: 100%;
-    padding: 12px 0 4px;
-    border-top: 1px solid var(--line);
-    color: var(--fg-2);
-    font-size: var(--text-sm);
-    font-weight: 500;
-  }
-
-  .improve-toggle :global(svg) {
-    transition: rotate var(--t) var(--ease);
-  }
-
-  .improve-toggle[aria-expanded='true'] :global(svg) {
-    rotate: 90deg;
-  }
-
-  .own-badge {
-    margin-left: 4px;
-    padding: 1px 8px;
-    border-radius: var(--r-full);
-    background: var(--spotify-soft);
-    color: var(--spotify);
-    font-size: var(--text-xs);
-  }
-
-  .improve {
-    padding: 6px 0 4px 22px;
+  .app-steps {
+    padding: 0 0 14px;
     color: var(--fg-2);
     font-size: var(--text-sm);
   }
 
-  .improve ol {
+  .app-steps ol {
     display: flex;
     flex-direction: column;
     gap: 6px;
-    margin: 10px 0 12px;
+    margin: 0 0 12px;
     padding-left: 18px;
   }
 
-  .improve a {
+  .app-steps a {
     color: var(--accent-fg);
   }
 
@@ -839,25 +802,6 @@
     color: var(--fg);
     font-family: var(--mono);
     font-size: var(--text-xs);
-  }
-
-  .own {
-    display: flex;
-    gap: 8px;
-    align-items: center;
-  }
-
-  .own :global(.field) {
-    flex: 1;
-  }
-
-  .own-on {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-    margin-top: 10px;
-    color: var(--spotify);
   }
 
   .ok {
