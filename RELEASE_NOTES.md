@@ -1,7 +1,8 @@
-## 1.11.4: o painel do Spotify cabe na tela
+## 1.11.5: estilos no Spotify
 
-- **Painel do Spotify com rolagem:** com muitos resultados na busca (ou uma fila grande), o painel passava da tela. Agora ele cabe na janela, o player fica parado em cima e só a lista rola.
-- **Vale pros outros diálogos também:** qualquer janela do Resenha que ficasse mais alta que a tela agora rola em vez de cortar.
+- **O estilo de cada música:** no painel do Spotify, a música tocando e os resultados da busca mostram o estilo do artista numa tag ao lado do nome (sertanejo, mpb, rock...).
+- **Buscar por estilo:** clique numa tag pra ver músicas daquele estilo, ou escolha um dos estilos prontos que aparecem com a busca vazia. Dá pra digitar também: `genre:"funk carioca"`.
+- O estilo vem do artista no Spotify, que não classifica todo mundo (principalmente artistas novos): nesses, a tag não aparece.
 
 ## Como atualizar
 

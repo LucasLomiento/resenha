@@ -403,6 +403,7 @@ function toTrack(value: unknown): MusicTrack | null {
   if (!item || !URI.test(uri)) return null
   const album = obj(item.album)
   const show = obj(item.show)
+  const artistId = str(obj(list(item.artists)[0])?.id, 40)
   return {
     uri,
     title: str(item.name),
@@ -410,8 +411,43 @@ function toTrack(value: unknown): MusicTrack | null {
     album: str(album?.name ?? show?.name),
     cover: cover(album?.images ?? item.images),
     durationMs: Math.max(0, Number(item.duration_ms) || 0),
+    artistId: ARTIST_ID.test(artistId) ? artistId : null,
+    genres: [],
   }
 }
+
+// ---------- Estilos (o Spotify guarda o estilo no artista, não na música) ----------
+
+const ARTIST_ID = /^[A-Za-z0-9]{1,40}$/
+/** artista -> estilos. O campo está descontinuado no Spotify: muito artista (os novos, principalmente) vem sem. */
+const genreCache = new Map<string, string[]>()
+
+/**
+ * Põe o estilo do artista principal em cada música. Busca no máximo `budget` artistas
+ * que ainda não conhece (um pedido por artista: o de vários de uma vez saiu do modo de
+ * desenvolvimento), três por vez; o resto fica com o que já sabe.
+ */
+async function withGenres(tracks: MusicTrack[], budget: number): Promise<MusicTrack[]> {
+  const missing = [...new Set(tracks.map((t) => t.artistId).filter((id): id is string => !!id && !genreCache.has(id)))].slice(0, budget)
+  if (genreCache.size > 2000) genreCache.clear()
+  for (let i = 0; i < missing.length; i += 3) {
+    const batch = missing.slice(i, i + 3)
+    const results = await Promise.allSettled(batch.map((id) => api('GET', `/artists/${id}`)))
+    let limited = false
+    results.forEach((result, j) => {
+      if (result.status === 'fulfilled') {
+        genreCache.set(batch[j], list(obj(result.value)?.genres).map((g) => str(g, 40)).filter(Boolean).slice(0, 3))
+      } else if (codeOf(result.reason) === 'rate') limited = true
+      else genreCache.set(batch[j], [])
+    })
+    // Muitos pedidos: o estilo fica pra depois (a música aparece sem a tag).
+    if (limited) break
+  }
+  return tracks.map((t) => (t.artistId && genreCache.get(t.artistId)?.length ? { ...t, genres: genreCache.get(t.artistId)! } : t))
+}
+
+/** "genre:rock" ou genre:"funk carioca": busca de músicas por estilo. */
+const GENRE_QUERY = /^genre:\s*"?([^"]{1,60})"?\s*$/i
 
 function toList(value: unknown): MusicList | null {
   const item = obj(value)
@@ -443,22 +479,41 @@ const items = (page: unknown) => list(obj(page)?.items)
 async function perform(op: MusicOp): Promise<unknown> {
   const device = deviceId ?? undefined
   switch (op.op) {
-    case 'player':
-      return toPlayer(await api('GET', '/me/player'))
-    case 'queue':
-      return list(obj(await api('GET', '/me/player/queue'))?.queue)
+    case 'player': {
+      const player = toPlayer(await api('GET', '/me/player'))
+      if (player.track) [player.track] = await withGenres([player.track], 1)
+      return player
+    }
+    case 'queue': {
+      // Só o estilo que já conhece (a fila é lida toda hora; não vale um pedido por artista).
+      const queue = list(obj(await api('GET', '/me/player/queue'))?.queue)
         .map(toTrack)
-        .filter(Boolean)
+        .filter((t): t is MusicTrack => !!t)
         .slice(0, 20)
+      return withGenres(queue, 0)
+    }
     case 'search': {
       const q = str(op.q, 200).trim()
       if (!q) return { tracks: [], lists: [] } satisfies MusicSearch
-      // App em modo de desenvolvimento: no máximo 10 por tipo.
-      const data = obj(await api('GET', '/search', { q, type: 'track,playlist,album', limit: 10, offset: clampOffset(op.offset) }))
-      return {
-        tracks: items(data?.tracks).map(toTrack).filter((t): t is MusicTrack => !!t),
-        lists: [...items(data?.playlists), ...items(data?.albums)].map(toList).filter((l): l is MusicList => !!l),
-      } satisfies MusicSearch
+      const offset = clampOffset(op.offset)
+      const genre = q.match(GENRE_QUERY)?.[1]?.trim()
+      let tracks: MusicTrack[]
+      let lists: MusicList[]
+      if (genre) {
+        // Por estilo: o filtro do Spotify só vale pra músicas; playlists vão pelo nome do estilo.
+        const [byGenre, named] = await Promise.all([
+          api('GET', '/search', { q: `genre:"${genre}"`, type: 'track', limit: 10, offset }),
+          api('GET', '/search', { q: genre, type: 'playlist', limit: 10, offset }),
+        ])
+        tracks = items(obj(byGenre)?.tracks).map(toTrack).filter((t): t is MusicTrack => !!t)
+        lists = items(obj(named)?.playlists).map(toList).filter((l): l is MusicList => !!l)
+      } else {
+        // App em modo de desenvolvimento: no máximo 10 por tipo.
+        const data = obj(await api('GET', '/search', { q, type: 'track,playlist,album', limit: 10, offset }))
+        tracks = items(data?.tracks).map(toTrack).filter((t): t is MusicTrack => !!t)
+        lists = [...items(data?.playlists), ...items(data?.albums)].map(toList).filter((l): l is MusicList => !!l)
+      }
+      return { tracks: await withGenres(tracks, 6), lists } satisfies MusicSearch
     }
     case 'playlists':
       return items(await api('GET', '/me/playlists', { limit: 30, offset: clampOffset(op.offset) }))

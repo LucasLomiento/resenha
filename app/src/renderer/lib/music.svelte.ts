@@ -62,8 +62,22 @@ export function cleanTrack(value: unknown): MusicTrack | null {
     album: text(value.album),
     cover: coverOf(value.cover),
     durationMs: num(value.durationMs, 24 * 3600_000),
+    artistId: typeof value.artistId === 'string' && /^[A-Za-z0-9]{1,40}$/.test(value.artistId) ? value.artistId : null,
+    genres: (Array.isArray(value.genres) ? value.genres : [])
+      .filter((g): g is string => typeof g === 'string' && g.trim().length > 0)
+      .slice(0, 3)
+      .map((g) => g.trim().slice(0, 40)),
   }
 }
+
+/** Busca de músicas por estilo (o filtro `genre:` do Spotify). */
+export const genreQuery = (genre: string) => `genre:"${genre.replace(/"/g, '')}"`
+
+/** Estilos pra escolher na busca vazia (os nomes do próprio Spotify: não se traduzem). */
+export const GENRES = [
+  'pop', 'rock', 'hip hop', 'trap', 'funk carioca', 'sertanejo', 'pagode', 'mpb', 'samba', 'forró',
+  'edm', 'house', 'lo-fi', 'jazz', 'metal', 'indie', 'k-pop', 'anime', 'reggaeton', 'r&b',
+]
 
 export function cleanList(value: unknown): MusicList | null {
   if (!isObj(value) || typeof value.uri !== 'string' || !URI.test(value.uri)) return null

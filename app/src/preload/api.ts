@@ -86,6 +86,10 @@ export interface MusicTrack {
   /** Capa (https://i.scdn.co/…), ou null. */
   cover: string | null
   durationMs: number
+  /** O artista principal (o estilo é dele). */
+  artistId: string | null
+  /** Estilos do artista principal (até 3; vazio quando o Spotify não tem). */
+  genres: string[]
 }
 
 /** Playlist ou álbum (busca e "playlists de quem pôs o bot"). */

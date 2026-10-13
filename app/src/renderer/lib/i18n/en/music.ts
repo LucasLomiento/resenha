@@ -70,6 +70,9 @@ export default {
     queued: (title: string) => `"${title}" was added to the queue.`,
     album: 'Album',
     playlist: 'Playlist',
+    /** Busca vazia: estilos prontos (os nomes do Spotify, que não se traduzem). */
+    styles: 'Or pick a style',
+    byGenre: (genre: string) => `Songs in ${genre}`,
   },
   queue: {
     empty: 'Nothing in the queue. When the song ends, Spotify keeps going with similar ones.',

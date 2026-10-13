@@ -5,14 +5,23 @@
 
 import { createServer } from 'node:http'
 
+const fold = (text) => text.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase()
+const slug = (text) => fold(text).replace(/[^a-z0-9]/g, '')
 const track = (id, name, artist, album, ms) => ({
   type: 'track',
   uri: `spotify:track:${id}`,
   name,
-  artists: [{ name: artist }],
+  artists: [{ id: slug(artist), name: artist }],
   album: { name: album, images: [] },
   duration_ms: ms,
 })
+
+/** Estilo de cada artista (o Spotify guarda no artista, não na música). */
+const ARTIST_GENRES = {
+  chitaozinhoxororo: ['sertanejo', 'sertanejo tradicional'],
+  sandyjunior: ['mpb', 'pop'],
+  legiaourbana: ['rock', 'mpb'],
+}
 
 export const TRACKS = [
   track('evidencias0000000000001', 'Evidências', 'Chitãozinho & Xororó', 'Cowboy do Asfalto', 270_000),
@@ -24,10 +33,10 @@ const PLAYLIST = { type: 'playlist', uri: 'spotify:playlist:sertanejoraiz0000000
 const MINE = { type: 'playlist', uri: 'spotify:playlist:resenhadasexta000000001', name: 'Resenha de sexta', owner: { display_name: 'Lucas no Spotify' }, images: [] }
 const ALBUM = { type: 'album', uri: 'spotify:album:cowboydoasfalto00000001', name: 'Cowboy do Asfalto', artists: [{ name: 'Chitãozinho & Xororó' }], images: [] }
 
+
 /** O app de computador do Spotify (o login que o librespot aceita). */
 const DESKTOP_APP = '65b708073fc0480ea92a077233ca87bd'
 
-const fold = (text) => text.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase()
 
 export async function startFakeSpotify() {
   const state = {
@@ -42,6 +51,8 @@ export async function startFakeSpotify() {
     log: [],
     /** Logins pedidos: com que app e pra onde o navegador volta. */
     logins: [],
+    /** Pedidos de artista (o estilo vem dele; o app guarda e não pede de novo). */
+    artistCalls: 0,
     /** O librespot de mentira: com que argumentos subiu (o último e todos), e quanto som escreveu x quanto tempo tocou. */
     started: null,
     starts: [],
@@ -78,6 +89,12 @@ export async function startFakeSpotify() {
       return res.end()
     }
     if (path.startsWith('/v1/') && req.headers.authorization !== 'Bearer token-de-teste') return json(401, { error: { status: 401, message: 'Invalid access token' } })
+
+    const artist = route.match(/^GET \/v1\/artists\/([A-Za-z0-9]+)$/)
+    if (artist) {
+      state.artistCalls++
+      return json(200, { id: artist[1], type: 'artist', genres: ARTIST_GENRES[artist[1]] ?? [] })
+    }
 
     switch (route) {
       // ---------- Login ----------
@@ -158,6 +175,9 @@ export async function startFakeSpotify() {
       }
       case 'GET /v1/search': {
         const q = fold(url.searchParams.get('q') ?? '')
+        // Por estilo (o filtro genre: do Spotify vale pra músicas).
+        const genre = q.match(/^genre:"([^"]+)"$/)?.[1]
+        if (genre) return json(200, { tracks: { items: TRACKS.filter((t) => (ARTIST_GENRES[t.artists[0].id] ?? []).includes(genre)) } })
         // Muitos resultados (o painel tem que rolar sem passar da tela).
         if (q === 'lista') {
           const many = (n, make) => Array.from({ length: n }, (_, i) => make(String(i).padStart(2, '0')))

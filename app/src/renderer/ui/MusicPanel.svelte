@@ -3,8 +3,10 @@
   import { client } from '../lib/client.svelte'
   import { m } from '../lib/i18n.svelte'
   import {
+    GENRES,
     cleanLists,
     cleanSearch,
+    genreQuery,
     progressOf,
     type MusicList,
     type MusicOp,
@@ -132,6 +134,13 @@
     if (tab === 'playlists' && hostConnId) void loadPlaylists()
   })
 
+  /** Busca músicas desse estilo (tag de estilo, ou um dos estilos prontos da busca vazia). */
+  function searchGenre(genre: string) {
+    tab = 'search'
+    query = genreQuery(genre)
+    void search()
+  }
+
   async function play(uri: string) {
     await run({ op: 'play', uri })
   }
@@ -220,7 +229,10 @@
       <div class="info">
         {#if track}
           <strong class="title" title={track.title}>{track.title}</strong>
-          <span class="artists">{track.artists}</span>
+          <span class="artist-line">
+            <span class="artists">{track.artists}</span>
+            {#each track.genres as genre (genre)}{@render genreTag(genre)}{/each}
+          </span>
           <span class="album">{track.album}</span>
         {:else}
           <span class="nothing">{t.player.nothing}</span>
@@ -294,7 +306,13 @@
         <form class="search" onsubmit={(e) => (e.preventDefault(), void search())}>
           <TextField icon="search" placeholder={t.search.placeholder} bind:value={query} oninput={typed} aria-label={t.tabs.search} />
         </form>
-        {#if searching && !results}
+        {#if !query.trim()}
+          <!-- Busca vazia: os estilos prontos (o nome que o Spotify usa, que é o que a busca entende). -->
+          <h3>{t.search.styles}</h3>
+          <div class="styles">
+            {#each GENRES as genre (genre)}{@render genreTag(genre)}{/each}
+          </div>
+        {:else if searching && !results}
           <div class="center"><Spinner /></div>
         {:else if results}
           {#if !results.tracks.length && !results.lists.length}
@@ -448,7 +466,10 @@
     <div class="thumb">{#if item.cover}<img src={item.cover} alt="" loading="lazy" />{:else}<Icon name="music" size={16} />{/if}</div>
     <div class="text">
       <span class="name">{item.title}</span>
-      <span class="sub">{item.artists}</span>
+      <span class="sub">
+        <span class="by">{item.artists}</span>
+        {#each item.genres.slice(0, 2) as genre (genre)}{@render genreTag(genre)}{/each}
+      </span>
     </div>
     <span class="tabular time">{clock(item.durationMs / 1000)}</span>
     {#if actions}
@@ -458,12 +479,16 @@
   </li>
 {/snippet}
 
+{#snippet genreTag(genre: string)}
+  <button type="button" class="genre" use:tooltip={t.search.byGenre(genre)} onclick={() => searchGenre(genre)}>{genre}</button>
+{/snippet}
+
 {#snippet listRow(item: MusicList)}
   <li class="item">
     <div class="thumb">{#if item.cover}<img src={item.cover} alt="" loading="lazy" />{:else}<Icon name="list-music" size={16} />{/if}</div>
     <div class="text">
       <span class="name">{item.title}</span>
-      <span class="sub">{item.kind === 'album' ? t.search.album : t.search.playlist}{item.by ? ` · ${item.by}` : ''}</span>
+      <span class="sub"><span class="by">{item.kind === 'album' ? t.search.album : t.search.playlist}{item.by ? ` · ${item.by}` : ''}</span></span>
     </div>
     <IconButton icon="play" label={t.search.playNow} size="sm" onclick={() => play(item.uri)} />
   </li>
@@ -539,8 +564,47 @@
     white-space: nowrap;
   }
 
+  .artist-line {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 6px;
+  }
+
   .artists {
     color: var(--fg-2);
+  }
+
+  /* Estilo do artista: uma tag que busca músicas do mesmo estilo. */
+  .genre {
+    flex: none;
+    height: 18px;
+    padding: 0 7px;
+    border-radius: var(--r-full);
+    background: var(--spotify-soft);
+    color: var(--spotify);
+    font-size: var(--text-2xs);
+    font-weight: 500;
+    line-height: 18px;
+    white-space: nowrap;
+    transition: background-color var(--t-fast) var(--ease);
+  }
+
+  .genre:hover {
+    background: rgb(30 215 96 / 0.24);
+  }
+
+  .styles {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .styles .genre {
+    height: 28px;
+    padding: 0 12px;
+    font-size: var(--text-sm);
+    line-height: 28px;
   }
 
   .album,
@@ -714,10 +778,17 @@
   }
 
   .name,
-  .sub {
+  .by {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  .sub {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
   }
 
   .name {

@@ -1560,6 +1560,8 @@ try {
   // B controla o bot de A pelo painel: pula a música (o som troca junto) e põe uma na fila pela busca.
   await b.page.locator('nav li.bot').getByRole('button', { name: 'Spotify de Lucas', exact: true }).click({ force: true })
   const panelB = b.page.locator('.music-panel')
+  // Busca vazia: os estilos prontos pra escolher.
+  const styles = await panelB.locator('.styles .genre').count()
   await panelB.getByRole('button', { name: 'Próxima', exact: true }).click({ force: true })
   await panelB.locator('.title', { hasText: 'Lenda' }).waitFor({ timeout: 10_000 })
   const skipped = await musicLevels(b.page, 660, 440)
@@ -1568,6 +1570,20 @@ try {
     'B pula a música no bot de A e o som troca junto (a anterior para)',
     JSON.stringify(skipped),
   )
+  // Estilo: a música tocando mostra o estilo do artista ao lado do nome, e clicar nele busca músicas do estilo.
+  await panelB.locator('.now .genre').first().waitFor({ timeout: 8000 })
+  const tags = await panelB.locator('.now .genre').allInnerTexts()
+  await panelB.locator('.now .genre', { hasText: 'mpb' }).click({ force: true })
+  const sameStyle = await panelB.locator('.item', { hasText: 'Tempo Perdido' }).waitFor({ timeout: 8000 }).then(() => true, () => false)
+  const styleQuery = await panelB.getByPlaceholder('Música, artista, playlist ou álbum').inputValue()
+  const rowTags = await panelB.locator('.item', { hasText: 'Tempo Perdido' }).locator('.genre').allInnerTexts()
+  const artistCalls = spotify.state.artistCalls
+  check(
+    styles === 20 && tags.join(',') === 'mpb,pop' && sameStyle && styleQuery === 'genre:"mpb"' && rowTags.join(',') === 'rock,mpb' && artistCalls <= 4,
+    'estilo da música: tag ao lado do artista, clicar busca músicas do estilo (e os estilos prontos na busca vazia)',
+    `${styles} prontos · ${tags.join('/')} · ${styleQuery} · ${rowTags.join('/')} · ${artistCalls} pedidos de artista`,
+  )
+  await shot(b, '7f-spotify-estilos')
   await panelB.getByPlaceholder('Música, artista, playlist ou álbum').fill('tempo')
   await panelB.getByPlaceholder('Música, artista, playlist ou álbum').press('Enter')
   const result = panelB.locator('.item', { hasText: 'Tempo Perdido' }).first()

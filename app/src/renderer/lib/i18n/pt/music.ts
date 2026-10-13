@@ -72,6 +72,9 @@ export default {
     queued: (title: string) => `"${title}" entrou na fila.`,
     album: 'Álbum',
     playlist: 'Playlist',
+    /** Busca vazia: estilos prontos (os nomes do Spotify, que não se traduzem). */
+    styles: 'Ou escolha um estilo',
+    byGenre: (genre: string) => `Músicas de ${genre}`,
   },
   queue: {
     empty: 'Nada na fila. Quando a música acabar, o Spotify segue com parecidas.',
