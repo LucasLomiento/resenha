@@ -60,3 +60,31 @@ export function audioMidsOf(sdp: string, wanted: (streamId: string) => boolean):
   }
   return mids
 }
+
+// ---------- Família de IP dos candidatos (rota por IPv4 ou IPv6) ----------
+
+export type IpFamily = 'ipv4' | 'ipv6'
+
+/** Família de um endereço (null: nome `.local` do mDNS, que não sai da rede de casa, ou vazio). */
+export function ipFamily(address: string | null | undefined): IpFamily | null {
+  if (!address) return null
+  if (address.includes(':')) return 'ipv6'
+  return /^\d{1,3}(\.\d{1,3}){3}$/.test(address) ? 'ipv4' : null
+}
+
+/** Família de um candidato ICE (a linha `candidate:...`, com ou sem o `a=` do SDP). */
+export function candidateFamily(candidate: string): IpFamily | null {
+  return ipFamily(candidate.replace(/^a=/, '').split(' ')[4])
+}
+
+/** Só os candidatos dessa família (e os `.local`) ficam no SDP. */
+export function keepFamily(sdp: string, family: IpFamily): string {
+  return sdp
+    .split('\r\n')
+    .filter((line) => {
+      if (!line.startsWith('a=candidate:')) return true
+      const of = candidateFamily(line)
+      return of === null || of === family
+    })
+    .join('\r\n')
+}

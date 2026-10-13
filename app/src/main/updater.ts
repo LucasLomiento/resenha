@@ -114,6 +114,19 @@ export function setupUpdater(onState: (state: UpdateState) => void) {
   setInterval(() => checkForUpdates(), CHECK_EVERY)
 }
 
+/** O que o app faz ao fechar (o `app.exit` pula o `will-quit`: sem isso, o librespot ficava rodando). */
+let cleanup = () => {}
+
+export function setUpdaterCleanup(fn: () => void) {
+  cleanup = fn
+}
+
+/** Fecha pra a versão nova entrar. */
+function exitForUpdate() {
+  cleanup()
+  app.exit(0)
+}
+
 /** Entrou ou saiu de call: saindo, baixa o que estava esperando. */
 export function setUpdaterCall(active: boolean) {
   inCall = active
@@ -211,7 +224,7 @@ async function installPacman(file: string, version: string) {
   const code = await run(...outside(['pkexec', 'pacman', '-U', '--noconfirm', file], { wait: true }))
   if (code === 0) {
     relaunchWhenGone()
-    return app.exit(0)
+    return exitForUpdate()
   }
   // 126 = a pessoa cancelou a senha; aí não insiste.
   if (code === 126) return set({ status: 'ready', version })
@@ -230,7 +243,7 @@ async function installPacman(file: string, version: string) {
   ].join('; ')
   const [command, args] = outside([terminal.command, ...terminal.args, 'bash', '-c', script], { wait: false })
   spawn(command, args, { detached: true, stdio: 'ignore' }).unref()
-  app.exit(0)
+  exitForUpdate()
 }
 
 export function findTerminal(title = tm().update.terminalTitle): { command: string; args: string[] } | null {

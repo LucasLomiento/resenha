@@ -1,6 +1,7 @@
 import type { SignalData, StreamKind } from '../../../../shared/protocol'
 import { boostContext, setBoostOutput } from './boost'
-import { audioMidsOf, tuneScreenOpus } from './sdp'
+import type { PathSample } from './route'
+import { audioMidsOf, candidateFamily, ipFamily, keepFamily, tuneScreenOpus, type IpFamily } from './sdp'
 import type { ScreenMode, VideoCodec } from './settings.svelte'
 
 /** Sinalização sem os ids das conexões (o Peer põe na hora de mandar). */
@@ -46,6 +47,10 @@ export interface LinkStats {
   route: 'direto' | 'relay' | null
   /** Bytes que passaram pelo TURN do Cloudflare (enviados + recebidos), pra cota do mês. */
   relayBytes?: number
+  /** Família de IP do caminho direto em uso. */
+  family?: IpFamily | null
+  /** Último ping medido de cada família com caminho direto (o ICE testa as duas), pra escolher a rota. */
+  paths?: Partial<Record<IpFamily, PathSample>>
 }
 
 export interface VideoStats {
@@ -187,16 +192,27 @@ export class Peer {
   private videoOptions: VideoSendOptions | null = null
   private lastIn = { bytes: 0, at: 0, jbDelay: 0, jbCount: 0 }
   private lastOut = { bytes: 0, at: 0, jbDelay: 0, jbCount: 0 }
+  /**
+   * Rota: só essa família de IP vale nos candidatos (null: as duas, como o Chromium preferir).
+   * Fica fixa na conexão: o ICE não larga um caminho que ainda funciona (nem refazendo o ICE),
+   * então trocar de rota é refazer a conexão.
+   */
+  private family: IpFamily | null
+  /** Respostas e ping somado de cada par direto na leitura anterior (a diferença é o ping recente). */
+  private pairMarks = new Map<string, { responses: number; total: number }>()
+  private paths: Partial<Record<IpFamily, PathSample>> = {}
 
   constructor(
     readonly connId: string,
     readonly userId: string,
-    private polite: boolean,
-    ice: { servers: RTCIceServer[]; relay: boolean },
+    /** Cede quando as ofertas cruzam. O outro lado (o que não cede) é quem escolhe a rota. */
+    readonly polite: boolean,
+    ice: { servers: RTCIceServer[]; relay: boolean; family?: IpFamily | null },
     micStream: MediaStream,
     private codec: VideoCodec,
     private events: PeerEvents,
   ) {
+    this.family = ice.relay ? null : (ice.family ?? null)
     // Sala pelo Cloudflare: só caminhos pelo TURN dele (nada direto entre os PCs).
     this.pc = new RTCPeerConnection({
       iceServers: ice.servers,
@@ -251,7 +267,7 @@ export class Peer {
     }
 
     this.pc.onicecandidate = ({ candidate }) => {
-      if (candidate) this.emit({ kind: 'candidate', candidate: candidate.toJSON() })
+      if (candidate && this.allows(candidate.candidate)) this.emit({ kind: 'candidate', candidate: candidate.toJSON() })
     }
 
     this.pc.onconnectionstatechange = () => {
@@ -301,7 +317,19 @@ export class Peer {
     const description = this.pc.localDescription
     if (!description) return
     if (description.type === 'offer') this.offerSentAt = Date.now()
-    this.emit({ kind: 'description', description: description.toJSON(), streams: { ...this.localStreams } })
+    const json = description.toJSON()
+    if (this.family && json.sdp) json.sdp = keepFamily(json.sdp, this.family)
+    this.emit({ kind: 'description', description: json, streams: { ...this.localStreams } })
+  }
+
+  /**
+   * Candidato que pode entrar (pra lá e pra cá): com a rota presa numa família, os da outra
+   * ficam de fora dos dois lados, e o ICE só acha caminho por ela.
+   */
+  private allows(candidate: string): boolean {
+    if (!this.family) return true
+    const family = candidateFamily(candidate)
+    return family === null || family === this.family
   }
 
   /**
@@ -350,9 +378,10 @@ export class Peer {
       case 'description': {
         Object.assign(this.remoteStreams, data.streams)
         const mids = new Set([this.screenAudio?.mid, this.musicTx?.mid].filter((m): m is string => !!m))
+        const sdp = data.description.sdp ?? ''
         const description: RTCSessionDescriptionInit = {
           type: data.description.type,
-          sdp: tuneScreenOpus(data.description.sdp ?? '', mids),
+          sdp: tuneScreenOpus(this.family ? keepFamily(sdp, this.family) : sdp, mids),
         }
         const readyForOffer = !this.makingOffer && (this.pc.signalingState === 'stable' || this.settingAnswer)
         const collision = description.type === 'offer' && !readyForOffer
@@ -371,7 +400,7 @@ export class Peer {
         return
       }
       case 'candidate':
-        if (!data.candidate) return
+        if (!data.candidate || !this.allows(data.candidate.candidate ?? '')) return
         // Sem descrição remota ainda o Chromium recusa e o candidato se perderia;
         // guarda e aplica logo depois. Perder candidatos aqui pode custar a conexão direta.
         if (!this.pc.remoteDescription) {
@@ -609,7 +638,8 @@ export class Peer {
         if (s.type === 'candidate-pair' && s.nominated && s.state === 'succeeded') pair = s
       })
     }
-    if (!pair) return { rtt: null, route: null }
+    this.measurePaths(report)
+    if (!pair) return { rtt: null, route: null, paths: { ...this.paths } }
     const local = report.get(pair.localCandidateId)
     const remote = report.get(pair.remoteCandidateId)
     const relay = local?.candidateType === 'relay' || remote?.candidateType === 'relay'
@@ -618,14 +648,48 @@ export class Peer {
       route: relay ? 'relay' : 'direto',
       // O TURN cobra o que sai dele: nos dois sentidos, quando o meu lado passa por ele.
       relayBytes: local?.candidateType === 'relay' ? (pair.bytesSent ?? 0) + (pair.bytesReceived ?? 0) : 0,
+      family: relay ? null : (ipFamily(local?.address ?? local?.ip) ?? ipFamily(remote?.address ?? remote?.ip)),
+      paths: { ...this.paths },
     }
+  }
+
+  /**
+   * Ping de cada família de IP pelos pares diretos que funcionam: o em uso é testado a cada
+   * poucos segundos e o reserva (da outra família) a cada 15 a 25 s. Cada resposta nova vira
+   * uma amostra.
+   */
+  private measurePaths(report: RTCStatsReport) {
+    const marks = new Map<string, { responses: number; total: number }>()
+    const now = Date.now()
+    const best: Partial<Record<IpFamily, number>> = {}
+    report.forEach((s) => {
+      if (s.type !== 'candidate-pair' || s.state !== 'succeeded') return
+      const local = report.get(s.localCandidateId)
+      const remote = report.get(s.remoteCandidateId)
+      if (!local || !remote || local.candidateType === 'relay' || remote.candidateType === 'relay') return
+      const family = ipFamily(local.address ?? local.ip)
+      if (!family) return
+      const responses = s.responsesReceived ?? 0
+      const total = s.totalRoundTripTime ?? 0
+      marks.set(s.id, { responses, total })
+      const prev = this.pairMarks.get(s.id) ?? { responses: 0, total: 0 }
+      if (responses <= prev.responses) return
+      const rtt = ((total - prev.total) / (responses - prev.responses)) * 1000
+      best[family] = Math.min(best[family] ?? Infinity, rtt)
+    })
+    this.pairMarks = marks
+    for (const [family, rtt] of Object.entries(best) as [IpFamily, number][]) this.paths[family] = { rtt, at: now }
   }
 
   async videoStats(direction: 'inbound' | 'outbound'): Promise<VideoStats | null> {
     return videoStatsFrom(await this.pc.getStats(), direction, direction === 'inbound' ? this.lastIn : this.lastOut)
   }
 
-  /** A sala passou (ou deixou de passar) pelo Cloudflare: troca a política e refaz o ICE, sem derrubar a conexão. */
+  /**
+   * Troca a política e refaz o ICE, sem derrubar a conexão. Só serve pra sair do Cloudflare
+   * (o caminho direto tem prioridade e ganha sozinho): pra entrar, o ICE continuaria no
+   * caminho direto que ainda funciona, então a call refaz a conexão (`Call.rebuildPeer`).
+   */
   setRelay(relay: boolean, servers: RTCIceServer[]) {
     if (this.closed) return
     this.pc.setConfiguration({ ...this.pc.getConfiguration(), iceServers: servers, iceTransportPolicy: relay ? 'relay' : 'all' })

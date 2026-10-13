@@ -42,7 +42,7 @@ import {
   spotifyStop,
   spotifyWant,
 } from './spotify'
-import { checkForUpdates, downloadUpdate, installUpdate, setUpdaterCall, setupUpdater, takeRejoin, updateState } from './updater'
+import { checkForUpdates, downloadUpdate, installUpdate, setUpdaterCall, setUpdaterCleanup, setupUpdater, takeRejoin, updateState } from './updater'
 
 // RESENHA_PROFILE=b roda uma segunda instância com outra conta no mesmo PC.
 const profile = process.env.RESENHA_PROFILE
@@ -488,13 +488,17 @@ app.on('before-quit', () => {
   quitting = true
 })
 
-app.on('will-quit', () => {
+/** Fechando (pelo jeito normal ou pra atualizar): solta atalhos e mata o que o app abriu por fora. */
+function cleanup() {
   clearHyprShortcuts()
   clearPortalShortcuts()
   stopScreenAudio()
   inkStop()
   spotifyKill()
-})
+}
+
+app.on('will-quit', cleanup)
+setUpdaterCleanup(cleanup)
 
 app.on('window-all-closed', () => {
   app.quit()

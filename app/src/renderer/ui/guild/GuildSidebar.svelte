@@ -1,6 +1,7 @@
 <script lang="ts">
   import { P, type Channel, type NotifyLevel, type VoiceMember } from '../../../../../shared/protocol'
   import { client } from '../../lib/client.svelte'
+  import { otherRtt } from '../../lib/call.svelte'
   import type { GuildState } from '../../lib/guild.svelte'
   import { m } from '../../lib/i18n.svelte'
   import { settings } from '../../lib/settings.svelte'
@@ -486,7 +487,7 @@
                     <span class="member-name">{name}</span>
                     <UserBadge {badge} size={13} />
                     <!-- Ping só passando o mouse (antes dos outros ícones: eles não saem do lugar). -->
-                    {#if here && !self}<SignalBars class="ping" rtt={link?.rtt} route={link?.route} />{/if}
+                    {#if here && !self}<SignalBars class="ping" rtt={link?.rtt} route={link?.route} family={link?.family} other={otherRtt(link, client.now)} />{/if}
                     {#if member.camera}<Icon name="camera" size={14} class="soft" />{/if}
                     {#if member.serverDeafened || member.deafened}
                       <span class="state" use:tooltip={member.serverDeafened ? t.deafenedByMod : t.deafened}>

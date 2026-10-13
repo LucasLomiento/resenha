@@ -99,6 +99,35 @@ async function launch(profile) {
   return { app, page, dropGuild, guildSockets }
 }
 
+/** Família de IP do caminho em uso na primeira conexão da call (pelas estatísticas do WebRTC). */
+async function pathFamily(page) {
+  return page.evaluate(async () => {
+    const pc = window.__call.peerList[0]?.pc
+    if (!pc) return null
+    const report = await pc.getStats()
+    let family = null
+    report.forEach((s) => {
+      if (s.type !== 'transport' || !s.selectedCandidatePairId) return
+      const local = report.get(report.get(s.selectedCandidatePairId)?.localCandidateId)
+      if (local?.address) family = local.address.includes(':') ? 'ipv6' : 'ipv4'
+    })
+    return family
+  })
+}
+
+/** Voz que chega da primeira conexão: amostras recebidas e as disfarçadas (pacote que faltou). */
+async function voiceStats(page) {
+  return page.evaluate(async () => {
+    let out = { samples: 0, concealed: 0 }
+    ;(await window.__call.peerList[0].pc.getStats()).forEach((s) => {
+      if (s.type === 'inbound-rtp' && s.kind === 'audio' && s.totalSamplesReceived > out.samples) {
+        out = { samples: s.totalSamplesReceived, concealed: s.concealedSamples ?? 0 }
+      }
+    })
+    return out
+  })
+}
+
 /** Microfone falso (oscilador) no lugar do real; o microfone virtual do venmic passa direto. */
 async function fakeMic(page) {
   await page.evaluate(installFakeMic)
@@ -832,6 +861,31 @@ try {
   })
   check(scroll.scrollable && scroll.moved, 'chat rola quando tem mensagem que não cabe')
 
+  // Queda rápida da conexão com o servidor (o comum no Cloudflare): volta sozinha, sem o aviso de
+  // "Conectando…" e sem esvaziar o chat; a mensagem que chegou enquanto estava fora aparece.
+  await b.page.waitForTimeout(5000)
+  await a.page.evaluate(() => {
+    window.__dropWatch = { fewest: Infinity, notice: false }
+    window.__dropTimer = setInterval(() => {
+      const watch = window.__dropWatch
+      watch.fewest = Math.min(watch.fewest, document.querySelectorAll('.scroller article').length)
+      if (document.querySelector('.offline[role=status]')) watch.notice = true
+    }, 20)
+  })
+  const dropping = a.dropGuild()
+  await composerB.fill('chegou durante a queda')
+  await composerB.press('Enter')
+  const cameBack = await dropping
+  await a.page.getByText('chegou durante a queda').waitFor({ timeout: 10_000 }).catch(() => {})
+  await a.page.waitForTimeout(1000)
+  const dropWatch = await a.page.evaluate(() => (clearInterval(window.__dropTimer), window.__dropWatch))
+  const arrivedInDrop = await a.page.getByText('chegou durante a queda').count()
+  check(
+    cameBack && dropWatch.fewest > 0 && !dropWatch.notice && arrivedInDrop === 1,
+    'queda rápida da conexão: volta sem aviso de "Conectando…", o chat não esvazia e o que chegou nela aparece',
+    JSON.stringify({ ...dropWatch, arrivedInDrop }),
+  )
+
   await checkMap()
   for (const side of [a, b]) await channel(side.page, 'geral').click({ force: true })
 
@@ -954,6 +1008,49 @@ try {
   await a.page.waitForTimeout(800)
   const speaking = await a.page.locator('.member', { hasText: 'Duarte' }).locator('.avatar.speaking').count()
   check(speaking === 1, 'A vê o indicador de fala de B')
+
+  // Rota da conexão direta: presa só no IPv4 (ou só no IPv6), a conexão é refeita só com essa
+  // família e a voz volta em seguida; solta, volta pro caminho de antes. (Refazer o ICE não
+  // basta: o Chromium não larga o caminho antigo, que tem prioridade.) Só com IPv4 e IPv6 na máquina.
+  const families = await a.page.evaluate(async () => {
+    const found = new Set()
+    ;(await window.__call.peerList[0].pc.getStats()).forEach((s) => {
+      if (s.type === 'local-candidate' && s.candidateType === 'host' && s.address) found.add(s.address.includes(':') ? 'ipv6' : 'ipv4')
+    })
+    return [...found]
+  })
+  let routeSettledAt = 0
+  if (families.length < 2) console.log('   (esta máquina não tem IPv4 e IPv6 juntos: troca de rota não testada)')
+  else {
+    const natural = await pathFamily(a.page)
+    const target = natural === 'ipv6' ? 'ipv4' : 'ipv6'
+    /** Prende (ou solta) e espera a conexão nova ficar na família e a voz voltar a chegar. */
+    const pinAndWait = async (family, expected) => {
+      const started = Date.now()
+      await a.page.evaluate((f) => window.__call.pinRoute(window.__call.peerList[0].connId, f), family)
+      let now = null
+      let voice = { samples: 0, concealed: 0 }
+      for (let i = 0; i < 100 && !(now === expected && voice.samples > 0); i++) {
+        await a.page.waitForTimeout(100)
+        now = await pathFamily(a.page)
+        voice = await voiceStats(a.page)
+      }
+      return { now, gap: Date.now() - started }
+    }
+    const pinned = await pinAndWait(target, target)
+    const seenByB = await pathFamily(b.page)
+    const before = await voiceStats(a.page)
+    await a.page.waitForTimeout(2000)
+    const after = await voiceStats(a.page)
+    const concealed = (after.concealed - before.concealed) / Math.max(1, after.samples - before.samples)
+    const released = await pinAndWait(null, natural)
+    routeSettledAt = Date.now()
+    check(
+      pinned.now === target && seenByB === target && pinned.gap < 5000 && concealed < 0.05 && released.now === natural,
+      `rota presa no ${target}: a conexão é refeita nele e a voz volta logo; solta, volta pro ${natural}`,
+      `${natural} → ${pinned.now} (B: ${seenByB}) em ${pinned.gap} ms, ${(concealed * 100).toFixed(1)}% de som disfarçado depois → ${released.now} em ${released.gap} ms`,
+    )
+  }
   // Na dock, a sua foto também fica verde ao falar, por cima da moldura (A tem a do Fundador).
   const dockAvatar = a.page.locator('.dock .me .avatar').first()
   const dockRing = await dockAvatar.evaluate((el) => [el.className, getComputedStyle(el, '::after').borderTopColor])
@@ -1115,6 +1212,19 @@ try {
     .then(() => check(true, 'resolução subiu de 720p pra 1080p ao vivo'))
     .catch(() => check(false, 'resolução subiu de 720p pra 1080p ao vivo'))
   console.log('   estatísticas em B depois da troca:', (await b.page.locator('.stats').innerText()).replace(/\n/g, ' | '))
+
+  // A escolha de rota depende do ICE continuar testando o caminho que não está em uso (a cada
+  // ~25 s): passado um minuto da última troca, as duas famílias têm ping recente.
+  if (routeSettledAt) {
+    await a.page.waitForTimeout(Math.max(0, routeSettledAt + 65_000 - Date.now()))
+    // Direto da conexão (o `call.links` só muda quando o ping mostrado muda).
+    const paths = await a.page.evaluate(async () => {
+      const link = await window.__call.peerList[0].linkStats()
+      return { family: link.family, ages: Object.fromEntries(Object.entries(link.paths ?? {}).map(([f, p]) => [f, Math.round((Date.now() - p.at) / 1000)])) }
+    })
+    const other = paths.family === 'ipv4' ? 'ipv6' : 'ipv4'
+    check(paths.ages[other] != null && paths.ages[other] < 40, 'o caminho que não está em uso continua sendo medido (pra escolher a rota)', JSON.stringify(paths))
+  }
 
   // Quedas de conexão no meio da transmissão: voz e tela são P2P e não podem cair junto, e
   // ninguém sai da call pros outros. Quem assiste continua assistindo, sem clicar em nada.

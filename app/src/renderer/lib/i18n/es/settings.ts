@@ -123,6 +123,7 @@ export default {
       },
       'voice.stats': { label: 'Estadísticas en el reproductor', section: 'Avanzado', keywords: ['fps', 'ping', 'resolución', 'bitrate', 'lag'] },
       'voice.doubleClick': { label: 'Cambiar de sala con doble clic', section: 'Llamada', keywords: ['doble clic', 'double click', 'cambiar de sala', 'cambiar de canal', 'sin querer', 'accidente', 'entrar a la llamada'] },
+      'voice.smartRoute': { label: 'Mejor camino en la conexión directa', section: 'Llamada', keywords: ['ruta', 'ping', 'lag', 'latencia', 'retraso', 'ipv4', 'ipv6', 'p2p', 'conexión directa', 'camino'] },
 
       // Notificaciones
       'notify.sounds': { label: 'Sonidos de la app', section: 'Sonidos', keywords: ['sonido', 'efectos de sonido', 'silenciar', 'mudo'] },
@@ -367,6 +368,8 @@ export default {
       section: 'Llamada',
       doubleClick: 'Cambiar de sala con doble clic',
       doubleClickDescription: 'Si ya estás en una llamada, un solo clic en otro canal de voz no te saca de la conversación.',
+      smartRoute: 'Mejor camino en la conexión directa',
+      smartRouteDescription: 'Si IPv4 o IPv6 da un ping mucho menor con alguien, la llamada se pasa a él sola. Las salas por Cloudflare no cambian.',
     },
     stream: {
       section: 'Transmisión',

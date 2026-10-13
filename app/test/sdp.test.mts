@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { audioMidsOf, tuneScreenOpus } from '../src/renderer/lib/sdp.ts'
+import { audioMidsOf, candidateFamily, ipFamily, keepFamily, tuneScreenOpus } from '../src/renderer/lib/sdp.ts'
 
 // Oferta de quem compartilha: voz (mid 0), vídeo da tela (mid 1) e áudio da tela (mid 2).
 const OFFER = [
@@ -42,4 +42,28 @@ test('estéreo e bitrate maior só na seção do áudio da tela', () => {
 
 test('sem áudio de tela, a descrição sai igualzinha', () => {
   assert.equal(tuneScreenOpus(OFFER, new Set()), OFFER)
+})
+
+// ---------- Família de IP dos candidatos (rota por IPv4 ou IPv6) ----------
+
+const V4 = 'candidate:1 1 udp 2122260223 192.168.1.15 50000 typ host generation 0'
+const V6 = 'candidate:2 1 udp 2122262783 2804:d57:1:2::5 50001 typ host generation 0'
+const SRFLX = 'candidate:3 1 udp 1686052607 177.10.20.30 50002 typ srflx raddr 192.168.1.15 rport 50000'
+const MDNS = 'candidate:4 1 udp 2122260223 6f1c2c7e-1111-2222-3333-444455556666.local 50003 typ host'
+
+test('reconhece a família de cada candidato (o .local não tem família)', () => {
+  assert.equal(candidateFamily(V4), 'ipv4')
+  assert.equal(candidateFamily(`a=${V6}`), 'ipv6')
+  assert.equal(candidateFamily(SRFLX), 'ipv4')
+  assert.equal(candidateFamily(MDNS), null)
+  assert.equal(ipFamily(''), null)
+})
+
+test('presa no IPv4: os candidatos IPv6 saem do SDP e o resto fica igual', () => {
+  const sdp = [OFFER.trimEnd(), `a=${V4}`, `a=${V6}`, `a=${SRFLX}`, `a=${MDNS}`, ''].join('\r\n')
+  const kept = keepFamily(sdp, 'ipv4')
+  assert.ok(!kept.includes('2804:d57'))
+  for (const line of [V4, SRFLX, MDNS]) assert.ok(kept.includes(line))
+  assert.ok(kept.startsWith(OFFER.trimEnd()))
+  assert.ok(keepFamily(sdp, 'ipv6').includes(V6) && !keepFamily(sdp, 'ipv6').includes('192.168.1.15 50000 typ host'))
 })

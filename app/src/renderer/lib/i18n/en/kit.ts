@@ -15,6 +15,8 @@ export default {
     measuring: 'Measuring connection…',
     relay: (rtt: number) => `${rtt} ms · through the server (relay)`,
     direct: (rtt: number) => `${rtt} ms · direct connection`,
+    directVia: (rtt: number, family: string) => `${rtt} ms · direct connection over ${family}`,
+    other: (family: string, rtt: number) => `${family}: ${rtt} ms`,
   },
   badge: {
     founder: 'Resenha founder',

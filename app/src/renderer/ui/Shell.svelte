@@ -206,10 +206,10 @@
       <StreamView full={streamFull} />
     {/if}
     <RejoinBanner />
-    {#if client.connection !== 'open'}
+    {#if client.connectionNotice}
       <div class="offline" role="status">
         <Spinner size={14} />
-        {client.connection === 'connecting' ? m.app.shell.connecting : m.app.shell.offline}
+        {client.connectionNotice === 'connecting' ? m.app.shell.connecting : m.app.shell.offline}
       </div>
     {/if}
   </main>

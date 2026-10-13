@@ -119,6 +119,7 @@ export default {
       },
       'voice.stats': { label: 'Stats in the player', section: 'Advanced', keywords: ['fps', 'ping', 'resolution', 'bitrate', 'statistics', 'lag'] },
       'voice.doubleClick': { label: 'Switch rooms with a double click', section: 'Call', keywords: ['double click', 'double-click', 'switch room', 'change channel', 'accidental', 'join call'] },
+      'voice.smartRoute': { label: 'Best path for direct connections', section: 'Call', keywords: ['route', 'ping', 'lag', 'latency', 'delay', 'ipv4', 'ipv6', 'p2p', 'direct connection', 'path'] },
 
       // Notifications
       'notify.sounds': { label: 'App sounds', section: 'Sounds', keywords: ['sound', 'sound effects', 'mute', 'silence', 'audio'] },
@@ -363,6 +364,8 @@ export default {
       section: 'Call',
       doubleClick: 'Switch rooms with a double click',
       doubleClickDescription: 'When you are already in a call, a single click on another voice channel won’t pull you out of the conversation.',
+      smartRoute: 'Best path for direct connections',
+      smartRouteDescription: 'If IPv4 or IPv6 has a much lower ping with someone, the call switches to it on its own. Rooms through Cloudflare don’t change.',
     },
     stream: {
       section: 'Streaming',

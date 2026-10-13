@@ -8,9 +8,18 @@ import { captureScreen, getCameraStream, getMicTrack, stopCapture } from './medi
 import { MicPipeline } from './mic'
 import { MusicBot, cleanMusicMessage, type MusicError, type MusicOp, type MusicReply, type MusicShare } from './music.svelte'
 import { Peer, type LinkStats, type SfuScreen, type VideoStats } from './peer'
+import { RoutePicker } from './route'
+import type { IpFamily } from './sdp'
 import { PRESETS, settings } from './settings.svelte'
 import { SfuPublisher, SfuViewer } from './sfu'
 import { playSound, type SoundName } from './sounds'
+
+/** Ping recente da família que não está em uso (pra dica do ping), arredondado. */
+export function otherRtt(link: LinkStats | undefined, now = Date.now()): number | null {
+  if (!link?.family) return null
+  const other = link.paths?.[link.family === 'ipv4' ? 'ipv6' : 'ipv4']
+  return other && now - other.at < 90_000 ? Math.round(other.rtt) : null
+}
 
 /** Quem tem selo entra na call com som próprio (o Fundador ganha do Pioneiro se os dois chegarem juntos). */
 function joinSound(badge: Badge | null): SoundName | null {
@@ -149,6 +158,10 @@ export class Call {
   private mediaBytes = 0
   private mediaReportAt = 0
   private relaySeen = new Map<string, number>()
+  /** connId -> escolha de rota (IPv4 ou IPv6) da conexão direta com essa pessoa (só do lado que escolhe). */
+  private routes = new Map<string, RoutePicker>()
+  /** connId -> família de IP presa (vale também pra conexão refeita depois de uma queda). */
+  private pins = new Map<string, IpFamily>()
 
   /** Rabiscos de quem assiste na minha tela (só compartilhando o monitor inteiro). */
   readonly ink = new InkShare((msg) => this.broadcastInk(msg))
@@ -295,6 +308,8 @@ export class Call {
     this.musicPending.clear()
     this.musicRate.clear()
     this.relaySeen.clear()
+    this.routes.clear()
+    this.pins.clear()
     this.stopCamera(false)
     this.cameras = {}
     this.watching = null
@@ -506,7 +521,8 @@ export class Call {
   private createPeer(member: VoiceMember): Peer | undefined {
     const me = this.connId()
     if (!me || !this.ice || !this.micTrack) return
-    const peer = new Peer(member.connId, member.userId, me > member.connId, { servers: this.ice.servers, relay: this.relay }, this.micStream, settings.codec, {
+    const ice = { servers: this.ice.servers, relay: this.relay, family: this.pins.get(member.connId) ?? null }
+    const peer = new Peer(member.connId, member.userId, me > member.connId, ice, this.micStream, settings.codec, {
       signal: (data) => this.sendSignal(member.connId, data),
       screen: (stream) => {
         // Puxando a tela dele pelo SFU: a cópia direta (que para logo) não substitui.
@@ -841,8 +857,59 @@ export class Call {
     const relay = this.relayFor(transport, true)
     if (relay === this.relay) return
     this.relay = relay
-    for (const peer of this.peers.values()) peer.setRelay(relay, this.ice.servers)
+    this.routes.clear()
+    this.pins.clear()
+    for (const peer of [...this.peers.values()]) {
+      // Entrar no Cloudflare: o ICE não larga a conexão direta que ainda funciona, então quem
+      // conduz a negociação refaz a dele do zero (o outro lado vê o id novo e refaz junto).
+      // Sair: o caminho direto tem prioridade e ganha sozinho, sem refazer nada.
+      if (relay && !peer.polite) this.rebuildPeer(peer.connId)
+      else peer.setRelay(relay, this.ice.servers)
+    }
     this.deps.toast(relay ? m.lib.call.relayOn : m.lib.call.relayOff, 'info')
+  }
+
+  /**
+   * Refaz a conexão com essa pessoa do zero, com a política e a rota de agora. O outro lado
+   * vê o id novo na sinalização e refaz a dele (como depois de uma queda); quem assistia uma
+   * tela pede de novo sozinho. O som some por ~1 s.
+   */
+  private rebuildPeer(connId: string) {
+    const member = this.members().find((m) => m.connId === connId && m.channelId === this.channelId)
+    if (!member || !this.peers.has(connId)) return
+    this.removePeer(connId)
+    this.createPeer(member)
+  }
+
+  // ---------- Rota da conexão direta ----------
+
+  /**
+   * Quando os dois PCs têm IPv4 e IPv6 e um deles dá um ping bem menor, prende a conexão nele
+   * (lib/route.ts). Só um lado escolhe (o que não cede na negociação), pros dois não refazerem
+   * a conexão ao mesmo tempo. Sala pelo Cloudflare fica de fora: lá tudo passa pelo TURN.
+   */
+  private pickRoute(peer: Peer, stats: LinkStats) {
+    if (peer.polite || peer.closed || this.relay) return
+    if (!settings.smartRoute) {
+      this.routes.delete(peer.connId)
+      // Desligou com a rota presa: solta.
+      if (this.pins.has(peer.connId)) this.pinRoute(peer.connId, null)
+      return
+    }
+    let picker = this.routes.get(peer.connId)
+    if (!picker) this.routes.set(peer.connId, (picker = new RoutePicker()))
+    const pick = picker.update({ now: Date.now(), family: stats.family ?? null, paths: stats.paths ?? {} })
+    if (pick === undefined) return
+    console.info('[rota]', peer.connId, pick ? `presa no ${pick}` : 'as duas famílias valem de novo', stats.paths)
+    this.pinRoute(peer.connId, pick)
+  }
+
+  /** Prende (ou solta, com null) a conexão com essa pessoa numa família de IP: refaz a conexão. */
+  pinRoute(connId: string, family: IpFamily | null) {
+    if (this.relay || (this.pins.get(connId) ?? null) === family) return
+    if (family) this.pins.set(connId, family)
+    else this.pins.delete(connId)
+    this.rebuildPeer(connId)
   }
 
   // ---------- Tela pelo SFU ----------
@@ -1149,15 +1216,22 @@ export class Call {
       }
     }, 100)
     this.statsTicker = setInterval(async () => {
-      for (const peer of this.peers.values()) {
+      // Cópia da lista: escolher a rota pode refazer a conexão (sai uma, entra outra).
+      for (const peer of [...this.peers.values()]) {
+        if (peer.closed) continue
         // Oferta que ficou sem resposta (sinalização perdida no caminho): manda de novo.
         peer.resendOffer()
         const stats = await peer.linkStats()
+        if (peer.closed) continue
         const prev = this.links[peer.connId]
-        if (!prev || prev.rtt !== stats.rtt || prev.route !== stats.route) this.links[peer.connId] = stats
+        if (!prev || prev.rtt !== stats.rtt || prev.route !== stats.route || prev.family !== stats.family || otherRtt(prev) !== otherRtt(stats)) {
+          this.links[peer.connId] = stats
+        }
         const relay = stats.relayBytes ?? 0
         this.mediaBytes += Math.max(0, relay - (this.relaySeen.get(peer.connId) ?? 0))
         this.relaySeen.set(peer.connId, relay)
+        // Por último: pode refazer a conexão.
+        this.pickRoute(peer, stats)
       }
       if (this.sfuWatch) {
         this.mediaBytes += await this.sfuWatch.viewer.newBytes()

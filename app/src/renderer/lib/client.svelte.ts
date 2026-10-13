@@ -41,6 +41,8 @@ export type Route =
 
 /** Sem mexer no PC esse tempo, o status vira "ausente" sozinho. */
 const IDLE_AFTER = 10 * 60_000
+/** Conexão fora por menos que isso não vira aviso: a queda rápida volta sozinha, sem ninguém notar. */
+const NOTICE_AFTER = 4000
 const LAST_CHANNEL_KEY = 'resenha.lastChannel'
 /** Depois disso a volta não vale mais (a atualização pelo terminal, com senha, pode demorar uns minutos). */
 const REJOIN_TTL = 10 * 60 * 1000
@@ -117,6 +119,8 @@ class Client implements GuildHost, HomeHost {
   idle = $state(false)
   toasts = $state<Toast[]>([])
   now = $state(Date.now())
+  /** Desde quando a conexão com o servidor está fora (0: aberta). */
+  private downSince = $state(0)
   /** Chamada privada tocando pra mim. */
   incomingCall = $state<{ channelId: string; from: string; video: boolean } | null>(null)
   /** Convite aberto por link (resenha://invite/...) esperando a pessoa confirmar. */
@@ -147,8 +151,16 @@ class Client implements GuildHost, HomeHost {
   })
 
   constructor() {
-    // O dono marcou (ou desmarcou) a sala da call: as conexões trocam de caminho na hora.
     $effect.root(() => {
+      // Marca quando a conexão caiu, pro aviso esperar uns segundos antes de aparecer.
+      $effect(() => {
+        const open = this.connection === 'open'
+        untrack(() => {
+          if (open) this.downSince = 0
+          else if (!this.downSince) this.downSince = Date.now()
+        })
+      })
+      // O dono marcou (ou desmarcou) a sala da call: as conexões trocam de caminho na hora.
       $effect(() => {
         const { guildId, channelId } = this.call
         void (guildId && channelId && this.guilds[guildId]?.channel(channelId)?.relay)
@@ -308,6 +320,13 @@ class Client implements GuildHost, HomeHost {
     if (states.includes('offline')) return 'offline'
     if (states.includes('connecting')) return 'connecting'
     return 'open'
+  }
+
+  /** O aviso de conexão na tela: só quando ela está fora há uns segundos (null: nada a avisar). */
+  get connectionNotice(): ConnectionStatus | null {
+    const status = this.connection
+    if (status === 'open' || !this.downSince || this.now - this.downSince < NOTICE_AFTER) return null
+    return status
   }
 
   async logout() {
@@ -775,6 +794,7 @@ class Client implements GuildHost, HomeHost {
     }
     if (!channelId) return
     if (!guild.messages[channelId]) guild.loadHistory(channelId)
+    else guild.refresh(channelId)
     if (document.hasFocus()) guild.ack(channelId)
   }
 
@@ -782,6 +802,7 @@ class Client implements GuildHost, HomeHost {
     const home = this.home
     if (!home?.loaded) return
     if (!home.messages[channelId]) home.loadHistory(channelId)
+    else home.refresh(channelId)
     if (document.hasFocus()) home.ack(channelId)
   }
 

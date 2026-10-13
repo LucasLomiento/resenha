@@ -25,6 +25,7 @@ import {
   type VoiceMember,
 } from '../../../../shared/protocol'
 import type { Api } from './api'
+import { freshTail, mergeMessages } from './history'
 import { fmt, m, serverText } from './i18n.svelte'
 import { GuildMap } from './map.svelte'
 import { Connection, connectionKey, type CloseReason, type ConnectionStatus } from './ws'
@@ -59,12 +60,6 @@ type WithReq = Extract<ServerMessage, { reqId: string }>
 
 let seq = 0
 const nextId = () => `${Date.now().toString(36)}${(++seq).toString(36)}`
-
-export function mergeMessages(current: Message[], incoming: Message[]): Message[] {
-  const byId = new Map(current.map((m) => [m.id, m]))
-  for (const m of incoming) byId.set(m.id, m)
-  return [...byId.values()].sort((a, b) => (a.id < b.id ? -1 : 1))
-}
 
 const kindOrder: Record<ChannelKind, number> = { text: 0, voice: 1, category: 2 }
 const byPosition = (a: Channel, b: Channel) =>
@@ -107,6 +102,8 @@ export class GuildState {
   private inviteWaiters = new Map<string, { resolve: (invite: Invite | null) => void; reject: (err: Error) => void; timer: ReturnType<typeof setTimeout> }>()
   private typingSent: Record<string, number> = {}
   private everConnected = false
+  /** Canais com mensagens de antes da última queda: o trecho recente é conferido quando abrirem. */
+  private stale = new Set<string>()
   /** Igual em toda reconexão desta instância: o servidor devolve o mesmo connId e a call continua. */
   private key = connectionKey()
 
@@ -395,10 +392,16 @@ export class GuildState {
         this.readStates = Object.fromEntries((msg.readStates ?? []).map((r) => [r.channelId, r]))
         this.lastMessageIds = msg.lastMessageIds ?? {}
         if (msg.notify) this.notify = msg.notify
-        // Reconectou: o que estava na tela pode ter perdido mensagens; busca de novo.
-        this.messages = {}
-        this.hasMore = {}
-        this.hasNewer = {}
+        // Reconectou: o que estava carregado pode ter perdido mensagens. Continua na tela (sem
+        // piscar) e o trecho mais recente é conferido quando o canal estiver aberto. Quem
+        // olhava mensagens antigas, ou deixou de ver o canal, recomeça do zero.
+        for (const channelId of Object.keys(this.messages)) {
+          if (this.hasNewer[channelId] || this.permissions[channelId] === undefined) {
+            delete this.messages[channelId]
+            delete this.hasMore[channelId]
+            delete this.hasNewer[channelId]
+          } else this.stale.add(channelId)
+        }
         this.loadingHistory = {}
         this.typing = {}
         this.loaded = true
@@ -583,6 +586,24 @@ export class GuildState {
     }
   }
 
+  /** Canal aberto depois de uma queda: acerta o trecho mais recente sem esvaziar a tela. */
+  async refresh(channelId: string) {
+    if (!this.stale.has(channelId) || this.loadingHistory[channelId]) return
+    this.loadingHistory[channelId] = true
+    const mark = this.messages[channelId]?.at(-1)?.id ?? ''
+    try {
+      const page = await this.request<'chat.history'>({ t: 'chat.history', reqId: nextId(), channelId })
+      this.stale.delete(channelId)
+      const { messages, kept } = freshTail(this.messages[channelId] ?? [], page.messages, mark)
+      this.messages[channelId] = messages
+      if (!kept) this.hasMore[channelId] = page.hasMore
+    } catch {
+      // sem conexão: confere na próxima vez que o canal abrir
+    } finally {
+      this.loadingHistory[channelId] = false
+    }
+  }
+
   /** Pula pra uma mensagem (busca, fixadas, resposta): carrega em volta dela. */
   async jumpTo(channelId: string, messageId: string) {
     const loaded = this.messages[channelId]?.some((m) => m.id === messageId)
@@ -590,6 +611,7 @@ export class GuildState {
     this.loadingHistory[channelId] = true
     try {
       const page = await this.request<'chat.history'>({ t: 'chat.history', reqId: nextId(), channelId, around: messageId })
+      this.stale.delete(channelId)
       this.messages[channelId] = page.messages
       this.hasMore[channelId] = page.hasMore
       this.hasNewer[channelId] = !!page.hasNewer
@@ -614,6 +636,7 @@ export class GuildState {
 
   /** Volta pras mensagens mais recentes. */
   async jumpToPresent(channelId: string) {
+    this.stale.delete(channelId)
     this.hasNewer[channelId] = false
     this.messages[channelId] = []
     this.hasMore[channelId] = true

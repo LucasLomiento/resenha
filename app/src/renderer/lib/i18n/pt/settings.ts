@@ -130,6 +130,7 @@ export default {
       },
       'voice.stats': { label: 'Estatísticas no player', section: 'Avançado', keywords: ['fps', 'ping', 'resolução', 'bitrate', 'stats', 'lag'] },
       'voice.doubleClick': { label: 'Mudar de sala com clique duplo', section: 'Call', keywords: ['clique duplo', 'duplo clique', 'double click', 'mudar de sala', 'trocar de canal', 'sem querer', 'acidente', 'entrar na call'] },
+      'voice.smartRoute': { label: 'Melhor caminho na conexão direta', section: 'Call', keywords: ['rota', 'ping', 'lag', 'latência', 'atraso', 'ipv4', 'ipv6', 'p2p', 'conexão direta', 'caminho'] },
 
       // Notificações
       'notify.sounds': { label: 'Sons do app', section: 'Sons', keywords: ['som', 'barulho', 'efeitos sonoros', 'silenciar', 'mudo', 'sounds'] },
@@ -380,6 +381,8 @@ export default {
       section: 'Call',
       doubleClick: 'Mudar de sala com clique duplo',
       doubleClickDescription: 'Já numa call, um clique só no outro canal de voz não te tira da conversa.',
+      smartRoute: 'Melhor caminho na conexão direta',
+      smartRouteDescription: 'Se o IPv4 ou o IPv6 der um ping bem menor com alguém, a call passa pra ele sozinha. Sala pelo Cloudflare não muda.',
     },
     stream: {
       section: 'Transmissão',

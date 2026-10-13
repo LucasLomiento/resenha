@@ -1,5 +1,6 @@
 <script lang="ts">
   import { client } from '../lib/client.svelte'
+  import { otherRtt } from '../lib/call.svelte'
   import { listDevices, namedDevices } from '../lib/devices'
   import { m } from '../lib/i18n.svelte'
   import { micProfile, setMicProfile } from '../lib/mic-profile'
@@ -126,7 +127,7 @@
           <span class="where">{place ? `${place.name} · ${place.where}` : ''}</span>
         </button>
         {#if call.channelId && worstLink}
-          <SignalBars rtt={worstLink.rtt} route={worstLink.route} />
+          <SignalBars rtt={worstLink.rtt} route={worstLink.route} family={worstLink.family} other={otherRtt(worstLink, client.now)} />
         {/if}
         <IconButton
           icon="music"

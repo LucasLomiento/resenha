@@ -5,17 +5,31 @@
   let {
     rtt,
     route = null,
+    family = null,
+    other = null,
     class: className,
   }: {
     /** Ping em ms (null = ainda medindo). */
     rtt: number | null | undefined
     route?: 'direto' | 'relay' | null
+    /** Família de IP do caminho direto em uso. */
+    family?: 'ipv4' | 'ipv6' | null
+    /** Ping recente pela outra família (quando os dois PCs têm as duas). */
+    other?: number | null
     class?: string
   } = $props()
 
+  const label = (f: 'ipv4' | 'ipv6') => (f === 'ipv4' ? 'IPv4' : 'IPv6')
   const level = $derived(rtt == null ? 0 : rtt < 80 ? 3 : rtt < 160 ? 2 : 1)
   const tone = $derived(level === 3 ? 'good' : level === 2 ? 'ok' : level === 1 ? 'bad' : 'idle')
-  const text = $derived(rtt == null ? m.kit.signal.measuring : route === 'relay' ? m.kit.signal.relay(rtt) : m.kit.signal.direct(rtt))
+  const text = $derived.by(() => {
+    const t = m.kit.signal
+    if (rtt == null) return t.measuring
+    if (route === 'relay') return t.relay(rtt)
+    if (!family) return t.direct(rtt)
+    const via = t.directVia(rtt, label(family))
+    return other == null ? via : `${via} · ${t.other(label(family === 'ipv4' ? 'ipv6' : 'ipv4'), other)}`
+  })
 </script>
 
 <!-- Qualidade da conexão: três barras com a cor do ping; o número fica na dica. -->

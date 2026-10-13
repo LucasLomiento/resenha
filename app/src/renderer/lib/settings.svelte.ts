@@ -39,6 +39,8 @@ export interface Settings {
   inkAllowed: boolean
   /** Já numa call, trocar de canal de voz pede clique duplo (um clique só não tira ninguém da conversa). */
   voiceDoubleClick: boolean
+  /** Na conexão direta, passar sozinho pro IPv4 ou pro IPv6 quando um deles tem o ping bem menor. */
+  smartRoute: boolean
   /** Último monitor achado pros rabiscos (conector, ex.: DP-1): é o primeiro a ser testado. */
   inkMonitor: string | null
   /** Ferramenta pra rabiscar na tela dos outros. */
@@ -83,6 +85,7 @@ const defaults: Settings = {
   streamMuted: false,
   inkAllowed: true,
   voiceDoubleClick: false,
+  smartRoute: true,
   inkMonitor: null,
   inkTool: 'laser',
   updateDismissed: null,

@@ -15,7 +15,7 @@ import {
 } from '../../../../shared/protocol'
 import type { Api } from './api'
 import { m, serverText } from './i18n.svelte'
-import { mergeMessages } from './guild.svelte'
+import { freshTail, mergeMessages } from './history'
 import { Connection, connectionKey, type CloseReason, type ConnectionStatus } from './ws'
 
 /** O que a conexão pessoal precisa do resto do app (o Client implementa). */
@@ -76,6 +76,8 @@ export class HomeState {
   private requests = new Map<string, (msg: HomeServerMessage) => void>()
   private typingSent: Record<string, number> = {}
   private everConnected = false
+  /** Conversas com mensagens de antes da última queda: o trecho recente é conferido quando abrirem. */
+  private stale = new Set<string>()
   /** Igual em toda reconexão desta instância: o servidor devolve o mesmo connId e a chamada continua. */
   private key = connectionKey()
 
@@ -165,8 +167,15 @@ export class HomeState {
         this.blocked = msg.blocked
         this.dms = msg.dms
         this.presences = msg.presences
-        this.messages = {}
-        this.hasMore = {}
+        // Reconectou: as conversas carregadas continuam na tela (sem piscar) e o trecho mais
+        // recente é conferido quando abrirem. A que sumiu da lista recomeça do zero.
+        for (const channelId of Object.keys(this.messages)) {
+          if (msg.dms.some((dm) => dm.id === channelId)) this.stale.add(channelId)
+          else {
+            delete this.messages[channelId]
+            delete this.hasMore[channelId]
+          }
+        }
         this.loadingHistory = {}
         this.typing = {}
         this.loaded = true
@@ -359,26 +368,48 @@ export class HomeState {
     this.send({ t: 'dm.close', channelId })
   }
 
+  private history(channelId: string, before?: string): Promise<Of<'dm.history'>> {
+    const reqId = nextId()
+    return new Promise((resolve, reject) => {
+      if (!this.send({ t: 'dm.history', reqId, channelId, before })) return reject(new Error(m.lib.connection.disconnected))
+      const timer = setTimeout(() => {
+        this.requests.delete(reqId)
+        reject(new Error(m.lib.connection.noReply))
+      }, 10_000)
+      this.requests.set(reqId, (msg) => {
+        clearTimeout(timer)
+        resolve(msg as Of<'dm.history'>)
+      })
+    })
+  }
+
   async loadHistory(channelId: string, before?: string) {
     if (this.loadingHistory[channelId]) return
     this.loadingHistory[channelId] = true
-    const reqId = nextId()
     try {
-      const page = await new Promise<Of<'dm.history'>>((resolve, reject) => {
-        if (!this.send({ t: 'dm.history', reqId, channelId, before })) return reject(new Error(m.lib.connection.disconnected))
-        const timer = setTimeout(() => {
-          this.requests.delete(reqId)
-          reject(new Error(m.lib.connection.noReply))
-        }, 10_000)
-        this.requests.set(reqId, (msg) => {
-          clearTimeout(timer)
-          resolve(msg as Of<'dm.history'>)
-        })
-      })
+      const page = await this.history(channelId, before)
       this.messages[channelId] = mergeMessages(this.messages[channelId] ?? [], page.messages)
       this.hasMore[channelId] = page.hasMore
     } catch {
       // tenta de novo ao abrir
+    } finally {
+      this.loadingHistory[channelId] = false
+    }
+  }
+
+  /** Conversa aberta depois de uma queda: acerta o trecho mais recente sem esvaziar a tela. */
+  async refresh(channelId: string) {
+    if (!this.stale.has(channelId) || this.loadingHistory[channelId]) return
+    this.loadingHistory[channelId] = true
+    const mark = this.messages[channelId]?.at(-1)?.id ?? ''
+    try {
+      const page = await this.history(channelId)
+      this.stale.delete(channelId)
+      const { messages, kept } = freshTail(this.messages[channelId] ?? [], page.messages, mark)
+      this.messages[channelId] = messages
+      if (!kept) this.hasMore[channelId] = page.hasMore
+    } catch {
+      // confere na próxima vez que a conversa abrir
     } finally {
       this.loadingHistory[channelId] = false
     }

@@ -222,6 +222,9 @@
   <Row label={t.call.doubleClick} for="voice-double-click" setting="voice.doubleClick" description={t.call.doubleClickDescription}>
     <Switch id="voice-double-click" bind:checked={settings.voiceDoubleClick} />
   </Row>
+  <Row label={t.call.smartRoute} for="voice-smart-route" setting="voice.smartRoute" description={t.call.smartRouteDescription}>
+    <Switch id="voice-smart-route" bind:checked={settings.smartRoute} />
+  </Row>
 </Section>
 
 <Section title={t.stream.section}>

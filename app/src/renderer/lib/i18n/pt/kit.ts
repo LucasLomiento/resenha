@@ -16,6 +16,8 @@ export default {
     measuring: 'Medindo a conexão…',
     relay: (rtt: number) => `${rtt} ms · pelo servidor (relay)`,
     direct: (rtt: number) => `${rtt} ms · conexão direta`,
+    directVia: (rtt: number, family: string) => `${rtt} ms · conexão direta por ${family}`,
+    other: (family: string, rtt: number) => `${family}: ${rtt} ms`,
   },
   /** Texto do selo ao lado do nome (aparece na dica). */
   badge: {

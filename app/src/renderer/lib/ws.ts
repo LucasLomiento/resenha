@@ -6,6 +6,8 @@ export type CloseReason = 'unauthorized' | 'not-member' | 'gone'
 const PING_EVERY = 20_000
 /** Sem resposta a um ping nesse tempo, a conexão morreu (mesmo que o sistema ainda não tenha avisado). */
 const PONG_TIMEOUT = 10_000
+/** Espera entre as tentativas seguintes (a primeira é na hora). */
+const RETRY_DELAYS = [1000, 2000, 5000, 10_000]
 
 /**
  * Chave desta instância do app pra uma conexão: vai no `auth` de toda
@@ -115,7 +117,10 @@ export class Connection<In, Out> {
     if (code === 4003) return this.stop('not-member')
     if (code === 4004) return this.stop('gone')
     this.handlers.status('offline')
-    const delay = [500, 1000, 2000, 5000, 10_000][Math.min(this.retry++, 4)] * (0.75 + Math.random() / 2)
+    // A queda comum é o Cloudflare trocando a conexão de lugar: a primeira tentativa vai
+    // na hora (espalhada em até 300 ms, pra todo mundo não chegar no mesmo instante).
+    const delay = this.retry === 0 ? Math.random() * 300 : RETRY_DELAYS[Math.min(this.retry - 1, RETRY_DELAYS.length - 1)] * (0.75 + Math.random() / 2)
+    this.retry++
     this.retryTimer = setTimeout(() => this.open(), delay)
   }
 
