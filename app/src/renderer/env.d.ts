@@ -13,5 +13,7 @@ interface ImportMetaEnv {
   readonly VITE_DEFAULT_SERVER?: string
   /** "1" abre direto nos protótipos de interface (ui/proto). */
   readonly VITE_PROTO?: string
+  /** "1" só no build do e2e: a call fica em `window.__call` pro teste conferir o som do bot do Spotify. */
+  readonly VITE_E2E?: string
 }
 

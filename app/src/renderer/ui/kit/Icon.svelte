@@ -62,6 +62,14 @@
   import Minus from '@lucide/svelte/icons/minus'
   import Play from '@lucide/svelte/icons/play'
   import Pause from '@lucide/svelte/icons/pause'
+  import Music from '@lucide/svelte/icons/music'
+  import ListMusic from '@lucide/svelte/icons/list-music'
+  import ListPlus from '@lucide/svelte/icons/list-plus'
+  import SkipBack from '@lucide/svelte/icons/skip-back'
+  import SkipForward from '@lucide/svelte/icons/skip-forward'
+  import Shuffle from '@lucide/svelte/icons/shuffle'
+  import Repeat from '@lucide/svelte/icons/repeat'
+  import RepeatOne from '@lucide/svelte/icons/repeat-1'
   import SendHorizontal from '@lucide/svelte/icons/send-horizontal'
   import ImagePlus from '@lucide/svelte/icons/image-plus'
   import Hammer from '@lucide/svelte/icons/hammer'
@@ -172,6 +180,14 @@
     monitor: Monitor,
     play: Play,
     pause: Pause,
+    music: Music,
+    'list-music': ListMusic,
+    'list-plus': ListPlus,
+    'skip-back': SkipBack,
+    'skip-forward': SkipForward,
+    shuffle: Shuffle,
+    repeat: Repeat,
+    'repeat-one': RepeatOne,
     send: SendHorizontal,
     'image-plus': ImagePlus,
     hammer: Hammer,

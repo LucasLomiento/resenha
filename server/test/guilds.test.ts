@@ -1,6 +1,6 @@
 import { SELF, env, evictAllDurableObjects, runInDurableObject } from 'cloudflare:test'
 import { describe, expect, it } from 'vitest'
-import { ALL_PERMISSIONS, DEFAULT_PERMISSIONS, P, type Channel } from '../../shared/protocol'
+import { ALL_PERMISSIONS, DEFAULT_PERMISSIONS, P, type Channel, type VoiceMember } from '../../shared/protocol'
 import {
   BASE,
   PASSWORD,
@@ -559,6 +559,30 @@ describe('voz', () => {
     expect((await socket.next('error')).message).toMatch(/dono do Resenha/)
   })
 
+  it('o dono libera alguém pra passar a sala pelo Cloudflare (e tira), valendo na hora', async () => {
+    const { owner, friend, b, voice } = await world()
+    const home = await homeSocket(friend.user.id, friend.token)
+    expect((await home.next('ready')).me.relay).toBeFalsy()
+    b.send({ t: 'channel.update', id: voice.id, relay: true })
+    expect((await b.next('error')).message).toMatch(/quem ele liberar/)
+
+    // Só o dono libera; e o dono não precisa.
+    expect((await post(`/api/admin/users/${friend.user.id}/relay`, { allowed: true }, friend.token)).status).toBe(403)
+    expect((await post(`/api/admin/users/${owner.user.id}/relay`, { allowed: true }, owner.token)).status).toBe(400)
+    expect((await post(`/api/admin/users/${friend.user.id}/relay`, { allowed: true }, owner.token)).status).toBe(200)
+    // O app da pessoa fica sabendo (aparece a opção) e já consegue, sem reconectar.
+    expect((await home.next('me.updated')).me.relay).toBe(true)
+    const listed = await call('GET', '/api/admin/users?q=duarte', undefined, owner.token)
+    expect(listed.body.find((u: { id: string }) => u.id === friend.user.id)?.relay).toBe(true)
+    b.send({ t: 'channel.update', id: voice.id, relay: true })
+    expect((await b.next('channel.upsert', (m) => m.channel.id === voice.id)).channel.relay).toBe(true)
+
+    expect((await post(`/api/admin/users/${friend.user.id}/relay`, { allowed: false }, owner.token)).status).toBe(200)
+    expect((await home.next('me.updated')).me.relay).toBe(false)
+    b.send({ t: 'channel.update', id: voice.id, relay: false })
+    expect((await b.next('error')).message).toMatch(/quem ele liberar/)
+  })
+
   it('a call sobrevive à hibernação e cair da conexão tira da call', async () => {
     const { a, b, readyA, readyB, voice } = await world()
     a.send({ t: 'voice.join', channelId: voice.id, muted: false, deafened: false })
@@ -572,6 +596,40 @@ describe('voz', () => {
     expect(state.members.find((x) => x.connId === readyB.connId)?.camera).toBe(true)
     b.close()
     await a.next('voice.state', (m) => m.members.length === 1)
+  })
+
+  it('o Spotify de alguém aparece na call pra todo mundo, limpo, e sai junto com ele', async () => {
+    const { guild, a, b, readyB, voice } = await world()
+    a.send({ t: 'voice.join', channelId: voice.id, muted: false, deafened: false })
+    b.send({ t: 'voice.join', channelId: voice.id, muted: false, deafened: false })
+    await a.next('voice.state', (m) => m.members.length === 2)
+    a.drain()
+    const musicOfB = (m: { members: VoiceMember[] }) => m.members.find((x) => x.connId === readyB.connId)?.music
+    const long = 'x'.repeat(500)
+    b.send({
+      t: 'voice.update',
+      muted: false,
+      deafened: false,
+      sharing: false,
+      music: { title: 'Evidências\u200b', artist: long, playing: 'sim', extra: 1 } as never,
+    })
+    expect(musicOfB(await a.next('voice.state', (m) => !!musicOfB(m)))).toEqual({ title: 'Evidências', artist: 'x'.repeat(200), playing: false })
+    // App antigo (sem o campo) não derruba o bot; null tira.
+    b.send({ t: 'voice.update', muted: true, deafened: false, sharing: false })
+    const kept = await a.next('voice.state', (m) => m.members.some((x) => x.muted))
+    expect(musicOfB(kept)?.title).toBe('Evidências')
+    b.send({ t: 'voice.update', muted: true, deafened: false, sharing: false, music: null })
+    expect(musicOfB(await a.next('voice.state', (m) => !musicOfB(m)))).toBeNull()
+    // Lixo no lugar do objeto também tira.
+    b.send({ t: 'voice.update', muted: true, deafened: false, sharing: false, music: { title: 'a', artist: 'b', playing: true } })
+    await a.next('voice.state', (m) => !!musicOfB(m))
+    b.send({ t: 'voice.update', muted: true, deafened: false, sharing: false, music: 'tocando' as never })
+    expect(musicOfB(await a.next('voice.state', (m) => !musicOfB(m)))).toBeNull()
+    // Sem permissão de falar, não toca música pra sala.
+    a.send({ t: 'role.update', id: guild.id, permissions: DEFAULT_PERMISSIONS & ~P.SPEAK })
+    await b.next('roles')
+    b.send({ t: 'voice.update', muted: false, deafened: false, sharing: false, music: { title: 'a', artist: 'b', playing: true } })
+    expect(musicOfB(await a.next('voice.state', (m) => m.members.some((x) => x.connId === readyB.connId && x.muted)))).toBeNull()
   })
 
   it('sem permissão de vídeo, não compartilha tela', async () => {

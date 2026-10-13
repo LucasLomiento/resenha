@@ -8,6 +8,7 @@ interface __BaseEnv_Env {
 	IMPORT_LIMITER: RateLimit;
 	AI: Ai;
 	TURNSTILE_SITE_KEY: string;
+	SPOTIFY_CLIENT_ID: string;
 	FILE_SECRET: string;
 	DIRECTORY: DurableObjectNamespace<import("./src/index").Directory>;
 	GUILD: DurableObjectNamespace<import("./src/index").Guild>;
@@ -26,7 +27,7 @@ type StringifyValues<EnvType extends Record<string, unknown>> = {
 	[Binding in keyof EnvType]: EnvType[Binding] extends string ? EnvType[Binding] : string;
 };
 declare namespace NodeJS {
-	interface ProcessEnv extends StringifyValues<Pick<Cloudflare.Env, "TURNSTILE_SITE_KEY" | "FILE_SECRET">> {}
+	interface ProcessEnv extends StringifyValues<Pick<Cloudflare.Env, "TURNSTILE_SITE_KEY" | "SPOTIFY_CLIENT_ID" | "FILE_SECRET">> {}
 }
 
 // Begin runtime types

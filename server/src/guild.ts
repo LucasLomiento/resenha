@@ -22,6 +22,7 @@ import {
   type StreetSpot,
   type Member,
   type NotifyLevel,
+  type MusicStatus,
   type NotifySettings,
   type Overwrite,
   type Presence,
@@ -61,7 +62,7 @@ import { aggregate, samePresence } from './presence'
 import { directory } from './stubs'
 import { parseStyle, styleText } from './style'
 import { unfurlAll } from './unfurl'
-import { cleanLine, cleanText, color } from './validate'
+import { cleanLine, cleanMusic, cleanText, color } from './validate'
 
 // Um servidor (como os do Discord): canais, cargos, membros, mensagens,
 // anexos, moderação, quem está em cada canal de voz e o repasse da sinalização
@@ -73,6 +74,8 @@ interface VoiceState {
   deafened: boolean
   sharing: boolean
   camera: boolean
+  /** Pôs o Spotify na call (o bot dela) e o que está tocando. */
+  music?: MusicStatus | null
 }
 
 /** Estado de cada WebSocket, guardado no próprio socket pra sobreviver à hibernação. */
@@ -722,11 +725,17 @@ export class Guild extends DurableObject<Env> {
         userId,
         ...voice,
         camera: !!voice.camera,
+        music: voice.music ?? null,
         serverMuted: row?.server_muted === 1,
         serverDeafened: row?.server_deafened === 1,
       })
     }
     return out
+  }
+
+  /** Pode pôr o Spotify na call: quem pode falar e não está mutado pela moderação. */
+  private playsMusic(userId: string, channelId: string): boolean {
+    return this.can(userId, channelId, P.SPEAK) && this.member(userId)?.server_muted !== 1
   }
 
   /** Cada um recebe só quem está nos canais de voz que ele vê. */
@@ -751,14 +760,14 @@ export class Guild extends DurableObject<Env> {
     for (const ws of this.socketsOf(userId)) {
       const state = this.state(ws)
       if (!state.voice || state.connId === exceptConnId) continue
-      this.save(ws, { ...state, voice: channelId ? { ...state.voice, channelId, sharing: false, camera: false } : null })
+      this.save(ws, { ...state, voice: channelId ? { ...state.voice, channelId, sharing: false, camera: false, music: null } : null })
       this.send(ws, { t: 'voice.forced', channelId })
       changed = true
     }
     for (const [connId, ghost] of this.ghosts) {
       const state = ghost.state
       if (state.userId !== userId || !state.voice || connId === exceptConnId) continue
-      ghost.state = { ...state, voice: channelId ? { ...state.voice, channelId, sharing: false, camera: false } : null }
+      ghost.state = { ...state, voice: channelId ? { ...state.voice, channelId, sharing: false, camera: false, music: null } : null }
       this.enqueue(ghost, { t: 'voice.forced', channelId })
       changed = true
     }
@@ -1580,6 +1589,7 @@ export class Guild extends DurableObject<Env> {
             deafened: !!msg.deafened,
             sharing: (msg.sharing ?? same?.sharing ?? false) === true && video,
             camera: (msg.camera ?? same?.camera ?? false) === true && video,
+            music: this.playsMusic(userId, channel.id) ? cleanMusic(msg.music === undefined ? same?.music : msg.music) : null,
           },
         })
         return this.broadcastVoice()
@@ -1602,6 +1612,8 @@ export class Guild extends DurableObject<Env> {
             deafened: !!msg.deafened,
             sharing: !!msg.sharing && video,
             camera: !!msg.camera && video,
+            // App antigo não manda: o bot continua como estava.
+            music: !this.playsMusic(userId, channelId) ? null : msg.music === undefined ? (state.voice.music ?? null) : cleanMusic(msg.music),
           },
         })
         return this.broadcastVoice()
@@ -1802,7 +1814,10 @@ export class Guild extends DurableObject<Env> {
     const args: SqlStorageValue[] = []
     const changes: string[] = []
     if (msg.relay !== undefined) {
-      if (!this.state(ws).staff) return this.error(ws, 'Só o dono do Resenha pode passar uma sala pelo Cloudflare.')
+      // O dono do Resenha, ou quem ele liberou (perguntado na hora: liberar ou tirar vale sem reconectar).
+      if (!this.state(ws).staff && !(await directory(this.env).canRelay(userId))) {
+        return this.error(ws, 'Só o dono do Resenha (ou quem ele liberar) pode passar uma sala pelo Cloudflare.')
+      }
       if (channel.kind !== 'voice' || typeof msg.relay !== 'boolean') return
       if (msg.relay !== !!channel.relay) {
         sets.push('relay = ?')

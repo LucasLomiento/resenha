@@ -118,6 +118,7 @@ export default {
         keywords: ['vp9', 'vp8', 'h264', 'av1', 'quality', 'screen', 'stream', 'cpu', 'screen share'],
       },
       'voice.stats': { label: 'Stats in the player', section: 'Advanced', keywords: ['fps', 'ping', 'resolution', 'bitrate', 'statistics', 'lag'] },
+      'voice.doubleClick': { label: 'Switch rooms with a double click', section: 'Call', keywords: ['double click', 'double-click', 'switch room', 'change channel', 'accidental', 'join call'] },
 
       // Notifications
       'notify.sounds': { label: 'App sounds', section: 'Sounds', keywords: ['sound', 'sound effects', 'mute', 'silence', 'audio'] },
@@ -358,6 +359,11 @@ export default {
       open: 'Show preview',
       close: 'Close preview',
     },
+    call: {
+      section: 'Call',
+      doubleClick: 'Switch rooms with a double click',
+      doubleClickDescription: 'When you are already in a call, a single click on another voice channel won’t pull you out of the conversation.',
+    },
     stream: {
       section: 'Streaming',
       ink: 'Viewers can draw on my screen',
@@ -451,6 +457,10 @@ export default {
       ban: 'Suspend',
       noMatch: 'No one with that name.',
       none: 'No accounts yet.',
+      relayAllow: (name: string) => `Let ${name} route rooms through Cloudflare`,
+      relayRevoke: (name: string) => `${name} can route rooms through Cloudflare (click to remove)`,
+      relayAllowed: (name: string) => `${name} can now route rooms through Cloudflare.`,
+      relayRevoked: (name: string) => `${name} can no longer route rooms through Cloudflare.`,
     },
     pioneer: {
       title: (name: string) => `Give the best friend badge to ${name}?`,

@@ -123,7 +123,8 @@
       for (const { level, label } of levels()) items.push({ label, checked: own?.level === level, onselect: () => setChannel({ level }) })
     }
     // Só o dono do Resenha: a sala de voz passa pelo Cloudflare (gasta a cota do mês dele).
-    if (channel.kind === 'voice' && client.me?.staff) {
+    // O dono do Resenha, ou quem ele liberou (Plataforma → Contas).
+    if (channel.kind === 'voice' && (client.me?.staff || client.me?.relay)) {
       items.push({
         label: t.relay,
         icon: 'cloud',
@@ -168,6 +169,23 @@
 
   let volumeFor = $state<string | null>(null)
 
+  /** Aviso de "clique duas vezes" esperando: some se o segundo clique vier. */
+  let switchHint: ReturnType<typeof setTimeout> | null = null
+
+  /**
+   * Com a opção ligada e já numa call, o primeiro clique em outro canal de voz
+   * não troca de sala: só o segundo (clique duplo). Pelo teclado (Enter) troca na hora.
+   */
+  function voiceClick(event: MouseEvent, channelId: string, here: boolean) {
+    if (switchHint) clearTimeout(switchHint)
+    switchHint = null
+    if (!here && settings.voiceDoubleClick && call.channelId && event.detail === 1) {
+      switchHint = setTimeout(() => client.toast(t.doubleClickToSwitch, 'info'), 400)
+      return
+    }
+    client.openChannel(guild.id, channelId)
+  }
+
   /**
    * Chegada de quem tem selo (Fundador, Pioneiro) na call: o nome entra com um brilho
    * nas cores do selo. Só pra quem chega depois que a lista apareceu (abrir o servidor
@@ -188,6 +206,12 @@
   function setVolume(userId: string, value: number) {
     settings.userVolumes[userId] = value
     call.applyVolumes()
+  }
+
+  /** Volume do bot do Spotify: um só pra todos os bots, e só pra mim. */
+  function setMusicVolume(value: number) {
+    settings.musicVolume = value
+    call.applyMusicOutput()
   }
 
   // ---------- Arrastar pra organizar ----------
@@ -420,7 +444,7 @@
               label={channel.name}
               active={here && client.view === 'call'}
               aria-label={here ? t.openCall(channel.name) : t.joinCall(channel.name)}
-              onclick={() => client.openChannel(guild.id, channel.id)}
+              onclick={(e) => voiceClick(e, channel.id, here)}
             >
               {#snippet trailing()}
                 {#if call.joining && !here}<Spinner size={14} />{/if}
@@ -488,14 +512,49 @@
                 {#if volumeFor === member.connId && !self}
                   <li class="volume">
                     <Icon name="volume" size={14} />
+                    <!-- Até 200%, como no Discord (acima de 100% a voz é amplificada dentro do app). -->
                     <Slider
                       label={t.volumeOf(name)}
-                      max={1}
+                      max={2}
                       value={settings.userVolumes[member.userId] ?? 1}
                       oninput={(e) => setVolume(member.userId, Number(e.currentTarget.value))}
                     />
                     <span class="tabular">{Math.round((settings.userVolumes[member.userId] ?? 1) * 100)}%</span>
                   </li>
+                {/if}
+                {#if member.music}
+                  <!-- O Spotify que essa pessoa pôs: mais um "membro" da call, com volume próprio. -->
+                  {@const botKey = `music:${member.connId}`}
+                  <li class="bot">
+                    <button
+                      class="member-main"
+                      class:dim={!here}
+                      aria-expanded={here ? volumeFor === botKey : undefined}
+                      use:tooltip={here ? { text: m.music.player.volume, placement: 'right' } : null}
+                      onclick={() => (here ? (volumeFor = volumeFor === botKey ? null : botKey) : null)}
+                    >
+                      <span class="bot-face" class:playing={here && call.musicPlaying[member.connId]}><Icon name="music" size={12} /></span>
+                      <span class="member-name">{m.music.bot}</span>
+                      {#if member.music.title}
+                        <span class="bot-song" class:paused={!member.music.playing}>{member.music.title}</span>
+                      {/if}
+                    </button>
+                    {#if here}
+                      <IconButton icon="list-music" size="sm" label={m.music.botOf(name)} tip="right" onclick={() => (ui.music = { connId: member.connId })} />
+                    {/if}
+                  </li>
+                  {#if volumeFor === botKey}
+                    <li class="volume">
+                      <Icon name="volume" size={14} />
+                      <Slider
+                        label={m.music.player.volume}
+                        max={1}
+                        value={settings.musicVolume}
+                        oninput={(e) => setMusicVolume(Number(e.currentTarget.value))}
+                      />
+                      <span class="tabular">{Math.round(settings.musicVolume * 100)}%</span>
+                    </li>
+                  {/if}
                 {/if}
               {/each}
             </ul>
@@ -859,6 +918,50 @@
 
   button.live:disabled {
     opacity: 0.55;
+  }
+
+  /* O Spotify de alguém, logo abaixo de quem pôs (um pouco mais pra dentro). */
+  .bot {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding-left: 44px;
+  }
+
+  .bot-face {
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: 20px;
+    height: 20px;
+    border-radius: var(--r-full);
+    background: var(--spotify);
+    color: var(--spotify-ink);
+    transition: box-shadow var(--t) var(--ease);
+  }
+
+  .bot-face.playing {
+    box-shadow:
+      0 0 0 2px var(--bg-canvas),
+      0 0 0 3.5px var(--spotify);
+  }
+
+  .bot .member-name {
+    flex: none;
+  }
+
+  .bot-song {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    color: var(--fg-3);
+    font-size: var(--text-xs);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .bot-song.paused {
+    opacity: 0.6;
   }
 
   .volume {

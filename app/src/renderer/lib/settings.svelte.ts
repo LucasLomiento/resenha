@@ -26,13 +26,17 @@ export interface Settings {
   /** Mostrar o texto da mensagem nas notificações do sistema. */
   notifyContent: boolean
   codec: VideoCodec
-  /** userId -> 0..1 */
+  /** userId -> 0..2 (acima de 1 a voz é amplificada dentro do app, até 200%) */
   userVolumes: Record<string, number>
   streamVolume: number
+  /** Volume do bot do Spotify (0..1): cada um ouve o bot no seu. */
+  musicVolume: number
   /** Som da transmissão tirado pelo botão (o volume continua guardado pra quando voltar). */
   streamMuted: boolean
   /** Quem assiste a minha tela pode rabiscar nela. */
   inkAllowed: boolean
+  /** Já numa call, trocar de canal de voz pede clique duplo (um clique só não tira ninguém da conversa). */
+  voiceDoubleClick: boolean
   /** Último monitor achado pros rabiscos (conector, ex.: DP-1): é o primeiro a ser testado. */
   inkMonitor: string | null
   /** Ferramenta pra rabiscar na tela dos outros. */
@@ -72,8 +76,10 @@ const defaults: Settings = {
   codec: 'VP9',
   userVolumes: {},
   streamVolume: 1,
+  musicVolume: 0.5,
   streamMuted: false,
   inkAllowed: true,
+  voiceDoubleClick: false,
   inkMonitor: null,
   inkTool: 'laser',
   updateDismissed: null,

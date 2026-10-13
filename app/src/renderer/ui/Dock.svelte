@@ -95,6 +95,9 @@
     ]
   }
 
+  /** Tem Spotify tocando na call (o meu ou o de alguém). */
+  const musicOn = $derived(Object.keys(call.musicBots).length > 0)
+
   function screenClick() {
     if (call.sharing) ui.sharePanel = !ui.sharePanel
     else ui.share = true
@@ -125,6 +128,14 @@
         {#if call.channelId && worstLink}
           <SignalBars rtt={worstLink.rtt} route={worstLink.route} />
         {/if}
+        <IconButton
+          icon="music"
+          label={m.music.open}
+          tone="success"
+          active={musicOn}
+          disabled={!call.channelId}
+          onclick={() => (ui.music = ui.music ? null : { connId: null })}
+        />
         <IconButton icon="phone-off" label={t.leave} tone="danger" disabled={!call.channelId} onclick={() => client.leaveCall()} />
       </div>
 

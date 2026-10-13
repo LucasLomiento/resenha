@@ -194,6 +194,13 @@ describe('chamada privada', () => {
     homeA.send({ t: 'call.signal', channelId, to: readyB.connId, data: { kind: 'watch' } })
     expect(await homeB.next('call.signal')).toEqual({ t: 'call.signal', channelId, from: readyA.connId, data: { kind: 'watch' } })
 
+    // O Spotify de A aparece pros dois (limpo) e sai quando A tira.
+    homeA.send({ t: 'call.update', channelId, muted: false, deafened: false, sharing: false, camera: false, music: { title: 'Lenda\u200b', artist: 'Sandy', playing: true } })
+    const music = await homeB.next('call.state', (m) => m.members.some((x) => !!x.music))
+    expect(music.members.find((x) => x.connId === readyA.connId)?.music).toEqual({ title: 'Lenda', artist: 'Sandy', playing: true })
+    homeA.send({ t: 'call.update', channelId, muted: false, deafened: false, sharing: false, camera: false, music: null })
+    await homeB.next('call.state', (m) => !m.members.some((x) => x.music))
+
     homeB.send({ t: 'call.hangup', channelId })
     await homeA.next('call.state', (m) => m.members.length === 1)
     homeA.send({ t: 'call.hangup', channelId })

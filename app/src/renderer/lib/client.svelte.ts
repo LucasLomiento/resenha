@@ -143,6 +143,7 @@ class Client implements GuildHost, HomeHost {
     name: (userId): string => this.user(userId, this.call.guildId)?.name ?? m.lib.someone,
     badge: (userId) => badgeOf(userId ? this.user(userId, this.call.guildId) : this.me),
     relayWanted: (transport) => transport.kind === 'guild' && !!this.guilds[transport.scopeId]?.channel(transport.channelId)?.relay,
+    musicStopped: (error) => this.toast(error ? m.music.errors[error] : m.music.stopped, error ? 'error' : 'info'),
   })
 
   constructor() {
@@ -936,3 +937,6 @@ class Client implements GuildHost, HomeHost {
 }
 
 export const client = new Client()
+
+// Só no build do e2e: o teste lê o som que chega do bot do Spotify (as conexões não aparecem na tela).
+if (import.meta.env.VITE_E2E === '1') (window as unknown as { __call: Call }).__call = client.call

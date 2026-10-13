@@ -65,8 +65,10 @@ Pra atualizar pelo app no pacote `.pacman`, ele pede a sua senha: numa janelinha
 - **Entrar na call:** clique no canal de voz (o com alto-falante). A call aparece no painel de baixo, à esquerda, e o telefone vermelho sai dela.
 - **Mutar e ensurdecer:** botões de microfone e de fone, no painel de baixo.
 - **Câmera e tela:** com a call aberta, use os botões de câmera e de tela no painel de baixo. Na tela, escolha a qualidade (até 1440p a 60 fps) e se quer mandar o áudio. Do outro lado aparece **AO VIVO**, e é só clicar pra assistir. Clicando de novo no botão da tela dá pra trocar a qualidade e o codec sem parar e ver quantas pessoas estão assistindo.
+- **Spotify na call:** o botão de nota musical, no painel de baixo, põe o seu Spotify na call (precisa de Premium; só no Linux por enquanto). Na primeira vez o painel instala o `librespot` (pede a senha) e conecta a sua conta pelo navegador. Ele aparece como mais um na sala e toca pra todo mundo: qualquer um pula, pausa, busca música ou playlist e põe na fila, e cada um acerta o volume do bot clicando nele, dentro do canal de voz.
 - **Ver todo mundo da call:** clique em **Na call**, no painel de baixo, ou no canal de voz: abre a tela da call, com um bloco por pessoa.
-- **Volume de cada pessoa:** clique no nome dela dentro do canal de voz.
+- **Volume de cada pessoa:** clique no nome dela dentro do canal de voz. Vai até 200% (o som é amplificado no Resenha, sem mexer no volume do sistema).
+- **Mudar de sala sem querer:** em Configurações → Voz e vídeo → Call, ligue **Mudar de sala com clique duplo**: estando numa call, trocar de canal de voz pede dois cliques.
 - **Assistindo:** dá pra voltar pro chat e a transmissão vira uma miniatura que se arrasta e redimensiona. Também tem a **janela flutuante**, que fica por cima de tudo, até de outros apps.
 - **Mensagens:** passe o mouse numa mensagem pra reagir, responder, editar ou fixar; o **⋯** tem o resto. `@` menciona alguém e `#` um canal. Com o campo vazio, **↑** edita a sua última mensagem. A busca fica no topo do chat.
 - **Imagens e arquivos:** clipe ao lado do campo, `Ctrl+V` com um print, ou arraste pro chat. Até 25 MB por arquivo.

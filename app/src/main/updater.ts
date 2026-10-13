@@ -185,13 +185,13 @@ const SESSION_ENV = [
 ]
 
 /** Monta o comando pra rodar fora deste processo (pelo systemd, sem a trava), ou direto se não tiver systemd. */
-function outside(command: string[], options: { wait: boolean }): [string, string[]] {
+export function outside(command: string[], options: { wait: boolean }): [string, string[]] {
   if (!hasSystemdRun()) return [command[0], command.slice(1)]
   const env = SESSION_ENV.filter((name) => process.env[name]).flatMap((name) => ['-E', name])
   return ['systemd-run', ['--user', '--collect', '--quiet', ...(options.wait ? ['--wait'] : []), ...env, '--', ...command]]
 }
 
-function run(command: string, args: string[]): Promise<number | null> {
+export function run(command: string, args: string[]): Promise<number | null> {
   return new Promise((resolve) => {
     const child = spawn(command, args, { stdio: 'ignore' })
     child.on('error', () => resolve(null))
@@ -233,8 +233,7 @@ async function installPacman(file: string, version: string) {
   app.exit(0)
 }
 
-function findTerminal(): { command: string; args: string[] } | null {
-  const title = tm().update.terminalTitle
+export function findTerminal(title = tm().update.terminalTitle): { command: string; args: string[] } | null {
   const candidates: { command: string; args: string[] }[] = [
     { command: 'foot', args: ['-T', title] },
     { command: 'konsole', args: ['-e'] },

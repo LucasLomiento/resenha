@@ -26,6 +26,26 @@ const api: ResenhaApi = {
     unmute: () => ipcRenderer.invoke('screen-audio:unmute'),
     stop: () => ipcRenderer.invoke('screen-audio:stop'),
   },
+  spotify: {
+    status: () => ipcRenderer.invoke('spotify:status'),
+    connect: (clientId) => ipcRenderer.invoke('spotify:connect', clientId),
+    disconnect: () => ipcRenderer.invoke('spotify:disconnect'),
+    install: () => ipcRenderer.invoke('spotify:install'),
+    start: () => ipcRenderer.invoke('spotify:start'),
+    stop: () => ipcRenderer.invoke('spotify:stop'),
+    request: (op) => ipcRenderer.invoke('spotify:request', op),
+    want: (bytes) => ipcRenderer.send('spotify:want', bytes),
+    flush: () => ipcRenderer.send('spotify:flush'),
+    onPcm: (callback) => {
+      ipcRenderer.on('spotify:pcm', (_event, chunk: Uint8Array) => callback(chunk))
+    },
+    onStopped: (callback) => {
+      ipcRenderer.on('spotify:stopped', (_event, error) => callback(error))
+    },
+    onBrowser: (callback) => {
+      ipcRenderer.on('spotify:browser', (_event, url: string | null) => callback(typeof url === 'string' ? url : null))
+    },
+  },
   attention: () => ipcRenderer.send('attention'),
   showWindow: () => ipcRenderer.send('show-window'),
   pendingInvite: () => ipcRenderer.invoke('invite:pending'),

@@ -45,6 +45,8 @@ export const ui = $state<{
   share: boolean
   /** Painel rápido da transmissão em andamento (qualidade, parar). */
   sharePanel: boolean
+  /** Painel do bot do Spotify (`connId` de quem pôs o bot que está aberto; null: o primeiro, ou ligar o meu). */
+  music: { connId: string | null } | null
   /** Gravando um atalho: os atalhos do app ficam pausados. */
   recordingShortcut: boolean
   lightbox: { url: string; name: string } | null
@@ -65,6 +67,7 @@ export const ui = $state<{
   members: loadMembersPref(),
   share: false,
   sharePanel: false,
+  music: null,
   recordingShortcut: false,
   lightbox: null,
   confirm: null,

@@ -1,6 +1,8 @@
 // Validação de tudo que vem de fora. O app nunca é confiável: cada campo é
 // conferido aqui antes de ir pro banco.
 
+import type { MusicStatus } from '../../shared/protocol'
+
 // Caracteres de controle e invisíveis (espaço de largura zero, troca de direção
 // do texto, separadores de linha…), usados pra disfarçar nomes. O ZWJ (U+200D)
 // fica: ele monta emoji compostos.
@@ -80,3 +82,11 @@ const COMMON = new Set([
   'teste123', 'testando', 'qazwsxedc', '1q2w3e4r', '1q2w3e4r5t', 'zaq12wsx', 'asdfghjkl', 'aaaaaaaa', 'passw0rd',
   'p@ssw0rd', 'letmein1', 'dragon123', 'monkey123', 'master123', 'shadow123', 'michael1', 'jordan23', 'charlie1',
 ])
+
+/** O que o bot do Spotify de alguém está tocando (só texto curto, pra lista do canal de voz). */
+export function cleanMusic(value: unknown): MusicStatus | null {
+  if (!value || typeof value !== 'object') return null
+  const music = value as Record<string, unknown>
+  const line = (text: unknown) => (typeof text === 'string' ? (cleanLine(text.slice(0, 200), 0, 200) ?? '') : '')
+  return { title: line(music.title), artist: line(music.artist), playing: music.playing === true }
+}

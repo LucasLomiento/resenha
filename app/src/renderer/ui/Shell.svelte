@@ -27,6 +27,7 @@
   import ServerSettings from './server/ServerSettings.svelte'
   import Settings from './settings/Settings.svelte'
   import ShareDialog from './ShareDialog.svelte'
+  import MusicPanel from './MusicPanel.svelte'
   import ShortcutsHelp from './ShortcutsHelp.svelte'
   import StreamView from './StreamView.svelte'
   import UpdateNotice from './UpdateNotice.svelte'
@@ -226,6 +227,7 @@
 {#if ui.guildSettings}<ServerSettings />{/if}
 {#if ui.settings}<Settings />{/if}
 {#if ui.share}<ShareDialog />{/if}
+{#if ui.music}<MusicPanel />{/if}
 {#if ui.lightbox}<Lightbox />{/if}
 {#if ui.confirm}<Confirm />{/if}
 

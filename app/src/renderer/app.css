@@ -45,6 +45,10 @@
   /* ---------- Cor: estados ---------- */
   --green: #34d399; /* falando, online, na call */
   --green-soft: rgb(52 211 153 / 0.14);
+  /* Bot do Spotify (a cor dele, só no bot: ícone, bloco na call, botão de tocar) */
+  --spotify: #1ed760;
+  --spotify-soft: rgb(30 215 96 / 0.14);
+  --spotify-ink: #0b0b10;
   --yellow: #fbbf24; /* ausente, aviso */
   --yellow-soft: rgb(251 191 36 / 0.13);
   --red: #ff5c72; /* ao vivo, menção, mutado, perigo */

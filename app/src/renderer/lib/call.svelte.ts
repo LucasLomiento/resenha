@@ -1,4 +1,4 @@
-import type { Badge, SignalData, VoiceMember } from '../../../../shared/protocol'
+import type { Badge, MusicStatus, SignalData, VoiceMember } from '../../../../shared/protocol'
 import type { PlatformInfo } from '../../preload/api'
 import type { Api } from './api'
 import { userColor } from './format'
@@ -6,6 +6,7 @@ import { m } from './i18n.svelte'
 import { InkShare, cleanInk, type InkMessage, type InkPolicy } from './ink.svelte'
 import { captureScreen, getCameraStream, getMicTrack, stopCapture } from './media'
 import { MicPipeline } from './mic'
+import { MusicBot, cleanMusicMessage, type MusicError, type MusicOp, type MusicReply, type MusicShare } from './music.svelte'
 import { Peer, type LinkStats, type SfuScreen, type VideoStats } from './peer'
 import { PRESETS, settings } from './settings.svelte'
 import { SfuPublisher, SfuViewer } from './sfu'
@@ -26,6 +27,8 @@ interface CallDeps {
   badge(userId?: string): Badge | null
   /** A sala dessa call passa pelo Cloudflare (o dono do Resenha marcou)? */
   relayWanted(transport: CallTransport): boolean
+  /** O meu bot do Spotify parou sozinho (o librespot caiu, a conta saiu...). */
+  musicStopped(error: MusicError | null): void
 }
 
 /**
@@ -41,10 +44,10 @@ export interface CallTransport {
   connId(): string | null
   /** Quem está nesta call (todas as conexões, inclusive a minha). */
   members(): VoiceMember[]
-  /** `back`: voltando depois de o servidor perder a call (tela e câmera como estavam). */
-  join(muted: boolean, deafened: boolean, back?: { sharing: boolean; camera: boolean }): boolean
+  /** `back`: voltando depois de o servidor perder a call (tela, câmera e o Spotify como estavam). */
+  join(muted: boolean, deafened: boolean, back?: { sharing: boolean; camera: boolean; music: MusicStatus | null }): boolean
   leave(): void
-  update(state: { muted: boolean; deafened: boolean; sharing: boolean; camera: boolean }): void
+  update(state: { muted: boolean; deafened: boolean; sharing: boolean; camera: boolean; music: MusicStatus | null }): void
   signal(to: string, data: SignalData): boolean
 }
 
@@ -63,6 +66,16 @@ const USAGE_EVERY = 60_000
 const PEER_GRACE = 15_000
 /** Sinalização guardada enquanto o WebSocket está caído (vai quando voltar). */
 const OUTBOX_MAX = 500
+/** Pedido pro bot do Spotify de outra pessoa sem resposta: desiste. */
+const MUSIC_REPLY_WAIT = 15_000
+/** Pedidos que cada pessoa pode fazer pro meu bot (por 10 s): busca digitando não derruba a cota do Spotify. */
+const MUSIC_RATE = 20
+const SPEAKING_MUSIC = 0.01
+
+/** O que vai pros outros da call: o nome do outro aparelho de quem pôs o bot fica só com ele. */
+function forPeers(share: MusicShare): MusicShare {
+  return share.player?.elsewhere ? { ...share, player: { ...share.player, elsewhere: '' } } : share
+}
 
 /** A call em que esta instância está: microfone, conexões P2P e telas. */
 export class Call {
@@ -144,7 +157,32 @@ export class Call {
   /** connId de quem compartilha -> quantas vezes os rabiscos de lá foram apagados (quem desenha apaga o eco junto). */
   inkCleared = $state<Record<string, number>>({})
 
-  constructor(private deps: CallDeps) {}
+  // ---------- Bot do Spotify (lib/music.svelte.ts) ----------
+  // Quem põe o bot manda o som dele como uma faixa à parte pra cada pessoa e
+  // conta o que toca pelo canal `music`; os outros pedem (tocar, pular, buscar)
+  // por esse canal e o dono do bot executa na conta dele.
+
+  /** O meu bot (som e comandos), quando eu pus o Spotify na call. */
+  readonly bot: MusicBot
+  /** connId de quem pôs o bot -> o que toca lá (os bots dos outros). */
+  remoteMusic = $state<Record<string, MusicShare>>({})
+  /** connId de quem pôs o bot -> está saindo som agora (o bloco do bot acende). */
+  musicPlaying = $state<Record<string, boolean>>({})
+  private musicPending = new Map<string, { connId: string; resolve(reply: MusicReply): void; timer: ReturnType<typeof setTimeout> }>()
+  private musicRate = new Map<string, number[]>()
+  /** O que já foi contado: a faixa indo pras conexões e o que o servidor sabe. */
+  private musicLive = false
+  private musicSent = 'null'
+
+  constructor(private deps: CallDeps) {
+    this.bot = new MusicBot({
+      changed: () => this.musicChanged(),
+      stopped: (error) => {
+        this.musicChanged()
+        this.deps.musicStopped(error)
+      },
+    })
+  }
 
   get peerList(): Peer[] {
     return [...this.peers.values()]
@@ -215,7 +253,7 @@ export class Call {
   reconnected(resumed: boolean) {
     if (!this.transport) return
     if (resumed) this.sendState()
-    else this.transport.join(this.muted, this.deafened, { sharing: this.sharing, camera: !!this.camera })
+    else this.transport.join(this.muted, this.deafened, { sharing: this.sharing, camera: !!this.camera, music: this.bot.serverStatus })
     this.flushOutbox()
     for (const peer of this.peers.values()) peer.resendOffer(true)
     // Quem compartilha pode ter parado de mandar pra mim enquanto eu estava fora.
@@ -250,6 +288,12 @@ export class Call {
     this.outbox = []
     this.stopShare(false)
     this.stopSfuWatch()
+    this.bot.stop()
+    this.remoteMusic = {}
+    this.musicPlaying = {}
+    for (const pending of this.musicPending.values()) clearTimeout(pending.timer)
+    this.musicPending.clear()
+    this.musicRate.clear()
     this.relaySeen.clear()
     this.stopCamera(false)
     this.cameras = {}
@@ -303,10 +347,12 @@ export class Call {
 
   applyOutput() {
     for (const peer of this.peers.values()) peer.setOutput(settings.outputDevice)
+    this.applyMusicOutput()
   }
 
   applyVolumes() {
     for (const peer of this.peers.values()) peer.setVolume(this.volumeOf(peer.connId, peer.userId))
+    this.applyMusicOutput()
   }
 
   private volumeOf(connId: string, userId: string): number {
@@ -345,11 +391,18 @@ export class Call {
   private applyMuteState(notify = true) {
     if (this.micTrack) this.micTrack.enabled = !this.muted && !this.serverMuted
     for (const peer of this.peers.values()) peer.setDeafened(this.deafened || this.serverDeafened)
+    this.applyMusicOutput()
     if (notify) this.sendState()
   }
 
   private sendState() {
-    this.transport?.update({ muted: this.muted, deafened: this.deafened, sharing: this.sharing, camera: !!this.camera })
+    this.transport?.update({
+      muted: this.muted,
+      deafened: this.deafened,
+      sharing: this.sharing,
+      camera: !!this.camera,
+      music: this.bot.serverStatus,
+    })
   }
 
   // ---------- Membros e sinalização ----------
@@ -364,6 +417,11 @@ export class Call {
       this.serverDeafened = !!mine.serverDeafened
       playSound(this.serverMuted || this.serverDeafened ? 'mute' : 'unmute')
       this.applyMuteState(false)
+      // Mutado pela moderação: o Spotify que eu pus sai junto (pros outros ele já fica mudo).
+      if (this.serverMuted && this.bot.status !== 'off') {
+        this.bot.stop()
+        this.deps.musicStopped('muted')
+      }
     }
     const others = members.filter((m) => m.channelId === this.channelId && m.connId !== me)
     // Mutado por moderador: quem recebe não toca o áudio dele.
@@ -482,8 +540,15 @@ export class Call {
       },
       screenSfu: (info) => void this.onScreenSfu(member.connId, peer, info),
       screenSfuReply: (ok) => this.onSfuReply(member.connId, peer, ok),
+      music: (data) => void this.onMusic(member.connId, peer, data),
+      musicReady: () => {
+        if (peer.closed || !this.bot.on) return
+        void peer.sendMusic(this.bot.stream)
+        peer.sendMusicData({ t: 'state', share: forPeers(this.bot.share) })
+      },
     })
     peer.setVolume(this.volumeOf(member.connId, member.userId))
+    peer.setMusicVolume(settings.musicVolume)
     peer.setDeafened(this.deafened || this.serverDeafened)
     peer.setOutput(settings.outputDevice)
     this.peers.set(member.connId, peer)
@@ -508,6 +573,7 @@ export class Call {
     this.relaySeen.delete(connId)
     this.dropScreen(connId)
     this.dropCamera(connId)
+    this.dropMusic(connId)
     if (connId in this.links) delete this.links[connId]
     if (connId in this.speaking) delete this.speaking[connId]
   }
@@ -936,6 +1002,126 @@ export class Call {
     }
   }
 
+  // ---------- Bot do Spotify ----------
+
+  /** Ponho o meu Spotify na call. Devolve o erro (pra tela explicar) ou null. */
+  async startMusic(): Promise<MusicError | null> {
+    if (!this.channelId) return 'off'
+    if (this.serverMuted) return 'muted'
+    const error = await this.bot.start()
+    if (error) return error
+    // Saí da call enquanto ligava.
+    if (!this.channelId) {
+      this.bot.stop()
+      return 'off'
+    }
+    this.applyMusicOutput()
+    return null
+  }
+
+  stopMusic() {
+    this.bot.stop()
+  }
+
+  /** O meu bot mudou (ligou, desligou, trocou a música): conta pra call e pro servidor. */
+  private musicChanged() {
+    const on = this.bot.on
+    const share = on ? forPeers(this.bot.share) : null
+    const toggled = on !== this.musicLive
+    this.musicLive = on
+    for (const peer of this.peers.values()) {
+      if (!peer.musicCapable) continue
+      if (toggled) void peer.sendMusic(on ? this.bot.stream : null)
+      peer.sendMusicData({ t: 'state', share })
+    }
+    // Pro servidor só o nome da música e se está tocando (a lista do canal de voz).
+    const status = JSON.stringify(this.bot.serverStatus)
+    if (status !== this.musicSent) {
+      this.musicSent = status
+      this.sendState()
+    }
+  }
+
+  /** Os bots desta call: connId de quem pôs -> o que toca (o meu também, pelo meu connId). */
+  get musicBots(): Record<string, MusicShare> {
+    const me = this.connId()
+    return this.bot.on && me ? { ...this.remoteMusic, [me]: this.bot.share } : this.remoteMusic
+  }
+
+  /** Pede algo pro bot de alguém (ou pro meu). */
+  musicRun(connId: string, op: MusicOp): Promise<MusicReply> {
+    if (connId === this.connId()) return this.bot.run(op)
+    const peer = this.peers.get(connId)
+    if (!peer || !this.remoteMusic[connId]) return Promise.resolve({ ok: false, error: 'off' })
+    const id = crypto.randomUUID().slice(0, 18)
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        this.musicPending.delete(id)
+        resolve({ ok: false, error: 'timeout' })
+      }, MUSIC_REPLY_WAIT)
+      this.musicPending.set(id, { connId, resolve, timer })
+      if (!peer.sendMusicData({ t: 'cmd', id, op })) {
+        clearTimeout(timer)
+        this.musicPending.delete(id)
+        resolve({ ok: false, error: 'network' })
+      }
+    })
+  }
+
+  private async onMusic(connId: string, peer: Peer, raw: unknown) {
+    const msg = cleanMusicMessage(raw)
+    if (!msg) return
+    switch (msg.t) {
+      case 'state':
+        if (msg.share) this.remoteMusic[connId] = msg.share
+        else this.dropMusic(connId)
+        return
+      case 'reply': {
+        const pending = this.musicPending.get(msg.id)
+        if (!pending || pending.connId !== connId) return
+        clearTimeout(pending.timer)
+        this.musicPending.delete(msg.id)
+        return pending.resolve(msg.reply)
+      }
+      case 'cmd': {
+        // Só quem está na call com o meu bot ligado pede, e sem exagero.
+        const now = Date.now()
+        const recent = (this.musicRate.get(connId) ?? []).filter((at) => now - at < 10_000)
+        recent.push(now)
+        this.musicRate.set(connId, recent)
+        // Tirar a música do celular de quem pôs o bot é só com ele.
+        const reply: MusicReply = !this.bot.on
+          ? { ok: false, error: 'off' }
+          : recent.length > MUSIC_RATE
+            ? { ok: false, error: 'rate' }
+            : msg.op.op === 'transfer'
+              ? { ok: false, error: 'failed' }
+              : await this.bot.run(msg.op)
+        peer.sendMusicData({ t: 'reply', id: msg.id, reply })
+        return
+      }
+    }
+  }
+
+  private dropMusic(connId: string) {
+    if (connId in this.remoteMusic) delete this.remoteMusic[connId]
+    if (connId in this.musicPlaying) delete this.musicPlaying[connId]
+    for (const [id, pending] of this.musicPending) {
+      if (pending.connId !== connId) continue
+      clearTimeout(pending.timer)
+      this.musicPending.delete(id)
+      pending.resolve({ ok: false, error: 'off' })
+    }
+  }
+
+  /** Volume do bot (cada um escolhe o seu) e surdo/saída: vale pro meu e pros dos outros. */
+  applyMusicOutput() {
+    const deafened = this.deafened || this.serverDeafened
+    this.bot.setOutput(settings.musicVolume, deafened, settings.outputDevice)
+    // O Spotify de quem foi mutado pela moderação fica mudo, como a voz dele.
+    for (const peer of this.peers.values()) peer.setMusicVolume(this.silenced.has(peer.connId) ? 0 : settings.musicVolume)
+  }
+
   // ---------- Indicadores ----------
 
   private startTickers() {
@@ -951,6 +1137,15 @@ export class Call {
       for (const peer of this.peers.values()) next[peer.connId] = !this.deafened && peer.audioLevel() > SPEAKING_REMOTE
       for (const [key, value] of Object.entries(next)) {
         if (this.speaking[key] !== value) this.speaking[key] = value
+      }
+      // O bloco do bot acende enquanto sai som dele.
+      for (const peer of this.peers.values()) {
+        const playing = !!this.remoteMusic[peer.connId] && peer.musicLevel() > SPEAKING_MUSIC
+        if (!!this.musicPlaying[peer.connId] !== playing) this.musicPlaying[peer.connId] = playing
+      }
+      if (me) {
+        const mine = this.bot.on && !!this.bot.share.player?.playing
+        if (!!this.musicPlaying[me] !== mine) this.musicPlaying[me] = mine
       }
     }, 100)
     this.statsTicker = setInterval(async () => {

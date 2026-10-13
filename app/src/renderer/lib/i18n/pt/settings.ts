@@ -129,6 +129,7 @@ export default {
         keywords: ['vp9', 'vp8', 'h264', 'av1', 'qualidade', 'tela', 'stream', 'cpu', 'compartilhar tela'],
       },
       'voice.stats': { label: 'Estatísticas no player', section: 'Avançado', keywords: ['fps', 'ping', 'resolução', 'bitrate', 'stats', 'lag'] },
+      'voice.doubleClick': { label: 'Mudar de sala com clique duplo', section: 'Call', keywords: ['clique duplo', 'duplo clique', 'double click', 'mudar de sala', 'trocar de canal', 'sem querer', 'acidente', 'entrar na call'] },
 
       // Notificações
       'notify.sounds': { label: 'Sons do app', section: 'Sons', keywords: ['som', 'barulho', 'efeitos sonoros', 'silenciar', 'mudo', 'sounds'] },
@@ -375,6 +376,11 @@ export default {
       open: 'Ver prévia',
       close: 'Fechar prévia',
     },
+    call: {
+      section: 'Call',
+      doubleClick: 'Mudar de sala com clique duplo',
+      doubleClickDescription: 'Já numa call, um clique só no outro canal de voz não te tira da conversa.',
+    },
     stream: {
       section: 'Transmissão',
       ink: 'Quem assiste pode rabiscar na minha tela',
@@ -471,6 +477,11 @@ export default {
       ban: 'Suspender',
       noMatch: 'Ninguém com esse nome.',
       none: 'Nenhuma conta ainda.',
+      /** Liberar alguém pra passar uma sala de voz pelo Cloudflare, como o dono. */
+      relayAllow: (name: string) => `Deixar ${name} passar salas pelo Cloudflare`,
+      relayRevoke: (name: string) => `${name} pode passar salas pelo Cloudflare (clique pra tirar)`,
+      relayAllowed: (name: string) => `${name} já pode passar salas pelo Cloudflare.`,
+      relayRevoked: (name: string) => `${name} não pode mais passar salas pelo Cloudflare.`,
     },
     pioneer: {
       title: (name: string) => `Dar o selo de melhor amigo pra ${name}?`,

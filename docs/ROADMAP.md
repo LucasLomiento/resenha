@@ -62,6 +62,8 @@ As etapas 0.6 a 0.9 saíram juntas na 1.0 (uma atualização em vez de quatro).
 - [x] Importar canais do Discord por um print (ou criar o servidor inteiro a partir dele)
 - [x] Tela pelo SFU do Cloudflare com 2 ou mais assistindo (uma codificação só), TURN de reserva e cota de mídia do mês
 - [x] Idiomas: português, inglês e espanhol, trocados na hora (1.9)
+- [x] Bot do Spotify na call: toca pra todo mundo, cada um no seu volume, e qualquer um controla (pular, buscar, fila, playlists)
+- [x] Volume de cada pessoa até 200% (amplificado no app), mudar de sala com clique duplo (opção) e sala pelo Cloudflare liberada por pessoa
 - [ ] Busca de emoji com nomes em inglês e espanhol (hoje só em português)
 - [ ] Modo privado (tudo via TURN, esconde o IP até dos amigos): precisa da chave TURN
 - [ ] Arrastar servidores no trilho pra reordenar

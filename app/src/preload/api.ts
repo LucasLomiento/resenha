@@ -74,6 +74,97 @@ export interface InkMonitor {
   height: number
 }
 
+// ---------- Bot do Spotify (main/spotify.ts e lib/music.svelte.ts) ----------
+
+/** Uma música, do jeito que o app mostra (e manda pros outros da call). */
+export interface MusicTrack {
+  /** spotify:track:… */
+  uri: string
+  title: string
+  artists: string
+  album: string
+  /** Capa (https://i.scdn.co/…), ou null. */
+  cover: string | null
+  durationMs: number
+}
+
+/** Playlist ou álbum (busca e "playlists de quem pôs o bot"). */
+export interface MusicList {
+  uri: string
+  kind: 'playlist' | 'album'
+  title: string
+  /** Dono da playlist ou artista do álbum. */
+  by: string
+  cover: string | null
+}
+
+/** O que está tocando no bot. */
+export interface MusicPlayer {
+  track: MusicTrack | null
+  playing: boolean
+  progressMs: number
+  /** Quando o `progressMs` valia (Date.now() de quem leu; quem recebe acerta pelo relógio dele). */
+  at: number
+  shuffle: boolean
+  repeat: 'off' | 'context' | 'track'
+  /** A conta está tocando em outro aparelho (o nome dele), não no bot. */
+  elsewhere: string | null
+}
+
+export interface MusicSearch {
+  tracks: MusicTrack[]
+  lists: MusicList[]
+}
+
+/** O que dá pra pedir pro Spotify do bot (quem pôs pede direto; quem está na call, pelo canal de dados). */
+export type MusicOp =
+  | { op: 'player' }
+  | { op: 'queue' }
+  | { op: 'search'; q: string; offset?: number }
+  | { op: 'playlists'; offset?: number }
+  /** Música (toca só ela, e o Spotify segue com parecidas), playlist ou álbum. */
+  | { op: 'play'; uri: string }
+  | { op: 'resume' }
+  | { op: 'pause' }
+  | { op: 'next' }
+  | { op: 'previous' }
+  | { op: 'seek'; ms: number }
+  | { op: 'shuffle'; on: boolean }
+  | { op: 'repeat'; mode: 'off' | 'context' | 'track' }
+  | { op: 'enqueue'; uri: string }
+  /** Traz pro bot o que a conta está tocando em outro aparelho. */
+  | { op: 'transfer' }
+
+export type MusicError =
+  | 'not-connected'
+  | 'premium'
+  /** O app do Spotify do Resenha está em modo de desenvolvimento e essa conta não foi liberada pelo dono. */
+  | 'allowlist'
+  /** Mutado pela moderação (ou sem permissão de falar): não dá pra pôr música. */
+  | 'muted'
+  | 'no-device'
+  | 'rate'
+  | 'network'
+  | 'auth'
+  | 'missing'
+  | 'login'
+  | 'off'
+  | 'timeout'
+  | 'failed'
+
+export type MusicReply = { ok: true; data?: unknown } | { ok: false; error: MusicError }
+
+export interface SpotifyStatus {
+  /** O librespot (o Spotify que o bot usa por baixo) está instalado. */
+  librespot: boolean
+  /** Dá pra instalar por aqui (Arch e derivados: pacman). */
+  installable: boolean
+  /** Conta conectada (nome no Spotify), com o client ID usado no login. */
+  account: { name: string; clientId: string } | null
+  /** O bot está ligado agora. */
+  running: boolean
+}
+
 export interface ResenhaApi {
   platform(): Promise<PlatformInfo>
   session: {
@@ -121,6 +212,28 @@ export interface ResenhaApi {
     set(patch: Partial<DesktopPrefs>): Promise<{ prefs: DesktopPrefs; failed: ShortcutAction[] }>
     /** Os atalhos que o sistema recusou da última vez (tecla já usada, por exemplo). */
     failed(): Promise<ShortcutAction[]>
+  }
+  /** Bot do Spotify na call. */
+  spotify: {
+    status(): Promise<SpotifyStatus>
+    /** Login no navegador (PKCE) com o app do Spotify do servidor. */
+    connect(clientId: string): Promise<{ ok: true; name: string } | { ok: false; error: MusicError }>
+    disconnect(): Promise<void>
+    /** Instala o librespot (pkexec, ou terminal com sudo). */
+    install(): Promise<boolean>
+    /** Liga o bot: o librespot entra na conta como o aparelho "Resenha" e o som começa a vir. */
+    start(): Promise<{ ok: true } | { ok: false; error: MusicError }>
+    stop(): Promise<void>
+    request(op: MusicOp): Promise<MusicReply>
+    /** Pede mais som (PCM s16le, 44,1 kHz, estéreo): o librespot só anda no ritmo que o app toca. */
+    want(bytes: number): void
+    /** Joga fora o som que estava esperando (trocou de música: a nova começa na hora). */
+    flush(): void
+    onPcm(callback: (chunk: Uint8Array) => void): void
+    /** O bot parou sozinho (o librespot caiu, a conta saiu...). */
+    onStopped(callback: (error: MusicError) => void): void
+    /** O librespot pediu o login dele no navegador (só na primeira vez), com o endereço quando ele escreve. */
+    onBrowser(callback: (url: string | null) => void): void
   }
   /** Estado da call, pra bandeja e barra de tarefas. */
   callState(state: CallState): void

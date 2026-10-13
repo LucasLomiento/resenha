@@ -3,6 +3,7 @@
   import { client } from '../lib/client.svelte'
   import { m } from '../lib/i18n.svelte'
   import { badgeOf } from '../lib/profile'
+  import { ui } from '../lib/ui.svelte'
   import { Avatar, Badge, Button, UserBadge, Icon } from './kit'
   import VideoTile from './VideoTile.svelte'
 
@@ -10,9 +11,16 @@
   const t = $derived(m.app.call)
   const place = $derived(client.callPlace)
   const members = $derived(client.callMembers)
-  // Até 1 pessoa: bloco grande; até 4: 2 colunas; mais que isso: 3.
-  const cols = $derived(members.length <= 1 ? 1 : members.length <= 4 ? 2 : 3)
-  const rows = $derived(Math.max(1, Math.ceil(members.length / cols)))
+  /** O Spotify de alguém é mais um bloco na call, logo depois de quem pôs. */
+  const bots = $derived(Object.entries(call.musicBots))
+  const tiles = $derived(members.length + bots.length)
+  // Até 1 bloco: grande; até 4: 2 colunas; mais que isso: 3.
+  const cols = $derived(tiles <= 1 ? 1 : tiles <= 4 ? 2 : 3)
+  const rows = $derived(Math.max(1, Math.ceil(tiles / cols)))
+  const hostName = (connId: string) => {
+    const userId = members.find((x) => x.connId === connId)?.userId
+    return userId ? (client.user(userId, call.guildId)?.name ?? m.app.someone) : m.app.someone
+  }
 
   function watch(connId: string) {
     call.watch(connId)
@@ -68,6 +76,27 @@
             </div>
           {/if}
         </div>
+      {/each}
+      {#each bots as [connId, share] (connId)}
+        {@const track = share.player?.track}
+        <button
+          class="tile music"
+          class:speaking={call.musicPlaying[connId]}
+          aria-label={m.music.botOf(hostName(connId))}
+          onclick={() => (ui.music = { connId })}
+        >
+          {#if track?.cover}<img class="backdrop" src={track.cover} alt="" />{/if}
+          <div class="face">
+            <div class="disc">
+              {#if track?.cover}<img src={track.cover} alt="" />{:else}<Icon name="music" size={cols === 1 ? 44 : 34} />{/if}
+            </div>
+          </div>
+          <div class="name-tag">
+            <Icon name="music" size={14} class="spotify" />
+            <span>{m.music.bot}</span>
+            {#if track}<span class="song">{track.title} · {track.artists}</span>{/if}
+          </div>
+        </button>
       {/each}
     </div>
   </div>
@@ -185,6 +214,58 @@
 
   .you {
     color: rgb(242 242 246 / 0.55);
+    font-weight: 450;
+  }
+
+  /* Bot do Spotify: a capa grande no meio, borrada no fundo. */
+  .tile.music {
+    display: block;
+    width: 100%;
+    background: #101014;
+    cursor: pointer;
+  }
+
+  .tile.music.speaking {
+    box-shadow:
+      0 0 0 2px var(--spotify),
+      0 0 24px -4px rgb(30 215 96 / 0.45);
+  }
+
+  .backdrop {
+    position: absolute;
+    inset: -20%;
+    width: 140%;
+    height: 140%;
+    object-fit: cover;
+    filter: blur(28px) brightness(0.45) saturate(1.2);
+  }
+
+  .disc {
+    display: grid;
+    place-items: center;
+    width: 38%;
+    aspect-ratio: 1;
+    max-width: 180px;
+    border-radius: var(--r-lg);
+    overflow: hidden;
+    background: var(--spotify);
+    color: var(--spotify-ink);
+    box-shadow: var(--shadow-lg);
+  }
+
+  .disc img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .name-tag :global(.spotify) {
+    flex: none;
+    color: var(--spotify);
+  }
+
+  .song {
+    color: rgb(242 242 246 / 0.6);
     font-weight: 450;
   }
 

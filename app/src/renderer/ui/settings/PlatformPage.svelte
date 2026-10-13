@@ -6,7 +6,7 @@
   import { fmt, m } from '../../lib/i18n.svelte'
   import { badgeOf } from '../../lib/profile'
   import { confirmAction } from '../../lib/ui.svelte'
-  import { Avatar, Badge, Button, Icon, PageHeader, RadioGroup, Row, Section, Spinner, TextField, UserBadge } from '../kit'
+  import { Avatar, Badge, Button, Icon, IconButton, PageHeader, RadioGroup, Row, Section, Spinner, TextField, UserBadge } from '../kit'
 
   const GB = 1024 ** 3
   /** O dono mexe em tudo; o melhor amigo dele só vê os números. */
@@ -123,6 +123,23 @@
     })
   }
 
+  /** Deixa (ou não) essa pessoa passar uma sala pelo Cloudflare, como o dono (vale na hora, sem ela reconectar). */
+  async function toggleRelay(user: AdminUser) {
+    const api = client.api
+    if (!api) return
+    const allowed = !user.relay
+    busyUser = user.id
+    try {
+      await api.adminSetRelay(user.id, allowed)
+      user.relay = allowed
+      client.toast(allowed ? t.accounts.relayAllowed(user.name) : t.accounts.relayRevoked(user.name), 'info')
+    } catch (err) {
+      client.toast((err as Error).message)
+    } finally {
+      busyUser = null
+    }
+  }
+
   function setBanned(user: AdminUser, banned: boolean) {
     // Reativar não precisa de confirmação: dá pra suspender de novo.
     if (!banned) return apply(user, false)
@@ -232,6 +249,18 @@
               <Badge tone="accent">{t.accounts.pioneer}</Badge>
             {:else if !self && !user.banned}
               <Button size="sm" variant="ghost" disabled={!!busyUser} onclick={() => makePioneer(user)}>{t.accounts.makePioneer}</Button>
+            {/if}
+            {#if !self && !user.banned}
+              <IconButton
+                icon="cloud"
+                size="sm"
+                tone="accent"
+                active={user.relay}
+                aria-pressed={user.relay}
+                label={user.relay ? t.accounts.relayRevoke(user.name) : t.accounts.relayAllow(user.name)}
+                disabled={!!busyUser}
+                onclick={() => toggleRelay(user)}
+              />
             {/if}
             {#if self}
               <Badge tone="accent">{m.common.you}</Badge>

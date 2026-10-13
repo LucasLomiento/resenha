@@ -1,4 +1,5 @@
-import type { SignalData } from '../../../../shared/protocol'
+import type { SignalData, StreamKind } from '../../../../shared/protocol'
+import { boostContext, setBoostOutput } from './boost'
 import { audioMidsOf, tuneScreenOpus } from './sdp'
 import type { ScreenMode, VideoCodec } from './settings.svelte'
 
@@ -21,6 +22,10 @@ export interface PeerEvents {
   screenSfu(info: SfuScreen | null): void
   /** Quem assiste conseguiu puxar do SFU (a cópia direta pode parar) ou não. */
   screenSfuReply(ok: boolean): void
+  /** Chegou algo pelo canal do bot do Spotify (sem conferir: quem recebe confere). */
+  music(data: unknown): void
+  /** O outro app entende o bot do Spotify (mandou "hello"): já dá pra mandar a faixa dele. */
+  musicReady(): void
 }
 
 /** Onde puxar a tela no SFU do Cloudflare: sessão de quem publicou e os nomes das faixas. */
@@ -142,6 +147,10 @@ export function videoStatsFrom(report: RTCStatsReport, direction: 'inbound' | 'o
 export class Peer {
   readonly pc: RTCPeerConnection
   readonly audio = new Audio()
+  /** O Spotify que essa pessoa pôs na call: toca à parte, no volume que eu escolher pro bot. */
+  readonly musicAudio = new Audio()
+  /** O outro app entende o bot do Spotify (só ele recebe a faixa: app antigo tocaria no lugar da voz). */
+  musicCapable = false
   /** Id desta RTCPeerConnection: vai em toda sinalização, pra cada lado saber se o outro recomeçou. */
   readonly id = crypto.randomUUID().slice(0, 13)
   /** Id da conexão do outro lado (null até a primeira mensagem dele). */
@@ -152,6 +161,8 @@ export class Peer {
   private offerSentAt = 0
   /** Canal dos rabiscos na tela (direto entre os dois, sem passar pelo servidor). */
   private inkChannel: RTCDataChannel
+  /** Canal do bot do Spotify: o que toca, pedidos e respostas (direto entre os dois). */
+  private musicChannel: RTCDataChannel
 
   private makingOffer = false
   private ignoreOffer = false
@@ -159,10 +170,17 @@ export class Peer {
   private queue: Promise<void> = Promise.resolve()
   /** Candidatos que chegaram antes da descrição remota (comum quando as ofertas cruzam). */
   private pendingCandidates: RTCIceCandidateInit[] = []
-  private localStreams: Record<string, 'mic' | 'screen' | 'camera'> = {}
-  private remoteStreams: Record<string, 'mic' | 'screen' | 'camera'> = {}
+  private localStreams: Record<string, StreamKind> = {}
+  private remoteStreams: Record<string, StreamKind> = {}
   private micSender: RTCRtpSender
   private micReceiver: RTCRtpReceiver | null = null
+  private musicReceiver: RTCRtpReceiver | null = null
+  private musicTx: RTCRtpTransceiver | null = null
+  /** Volume da voz dessa pessoa pra mim (0..2) e se estou surdo. */
+  private volume = 1
+  private deafened = false
+  /** Acima de 100%: a voz toca por aqui (ganho do WebAudio) e o elemento fica mudo. */
+  private boost: { stream: MediaStream; source: MediaStreamAudioSourceNode; gain: GainNode } | null = null
   private screenVideo: RTCRtpTransceiver | null = null
   private screenAudio: RTCRtpTransceiver | null = null
   private cameraVideo: RTCRtpTransceiver | null = null
@@ -187,6 +205,7 @@ export class Peer {
       rtcpMuxPolicy: 'require',
     })
     this.audio.autoplay = true
+    this.musicAudio.autoplay = true
 
     this.localStreams[micStream.id] = 'mic'
     this.micSender = this.pc.addTrack(micStream.getAudioTracks()[0], micStream)
@@ -201,6 +220,22 @@ export class Peer {
       } catch {
         // mensagem quebrada
       }
+    }
+
+    this.musicChannel = this.pc.createDataChannel('music', { negotiated: true, id: 3, ordered: true })
+    this.musicChannel.onopen = () => this.musicChannel.send(JSON.stringify({ t: 'hello' }))
+    this.musicChannel.onmessage = (event) => {
+      if (typeof event.data !== 'string' || event.data.length > 256_000) return
+      let data: unknown
+      try {
+        data = JSON.parse(event.data)
+      } catch {
+        return
+      }
+      if ((data as { t?: unknown })?.t !== 'hello') return this.events.music(data)
+      if (this.musicCapable) return
+      this.musicCapable = true
+      this.events.musicReady()
     }
 
     this.pc.onnegotiationneeded = async () => {
@@ -229,10 +264,17 @@ export class Peer {
 
       const stream = streams[0]
       const kind = stream ? this.remoteStreams[stream.id] : undefined
+      if (track.kind === 'audio' && kind === 'music') {
+        this.musicReceiver = receiver
+        this.musicAudio.srcObject = new MediaStream([track])
+        this.musicAudio.play().catch(() => {})
+        return
+      }
       if (track.kind === 'audio' && kind !== 'screen') {
         this.micReceiver = receiver
         this.audio.srcObject = new MediaStream([track])
         this.audio.play().catch(() => {})
+        this.applyVoice()
         return
       }
       if (track.kind === 'video') {
@@ -307,7 +349,7 @@ export class Peer {
     switch (data.kind) {
       case 'description': {
         Object.assign(this.remoteStreams, data.streams)
-        const mids = new Set([this.screenAudio?.mid].filter((m): m is string => !!m))
+        const mids = new Set([this.screenAudio?.mid, this.musicTx?.mid].filter((m): m is string => !!m))
         const description: RTCSessionDescriptionInit = {
           type: data.description.type,
           sdp: tuneScreenOpus(data.description.sdp ?? '', mids),
@@ -356,13 +398,13 @@ export class Peer {
   }
 
   /**
-   * Cria e aplica a descrição local pedindo estéreo no áudio de tela que eu
-   * recebo: sem isso o Chromium decodifica em mono, mesmo chegando estéreo.
+   * Cria e aplica a descrição local pedindo estéreo no áudio de tela (e no do
+   * Spotify) que eu recebo: sem isso o Chromium decodifica em mono, mesmo chegando estéreo.
    */
   private async setLocal(type: 'offer' | 'answer') {
     const created = type === 'offer' ? await this.pc.createOffer() : await this.pc.createAnswer()
     const remote = this.pc.remoteDescription?.sdp ?? ''
-    const mids = audioMidsOf(remote, (streamId) => this.remoteStreams[streamId] === 'screen')
+    const mids = audioMidsOf(remote, (streamId) => this.remoteStreams[streamId] === 'screen' || this.remoteStreams[streamId] === 'music')
     await this.pc.setLocalDescription(mids.size ? { type, sdp: tuneScreenOpus(created.sdp ?? '', mids) } : created)
   }
 
@@ -384,21 +426,88 @@ export class Peer {
     return this.micSender.replaceTrack(track)
   }
 
+  /** 0..2: acima de 1 (100%) a voz é amplificada dentro do app. */
   setVolume(volume: number) {
-    this.audio.volume = Math.max(0, Math.min(1, volume))
+    this.volume = Math.max(0, Math.min(2, volume))
+    this.applyVoice()
   }
 
   setDeafened(deafened: boolean) {
-    this.audio.muted = deafened
+    this.deafened = deafened
+    this.applyVoice()
+    this.musicAudio.muted = deafened
   }
 
   setOutput(deviceId: string) {
-    this.audio.setSinkId(deviceId === 'default' ? '' : deviceId).catch(() => {})
+    const sink = deviceId === 'default' ? '' : deviceId
+    this.audio.setSinkId(sink).catch(() => {})
+    this.musicAudio.setSinkId(sink).catch(() => {})
+    setBoostOutput(deviceId)
+  }
+
+  /**
+   * Até 100%, o próprio elemento toca no volume escolhido. Acima, ele fica mudo
+   * (mas ligado: sem ele o Chromium não entrega o som da conexão pro WebAudio)
+   * e a voz passa por um ganho.
+   */
+  private applyVoice() {
+    const loud = this.volume > 1
+    this.audio.volume = Math.min(1, this.volume)
+    this.audio.muted = this.deafened || loud
+    const stream = this.audio.srcObject as MediaStream | null
+    if (!loud || this.deafened || !stream || this.closed) return this.dropBoost()
+    if (this.boost?.stream !== stream) {
+      this.dropBoost()
+      const ctx = boostContext()
+      const source = ctx.createMediaStreamSource(stream)
+      const gain = ctx.createGain()
+      source.connect(gain).connect(ctx.destination)
+      this.boost = { stream, source, gain }
+    }
+    this.boost.gain.gain.value = this.volume
+  }
+
+  private dropBoost() {
+    if (!this.boost) return
+    this.boost.source.disconnect()
+    this.boost.gain.disconnect()
+    this.boost = null
   }
 
   /** Nível de voz (0..1) do que está chegando, direto do WebRTC, sem WebAudio. */
   audioLevel(): number {
     return this.micReceiver?.getSynchronizationSources()[0]?.audioLevel ?? 0
+  }
+
+  // ---------- Bot do Spotify ----------
+
+  setMusicVolume(volume: number) {
+    this.musicAudio.volume = Math.max(0, Math.min(1, volume))
+  }
+
+  /** Nível do Spotify que essa pessoa pôs (0..1), pro bloco do bot "acender" como quem fala. */
+  musicLevel(): number {
+    return this.musicReceiver?.getSynchronizationSources()[0]?.audioLevel ?? 0
+  }
+
+  /** Manda pelo canal do bot (se ainda não abriu, perde: o próximo estado vai inteiro). */
+  sendMusicData(data: unknown): boolean {
+    if (this.closed || this.musicChannel.readyState !== 'open') return false
+    this.musicChannel.send(JSON.stringify(data))
+    return true
+  }
+
+  /** Começa (ou para, com null) de mandar o som do meu bot do Spotify: estéreo, como música. */
+  async sendMusic(stream: MediaStream | null) {
+    if (stream) this.localStreams[stream.id] = 'music'
+    this.musicTx = await this.setSending(
+      this.musicTx,
+      stream?.getAudioTracks()[0] ?? null,
+      stream,
+      // Abaixo da voz: se a rede apertar, a música cede primeiro.
+      { maxBitrate: 160_000, priority: 'medium', networkPriority: 'medium' },
+      null,
+    )
   }
 
   // ---------- Tela ----------
@@ -525,7 +634,9 @@ export class Peer {
 
   close() {
     this.closed = true
+    this.dropBoost()
     this.audio.srcObject = null
+    this.musicAudio.srcObject = null
     this.pc.close()
   }
 }

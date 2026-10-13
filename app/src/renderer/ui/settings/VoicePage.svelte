@@ -218,6 +218,12 @@
   {/if}
 </Section>
 
+<Section title={t.call.section}>
+  <Row label={t.call.doubleClick} for="voice-double-click" setting="voice.doubleClick" description={t.call.doubleClickDescription}>
+    <Switch id="voice-double-click" bind:checked={settings.voiceDoubleClick} />
+  </Row>
+</Section>
+
 <Section title={t.stream.section}>
   <Row label={t.stream.ink} for="voice-ink" setting="voice.ink" description={t.stream.inkDescription}>
     <Switch id="voice-ink" checked={settings.inkAllowed} onchange={(e) => call.ink.setEnabled(e.currentTarget.checked)} />

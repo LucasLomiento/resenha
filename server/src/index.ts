@@ -356,6 +356,7 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
       needsInvite: status.users > 0 && !open,
       signup: open ? 'open' : 'invite',
       turnstileSiteKey: open ? env.TURNSTILE_SITE_KEY : null,
+      spotifyClientId: env.SPOTIFY_CLIENT_ID || null,
     } satisfies StatusResponse)
   }
 
@@ -564,6 +565,10 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
   }
   if (pathname === '/api/admin/users' && method === 'GET') return fromResult(await dir.adminUsers(me, url.searchParams.get('q') ?? ''))
   if ((m = pathname.match(/^\/api\/admin\/users\/([\w-]{1,64})\/pioneer$/)) && method === 'POST') return fromResult(await dir.adminSetPioneer(me, m[1]))
+  if ((m = pathname.match(/^\/api\/admin\/users\/([\w-]{1,64})\/relay$/)) && method === 'POST') {
+    const body = await readJson(request)
+    return fromResult(await dir.adminSetRelay(me, m[1], body.allowed === true))
+  }
   if ((m = pathname.match(/^\/api\/admin\/users\/([\w-]{1,64})\/ban$/)) && method === 'POST') {
     const body = await readJson(request)
     return fromResult(await dir.adminSetBanned(me, m[1], !!body.banned))

@@ -4,6 +4,8 @@ import type { Plugin } from 'vite'
 
 /** Mapa compartilhado: os mapas do OpenFreeMap (estilo, pedaços, fontes, ícones) e a busca de endereço do OpenStreetMap. */
 const MAP_HOSTS = 'https://tiles.openfreemap.org https://nominatim.openstreetmap.org'
+/** Capas do bot do Spotify (só imagem: os pedidos ao Spotify saem do processo principal). */
+const SPOTIFY_IMAGES = 'https://*.scdn.co https://*.spotifycdn.com'
 
 /**
  * CSP do app: no build, a página só fala com o servidor do Resenha (mesmo se
@@ -23,7 +25,7 @@ function csp(): Plugin {
             "default-src 'none'",
             "script-src 'self' 'wasm-unsafe-eval'",
             "style-src 'self' 'unsafe-inline'",
-            `img-src 'self' data: blob: ${http} ${MAP_HOSTS}`,
+            `img-src 'self' data: blob: ${http} ${MAP_HOSTS} ${SPOTIFY_IMAGES}`,
             `media-src 'self' blob: ${http}`,
             `connect-src 'self' ${http} ${ws} ${MAP_HOSTS}`,
             "font-src 'self'",

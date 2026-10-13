@@ -144,6 +144,8 @@ export const MAX_BANNER_BYTES = 1536 * 1024
 export interface Me extends User {
   /** Dono da plataforma (painel de administração). */
   staff: boolean
+  /** Pode passar uma sala de voz pelo Cloudflare (o dono, ou quem ele liberou na Plataforma). */
+  relay?: boolean
   dmPolicy: DmPolicy
   createdAt: number
 }
@@ -380,6 +382,20 @@ export interface VoiceMember {
   /** Mutado/ensurdecido por moderador: quem recebe não toca o áudio. */
   serverMuted?: boolean
   serverDeafened?: boolean
+  /** Essa conexão pôs o Spotify na call (o bot aparece logo abaixo dela), e o que está tocando. */
+  music?: MusicStatus | null
+}
+
+/**
+ * O bot do Spotify de alguém da call: o que aparece pra todo mundo do servidor
+ * na lista do canal de voz. O resto (capa, fila, controles) vai direto entre
+ * os apps de quem está na call, pelo canal de dados `music`.
+ */
+export interface MusicStatus {
+  /** Música tocando (vazio: nada carregado ainda). */
+  title: string
+  artist: string
+  playing: boolean
 }
 
 // ---------- Mapa compartilhado (um por servidor) ----------
@@ -436,12 +452,15 @@ export interface IceCandidate {
   usernameFragment?: string | null
 }
 
+/** O que cada faixa é: voz, tela (vídeo e som), câmera ou o som do Spotify de quem pôs o bot. */
+export type StreamKind = 'mic' | 'screen' | 'camera' | 'music'
+
 export type SignalData = (
   | {
       kind: 'description'
       description: SessionDescription
-      /** streamId -> o que é, pra quem recebe saber qual faixa é mic, tela ou câmera. */
-      streams: Record<string, 'mic' | 'screen' | 'camera'>
+      /** streamId -> o que é, pra quem recebe saber qual faixa é mic, tela, câmera ou o Spotify. */
+      streams: Record<string, StreamKind>
     }
   | { kind: 'candidate'; candidate: IceCandidate | null }
   | { kind: 'watch' }
@@ -476,6 +495,8 @@ export interface StatusResponse {
   signup: 'invite' | 'open'
   /** Chave pública do Turnstile, quando o cadastro aberto usa anti-robô. */
   turnstileSiteKey: string | null
+  /** Client ID do app do Spotify (bot de música na call). null: o bot fica desligado. */
+  spotifyClientId?: string | null
 }
 
 export interface SessionInfo {
@@ -589,9 +610,17 @@ export type ClientMessage =
   | { t: 'invite.delete'; code: string }
   | { t: 'notify.update'; settings: NotifySettings }
   /** `sharing`/`camera`: voltando depois de o servidor perder a call (tudo numa mensagem só, sem piscar). */
-  | { t: 'voice.join'; channelId: string; muted: boolean; deafened: boolean; sharing?: boolean; camera?: boolean }
+  | {
+      t: 'voice.join'
+      channelId: string
+      muted: boolean
+      deafened: boolean
+      sharing?: boolean
+      camera?: boolean
+      music?: MusicStatus | null
+    }
   | { t: 'voice.leave' }
-  | { t: 'voice.update'; muted: boolean; deafened: boolean; sharing: boolean; camera?: boolean }
+  | { t: 'voice.update'; muted: boolean; deafened: boolean; sharing: boolean; camera?: boolean; music?: MusicStatus | null }
   | { t: 'rtc.signal'; to: string; data: SignalData }
   /** Abriu o mapa: passa a receber a vista, os cursores e os marcadores (responde com `map.state`). */
   | { t: 'map.join' }
@@ -734,10 +763,18 @@ export type HomeClientMessage =
       t: 'call.answer'
       channelId: string
       accept: boolean
-      state?: { muted: boolean; deafened: boolean; sharing: boolean; camera: boolean }
+      state?: { muted: boolean; deafened: boolean; sharing: boolean; camera: boolean; music?: MusicStatus | null }
     }
   | { t: 'call.hangup'; channelId: string }
-  | { t: 'call.update'; channelId: string; muted: boolean; deafened: boolean; sharing: boolean; camera: boolean }
+  | {
+      t: 'call.update'
+      channelId: string
+      muted: boolean
+      deafened: boolean
+      sharing: boolean
+      camera: boolean
+      music?: MusicStatus | null
+    }
   | { t: 'call.signal'; channelId: string; to: string; data: SignalData }
 
 export type HomeServerMessage =

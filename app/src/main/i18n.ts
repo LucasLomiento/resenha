@@ -50,6 +50,15 @@ const pt = {
   },
   /** Janelinha do anti-robô do cadastro (Turnstile). */
   verifyTitle: 'Verificação',
+  /** Bot do Spotify: a página que o navegador mostra depois do login e o terminal que instala o librespot. */
+  spotify: {
+    connected: 'Spotify conectado. Pode fechar esta aba e voltar pro Resenha.',
+    failed: 'Não deu pra conectar o Spotify. Volte pro Resenha e tente de novo.',
+    installTitle: 'Instalar librespot',
+    installPrompt: 'Instalando o librespot (o Spotify do bot do Resenha). Digite sua senha:',
+    installDone: 'Pronto. Pode fechar esta janela e voltar pro Resenha.',
+    installFailed: 'Não deu pra instalar. Aperte Enter pra fechar.',
+  },
 }
 
 const en: typeof pt = {
@@ -85,6 +94,14 @@ const en: typeof pt = {
     noTerminal: (file: string) => `Couldn't find a terminal to ask for your password. Install it manually: sudo pacman -U "${file}"`,
   },
   verifyTitle: 'Verification',
+  spotify: {
+    connected: 'Spotify connected. You can close this tab and go back to Resenha.',
+    failed: "Couldn't connect Spotify. Go back to Resenha and try again.",
+    installTitle: 'Install librespot',
+    installPrompt: "Installing librespot (the Spotify player behind Resenha's bot). Enter your password:",
+    installDone: 'Done. You can close this window and go back to Resenha.',
+    installFailed: "Couldn't install it. Press Enter to close.",
+  },
 }
 
 const es: typeof pt = {
@@ -120,6 +137,14 @@ const es: typeof pt = {
     noTerminal: (file: string) => `No encontré una terminal para pedir tu contraseña. Instálalo manualmente: sudo pacman -U "${file}"`,
   },
   verifyTitle: 'Verificación',
+  spotify: {
+    connected: 'Spotify conectado. Puedes cerrar esta pestaña y volver a Resenha.',
+    failed: 'No se pudo conectar Spotify. Vuelve a Resenha e inténtalo de nuevo.',
+    installTitle: 'Instalar librespot',
+    installPrompt: 'Instalando librespot (el Spotify del bot de Resenha). Escribe tu contraseña:',
+    installDone: 'Listo. Puedes cerrar esta ventana y volver a Resenha.',
+    installFailed: 'No se pudo instalar. Presiona Enter para cerrar.',
+  },
 }
 
 const CATALOGS: Record<Locale, typeof pt> = { pt, en, es }

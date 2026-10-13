@@ -8,6 +8,7 @@ import settings from './settings'
 import kit from './kit'
 import lib from './lib'
 import map from './map'
+import music from './music'
 import errors from './errors'
 
-export default { common, app, chat, home, guild, server, settings, kit, lib, map, errors }
+export default { common, app, chat, home, guild, server, settings, kit, lib, map, music, errors }

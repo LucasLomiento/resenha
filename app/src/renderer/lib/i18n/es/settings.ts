@@ -122,6 +122,7 @@ export default {
         keywords: ['vp9', 'vp8', 'h264', 'av1', 'calidad', 'pantalla', 'stream', 'cpu', 'compartir pantalla'],
       },
       'voice.stats': { label: 'Estadísticas en el reproductor', section: 'Avanzado', keywords: ['fps', 'ping', 'resolución', 'bitrate', 'lag'] },
+      'voice.doubleClick': { label: 'Cambiar de sala con doble clic', section: 'Llamada', keywords: ['doble clic', 'double click', 'cambiar de sala', 'cambiar de canal', 'sin querer', 'accidente', 'entrar a la llamada'] },
 
       // Notificaciones
       'notify.sounds': { label: 'Sonidos de la app', section: 'Sonidos', keywords: ['sonido', 'efectos de sonido', 'silenciar', 'mudo'] },
@@ -362,6 +363,11 @@ export default {
       open: 'Ver vista previa',
       close: 'Cerrar vista previa',
     },
+    call: {
+      section: 'Llamada',
+      doubleClick: 'Cambiar de sala con doble clic',
+      doubleClickDescription: 'Si ya estás en una llamada, un solo clic en otro canal de voz no te saca de la conversación.',
+    },
     stream: {
       section: 'Transmisión',
       ink: 'Quien mira puede dibujar en mi pantalla',
@@ -455,6 +461,10 @@ export default {
       ban: 'Suspender',
       noMatch: 'Nadie con ese nombre.',
       none: 'Todavía no hay cuentas.',
+      relayAllow: (name: string) => `Permitir que ${name} pase salas por Cloudflare`,
+      relayRevoke: (name: string) => `${name} puede pasar salas por Cloudflare (clic para quitar)`,
+      relayAllowed: (name: string) => `${name} ya puede pasar salas por Cloudflare.`,
+      relayRevoked: (name: string) => `${name} ya no puede pasar salas por Cloudflare.`,
     },
     pioneer: {
       title: (name: string) => `¿Dar la insignia de mejor amigo a ${name}?`,

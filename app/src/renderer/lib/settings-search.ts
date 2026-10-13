@@ -82,6 +82,7 @@ export const SETTINGS: SettingEntry[] = [
   { id: 'voice.agc', page: 'voice' },
   { id: 'voice.codec', page: 'voice' },
   { id: 'voice.stats', page: 'voice' },
+  { id: 'voice.doubleClick', page: 'voice' },
 
   // Notificações
   { id: 'notify.sounds', page: 'notifications' },

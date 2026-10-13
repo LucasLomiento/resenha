@@ -37,6 +37,8 @@ export function normalizeServer(input: string): string {
 
 export interface AdminUser extends User {
   banned: boolean
+  /** Pode passar uma sala de voz pelo Cloudflare (o dono sempre pode). */
+  relay: boolean
   createdAt: number
 }
 
@@ -296,6 +298,11 @@ export class Api {
   }
 
   /** Dá o selo de Pioneiro (e os exclusivos dele) pra outra conta. */
+  /** Libera (ou tira) de alguém passar uma sala pelo Cloudflare. */
+  adminSetRelay(userId: string, allowed: boolean) {
+    return this.request(`/api/admin/users/${encodeURIComponent(userId)}/relay`, { method: 'POST', json: { allowed } })
+  }
+
   adminSetPioneer(userId: string) {
     return this.request(`/api/admin/users/${encodeURIComponent(userId)}/pioneer`, { method: 'POST', json: {} })
   }

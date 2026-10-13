@@ -42,6 +42,8 @@ const SEEN_EVERY = HOUR
 const FLAG_STAFF = 1
 const FLAG_BANNED = 2
 const FLAG_DELETED = 4
+/** O dono liberou: pode passar uma sala pelo Cloudflare, como ele (Plataforma → Contas). */
+const FLAG_RELAY = 8
 
 /** Teto de anexos da plataforma inteira (o plano grátis tem 5 GB pra tudo). */
 const STORAGE_LIMIT = 4 * 1024 ** 3
@@ -367,6 +369,7 @@ export class Directory extends DurableObject<Env> {
     return {
       ...this.toUser(row),
       staff: (row.flags & FLAG_STAFF) !== 0,
+      relay: (row.flags & (FLAG_STAFF | FLAG_RELAY)) !== 0,
       dmPolicy: row.dm_policy as DmPolicy,
       createdAt: row.created_at,
     }
@@ -1413,7 +1416,7 @@ export class Directory extends DurableObject<Env> {
     return ok(null)
   }
 
-  adminUsers(staffId: string, query: unknown): Result<(User & { banned: boolean; createdAt: number })[]> {
+  adminUsers(staffId: string, query: unknown): Result<(User & { banned: boolean; relay: boolean; createdAt: number })[]> {
     if (!this.isStaff(staffId)) return fail(403, 'Só o dono da plataforma.')
     const q = typeof query === 'string' ? `%${query.trim().toLowerCase().replace(/[%_]/g, '')}%` : '%'
     return ok(
@@ -1426,7 +1429,12 @@ export class Directory extends DurableObject<Env> {
           FLAG_DELETED,
         )
         .toArray()
-        .map((r) => ({ ...this.toUser(r), banned: (r.flags & FLAG_BANNED) !== 0, createdAt: r.created_at })),
+        .map((r) => ({
+          ...this.toUser(r),
+          banned: (r.flags & FLAG_BANNED) !== 0,
+          relay: (r.flags & (FLAG_STAFF | FLAG_RELAY)) !== 0,
+          createdAt: r.created_at,
+        })),
     )
   }
 
@@ -1443,6 +1451,24 @@ export class Directory extends DurableObject<Env> {
       if (changed) await this.propagateProfile(changed)
     }
     return ok(null)
+  }
+
+  /** O dono libera (ou tira) de alguém passar uma sala pelo Cloudflare, como ele. O app da pessoa fica sabendo na hora. */
+  async adminSetRelay(staffId: string, userId: string, allowed: boolean): Promise<Result<null>> {
+    if (!this.isStaff(staffId)) return fail(403, 'Só o dono da plataforma.')
+    const row = this.user(userId)
+    if (!row || row.flags & FLAG_DELETED) return fail(404, 'Conta não encontrada.')
+    if (row.flags & FLAG_STAFF) return fail(400, 'O dono já pode.')
+    this.sql.exec(`UPDATE users SET flags = ${allowed ? 'flags | ?' : 'flags & ~?'} WHERE id = ?`, FLAG_RELAY, userId)
+    const updated = this.user(userId)
+    if (updated) await this.home(userId).meUpdated(this.toMe(updated)).catch(() => {})
+    return ok(null)
+  }
+
+  /** Pode passar uma sala pelo Cloudflare (o dono, ou quem ele liberou). */
+  canRelay(userId: string): boolean {
+    const row = this.user(userId)
+    return !!row && !(row.flags & (FLAG_DELETED | FLAG_BANNED)) && (row.flags & (FLAG_STAFF | FLAG_RELAY)) !== 0
   }
 
   async adminSetBanned(staffId: string, userId: string, banned: boolean): Promise<Result<null>> {

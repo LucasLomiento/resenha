@@ -51,6 +51,8 @@ export default {
     editChannel: 'Editar canal',
     openCall: (channel: string) => `${channel}: abrir a call`,
     joinCall: (channel: string) => `${channel}: entrar na call`,
+    /** Mudar de sala com clique duplo (opção em Voz e vídeo): o primeiro clique só avisa. */
+    doubleClickToSwitch: 'Clique duas vezes pra mudar de sala.',
     relay: 'Pelo Cloudflare: voz, câmera e tela passam pelos servidores dele, não direto entre os PCs',
     volume: 'Volume',
     volumeOf: (name: string) => `Volume de ${name}`,

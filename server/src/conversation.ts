@@ -4,6 +4,7 @@ import {
   dmMembers,
   type HomeServerMessage,
   type Message,
+  type MusicStatus,
   type SignalData,
   type VoiceMember,
 } from '../../shared/protocol'
@@ -13,6 +14,7 @@ import { newId } from './ids'
 import { MessageStore, validEmoji, type UploadTicket } from './messages'
 import { directory, guild, home } from './stubs'
 import { unfurlAll } from './unfurl'
+import { cleanMusic } from './validate'
 
 // Uma conversa privada entre duas pessoas: mensagens, anexos e a chamada.
 // O app nunca fala direto com este DO: tudo passa pelo Home de cada um, que
@@ -39,6 +41,8 @@ interface CallMember {
   deafened: boolean
   sharing: boolean
   camera: boolean
+  /** Pôs o Spotify na chamada (o bot dela) e o que está tocando. */
+  music?: MusicStatus | null
 }
 
 interface CallState {
@@ -370,7 +374,7 @@ export class Conversation extends DurableObject<Env> {
     userId: string,
     connId: string,
     accept: boolean,
-    state?: { muted?: unknown; deafened?: unknown; sharing?: unknown; camera?: unknown },
+    state?: { muted?: unknown; deafened?: unknown; sharing?: unknown; camera?: unknown; music?: unknown },
   ): Promise<Result<null>> {
     const m = this.member(channelId, userId)
     const call = this.call()
@@ -387,6 +391,7 @@ export class Conversation extends DurableObject<Env> {
         deafened: flags.deafened === true,
         sharing: flags.sharing === true,
         camera: flags.camera === true,
+        music: cleanMusic(flags.music),
       })
     }
     await this.broadcastCall(call, m.pair)
@@ -411,13 +416,19 @@ export class Conversation extends DurableObject<Env> {
     channelId: string,
     userId: string,
     connId: string,
-    flags: { muted: boolean; deafened: boolean; sharing: boolean; camera: boolean },
+    flags: { muted: boolean; deafened: boolean; sharing: boolean; camera: boolean; music?: unknown },
   ) {
     const m = this.member(channelId, userId)
     const call = this.call()
     const entry = call?.members.find((x) => x.connId === connId && x.userId === userId)
     if (!m || !call || !entry) return
-    Object.assign(entry, { muted: !!flags.muted, deafened: !!flags.deafened, sharing: !!flags.sharing, camera: !!flags.camera })
+    Object.assign(entry, {
+      muted: !!flags.muted,
+      deafened: !!flags.deafened,
+      sharing: !!flags.sharing,
+      camera: !!flags.camera,
+      music: flags.music === undefined ? (entry.music ?? null) : cleanMusic(flags.music),
+    })
     await this.broadcastCall(call, m.pair)
   }
 

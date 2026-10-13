@@ -69,6 +69,15 @@ A conta tem cartão (o Realtime pede pra ativar): o que passar de 1.000 GB no m�
 
 Sem as chaves, tudo funciona como antes, só P2P.
 
+## Bot do Spotify (app no painel de desenvolvedor do Spotify)
+
+O bot usa a Web API do Spotify com um app do Resenha. Pra ligar:
+1. Em <https://developer.spotify.com/dashboard>, **Create app** (a conta precisa ter Premium: é regra do modo de desenvolvimento desde fevereiro de 2026). Nome e descrição quaisquer; em **Redirect URIs**, `http://127.0.0.1/spotify` (sem porta: o app usa a que estiver livre); em **APIs used**, **Web API**.
+2. Copie o **Client ID** (não precisa do Client secret: o app entra por PKCE) pro `SPOTIFY_CLIENT_ID` do `server/wrangler.jsonc` e faça o deploy. Ele é público (vai pros apps pelo `/api/status`).
+3. Em **User Management**, cadastre o e-mail do Spotify de cada pessoa que vai pôr o bot na call (até 5, contando o dono). Quem só ouve não precisa.
+
+Sem o client ID, o painel do Spotify avisa que o servidor não tem o app configurado.
+
 ## Voltar no tempo (backup)
 
 Os Durable Objects com SQLite guardam o histórico dos últimos 30 dias (point-in-time recovery). Pra voltar um servidor (ou o cadastro central) a um momento:

@@ -29,6 +29,19 @@ import {
   unmuteScreenAudio,
   type ScreenAudioOptions,
 } from './screen-audio-linux'
+import {
+  installLibrespot,
+  setSpotifyTarget,
+  spotifyConnect,
+  spotifyDisconnect,
+  spotifyFlush,
+  spotifyKill,
+  spotifyRequest,
+  spotifyStart,
+  spotifyStatus,
+  spotifyStop,
+  spotifyWant,
+} from './spotify'
 import { checkForUpdates, downloadUpdate, installUpdate, setUpdaterCall, setupUpdater, takeRejoin, updateState } from './updater'
 
 // RESENHA_PROFILE=b roda uma segunda instância com outra conta no mesmo PC.
@@ -179,7 +192,10 @@ function createWindow() {
       event.preventDefault()
     }
   })
+  setSpotifyTarget(win.webContents)
   win.webContents.on('render-process-gone', (_event, details) => {
+    // Quem cuidava do bot do Spotify caiu junto (recarregar a página também para: o app pede ao abrir).
+    void spotifyStop()
     console.error('renderer caiu:', details.reason, details.exitCode)
     if (details.reason !== 'clean-exit') win?.webContents.reload()
   })
@@ -267,6 +283,16 @@ handle('screen-audio:apps', () => listPlayingApps())
 handle('screen-audio:start', (_event, options: ScreenAudioOptions) => startScreenAudio(options))
 handle('screen-audio:unmute', () => unmuteScreenAudio())
 handle('screen-audio:stop', () => stopScreenAudio())
+
+handle('spotify:status', () => spotifyStatus())
+handle('spotify:connect', (_event, clientId: unknown) => spotifyConnect(clientId))
+handle('spotify:disconnect', () => spotifyDisconnect())
+handle('spotify:install', () => installLibrespot())
+handle('spotify:start', () => spotifyStart())
+handle('spotify:stop', () => spotifyStop())
+handle('spotify:request', (_event, op: unknown) => spotifyRequest(op))
+listen('spotify:want', (_event, bytes: unknown) => spotifyWant(bytes))
+listen('spotify:flush', () => spotifyFlush())
 
 handle('platform:info', (): PlatformInfo => {
   let screenAudio: PlatformInfo['screenAudio'] = 'none'
@@ -467,6 +493,7 @@ app.on('will-quit', () => {
   clearPortalShortcuts()
   stopScreenAudio()
   inkStop()
+  spotifyKill()
 })
 
 app.on('window-all-closed', () => {

@@ -18,6 +18,7 @@ import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import electronPath from 'electron'
 import { _electron as electron } from 'playwright-core'
+import { TRACKS, startFakeSpotify } from './fake-spotify.mjs'
 
 /** RESENHA_SHOTS=pasta salva capturas da interface pra revisão visual. */
 const SHOTS = process.env.RESENHA_SHOTS
@@ -72,7 +73,7 @@ async function launch(profile) {
     (sfu) =>
       localStorage.setItem(
         'resenha.settings',
-        JSON.stringify({ sounds: false, noiseReduction: 'off', streamVolume: 0, ...(sfu ? { sfuMinViewers: 1 } : {}) }),
+        JSON.stringify({ sounds: false, noiseReduction: 'off', streamVolume: 0, musicVolume: 0, ...(sfu ? { sfuMinViewers: 1 } : {}) }),
       ),
     viaSfu,
   )
@@ -263,6 +264,50 @@ async function stereoLevels(page) {
   })
 }
 
+/**
+ * Nível (dB) dos tons do Spotify de mentira no som do bot que chega em quem ouve (pela conexão com
+ * quem pôs o bot): esquerda na frequência da música, direita em 1500 Hz. Lê a faixa, não a caixa de som.
+ */
+async function musicLevels(page, leftHz, beforeHz = 0) {
+  return page.evaluate(async ([leftHz, beforeHz]) => {
+    const peer = window.__call?.peerList.find((p) => p.musicAudio.srcObject)
+    const track = peer?.musicAudio.srcObject?.getAudioTracks?.()[0]
+    if (!track) return null
+    const ctx = new AudioContext()
+    const split = ctx.createChannelSplitter(2)
+    ctx.createMediaStreamSource(new MediaStream([track])).connect(split)
+    const silent = ctx.createGain()
+    silent.gain.value = 0
+    silent.connect(ctx.destination)
+    const analysers = [0, 1].map((channel) => {
+      const analyser = ctx.createAnalyser()
+      analyser.fftSize = 8192
+      split.connect(analyser, channel)
+      analyser.connect(silent)
+      return analyser
+    })
+    await new Promise((r) => setTimeout(r, 1500))
+    const level = (analyser, hz) => {
+      const bins = new Float32Array(analyser.frequencyBinCount)
+      analyser.getFloatFrequencyData(bins)
+      const i = Math.round(hz / (ctx.sampleRate / analyser.fftSize))
+      return Math.round(Math.max(bins[i - 1], bins[i], bins[i + 1]))
+    }
+    const [left, right] = analysers
+    const out = {
+      left: level(left, leftHz),
+      leftCross: level(left, 1500),
+      right: level(right, 1500),
+      rightCross: level(right, leftHz),
+      // A frequência da música anterior (depois de pular, tem que ter sumido).
+      before: beforeHz ? level(left, beforeHz) : null,
+      volume: peer.musicAudio.volume,
+    }
+    await ctx.close()
+    return out
+  }, [leftHz, beforeHz])
+}
+
 /** Lê o horário dos pixels de cada quadro recebido: atraso = agora - horário desenhado. */
 async function measureLatency(page, samples = 90) {
   return page.evaluate(async (samples) => {
@@ -337,13 +382,16 @@ function channel(page, name) {
 const PORT = Number(process.env.RESENHA_E2E_PORT ?? 8797)
 const SERVER = `http://127.0.0.1:${PORT}`
 const PASSWORD = 'senha-de-teste-1'
+const SPOTIFY_CLIENT_ID = '0123456789abcdef0123456789abcdef'
 
 async function startServer() {
   const state = mkdtempSync(join(tmpdir(), 'resenha-e2e-server-'))
   let proc = null
   let log = ''
   const up = async () => {
-    proc = spawn('npx', ['wrangler', 'dev', '--local', '--port', String(PORT), '--ip', '127.0.0.1', '--persist-to', state], {
+    // Client ID do app do Spotify (o bot conversa com o Spotify de mentira, test/fake-spotify.mjs).
+    const vars = ['--var', `SPOTIFY_CLIENT_ID:${SPOTIFY_CLIENT_ID}`]
+    proc = spawn('npx', ['wrangler', 'dev', '--local', '--port', String(PORT), '--ip', '127.0.0.1', '--persist-to', state, ...vars], {
       cwd: new URL('../../server', import.meta.url).pathname,
       stdio: ['ignore', 'pipe', 'pipe'],
       detached: true,
@@ -606,6 +654,9 @@ async function checkMap() {
 // ---------------------------------------------------------------------------
 
 const server = await startServer()
+// Spotify de mentira (login, Web API e o librespot): os dois apps sobem apontando pra ele.
+const spotify = await startFakeSpotify()
+Object.assign(process.env, spotify.env)
 const owner = await api('/api/register', { username: 'lucas', name: 'Lucas', password: PASSWORD })
 const guild = await api('/api/guilds', { name: 'Turma' }, owner.token)
 const code = await inviteFor(guild.id, owner.token)
@@ -872,6 +923,25 @@ try {
   const pingOnHover = await ping.isVisible()
   await a.page.mouse.move(0, 0)
   check(!pingAtRest && pingOnHover, 'ícone de conexão de cada um só aparece passando o mouse')
+
+  // Volume acima de 100% (até 200%, como no Discord): a voz é amplificada dentro do app (o elemento
+  // de áudio fica mudo e o som passa por um ganho), sem mexer no volume do sistema. Os tons ainda estão em 0.
+  await b.page.locator('.member-main', { hasText: 'Lucas' }).click({ force: true })
+  await b.page.locator('.volume input[type=range]').fill('1.5')
+  const voiceOf = () =>
+    b.page.evaluate(() => {
+      const peer = window.__call.peerList[0]
+      return { muted: peer.audio.muted, gain: peer.boost?.gain.gain.value ?? null, label: document.querySelector('nav .volume .tabular')?.textContent }
+    })
+  const boosted = await voiceOf()
+  await b.page.locator('.volume input[type=range]').fill('0.8')
+  const normal = await voiceOf()
+  await b.page.locator('.member-main', { hasText: 'Lucas' }).click({ force: true })
+  check(
+    boosted.muted && Math.abs(boosted.gain - 1.5) < 0.01 && boosted.label === '150%' && !normal.muted && normal.gain === null,
+    'volume de alguém passa de 100% (amplificado no app) e volta pro normal abaixo disso',
+    JSON.stringify({ boosted, normal }),
+  )
 
   // Volume de cada um pro outro em 0 (nada sai na caixa de som) e o tom liga.
   for (const [page, other] of [
@@ -1397,6 +1467,105 @@ try {
   await b.page.locator('.stream').waitFor({ state: 'detached', timeout: 5000 })
   check(true, 'parar de compartilhar fecha o player de B')
 
+  // ---------- Bot do Spotify ----------
+  // A conecta a conta (no Spotify de mentira), põe o bot e toca; B ouve em estéreo, no volume dele,
+  // e controla o bot de A (pular, buscar, pôr na fila). Nada sai na caixa de som (volume do bot em 0).
+  await a.page.locator('.dock').getByRole('button', { name: 'Spotify', exact: true }).click({ force: true })
+  const panelA = a.page.locator('.music-panel')
+  await panelA.getByText('Instalado').waitFor({ timeout: 8000 })
+  await panelA.getByRole('button', { name: 'Conectar', exact: true }).click({ force: true })
+  await panelA.getByText('Conectado como Lucas no Spotify').waitFor({ timeout: 10_000 })
+  await shot(a, '7a-spotify-conectar')
+  await panelA.getByRole('button', { name: 'Pôr o Spotify na call', exact: true }).click({ force: true })
+  await panelA.getByText('Nada tocando ainda', { exact: false }).waitFor({ timeout: 20_000 })
+  const librespotArgs = spotify.state.started?.args ?? []
+  check(
+    !!spotify.state.started?.tokenFromEnv &&
+      !librespotArgs.includes('--access-token') &&
+      librespotArgs.includes('--device') &&
+      spotify.state.log.some((c) => c.route === 'PUT /v1/me/player'),
+    'Spotify: A conecta a conta e o bot entra (librespot com o token do login pelo ambiente, som pelo FIFO, Spotify passado pro bot)',
+    librespotArgs.filter((x) => x.startsWith('--')).join(' '),
+  )
+  await panelA.getByPlaceholder('Música, artista, playlist ou álbum').fill('evid')
+  await panelA.locator('.item', { hasText: 'Evidências' }).first().waitFor({ timeout: 8000 })
+  await panelA.locator('.item', { hasText: 'Evidências' }).first().getByRole('button', { name: 'Tocar agora', exact: true }).click({ force: true })
+  await panelA.locator('.title', { hasText: 'Evidências' }).waitFor({ timeout: 10_000 })
+  await shot(a, '7b-spotify-tocando')
+  await a.page.keyboard.press('Escape')
+
+  // B: o bot aparece logo abaixo de A na lista do canal (pelo servidor, com a música) e na tela da call.
+  const botRowB = b.page.locator('nav li.bot', { hasText: 'Evidências' })
+  const botListed = await botRowB.waitFor({ timeout: 10_000 }).then(() => true, () => false)
+  await b.page.getByRole('button', { name: 'Abrir a call', exact: true }).click({ force: true })
+  const tile = await b.page.locator('.tile.music', { hasText: 'Evidências' }).waitFor({ timeout: 10_000 }).then(() => true, () => false)
+  check(botListed && tile, 'B vê o Spotify de A como mais um na call (na lista do canal e um bloco na tela da call)', `${botListed}/${tile}`)
+  await shot(b, '7c-spotify-na-call')
+  const heard = await musicLevels(b.page, 440)
+  check(
+    !!heard && heard.left > -60 && heard.right > -60 && heard.left - heard.leftCross > 25 && heard.right - heard.rightCross > 25,
+    'B ouve o Spotify de A numa faixa à parte, em estéreo (esquerda e direita separadas)',
+    JSON.stringify(heard),
+  )
+  const lit = await b.page.locator('.tile.music.speaking').waitFor({ timeout: 5000 }).then(() => true, () => false)
+  check(lit, 'o bloco do Spotify acende enquanto sai som dele')
+  // O librespot anda no ritmo em que o som toca (sem isso, o Spotify acharia que a música acabou bem antes).
+  const pace0 = { ...spotify.state.written }
+  await b.page.waitForTimeout(4000)
+  const pace1 = { ...spotify.state.written }
+  const pace = (pace1.audio - pace0.audio) / (pace1.playing - pace0.playing)
+  check(pace > 0.75 && pace < 1.3, 'o som do bot vem no ritmo em que toca (o librespot não dispara na frente)', `${pace.toFixed(2)} s de som por segundo tocando`)
+
+  // Volume do bot: B mexe no dele (na lista do canal), só pra ele.
+  await channel(b.page, 'geral').click({ force: true })
+  await b.page.locator('nav li.bot .member-main').click({ force: true })
+  await b.page.locator('nav .volume input[type=range]').fill('0.25')
+  const volumeB = (await musicLevels(b.page, 440))?.volume
+  // A (que pôs o bot) ouve pelo próprio app, no volume dele.
+  const volumeA = await a.page.evaluate(() => window.__call.bot.local.volume)
+  await b.page.locator('nav .volume input[type=range]').fill('0')
+  check(volumeB === 0.25 && volumeA === 0, 'cada um escolhe o volume do bot (o de B mudou, o de A não)', `${volumeB}/${volumeA}`)
+
+  // B controla o bot de A pelo painel: pula a música (o som troca junto) e põe uma na fila pela busca.
+  await b.page.locator('nav li.bot').getByRole('button', { name: 'Spotify de Lucas', exact: true }).click({ force: true })
+  const panelB = b.page.locator('.music-panel')
+  await panelB.getByRole('button', { name: 'Próxima', exact: true }).click({ force: true })
+  await panelB.locator('.title', { hasText: 'Lenda' }).waitFor({ timeout: 10_000 })
+  const skipped = await musicLevels(b.page, 660, 440)
+  check(
+    spotify.state.log.some((c) => c.route === 'POST /v1/me/player/next') && !!skipped && skipped.left > -60 && skipped.left - skipped.before > 25,
+    'B pula a música no bot de A e o som troca junto (a anterior para)',
+    JSON.stringify(skipped),
+  )
+  await panelB.getByPlaceholder('Música, artista, playlist ou álbum').fill('tempo')
+  await panelB.getByPlaceholder('Música, artista, playlist ou álbum').press('Enter')
+  const result = panelB.locator('.item', { hasText: 'Tempo Perdido' }).first()
+  await result.waitFor({ timeout: 8000 })
+  await result.getByRole('button', { name: 'Pôr na fila', exact: true }).click({ force: true })
+  await b.page.locator('.toast', { hasText: 'entrou na fila' }).waitFor({ timeout: 5000 })
+  await panelB.getByRole('tab', { name: /Fila/ }).click({ force: true })
+  const queued = await panelB.locator('.item', { hasText: 'Tempo Perdido' }).waitFor({ timeout: 8000 }).then(() => true, () => false)
+  check(queued && spotify.state.queue.some((t) => t.uri === TRACKS[2].uri), 'B busca pelo bot de A e põe na fila, e a fila aparece pra B', `${queued}`)
+  await panelB.getByRole('tab', { name: 'Playlists', exact: true }).click({ force: true })
+  const playlistsOfA = await panelB.locator('.item', { hasText: 'Resenha de sexta' }).waitFor({ timeout: 8000 }).then(() => true, () => false)
+  check(playlistsOfA, 'B vê as playlists da conta de A pelo bot')
+  await shot(b, '7d-spotify-painel-de-b')
+  // Pausar: o som para na hora (o que estava guardado vai fora) e o bloco apaga.
+  await panelB.getByRole('button', { name: 'Pausar', exact: true }).click({ force: true })
+  await panelB.getByRole('button', { name: 'Tocar', exact: true }).waitFor({ timeout: 8000 })
+  const quiet = await b.page.locator('nav li.bot .bot-song.paused').waitFor({ timeout: 8000 }).then(() => true, () => false)
+  // O som para (o que estava guardado vai fora): o bot "apaga" na lista de B.
+  const silent = await b.page.locator('nav li.bot .bot-face.playing').waitFor({ state: 'detached', timeout: 3000 }).then(() => true, () => false)
+  check(quiet && silent, 'pausar pelo painel de B pausa o bot de A: o som para e a lista do canal mostra', `${quiet}/${silent}`)
+  await b.page.keyboard.press('Escape')
+
+  // A tira o bot: some da call pros dois.
+  await a.page.locator('.dock').getByRole('button', { name: 'Spotify', exact: true }).click({ force: true })
+  await a.page.locator('.music-panel').getByRole('button', { name: 'Tirar o Spotify da call', exact: true }).click({ force: true })
+  await a.page.keyboard.press('Escape')
+  const gone = await b.page.locator('nav li.bot').waitFor({ state: 'detached', timeout: 10_000 }).then(() => true, () => false)
+  check(gone, 'tirar o Spotify some com o bot da call pra todo mundo')
+
   // Sala pelo Cloudflare: só o dono do Resenha (A) tem a opção; os dois veem a nuvem. Sem TURN no
   // servidor do teste, a call continua direta e avisa (o caminho de verdade só existe em produção).
   // "Geral" com G maiúsculo (a busca por texto comum ignora maiúsculas e pegaria o canal de texto "geral").
@@ -1413,6 +1582,32 @@ try {
   await voiceRow(a.page).click({ button: 'right', force: true })
   await a.page.getByRole('menuitem', { name: /Passar pelo Cloudflare/ }).click({ force: true })
   await voiceRow(b.page).locator('.relay').waitFor({ state: 'detached', timeout: 5000 })
+  // O dono libera B na Plataforma (Contas): a opção aparece pra B na hora e ele consegue; tirando, some.
+  const relayOption = async () => {
+    await voiceRow(b.page).click({ button: 'right', force: true })
+    const count = await b.page.getByRole('menuitem', { name: /Passar pelo Cloudflare/ }).count()
+    await b.page.keyboard.press('Escape')
+    return count
+  }
+  await a.page.getByRole('button', { name: 'Configurações', exact: true }).click({ force: true })
+  await a.page.locator('.settings-nav button', { hasText: 'Plataforma' }).first().click({ force: true })
+  await a.page.getByRole('button', { name: 'Deixar Duarte passar salas pelo Cloudflare', exact: true }).click({ force: true })
+  await a.page.getByRole('button', { name: 'Duarte pode passar salas pelo Cloudflare (clique pra tirar)', exact: true }).waitFor({ timeout: 5000 })
+  await shot(a, '6d-plataforma-cloudflare-por-pessoa')
+  await b.page.waitForTimeout(500)
+  const allowedOption = await relayOption()
+  await voiceRow(b.page).click({ button: 'right', force: true })
+  await b.page.getByRole('menuitem', { name: /Passar pelo Cloudflare/ }).click({ force: true })
+  const byB = await voiceRow(a.page).locator('.relay').waitFor({ timeout: 5000 }).then(() => true, () => false)
+  await voiceRow(b.page).click({ button: 'right', force: true })
+  await b.page.getByRole('menuitem', { name: /Passar pelo Cloudflare/ }).click({ force: true })
+  await voiceRow(a.page).locator('.relay').waitFor({ state: 'detached', timeout: 5000 })
+  await a.page.getByRole('button', { name: 'Duarte pode passar salas pelo Cloudflare (clique pra tirar)', exact: true }).click({ force: true })
+  await a.page.getByRole('button', { name: 'Deixar Duarte passar salas pelo Cloudflare', exact: true }).waitFor({ timeout: 5000 })
+  await a.page.keyboard.press('Escape')
+  await b.page.waitForTimeout(500)
+  const revokedOption = await relayOption()
+  check(allowedOption === 1 && byB && revokedOption === 0, 'o dono libera (e tira) alguém pra passar a sala pelo Cloudflare, valendo na hora', `${allowedOption}/${byB}/${revokedOption}`)
   if (withAudio) {
     await a.page.waitForTimeout(500)
     check(venmicSources() === null, 'venmic desfez o microfone virtual ao parar')
@@ -1493,6 +1688,21 @@ try {
     .catch(() => 0)
   check(imported === 1, 'canais importados aparecem pra todo mundo do servidor, nas categorias certas')
 
+  // Mudar de sala com clique duplo (Voz e vídeo): já na call, um clique só em outro canal de voz não tira B de lá; o duplo leva.
+  await b.page.getByRole('button', { name: 'Configurações', exact: true }).click({ force: true })
+  await b.page.getByRole('button', { name: 'Voz e vídeo', exact: true }).click({ force: true })
+  await b.page.locator('#voice-double-click').click({ force: true })
+  await b.page.keyboard.press('Escape')
+  const jogatina = b.page.getByRole('button', { name: 'Jogatina: entrar na call', exact: true })
+  await jogatina.click({ force: true })
+  const hinted = await b.page.locator('.toast', { hasText: 'Clique duas vezes pra mudar de sala' }).waitFor({ timeout: 3000 }).then(() => true, () => false)
+  const stayed = await b.page.locator('.dock .where').innerText()
+  await jogatina.dblclick({ force: true })
+  const moved = await b.page.locator('.dock .where', { hasText: 'Jogatina' }).waitFor({ timeout: 10_000 }).then(() => true, () => false)
+  check(hinted && stayed.startsWith('Geral') && moved, 'com a opção ligada, um clique só não muda de sala (avisa) e o clique duplo muda', `${hinted}/${stayed}/${moved}`)
+  await b.page.getByRole('button', { name: 'Geral: entrar na call', exact: true }).dblclick({ force: true })
+  await b.page.locator('.dock .where', { hasText: 'Geral' }).waitFor({ timeout: 10_000 })
+
   // Servidor novo direto do print: nome do print e só os canais importados.
   await a.page.getByRole('button', { name: 'Criar ou entrar num servidor', exact: true }).click({ force: true })
   await a.page.getByRole('button', { name: /Trazer do Discord/ }).click({ force: true })
@@ -1571,6 +1781,7 @@ try {
   if (!closedA) await a.app.close()
   await b.app.close()
   server.stop()
+  spotify.close()
 }
 
 console.log(failures ? `\n${failures} falha(s)` : '\nTudo certo.')
