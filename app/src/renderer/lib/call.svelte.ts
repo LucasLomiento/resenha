@@ -8,7 +8,7 @@ import { captureScreen, getCameraStream, getMicTrack, stopCapture } from './medi
 import { MicPipeline } from './mic'
 import { MusicBot, cleanMusicMessage, type MusicError, type MusicOp, type MusicReply, type MusicShare } from './music.svelte'
 import { Peer, type LinkStats, type SfuScreen, type VideoStats } from './peer'
-import { RoutePicker } from './route'
+import { RoutePicker, stunOnly } from './route'
 import type { IpFamily } from './sdp'
 import { PRESETS, settings } from './settings.svelte'
 import { SfuPublisher, SfuViewer } from './sfu'
@@ -162,6 +162,8 @@ export class Call {
   private routes = new Map<string, RoutePicker>()
   /** connId -> família de IP presa (vale também pra conexão refeita depois de uma queda). */
   private pins = new Map<string, IpFamily>()
+  /** Já avisei que não deu pra conectar direto com essa pessoa (uma vez por call). */
+  private directFailed = new Set<string>()
 
   /** Rabiscos de quem assiste na minha tela (só compartilhando o monitor inteiro). */
   readonly ink = new InkShare((msg) => this.broadcastInk(msg))
@@ -310,6 +312,7 @@ export class Call {
     this.relaySeen.clear()
     this.routes.clear()
     this.pins.clear()
+    this.directFailed.clear()
     this.stopCamera(false)
     this.cameras = {}
     this.watching = null
@@ -521,7 +524,7 @@ export class Call {
   private createPeer(member: VoiceMember): Peer | undefined {
     const me = this.connId()
     if (!me || !this.ice || !this.micTrack) return
-    const ice = { servers: this.ice.servers, relay: this.relay, family: this.pins.get(member.connId) ?? null }
+    const ice = { servers: this.peerServers(), relay: this.relay, family: this.pins.get(member.connId) ?? null }
     const peer = new Peer(member.connId, member.userId, me > member.connId, ice, this.micStream, settings.codec, {
       signal: (data) => this.sendSignal(member.connId, data),
       screen: (stream) => {
@@ -557,6 +560,12 @@ export class Call {
       screenSfu: (info) => void this.onScreenSfu(member.connId, peer, info),
       screenSfuReply: (ok) => this.onSfuReply(member.connId, peer, ok),
       music: (data) => void this.onMusic(member.connId, peer, data),
+      failed: () => {
+        // Sala direta não tem o TURN de reserva: sem caminho direto, ninguém se ouve. Avisa uma vez.
+        if (this.relay || this.directFailed.has(member.connId)) return
+        this.directFailed.add(member.connId)
+        this.deps.toast(m.lib.call.directFailed(this.deps.name(member.userId)), 'info')
+      },
       musicReady: () => {
         if (peer.closed || !this.bot.on) return
         void peer.sendMusic(this.bot.stream)
@@ -847,24 +856,45 @@ export class Call {
     return false
   }
 
-  /** O dono mudou a sala no meio da call: as conexões passam (ou deixam de passar) pelo Cloudflare, sem cair. */
+  /**
+   * Servidores ICE das conexões com as pessoas. Sala pelo Cloudflare: com o TURN (e só ele vale).
+   * Sala direta e chamada privada: só o STUN, sem o TURN de reserva (tudo P2P, a pedido do usuário).
+   */
+  private peerServers(): RTCIceServer[] {
+    const servers = this.ice?.servers ?? []
+    return this.relay ? servers : stunOnly(servers)
+  }
+
+  /**
+   * O dono mudou a sala no meio da call. A tela com 2+ assistindo entra (ou sai) do SFU, e as
+   * conexões passam (ou deixam de passar) pelo TURN.
+   */
   updateRelay() {
     const transport = this.transport
     if (!transport || !this.ice) return
     const wanted = this.deps.relayWanted(transport)
     if (wanted === this.relayAsked) return
     this.relayAsked = wanted
+    if (wanted) void this.maybeSfu()
+    else {
+      this.leaveSfu('a sala voltou a ser direta', false)
+      if (this.sfuWatch) {
+        const { connId } = this.sfuWatch
+        this.stopSfuWatch()
+        this.peers.get(connId)?.replySfu(false)
+      }
+    }
     const relay = this.relayFor(transport, true)
     if (relay === this.relay) return
     this.relay = relay
     this.routes.clear()
     this.pins.clear()
     for (const peer of [...this.peers.values()]) {
-      // Entrar no Cloudflare: o ICE não larga a conexão direta que ainda funciona, então quem
-      // conduz a negociação refaz a dele do zero (o outro lado vê o id novo e refaz junto).
-      // Sair: o caminho direto tem prioridade e ganha sozinho, sem refazer nada.
-      if (relay && !peer.polite) this.rebuildPeer(peer.connId)
-      else peer.setRelay(relay, this.ice.servers)
+      // O ICE não larga um caminho que ainda funciona (nem refazendo o ICE com outra política),
+      // então quem conduz a negociação refaz a conexão do zero, e o outro lado vê o id novo e
+      // refaz junto. O outro só troca a configuração (vale se a conexão dele for a que fica).
+      if (!peer.polite) this.rebuildPeer(peer.connId)
+      else peer.setRelay(relay, this.peerServers())
     }
     this.deps.toast(relay ? m.lib.call.relayOn : m.lib.call.relayOff, 'info')
   }
@@ -934,17 +964,20 @@ export class Call {
     return this.media.sfu
   }
 
-  /** 2 ou mais assistindo: publica a tela no SFU e avisa quem assiste. */
+  /**
+   * Sala pelo Cloudflare com 2 ou mais assistindo: publica a tela no SFU e avisa quem assiste.
+   * Sala direta (e chamada privada) nunca usa o SFU: a tela vai direto pra cada um.
+   */
   private async maybeSfu() {
     const stream = this.localScreen
     const api = this.deps.api()
-    if (!stream || !api || !this.ice || this.sfuShare || this.sfuStarting || this.sfuGaveUp) return
+    if (!this.relayAsked || !stream || !api || !this.ice || this.sfuShare || this.sfuStarting || this.sfuGaveUp) return
     if (this.watcherIds().length < this.sfuMinViewers()) return
     this.sfuStarting = true
     try {
       if (!(await this.sfuAvailable(api)) || this.localScreen !== stream) return
       const publisher = await SfuPublisher.start(api, stream, this.videoOptions(), this.ice.servers)
-      if (this.localScreen !== stream || !this.anyWatcher()) return publisher.close()
+      if (this.localScreen !== stream || !this.anyWatcher() || !this.relayAsked) return publisher.close()
       this.sfuShare = publisher
       // Quem já assiste continua com a cópia direta até confirmar que puxou do SFU.
       for (const connId of this.watcherIds()) this.peers.get(connId)?.sendSfuScreen(publisher.info)
@@ -999,8 +1032,11 @@ export class Call {
     delete this.sfuViewers[connId]
   }
 
-  /** O SFU caiu ou a cota acabou no meio: todo mundo volta pra cópia direta. */
-  private leaveSfu(reason: string) {
+  /**
+   * O SFU caiu, a cota acabou ou a sala voltou a ser direta: todo mundo volta pra cópia direta.
+   * `giveUp`: não tenta o SFU de novo nesta transmissão.
+   */
+  private leaveSfu(reason: string, giveUp = true) {
     if (!this.sfuShare) return
     console.warn('[sfu] voltando pra conexão direta:', reason)
     const stream = this.localScreen
@@ -1009,7 +1045,7 @@ export class Call {
       peer?.sendSfuScreen(null)
       if (stream && this.sfuViewers[connId]) void peer?.sendScreen(stream, this.videoOptions())
     }
-    this.sfuGaveUp = true
+    if (giveUp) this.sfuGaveUp = true
     this.stopSfuShare()
   }
 
@@ -1028,7 +1064,8 @@ export class Call {
       return
     }
     const api = this.deps.api()
-    if (this.watching !== connId || !api || !this.ice) return peer.replySfu(false)
+    // Sala direta: a tela vem direto (quem compartilha com app antigo ainda oferece o SFU).
+    if (!this.relayAsked || this.watching !== connId || !api || !this.ice) return peer.replySfu(false)
     if (this.sfuWatch?.connId === connId) return peer.replySfu(true)
     try {
       const viewer = await SfuViewer.start(api, info, this.ice.servers)

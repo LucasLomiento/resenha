@@ -27,6 +27,8 @@ export interface PeerEvents {
   music(data: unknown): void
   /** O outro app entende o bot do Spotify (mandou "hello"): já dá pra mandar a faixa dele. */
   musicReady(): void
+  /** O ICE não achou caminho (a conexão tenta de novo sozinha). */
+  failed(): void
 }
 
 /** Onde puxar a tela no SFU do Cloudflare: sessão de quem publicou e os nomes das faixas. */
@@ -271,7 +273,9 @@ export class Peer {
     }
 
     this.pc.onconnectionstatechange = () => {
-      if (this.pc.connectionState === 'failed') this.pc.restartIce()
+      if (this.pc.connectionState !== 'failed') return
+      this.pc.restartIce()
+      this.events.failed()
     }
 
     this.pc.ontrack = ({ track, streams, receiver, transceiver }) => {
@@ -686,9 +690,9 @@ export class Peer {
   }
 
   /**
-   * Troca a política e refaz o ICE, sem derrubar a conexão. Só serve pra sair do Cloudflare
-   * (o caminho direto tem prioridade e ganha sozinho): pra entrar, o ICE continuaria no
-   * caminho direto que ainda funciona, então a call refaz a conexão (`Call.rebuildPeer`).
+   * Troca a política e os servidores e refaz o ICE, sem derrubar a conexão. Sozinho não tira
+   * a conexão de um caminho que ainda funciona (o ICE fica nele): quem conduz a negociação
+   * refaz a conexão (`Call.rebuildPeer`), e esta só deixa a do outro lado configurada igual.
    */
   setRelay(relay: boolean, servers: RTCIceServer[]) {
     if (this.closed) return

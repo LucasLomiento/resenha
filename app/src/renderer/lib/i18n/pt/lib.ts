@@ -72,6 +72,7 @@ export default {
     relayUnavailable: 'Essa sala passa pelo Cloudflare, mas ele não está disponível agora: a call vai direto (P2P).',
     relayOn: 'A sala agora passa pelo Cloudflare.',
     relayOff: 'A sala voltou a ir direto (P2P).',
+    directFailed: (name: string) => `Não deu pra conectar direto com ${name}. Se continuar sem som, a sala pode passar pelo Cloudflare.`,
   },
   media: {
     screenAudioFailed: 'Não deu pra capturar o áudio da tela; compartilhando só o vídeo.',

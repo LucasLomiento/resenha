@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { RoutePicker, type RouteReading } from '../src/renderer/lib/route.ts'
+import { RoutePicker, stunOnly, type RouteReading } from '../src/renderer/lib/route.ts'
 import type { IpFamily } from '../src/renderer/lib/sdp.ts'
 
 /**
@@ -68,4 +68,13 @@ test('presa no IPv4: fica presa mesmo se ele piorar (cada troca custa um segundo
   const [first] = run(picker, 90, 0, 'ipv6', { ipv4: 30, ipv6: 120 })
   assert.equal(first.pick, 'ipv4')
   assert.deepEqual(run(picker, 600, first.at + 2000, 'ipv6', { ipv4: 150, ipv6: 120 }), [])
+})
+
+test('sala direta: só o STUN fica, o TURN (com a credencial) sai', () => {
+  const servers = [
+    { urls: ['stun:stun.cloudflare.com:3478', 'turn:turn.cloudflare.com:3478?transport=udp', 'turns:turn.cloudflare.com:443?transport=tcp'], username: 'u', credential: 'c' },
+    { urls: 'turn:outro:3478', username: 'u', credential: 'c' },
+    { urls: 'stun:stun.l.google.com:19302' },
+  ]
+  assert.deepEqual(stunOnly(servers), [{ urls: ['stun:stun.cloudflare.com:3478'] }, { urls: ['stun:stun.l.google.com:19302'] }])
 })

@@ -27,8 +27,9 @@ const withAudio = process.env.RESENHA_E2E_AUDIO === '1' && process.platform === 
 const full = process.env.RESENHA_E2E_FULL === '1'
 /**
  * RESENHA_E2E_SFU=1: a tela vai pelo SFU do Cloudflare de verdade já com uma pessoa
- * assistindo (precisa de REALTIME_APP_ID e REALTIME_APP_SECRET no server/.dev.vars).
- * Todas as checagens da tela passam a valer pelo SFU.
+ * assistindo (precisa de REALTIME_APP_ID e REALTIME_APP_SECRET no server/.dev.vars). A sala
+ * passa pelo Cloudflare durante a tela (sala direta nunca usa o SFU). Todas as checagens da
+ * tela passam a valer pelo SFU.
  */
 const viaSfu = process.env.RESENHA_E2E_SFU === '1'
 const targetWidth = full ? 2560 : 1280
@@ -957,7 +958,13 @@ try {
     await channel(side.page, 'geral').click({ force: true })
   }
 
-  // Call P2P no canal de voz.
+  // Call P2P no canal de voz. O servidor do teste não tem TURN: A ganha um de mentira, pra conferir
+  // que a sala direta não usa (tudo P2P; o TURN só vale na sala pelo Cloudflare).
+  await a.page.evaluate(() => {
+    const call = window.__call
+    const servers = call.ice?.servers ?? [{ urls: ['stun:stun.cloudflare.com:3478'] }]
+    call.ice = { servers: [...servers, { urls: ['turn:127.0.0.1:9?transport=udp'], username: 'teste', credential: 'teste' }], at: Date.now() }
+  })
   const micBefore = await rectOf(a.page, 'Mutar')
   await a.page.getByRole('button', { name: 'Geral: entrar na call', exact: true }).click({ force: true })
   await b.page.getByRole('button', { name: 'Geral: entrar na call', exact: true }).click({ force: true })
@@ -970,6 +977,13 @@ try {
   await a.page.waitForFunction(() => /\d+ ms/.test(document.querySelector('.member .ping')?.textContent ?? ''), null, { timeout: 15_000 })
   const pingText = await ping.textContent()
   check(!pingText.includes('relay'), 'A e B conectados direto (P2P)', pingText.trim())
+  const peerUrls = await a.page.evaluate(() => {
+    const urls = window.__call.peerList[0].pc.getConfiguration().iceServers.flatMap((s) => [s.urls].flat())
+    // Tira o TURN de mentira (a sala pelo Cloudflare, mais adiante, testa o "sem TURN").
+    window.__call.ice.servers = window.__call.ice.servers.filter((s) => ![s.urls].flat().some((u) => u.startsWith('turn')))
+    return urls
+  })
+  check(peerUrls.length > 0 && peerUrls.every((url) => url.startsWith('stun')), 'sala direta: a conexão não tem o TURN, mesmo com ele disponível', peerUrls.join(' '))
   // O ícone de conexão de cada um só aparece passando o mouse na pessoa.
   const pingAtRest = await ping.isVisible()
   await a.page.locator('.member-main', { hasText: 'Duarte' }).hover({ force: true })
@@ -1110,6 +1124,18 @@ try {
     .catch(() => check(false, 'desligar a câmera volta o avatar'))
   await channel(a.page, 'geral').click({ force: true })
   await shot(a, '5-call')
+
+  // Com o SFU de verdade: a sala passa pelo Cloudflare (sala direta nunca usa o SFU). Sem TURN no
+  // teste, a voz segue direta (avisando) e só a tela vai pelo Cloudflare.
+  const voiceRoom = (page) => page.getByRole('navigation', { name: 'Canais' }).locator('.channel-row', { hasText: /Geral/ }).first()
+  const toggleCloudflare = async () => {
+    await voiceRoom(a.page).click({ button: 'right', force: true })
+    await a.page.getByRole('menuitem', { name: /Passar pelo Cloudflare/ }).click({ force: true })
+  }
+  if (viaSfu) {
+    await toggleCloudflare()
+    await voiceRoom(b.page).locator('.relay').waitFor({ timeout: 5000 })
+  }
 
   // Tela: A compartilha (áudio pelo venmic no Linux) e B assiste.
   const player = withAudio ? silentPlayer() : null
@@ -1575,6 +1601,10 @@ try {
   await a.page.locator('.share-panel').getByRole('button', { name: 'Parar', exact: true }).click({ force: true })
   await b.page.locator('.stream').waitFor({ state: 'detached', timeout: 5000 })
   check(true, 'parar de compartilhar fecha o player de B')
+  if (viaSfu) {
+    await toggleCloudflare()
+    await voiceRoom(b.page).locator('.relay').waitFor({ state: 'detached', timeout: 5000 })
+  }
 
   // ---------- Bot do Spotify ----------
   // A conecta a conta (no Spotify de mentira), põe o bot e toca; B ouve em estéreo, no volume dele,

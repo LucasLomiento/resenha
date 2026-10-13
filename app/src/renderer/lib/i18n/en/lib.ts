@@ -63,6 +63,7 @@ export default {
     relayUnavailable: "This room goes through Cloudflare, but it isn't available right now: the call will go direct (P2P).",
     relayOn: 'The room now goes through Cloudflare.',
     relayOff: 'The room is back to going direct (P2P).',
+    directFailed: (name: string) => `Couldn’t connect directly to ${name}. If you still can’t hear each other, the room can go through Cloudflare.`,
   },
   media: {
     screenAudioFailed: "Couldn't capture the screen audio; sharing video only.",

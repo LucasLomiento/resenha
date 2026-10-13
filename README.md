@@ -15,7 +15,7 @@ Um app no estilo do Discord: vários servidores com canais, cargos e moderação
  ├─ 1 WebSocket pessoal ───────────── WSS ──▶  Home (um por pessoa): DMs, amigos, status
  │                                              └─▶ Conversation (uma por DM): mensagens e chamada
  └─ voz, câmera e tela ── WebRTC P2P direto ──▶ outros PCs
-                          (TURN do Cloudflare só se a rede bloquear o direto)
+                          (sala marcada "pelo Cloudflare": TURN e SFU do Cloudflare)
 ```
 
 Os detalhes (e as regras de segurança do servidor) estão em [docs/ARQUITETURA.md](docs/ARQUITETURA.md).
@@ -74,7 +74,7 @@ npx wrangler deploy                                  # mostra a URL *.workers.de
 openssl rand -base64 32 | tr -d '\n' | npx wrangler secret put FILE_SECRET
 ```
 
-**TURN (opcional).** É o relay de reserva pra quando a rede de alguém bloqueia a conexão direta, o que é comum com CGNAT. Pra ativar:
+**TURN (opcional).** É o relay das salas marcadas "pelo Cloudflare" (útil quando a rede de alguém bloqueia a conexão direta, o que é comum com CGNAT). Sala direta não usa: lá tudo é P2P. Pra ativar:
 
 1. No painel do Cloudflare, vá em **Realtime → TURN Server** e crie uma chave.
 2. Rode:
@@ -84,7 +84,7 @@ openssl rand -base64 32 | tr -d '\n' | npx wrangler secret put FILE_SECRET
    npx wrangler secret put TURN_KEY_API_TOKEN
    ```
 
-Sem essas duas variáveis o app usa só STUN e tenta sempre a conexão direta. O TURN tem 1000 GB grátis por mês, e como aqui ele só entra quando o direto falha, na prática fica de graça.
+Sem essas duas variáveis o app usa só STUN e a sala pelo Cloudflare vai direto (avisando). O TURN tem 1000 GB grátis por mês, dividido com o SFU; só as salas pelo Cloudflare gastam.
 
 **Cadastro aberto com anti-robô (opcional).** Por padrão só entra quem tem convite. Pra deixar qualquer pessoa criar conta:
 
@@ -152,6 +152,6 @@ O e2e abre o app em português (`LANGUAGE=pt_BR`), troca pra inglês e espanhol,
 
 ## Limites conhecidos
 
-- **P2P**: cada pessoa assistindo a sua tela custa mais ~12 Mbps de upload (em 1440p) e mais uma codificação na CPU. Pra 1–3 pessoas assistindo está ótimo. Pra muito mais, o caminho seria o SFU do Cloudflare Realtime.
+- **P2P**: cada pessoa assistindo a sua tela custa mais ~12 Mbps de upload (em 1440p) e mais uma codificação na CPU. Pra 1–3 pessoas assistindo está ótimo. Pra muito mais, marque a sala "pelo Cloudflare": com 2+ assistindo, a tela vai uma vez só pro SFU do Cloudflare Realtime.
 - **Linux**: o WebRTC do Chromium não usa o NVENC da NVIDIA, então a codificação é por CPU. Se pesar, troque o codec pra VP8 ou H264 em Configurações → Tela.
 - **Windows**: o áudio da tela sem a voz da call precisa do Windows 10 22H2 ou mais novo.

@@ -95,3 +95,13 @@ export class RoutePicker {
     return family
   }
 }
+
+/**
+ * Sala direta (e chamada privada): só o STUN, pra cada um descobrir o próprio endereço. O TURN
+ * fica de fora: se não houver caminho direto, a conexão falha em vez de passar pelo Cloudflare.
+ */
+export function stunOnly(servers: RTCIceServer[]): RTCIceServer[] {
+  return servers
+    .map((server) => ({ urls: [server.urls].flat().filter((url) => /^stuns?:/.test(url)) }))
+    .filter((server) => server.urls.length > 0)
+}
