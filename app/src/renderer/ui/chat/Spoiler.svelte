@@ -15,7 +15,7 @@
   .spoiler {
     padding: 0 2px;
     border-radius: var(--r-xs);
-    background: #2a2a35;
+    background: #2a2a30;
     color: transparent;
     font: inherit;
     text-align: inherit;
@@ -28,7 +28,7 @@
   }
 
   .spoiler:hover:not(.shown) {
-    background: #33333f;
+    background: #34343b;
   }
 
   .spoiler.shown {

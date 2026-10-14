@@ -45,8 +45,8 @@
     align-items: center;
     gap: 6px;
     height: 30px;
-    padding: 0 12px;
-    border-radius: var(--r-md);
+    padding: 0 13px;
+    border-radius: var(--r-full);
     color: var(--fg-2);
     font-size: var(--text-sm);
     font-weight: 500;
@@ -71,7 +71,7 @@
     height: 18px;
     padding: 0 5px;
     border-radius: var(--r-full);
-    background: rgb(255 255 255 / 0.08);
+    background: var(--selected);
     color: var(--fg-2);
     font-size: var(--text-2xs);
     font-weight: 600;
@@ -81,7 +81,7 @@
   }
 
   .count.alert {
-    background: var(--red);
+    background: var(--red-fill);
     color: #fff;
   }
 </style>

@@ -82,7 +82,6 @@ export const SETTINGS: SettingEntry[] = [
   { id: 'voice.agc', page: 'voice' },
   { id: 'voice.codec', page: 'voice' },
   { id: 'voice.stats', page: 'voice' },
-  { id: 'voice.doubleClick', page: 'voice' },
   { id: 'voice.smartRoute', page: 'voice' },
 
   // Notificações
@@ -107,6 +106,7 @@ export const SETTINGS: SettingEntry[] = [
   { id: 'app.hidden', page: 'app', desktop: true },
   { id: 'app.tray', page: 'app', desktop: true },
   { id: 'app.close', page: 'app', desktop: true },
+  { id: 'app.doubleClick', page: 'app' },
   { id: 'app.zoom', page: 'app', desktop: true },
   { id: 'app.update', page: 'app' },
 

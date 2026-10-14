@@ -321,6 +321,9 @@
     aria-haspopup="menu"
     onclick={() => headerButton && (menu = { items: guildMenu(), anchor: headerButton, width: Math.max(248, headerButton.offsetWidth) })}
   >
+    <span class="server-icon" aria-hidden="true">
+      <Avatar id={guild.id} name={guild.info.name} size={26} square src={client.api?.media(guild.info.icon) ?? null} />
+    </span>
     <span class="server-name">{guild.info.name}</span>
     <Icon name="chevron-down" size={16} />
   </button>
@@ -586,11 +589,10 @@
   .server {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    gap: 8px;
+    gap: 10px;
     width: 100%;
-    height: 40px;
-    padding: 0 10px;
+    height: 42px;
+    padding: 0 10px 0 8px;
     border-radius: var(--r-lg);
     color: var(--fg-3);
     transition: background-color var(--t-fast) var(--ease);
@@ -602,14 +604,29 @@
     color: var(--fg-2);
   }
 
+  .server-icon {
+    display: flex;
+    flex: none;
+  }
+
+  .server-icon :global(.face),
+  .server-icon :global(img),
+  .server-icon :global(.avatar) {
+    border-radius: 8px !important;
+  }
+
   .server-name {
+    flex: 1;
+    min-width: 0;
+    text-align: left;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
     color: var(--fg);
-    font-size: var(--text-lg);
-    font-weight: 650;
-    letter-spacing: -0.015em;
+    font-family: var(--font-display);
+    font-size: 18px;
+    font-weight: 700;
+    letter-spacing: -0.025em;
   }
 
   nav {
@@ -622,11 +639,11 @@
   }
 
   nav :global(.nav-item:hover) {
-    --row-bg: color-mix(in srgb, var(--bg-canvas) 95.5%, white);
+    --row-bg: color-mix(in srgb, var(--bg-canvas) 95.5%, rgb(var(--tint-rgb)));
   }
 
   nav :global(.nav-item.active) {
-    --row-bg: color-mix(in srgb, var(--bg-canvas) 92.5%, white);
+    --row-bg: color-mix(in srgb, var(--bg-canvas) 92%, rgb(var(--tint-rgb)));
   }
 
   /* Mapa no topo da lista: quem está nele aparece em rostinhos à direita. */
@@ -661,6 +678,7 @@
 
   .category {
     position: relative;
+    min-height: 30px;
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -681,7 +699,7 @@
     overflow: hidden;
     color: var(--fg-3);
     font-size: var(--text-xs);
-    font-weight: 500;
+    font-weight: 600;
     text-overflow: ellipsis;
     white-space: nowrap;
     transition: color var(--t-fast) var(--ease);
@@ -802,7 +820,7 @@
      Fundador, prata e azul pro Pioneiro). */
   .member:global(.arrive-founder) {
     --arrive-a: rgb(255 211 107 / 0.35);
-    --arrive-b: rgb(143 132 255 / 0.4);
+    --arrive-b: rgb(var(--accent-rgb) / 0.35);
   }
 
   .member:global(.arrive-pioneer) {
@@ -854,9 +872,9 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    height: 30px;
+    height: 32px;
     padding: 0 6px;
-    border-radius: var(--r-md);
+    border-radius: 9px;
     color: var(--fg-2);
     font-size: var(--text-sm);
     text-align: left;
@@ -901,9 +919,9 @@
   button.live {
     flex: none;
     height: 18px;
-    padding: 0 6px;
-    border-radius: 5px;
-    background: var(--red);
+    padding: 0 7px;
+    border-radius: var(--r-full);
+    background: var(--red-fill);
     color: #fff;
     font-size: 10px;
     font-weight: 700;

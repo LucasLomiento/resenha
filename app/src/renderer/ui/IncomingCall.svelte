@@ -58,10 +58,10 @@
 
   @keyframes halo {
     0% {
-      box-shadow: 0 0 0 0 rgb(52 211 153 / 0.45);
+      box-shadow: 0 0 0 0 rgb(var(--accent-rgb) / 0.45);
     }
     100% {
-      box-shadow: 0 0 0 16px rgb(52 211 153 / 0);
+      box-shadow: 0 0 0 16px rgb(var(--accent-rgb) / 0);
     }
   }
 
@@ -83,5 +83,31 @@
   .actions {
     display: flex;
     gap: 10px;
+  }
+
+  /* Atender e recusar cheios: a ação principal salta aos olhos. */
+  .actions :global(.icon-btn.tone-success) {
+    width: 44px;
+    height: 44px;
+    background: var(--green);
+    box-shadow: none;
+    color: #05170d;
+  }
+
+  .actions :global(.icon-btn.tone-success:hover) {
+    background: #52e09c;
+    color: #05170d;
+  }
+
+  .actions :global(.icon-btn.tone-danger) {
+    width: 44px;
+    height: 44px;
+    background: var(--red-fill);
+    color: #fff;
+  }
+
+  .actions :global(.icon-btn.tone-danger:hover) {
+    background: var(--red-fill-hover);
+    color: #fff;
   }
 </style>

@@ -81,14 +81,14 @@ test('procura no idioma da interface e mostra o texto nele', () => {
   const spanish = { ...everyone, locale: 'es' as const }
   assert.equal(first('noise suppression', english), 'voice.noise')
   assert.equal(searchSettings('noise suppression', english)[0].label, 'Noise suppression')
-  assert.equal(searchSettings('noise suppression', english)[0].where, 'Voice & video · Audio')
+  assert.equal(searchSettings('noise suppression', english)[0].where, 'Voice & video · Voice processing')
   assert.equal(first('echo cancellation', english), 'voice.echo')
   assert.equal(first('cancelación de eco', spanish), 'voice.echo')
   assert.equal(searchSettings('reduccion de ruido', spanish)[0].label, 'Reducción de ruido')
   assert.equal(first('contraseña', spanish), 'password.change')
   // Sem idioma no contexto, português.
   assert.equal(searchSettings('ruido', { ...everyone, locale: undefined })[0].label, 'Redução de ruído')
-  assert.equal(searchSettings('ruido', everyone)[0].where, 'Voz e vídeo · Áudio')
+  assert.equal(searchSettings('ruido', everyone)[0].where, 'Voz e vídeo · Processamento da voz')
 })
 
 test('as palavras dos outros idiomas também acham (com peso menor)', () => {

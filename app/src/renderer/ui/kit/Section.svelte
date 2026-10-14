@@ -50,10 +50,9 @@
 
   header {
     display: flex;
-    align-items: flex-end;
+    align-items: center;
     gap: var(--s-3);
     margin-bottom: 10px;
-    padding: 0 2px;
   }
 
   .titles {
@@ -62,12 +61,14 @@
   }
 
   h3 {
-    font-size: var(--text-md);
+    font-size: 15px;
     font-weight: 600;
+    letter-spacing: -0.01em;
   }
 
   .titles p {
     margin-top: 2px;
+    text-wrap: pretty;
     color: var(--fg-3);
     font-size: var(--text-sm);
   }
@@ -82,7 +83,7 @@
 
   .note {
     margin-top: 8px;
-    padding: 0 2px;
+    text-wrap: pretty;
     color: var(--fg-3);
     font-size: var(--text-xs);
   }

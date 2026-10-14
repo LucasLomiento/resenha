@@ -35,7 +35,7 @@
     z-index: var(--z-lightbox);
     display: grid;
     place-items: center;
-    background: rgb(4 4 7 / 0.9);
+    background: rgb(4 4 6 / 0.92);
     backdrop-filter: blur(6px);
     animation: rs-fade-in var(--t) var(--ease);
   }

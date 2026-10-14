@@ -37,10 +37,11 @@
   }
 
   h1 {
-    font-size: var(--text-2xl);
-    font-weight: 650;
-    letter-spacing: -0.02em;
-    line-height: 1.2;
+    font-family: var(--font-display);
+    font-size: 28px;
+    font-weight: 700;
+    letter-spacing: -0.03em;
+    line-height: 1.15;
   }
 
   p {

@@ -256,7 +256,7 @@
   .source.selected .thumb {
     box-shadow:
       0 0 0 2px var(--accent-fg),
-      0 0 0 5px rgb(122 108 255 / 0.2);
+      0 0 0 5px rgb(var(--accent-rgb) / 0.2);
   }
 
   .source-name {
@@ -296,8 +296,8 @@
     width: 36px;
     height: 36px;
     border-radius: var(--r-lg);
-    background: var(--accent-soft);
-    color: var(--accent-fg);
+    background: var(--selected);
+    color: var(--fg-2);
   }
 
   .options {

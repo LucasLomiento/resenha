@@ -69,9 +69,13 @@
     display: grid;
     grid-template-columns: repeat(var(--n), minmax(0, 1fr));
     padding: 3px;
-    border-radius: var(--r-lg);
+    border-radius: var(--r-full);
     background: var(--bg-input);
     box-shadow: inset 0 0 0 1px var(--line);
+  }
+
+  .segmented.two-line {
+    border-radius: var(--r-lg);
   }
 
   .thumb {
@@ -81,10 +85,10 @@
     left: 3px;
     width: calc((100% - 6px) / var(--n));
     transform: translateX(calc(var(--i) * 100%));
-    border-radius: 7px;
-    background: rgb(255 255 255 / 0.1);
+    border-radius: var(--r-full);
+    background: rgb(var(--tint-rgb) / 0.11);
     box-shadow:
-      inset 0 1px 0 rgb(255 255 255 / 0.07),
+      inset 0 1px 0 rgb(255 255 255 / 0.08),
       0 1px 3px rgb(0 0 0 / 0.45);
     transition: transform var(--t) var(--ease);
   }
@@ -100,7 +104,7 @@
     min-width: 0;
     height: 28px;
     padding: 0 10px;
-    border-radius: 7px;
+    border-radius: var(--r-full);
     color: var(--fg-2);
     font-size: var(--text-sm);
     font-weight: 500;
@@ -131,6 +135,11 @@
 
   .two-line button {
     height: 46px;
+    border-radius: 9px;
+  }
+
+  .two-line .thumb {
+    border-radius: 9px;
   }
 
   .two-line .main {

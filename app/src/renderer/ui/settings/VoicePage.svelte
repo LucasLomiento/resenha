@@ -135,7 +135,7 @@
 
   let advanced = $state(false)
   // A busca (ou o Ctrl+K) achou uma opção que fica no "Avançado": abre ele.
-  const ADVANCED = ['voice.echo', 'voice.agc', 'voice.codec', 'voice.stats']
+  const ADVANCED = ['voice.codec', 'voice.stats']
   $effect(() => {
     if (ui.settingsTarget && ADVANCED.includes(ui.settingsTarget)) advanced = true
   })
@@ -171,6 +171,9 @@
       />
     </div>
   </Row>
+</Section>
+
+<Section title={t.processing.section}>
   <Row label={t.audio.noise} setting="voice.noise" description={t.audio.noiseDescription}>
     <Segmented
       label={t.audio.noise}
@@ -202,6 +205,12 @@
       />
     </Row>
   {/if}
+  <Row label={t.advanced.echo} setting="voice.echo" for="voice-echo" description={t.advanced.echoDescription}>
+    <Switch id="voice-echo" bind:checked={settings.echoCancellation} onchange={micChanged} />
+  </Row>
+  <Row label={t.advanced.agc} setting="voice.agc" for="voice-agc" description={t.advanced.agcDescription}>
+    <Switch id="voice-agc" bind:checked={settings.autoGainControl} onchange={micChanged} />
+  </Row>
 </Section>
 
 <Section title={t.camera.section}>
@@ -219,9 +228,6 @@
 </Section>
 
 <Section title={t.call.section}>
-  <Row label={t.call.doubleClick} for="voice-double-click" setting="voice.doubleClick" description={t.call.doubleClickDescription}>
-    <Switch id="voice-double-click" bind:checked={settings.voiceDoubleClick} />
-  </Row>
   <Row label={t.call.smartRoute} for="voice-smart-route" setting="voice.smartRoute" description={t.call.smartRouteDescription}>
     <Switch id="voice-smart-route" bind:checked={settings.smartRoute} />
   </Row>
@@ -240,12 +246,6 @@
   </button>
   {#if advanced}
     <Section>
-      <Row label={t.advanced.echo} setting="voice.echo" for="voice-echo" description={t.advanced.echoDescription}>
-        <Switch id="voice-echo" bind:checked={settings.echoCancellation} onchange={micChanged} />
-      </Row>
-      <Row label={t.advanced.agc} setting="voice.agc" for="voice-agc" description={t.advanced.agcDescription}>
-        <Switch id="voice-agc" bind:checked={settings.autoGainControl} onchange={micChanged} />
-      </Row>
       <Row label={t.advanced.codec} setting="voice.codec" description={t.advanced.codecDescription}>
         <Segmented
           label={t.advanced.codec}

@@ -99,12 +99,12 @@ export default {
       },
       'voice.noise': {
         label: 'Reducción de ruido',
-        section: 'Audio',
+        section: 'Procesamiento de voz',
         keywords: ['ruido', 'ruido de fondo', 'zumbido', 'supresión de ruido', 'rnnoise', 'krisp'],
       },
       'voice.gate': {
         label: 'Transmitir solo cuando hablo',
-        section: 'Audio',
+        section: 'Procesamiento de voz',
         keywords: ['detección de voz', 'activación por voz', 'sensibilidad', 'umbral', 'gate', 'silencio'],
       },
       'voice.camera': { label: 'Cámara', section: 'Cámara', keywords: ['webcam', 'video', 'dispositivo de video'] },
@@ -114,16 +114,15 @@ export default {
         section: 'Transmisión',
         keywords: ['dibujar', 'garabato', 'rayar', 'anotar', 'lápiz', 'láser', 'slack', 'permitir', 'bloquear dibujos', 'pantalla'],
       },
-      'voice.echo': { label: 'Cancelación de eco', section: 'Avanzado', keywords: ['eco', 'altavoz', 'acople'] },
-      'voice.agc': { label: 'Ganancia automática', section: 'Avanzado', keywords: ['agc', 'volumen automático', 'ganancia'] },
+      'voice.echo': { label: 'Cancelación de eco', section: 'Procesamiento de voz', keywords: ['eco', 'altavoz', 'acople'] },
+      'voice.agc': { label: 'Ganancia automática', section: 'Procesamiento de voz', keywords: ['agc', 'volumen automático', 'ganancia'] },
       'voice.codec': {
         label: 'Códec de la transmisión',
         section: 'Avanzado',
         keywords: ['vp9', 'vp8', 'h264', 'av1', 'calidad', 'pantalla', 'stream', 'cpu', 'compartir pantalla'],
       },
       'voice.stats': { label: 'Estadísticas en el reproductor', section: 'Avanzado', keywords: ['fps', 'ping', 'resolución', 'bitrate', 'lag'] },
-      'voice.doubleClick': { label: 'Cambiar de sala con doble clic', section: 'Llamada', keywords: ['doble clic', 'double click', 'cambiar de sala', 'cambiar de canal', 'sin querer', 'accidente', 'entrar a la llamada'] },
-      'voice.smartRoute': { label: 'Mejor camino en la conexión directa', section: 'Llamada', keywords: ['ruta', 'ping', 'lag', 'latencia', 'retraso', 'ipv4', 'ipv6', 'p2p', 'conexión directa', 'camino'] },
+      'voice.smartRoute': { label: 'Mejor camino en la conexión directa', section: 'Conexión', keywords: ['ruta', 'ping', 'lag', 'latencia', 'retraso', 'ipv4', 'ipv6', 'p2p', 'conexión directa', 'camino'] },
 
       // Notificaciones
       'notify.sounds': { label: 'Sonidos de la app', section: 'Sonidos', keywords: ['sonido', 'efectos de sonido', 'silenciar', 'mudo'] },
@@ -148,7 +147,7 @@ export default {
       // Aplicación
       'app.language': {
         label: 'Idioma de Resenha',
-        section: 'Idioma',
+        section: 'Idioma y apariencia',
         keywords: ['idioma', 'lengua', 'traducción', 'inglés', 'español', 'portugués', 'english', 'português', 'language'],
       },
       'app.autostart': {
@@ -159,9 +158,10 @@ export default {
       'app.hidden': { label: 'Iniciar minimizado', section: 'Al encender la computadora', keywords: ['minimizado', 'segundo plano', 'oculto', 'bandeja'] },
       'app.tray': { label: 'Ícono en la bandeja', section: 'Ventana', keywords: ['bandeja', 'bandeja del sistema', 'barra de tareas', 'ícono', 'tray'] },
       'app.close': { label: 'Cerrar solo oculta la ventana', section: 'Ventana', keywords: ['minimizar al cerrar', 'segundo plano', 'cerrar', 'x'] },
+      'app.doubleClick': { label: 'Cambiar de sala con doble clic', section: 'Comportamiento', keywords: ['doble clic', 'double click', 'cambiar de sala', 'cambiar de canal', 'sin querer', 'accidente', 'entrar a la llamada'] },
       'app.zoom': {
         label: 'Tamaño de la interfaz',
-        section: 'Ventana',
+        section: 'Idioma y apariencia',
         keywords: ['zoom', 'escala', 'tamaño de letra', 'fuente', 'ampliar', 'reducir', 'ctrl +'],
       },
       'app.update': {
@@ -356,6 +356,9 @@ export default {
       auto: 'Automática',
       manual: 'Manual',
     },
+    processing: {
+      section: 'Procesamiento de voz',
+    },
     camera: {
       section: 'Cámara',
       device: 'Dispositivo',
@@ -365,9 +368,7 @@ export default {
       close: 'Cerrar vista previa',
     },
     call: {
-      section: 'Llamada',
-      doubleClick: 'Cambiar de sala con doble clic',
-      doubleClickDescription: 'Si ya estás en una llamada, un solo clic en otro canal de voz no te saca de la conversación.',
+      section: 'Conexión',
       smartRoute: 'Mejor camino en la conexión directa',
       smartRouteDescription: 'Si IPv4 o IPv6 da un ping mucho menor con alguien, la llamada se pasa a él sola. Las salas por Cloudflare no cambian.',
     },
@@ -484,10 +485,15 @@ export default {
   app: {
     title: 'Aplicación',
     language: {
-      section: 'Idioma',
+      section: 'Idioma y apariencia',
       label: 'Idioma de Resenha',
       auto: (name: string) => `Automático (${name})`,
       description: 'El automático sigue el idioma del sistema.',
+    },
+    behavior: {
+      section: 'Comportamiento',
+      doubleClick: 'Cambiar de sala con doble clic',
+      doubleClickDescription: 'Si ya estás en una llamada, un solo clic en otro canal de voz no te saca de la conversación.',
     },
     startup: {
       section: 'Al encender la computadora',

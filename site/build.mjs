@@ -121,7 +121,7 @@ function message(release, latest) {
   const version = release.tag_name.replace(/^v/, '')
   const { title, html } = renderNotes(release.body ?? '')
   return `<article class="msg${latest ? ' latest' : ''}" id="v${esc(version)}">
-  <img class="msg-avatar" src="assets/icon.svg" alt="" width="40" height="40" loading="lazy">
+  <svg class="msg-mascot" viewBox="0 0 336 336" aria-hidden="true"><use href="#mascot"/></svg>
   <div class="msg-main">
     <header class="msg-head">
       <span class="msg-author">Resenha</span><span class="msg-bot">app</span>

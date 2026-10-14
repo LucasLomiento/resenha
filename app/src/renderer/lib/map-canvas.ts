@@ -287,8 +287,8 @@ export class SharedMap {
   /** O escuro do OpenFreeMap puxado pro tom das superfícies do app (os cinzas dele são neutros). */
   private tint() {
     if (!this.style.endsWith('/dark')) return
-    if (this.map.getLayer('background')) this.map.setPaintProperty('background', 'background-color', '#0f0f15')
-    if (this.map.getLayer('water')) this.map.setPaintProperty('water', 'fill-color', '#191924')
+    if (this.map.getLayer('background')) this.map.setPaintProperty('background', 'background-color', '#0e0e10')
+    if (this.map.getLayer('water')) this.map.setPaintProperty('water', 'fill-color', '#15171d')
   }
 
   setPlacing(on: boolean) {

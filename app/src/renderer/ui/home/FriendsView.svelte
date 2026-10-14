@@ -472,7 +472,7 @@
     gap: 12px;
     flex: none;
     height: var(--header-h);
-    padding: 0 12px 0 20px;
+    padding: 0 14px 0 22px;
     border-bottom: 1px solid var(--line);
   }
 
@@ -481,8 +481,10 @@
   }
 
   h1 {
-    font-size: var(--text-lg);
-    font-weight: 600;
+    font-family: var(--font-display);
+    font-size: 17px;
+    font-weight: 650;
+    letter-spacing: -0.02em;
   }
 
   .divider {
@@ -542,7 +544,7 @@
     height: 60px;
     padding: 0 8px;
     border-top: 1px solid var(--line);
-    border-radius: var(--r-md);
+    border-radius: 12px;
     background: var(--row-bg);
   }
 
@@ -561,7 +563,7 @@
   }
 
   .person:is(:hover, :focus-within, .open) :global(.icon-btn:not(.active)) {
-    background: rgb(255 255 255 / 0.06);
+    background: var(--selected);
     color: var(--fg);
   }
 
@@ -634,8 +636,10 @@
   }
 
   .add h2 {
-    font-size: var(--text-xl);
-    font-weight: 650;
+    font-family: var(--font-display);
+    font-size: 22px;
+    font-weight: 700;
+    letter-spacing: -0.025em;
   }
 
   .add-lead {
@@ -670,7 +674,7 @@
     margin-top: 28px;
     padding: 12px 14px;
     border-radius: var(--r-lg);
-    background: rgb(255 255 255 / 0.035);
+    background: var(--hover);
     box-shadow: inset 0 0 0 1px var(--line);
     color: var(--fg-2);
     font-size: var(--text-sm);
@@ -698,8 +702,10 @@
   }
 
   .now h2 {
-    font-size: var(--text-md);
-    font-weight: 600;
+    font-family: var(--font-display);
+    font-size: 16px;
+    font-weight: 650;
+    letter-spacing: -0.015em;
   }
 
   .now-card {

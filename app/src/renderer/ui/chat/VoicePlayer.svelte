@@ -161,7 +161,7 @@
     height: 36px;
     border-radius: 50%;
     background: var(--accent);
-    color: #fff;
+    color: var(--fg-on-accent);
     transition: transform var(--t-fast) var(--ease);
   }
 

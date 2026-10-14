@@ -30,7 +30,7 @@
   const t = $derived(m.server.channelSettings)
 
   const nav = $derived<SettingsNavEntry[]>([
-    { heading: channel ? (channel.kind === 'text' ? `#${channel.name}` : channel.name) : '' },
+    { heading: channel ? (channel.kind === 'text' ? `#${channel.name}` : channel.name) : '', name: true },
     { id: 'overview', label: m.server.shared.overview, icon: 'settings' },
     ...(canPermissions ? [{ id: 'permissions', label: t.permissions, icon: 'shield' as const }] : []),
     { separator: true },

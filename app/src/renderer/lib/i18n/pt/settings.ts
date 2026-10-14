@@ -106,12 +106,12 @@ export default {
       },
       'voice.noise': {
         label: 'Redução de ruído',
-        section: 'Áudio',
+        section: 'Processamento da voz',
         keywords: ['ruído', 'barulho', 'chiado', 'supressão', 'rnnoise', 'krisp', 'noise suppression'],
       },
       'voice.gate': {
         label: 'Só transmitir quando eu falar',
-        section: 'Áudio',
+        section: 'Processamento da voz',
         keywords: ['detecção de voz', 'ativação por voz', 'sensibilidade', 'limiar', 'gate', 'voice activity', 'silêncio'],
       },
       'voice.camera': { label: 'Câmera', section: 'Câmera', keywords: ['webcam', 'vídeo', 'dispositivo de vídeo', 'camera'] },
@@ -121,16 +121,15 @@ export default {
         section: 'Transmissão',
         keywords: ['rabisco', 'rabiscar', 'desenhar', 'anotar', 'caneta', 'laser', 'slack', 'permitir', 'bloquear rabisco', 'tela'],
       },
-      'voice.echo': { label: 'Cancelamento de eco', section: 'Avançado', keywords: ['eco', 'echo', 'caixa de som', 'microfonia'] },
-      'voice.agc': { label: 'Ganho automático', section: 'Avançado', keywords: ['agc', 'volume automático', 'ganho', 'gain'] },
+      'voice.echo': { label: 'Cancelamento de eco', section: 'Processamento da voz', keywords: ['eco', 'echo', 'caixa de som', 'microfonia'] },
+      'voice.agc': { label: 'Ganho automático', section: 'Processamento da voz', keywords: ['agc', 'volume automático', 'ganho', 'gain'] },
       'voice.codec': {
         label: 'Codec da transmissão',
         section: 'Avançado',
         keywords: ['vp9', 'vp8', 'h264', 'av1', 'qualidade', 'tela', 'stream', 'cpu', 'compartilhar tela'],
       },
       'voice.stats': { label: 'Estatísticas no player', section: 'Avançado', keywords: ['fps', 'ping', 'resolução', 'bitrate', 'stats', 'lag'] },
-      'voice.doubleClick': { label: 'Mudar de sala com clique duplo', section: 'Call', keywords: ['clique duplo', 'duplo clique', 'double click', 'mudar de sala', 'trocar de canal', 'sem querer', 'acidente', 'entrar na call'] },
-      'voice.smartRoute': { label: 'Melhor caminho na conexão direta', section: 'Call', keywords: ['rota', 'ping', 'lag', 'latência', 'atraso', 'ipv4', 'ipv6', 'p2p', 'conexão direta', 'caminho'] },
+      'voice.smartRoute': { label: 'Melhor caminho na conexão direta', section: 'Conexão', keywords: ['rota', 'ping', 'lag', 'latência', 'atraso', 'ipv4', 'ipv6', 'p2p', 'conexão direta', 'caminho'] },
 
       // Notificações
       'notify.sounds': { label: 'Sons do app', section: 'Sons', keywords: ['som', 'barulho', 'efeitos sonoros', 'silenciar', 'mudo', 'sounds'] },
@@ -155,7 +154,7 @@ export default {
       // Aplicativo
       'app.language': {
         label: 'Idioma do Resenha',
-        section: 'Idioma',
+        section: 'Idioma e aparência',
         keywords: ['idioma', 'língua', 'language', 'lengua', 'english', 'inglês', 'español', 'espanhol', 'português', 'tradução', 'translation'],
       },
       'app.autostart': {
@@ -166,9 +165,10 @@ export default {
       'app.hidden': { label: 'Começar minimizado', section: 'Ao ligar o computador', keywords: ['minimizado', 'segundo plano', 'escondido', 'bandeja'] },
       'app.tray': { label: 'Ícone na bandeja', section: 'Janela', keywords: ['tray', 'bandeja', 'barra de tarefas', 'ícone', 'system tray'] },
       'app.close': { label: 'Fechar só esconde a janela', section: 'Janela', keywords: ['minimizar ao fechar', 'segundo plano', 'fechar', 'x'] },
+      'app.doubleClick': { label: 'Mudar de sala com clique duplo', section: 'Comportamento', keywords: ['clique duplo', 'duplo clique', 'double click', 'mudar de sala', 'trocar de canal', 'sem querer', 'acidente', 'entrar na call'] },
       'app.zoom': {
         label: 'Tamanho da interface',
-        section: 'Janela',
+        section: 'Idioma e aparência',
         keywords: ['zoom', 'escala', 'tamanho da letra', 'fonte', 'aumentar', 'diminuir', 'ctrl +'],
       },
       'app.update': {
@@ -369,6 +369,9 @@ export default {
       auto: 'Automática',
       manual: 'Manual',
     },
+    processing: {
+      section: 'Processamento da voz',
+    },
     camera: {
       section: 'Câmera',
       device: 'Dispositivo',
@@ -378,9 +381,7 @@ export default {
       close: 'Fechar prévia',
     },
     call: {
-      section: 'Call',
-      doubleClick: 'Mudar de sala com clique duplo',
-      doubleClickDescription: 'Já numa call, um clique só no outro canal de voz não te tira da conversa.',
+      section: 'Conexão',
       smartRoute: 'Melhor caminho na conexão direta',
       smartRouteDescription: 'Se o IPv4 ou o IPv6 der um ping bem menor com alguém, a call passa pra ele sozinha. Sala pelo Cloudflare não muda.',
     },
@@ -501,10 +502,15 @@ export default {
   app: {
     title: 'Aplicativo',
     language: {
-      section: 'Idioma',
+      section: 'Idioma e aparência',
       label: 'Idioma do Resenha',
       auto: (name: string) => `Automático (${name})`,
       description: 'O automático segue o idioma do sistema.',
+    },
+    behavior: {
+      section: 'Comportamento',
+      doubleClick: 'Mudar de sala com clique duplo',
+      doubleClickDescription: 'Já numa call, um clique só no outro canal de voz não te tira da conversa.',
     },
     startup: {
       section: 'Ao ligar o computador',

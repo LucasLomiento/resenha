@@ -328,7 +328,7 @@
     {#if aside === 'members' && guild}
       <div class="aside"><MemberList {guild} /></div>
     {:else if aside === 'search' && guild}
-      <div class="aside">
+      <div class="aside search-aside">
         <SearchPanel {guild} query={searchQuery} onjump={jumpFromSearch} onclose={() => ((searchQuery = ''), (searchText = ''))} />
       </div>
     {:else if aside === 'profile' && peer}
@@ -351,6 +351,7 @@
 
 <style>
   .pane {
+    position: relative;
     display: grid;
     grid-template-columns: minmax(0, 1fr);
     height: 100%;
@@ -372,6 +373,22 @@
       display: none;
     }
 
+    /* A busca não some: os resultados abrem numa gaveta por cima do chat. */
+    .aside.search-aside {
+      display: block;
+      position: absolute;
+      top: var(--header-h);
+      right: 0;
+      bottom: 0;
+      z-index: 6;
+      width: min(320px, 88%);
+      background: var(--bg-panel);
+      box-shadow:
+        -1px 0 0 var(--line),
+        var(--shadow-lg);
+      animation: rs-fade-in var(--t) var(--ease);
+    }
+
     .search {
       width: 132px;
     }
@@ -391,7 +408,7 @@
     gap: 10px;
     flex: none;
     height: var(--header-h);
-    padding: 0 12px 0 20px;
+    padding: 0 14px 0 22px;
     border-bottom: 1px solid var(--line);
   }
 
@@ -406,9 +423,10 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-size: var(--text-lg);
-    font-weight: 600;
-    letter-spacing: -0.01em;
+    font-family: var(--font-display);
+    font-size: 17px;
+    font-weight: 650;
+    letter-spacing: -0.02em;
   }
 
   .divider {
@@ -441,10 +459,10 @@
     align-items: center;
     gap: 6px;
     width: 168px;
-    height: 30px;
+    height: 32px;
     margin-left: 6px;
-    padding: 0 8px 0 10px;
-    border-radius: var(--r-md);
+    padding: 0 10px 0 12px;
+    border-radius: var(--r-full);
     background: var(--bg-input);
     box-shadow: inset 0 0 0 1px var(--line);
     color: var(--fg-3);
@@ -456,7 +474,7 @@
   .search:focus-within,
   .search.filled {
     width: 220px;
-    box-shadow: inset 0 0 0 1px var(--accent-line);
+    box-shadow: var(--focus-ring);
   }
 
   .search input {
@@ -490,9 +508,11 @@
     margin: 10px 16px 0;
     padding: 8px 8px 8px 14px;
     border-radius: var(--r-lg);
-    background: rgb(52 211 153 / 0.1);
-    box-shadow: inset 0 0 0 1px rgb(52 211 153 / 0.3);
-    color: var(--green);
+    background: var(--bg-raised);
+    box-shadow:
+      inset 0 0 0 1px var(--line),
+      var(--highlight);
+    color: var(--fg);
     font-size: var(--text-sm);
     font-weight: 550;
   }
@@ -502,9 +522,12 @@
   }
 
   .call-banner.calling {
-    background: var(--accent-soft);
-    box-shadow: inset 0 0 0 1px var(--accent-line);
-    color: var(--accent-fg);
+    color: var(--fg-2);
+  }
+
+  /* Só o pulso fica verde: o resto da faixa é neutro. */
+  .call-banner .pulse {
+    color: var(--green);
   }
 
   .pulse {
@@ -543,14 +566,14 @@
     place-items: center;
     width: 64px;
     height: 64px;
-    margin-bottom: 8px;
+    margin-bottom: 10px;
     border-radius: 20px;
     background:
       linear-gradient(var(--bg-raised), var(--bg-raised)) padding-box,
-      linear-gradient(135deg, rgb(143 132 255 / 0.7), rgb(106 92 246 / 0.25), rgb(143 132 255 / 0.45)) border-box;
+      linear-gradient(135deg, rgb(var(--brand-1-rgb) / 0.75), rgb(var(--accent-rgb) / 0.2), rgb(var(--brand-3-rgb) / 0.6)) border-box;
     border: 1px solid transparent;
-    color: var(--fg);
-    box-shadow: 0 12px 32px -12px rgb(106 92 246 / 0.45);
+    color: var(--accent-fg);
+    box-shadow: 0 14px 36px -18px rgb(var(--accent-rgb) / 0.25);
   }
 
   .start :global(.avatar) {
@@ -558,10 +581,11 @@
   }
 
   .start h2 {
+    font-family: var(--font-display);
     font-size: var(--text-3xl);
-    font-weight: 650;
-    letter-spacing: -0.025em;
-    line-height: 1.15;
+    font-weight: 700;
+    letter-spacing: -0.035em;
+    line-height: 1.1;
   }
 
   .start p {
@@ -586,7 +610,7 @@
     margin: 20px 20px 8px;
     color: var(--fg-3);
     font-size: var(--text-xs);
-    font-weight: 500;
+    font-weight: 600;
   }
 
   .day::before,
@@ -601,16 +625,16 @@
     position: relative;
     height: 1px;
     margin: 12px 20px 4px;
-    background: rgb(255 92 114 / 0.55);
+    background: rgb(255 90 107 / 0.55);
   }
 
   .new-divider span {
     position: absolute;
     top: 50%;
     right: 0;
-    padding: 1px 6px;
-    border-radius: var(--r-xs);
-    background: #dc3a50;
+    padding: 1px 7px;
+    border-radius: var(--r-full);
+    background: var(--red-fill);
     color: #fff;
     font-size: 10px;
     font-weight: 700;
@@ -701,8 +725,8 @@
     display: grid;
     place-items: center;
     padding: 16px;
-    background: rgb(11 11 16 / 0.72);
-    backdrop-filter: blur(2px);
+    background: var(--scrim);
+    backdrop-filter: blur(4px);
     pointer-events: none;
     animation: rs-fade-in var(--t) var(--ease);
   }

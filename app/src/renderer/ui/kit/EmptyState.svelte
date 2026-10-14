@@ -59,16 +59,18 @@
     border-radius: 18px;
     background:
       linear-gradient(var(--bg-raised), var(--bg-raised)) padding-box,
-      linear-gradient(135deg, rgb(111 125 255 / 0.6), rgb(145 80 255 / 0.35), rgb(255 90 122 / 0.5)) border-box;
+      linear-gradient(135deg, rgb(var(--brand-1-rgb) / 0.7), rgb(var(--accent-rgb) / 0.25), rgb(var(--brand-3-rgb) / 0.55)) border-box;
     border: 1px solid transparent;
-    color: var(--fg);
-    box-shadow: 0 10px 30px -10px rgb(111 125 255 / 0.35);
+    color: var(--accent-fg);
+    box-shadow: 0 12px 32px -12px rgb(var(--accent-rgb) / 0.3);
   }
 
   h2 {
-    font-size: var(--text-xl);
-    font-weight: 600;
-    letter-spacing: -0.015em;
+    color: var(--fg);
+    font-family: var(--font-display);
+    font-size: 20px;
+    font-weight: 650;
+    letter-spacing: -0.02em;
   }
 
   p {

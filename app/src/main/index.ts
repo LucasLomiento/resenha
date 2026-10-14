@@ -141,7 +141,7 @@ function createWindow() {
     minWidth: 940,
     minHeight: 560,
     title: 'Resenha',
-    backgroundColor: '#17181c',
+    backgroundColor: '#09090b',
     autoHideMenuBar: true,
     show: false,
     icon: appIcon(),
@@ -343,7 +343,7 @@ handle('turnstile:verify', (_event, server: string): Promise<string | null> => {
       minimizable: false,
       maximizable: false,
       title: tm().verifyTitle,
-      backgroundColor: '#0d0e12',
+      backgroundColor: '#0c0c0e',
       autoHideMenuBar: true,
       webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false, partition: 'turnstile' },
     })

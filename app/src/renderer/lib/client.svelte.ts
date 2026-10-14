@@ -380,8 +380,10 @@ class Client implements GuildHost, HomeHost {
   // ---------- Avisos ----------
 
   toast(text: string, kind: Toast['kind'] = 'error') {
+    // O mesmo aviso já está na tela: não repete. E no máximo três de uma vez (sai o mais velho).
+    if (this.toasts.some((t) => t.text === text)) return
     const id = ++toastId
-    this.toasts.push({ id, text, kind })
+    this.toasts = [...this.toasts.slice(-2), { id, text, kind }]
     setTimeout(() => (this.toasts = this.toasts.filter((t) => t.id !== id)), kind === 'error' ? 6000 : 4500)
   }
 

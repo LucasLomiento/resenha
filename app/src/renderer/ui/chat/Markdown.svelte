@@ -79,7 +79,7 @@
 
 <style>
   .md {
-    color: #dedee6;
+    color: #e4e4e8;
     font-size: var(--text-lg);
     line-height: 1.5;
     overflow-wrap: anywhere;
@@ -111,8 +111,9 @@
 
   code {
     padding: 1px 5px;
-    border-radius: var(--r-xs);
-    background: rgb(255 255 255 / 0.07);
+    border-radius: var(--r-sm);
+    background: rgb(var(--tint-rgb) / 0.07);
+    box-shadow: inset 0 0 0 1px var(--line);
     font-family: var(--mono);
     font-size: 0.86em;
   }
@@ -173,10 +174,10 @@
     display: inline-flex;
     align-items: center;
     gap: 2px;
-    padding: 0 4px;
-    border-radius: var(--r-xs);
-    background: rgb(122 108 255 / 0.18);
-    color: #c9c2ff;
+    padding: 0 5px;
+    border-radius: var(--r-sm);
+    background: rgb(var(--accent-rgb) / 0.14);
+    color: var(--accent-fg);
     font: inherit;
     font-weight: 550;
     vertical-align: baseline;
@@ -184,7 +185,7 @@
   }
 
   button.mention:hover:not(:disabled) {
-    background: rgb(122 108 255 / 0.32);
+    background: rgb(var(--accent-rgb) / 0.26);
   }
 
   .mention :global(svg) {

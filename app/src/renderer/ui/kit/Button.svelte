@@ -50,10 +50,11 @@
     gap: var(--s-2);
     flex: none;
     height: var(--h-md);
-    padding: 0 14px;
-    border-radius: var(--r-lg);
+    padding: 0 16px;
+    border-radius: var(--r-full);
     font-size: var(--text-sm);
-    font-weight: 550;
+    font-weight: 600;
+    letter-spacing: -0.005em;
     line-height: 1;
     white-space: nowrap;
     transition:
@@ -83,16 +84,14 @@
 
   .sm {
     height: var(--h-sm);
-    padding: 0 10px;
+    padding: 0 12px;
     gap: 6px;
-    border-radius: var(--r-md);
     font-size: var(--text-xs);
   }
 
   .lg {
     height: var(--h-xl);
-    padding: 0 18px;
-    border-radius: 12px;
+    padding: 0 22px;
     font-size: var(--text-md);
   }
 
@@ -100,8 +99,17 @@
     background: var(--accent);
     color: var(--fg-on-accent);
     box-shadow:
-      inset 0 1px 0 rgb(255 255 255 / 0.18),
+      inset 0 1px 0 rgb(255 255 255 / 0.35),
+      inset 0 -1px 0 rgb(0 0 0 / 0.12),
       0 1px 2px rgb(0 0 0 / 0.4);
+  }
+
+  .primary:disabled,
+  .danger:disabled {
+    opacity: 1;
+    background: var(--selected);
+    color: var(--fg-3);
+    box-shadow: inset 0 0 0 1px var(--line);
   }
 
   .primary:hover:not(:disabled) {
@@ -113,13 +121,15 @@
   }
 
   .secondary {
-    background: rgb(255 255 255 / 0.065);
+    background: var(--selected);
     color: var(--fg);
-    box-shadow: inset 0 0 0 1px var(--line);
+    box-shadow:
+      inset 0 0 0 1px var(--line),
+      var(--highlight);
   }
 
   .secondary:hover:not(:disabled) {
-    background: rgb(255 255 255 / 0.1);
+    background: var(--press);
   }
 
   .ghost {
@@ -132,15 +142,15 @@
   }
 
   .danger {
-    background: #dc3a50;
+    background: var(--red-fill);
     color: #fff;
     box-shadow:
-      inset 0 1px 0 rgb(255 255 255 / 0.16),
+      inset 0 1px 0 rgb(255 255 255 / 0.18),
       0 1px 2px rgb(0 0 0 / 0.4);
   }
 
   .danger:hover:not(:disabled) {
-    background: #e64a5f;
+    background: var(--red-fill-hover);
   }
 
   .danger-soft {
@@ -149,7 +159,7 @@
   }
 
   .danger-soft:hover:not(:disabled) {
-    background: rgb(255 92 114 / 0.22);
+    background: rgb(255 90 107 / 0.22);
     color: var(--red-hover);
   }
 </style>

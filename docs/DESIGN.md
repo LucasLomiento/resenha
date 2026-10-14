@@ -7,17 +7,20 @@ Guia da interface: o que o app parece, por quê, e como fazer tela nova sem dest
 1. **Um lugar pra cada coisa.** Se um controle aparece em dois lugares, um deles sai. A câmera e a tela ficam só no dock; a qualidade da transmissão fica no diálogo e no painel ao vivo, não nas configurações.
 2. **Nada muda de lugar.** O botão troca de ícone, de cor ou de texto, mas não de posição, em nenhum estado e em nenhum tamanho de janela. O e2e confere isso no dock.
 3. **Texto só quando ajuda a decidir.** Rótulo curto, descrição de uma linha, e só se mudar a escolha de alguém. Jargão técnico (codec, RNNoise, bitrate) fica em "Avançado" ou some.
-4. **Escuro de verdade, com uma pitada de marca.** Superfícies em tinta fria levemente violeta; o violeta do ícone aparece só em momentos de marca (logo, tela de entrada, boas-vindas do canal, criar servidor).
-5. **Calmo por padrão, vivo quando importa.** Cinza na maior parte do tempo; verde quando alguém fala, vermelho quando é ao vivo, menção ou perigo, violeta quando é seu (seleção, sua reação, seu link).
+4. **Noite elétrica (1.13).** Superfícies em grafite neutro, quase preto, sem tinta de cor; um acento só, o azul elétrico, que é a cor da marca e do que é seu (botão principal, item aberto, seleção, sua reação, seu link). Nada de violeta (o app não pode lembrar o Discord) e nada de verde fora de "falando/online" (a primeira versão com lima foi recusada: tudo ficava meio verde).
+5. **Calmo por padrão, vivo quando importa.** Grafite na maior parte do tempo; azul na ação principal e no que é seu, verde quando alguém fala, vermelho quando é ao vivo, menção ou perigo, amarelo pra ausente e aviso. Cor translúcida em área grande suja o grafite: em fundo de linha ou de painel, só cinza; o acento fica no fio, no ícone ou numa barra.
 6. **Teclado e leitor de tela contam.** Todo botão de ícone tem nome; o status tem forma além da cor; o Esc fecha só a camada de cima.
 
 ## Identidade
 
-- **Ícone:** balão rindo com headset violeta, sobre squircle escuro com o brilho do acento (`app/build/icon.svg`; os tamanhos pequenos são desenhados à parte, na grade de pixels). Os PNG e o `.ico` saem do `app/build/render-icons.sh`.
+- **Ícone:** balão rindo com headset azul, sobre squircle grafite com o brilho do acento (`app/build/icon.svg`; os tamanhos pequenos são desenhados à parte, na grade de pixels). Os PNG e o `.ico` saem do `app/build/render-icons.sh`.
 - **Bandeja:** normal é o ícone; falando, ele fica verde inteiro; mutado ou ensurdecido, vira um quadrado vermelho com o microfone ou o fone cortado (o tray do Omarchy desenha a 12 px, então nada de selo no canto). No Linux a janela troca de ícone junto; no Windows o aviso vai como selo na barra de tarefas.
-- **Degradê da marca:** `--brand-gradient` (#8f84ff → #6a5cf6 → #5244e0), só no violeta do acento. Usar pouco: borda do ícone de boas-vindas do canal, botão de criar servidor.
-- **Fundo da janela:** um brilho violeta bem fraco no canto superior esquerdo (7%), que some atrás do painel.
-- **Forma:** cantos arredondados em todo lugar (10 px em controles, 14 px em cartões e no painel, 18 px em modais), squircle nos ícones de servidor.
+- **Degradê da marca:** `--brand-gradient` (#78c4ff → #4f8cff → #3d6bff). Usar pouco: borda do ícone de boas-vindas do canal, estado vazio.
+- **Fundo da janela:** uma luz azul bem fraca no alto à esquerda (5%), que some atrás do painel.
+- **Tipografia de marca:** **Bricolage Grotesque** (com tamanho óptico) nos títulos: nome do servidor, cabeçalho do painel, boas-vindas do canal, título de página, de modal e de seção, e o login. O resto da interface continua em Geist.
+- **Forma:** botões e chips em pílula; 10–12 px em itens e campos, 16 px em cartões, 18 px no painel e no dock, 22 px em modais. Servidores em azulejos de raio fixo (14 px), sem a mudança de forma no hover.
+- **Tela de entrada:** dividida. À esquerda, o mascote ao lado de "Resenha" grande, a frase "A call da sua turma." e a vitrine (`ui/login/Showcase.svelte`): quatro cartões soltos que contam o app em loop: a call com o anel verde passando de quem fala pra quem fala, o chat com as mensagens chegando depois do "digitando", uma transmissão AO VIVO com um rabisco se desenhando e o Spotify tocando. Os cartões flutuam e acompanham o mouse de leve (paralaxe); tudo para com `prefers-reduced-motion`. À direita, o formulário num cartão de vidro, com as abas **Entrar | Criar conta** no topo: o modo só muda pela pessoa (servidor vazio ou link de convite abrem em "Criar conta", uma vez). Em janela estreita (até 960 px) fica só o formulário, com o mascote e o nome no meio, em cima dele.
+- **Mascote** (`kit/Mascot.svelte`): o balão rindo de headset do ícone, desenhado em SVG, solto (sem o quadrado do ícone) e sempre com a cara do ícone (o XD; o dono não quis outras expressões). Flutua devagar e ri (pula, a boca mexe, saem ondinhas do microfone) quando pedem (`laughing`) ou com o mouse em cima de quem o contém. No login ri de 8 em 8 s e enquanto entra; no trilho é o botão do início, parado, e ri no hover. Em janela estreita, o login mostra o mascote e o nome no meio, em cima do cartão.
 
 ## Tokens
 
@@ -25,35 +28,40 @@ Guia da interface: o que o app parece, por quê, e como fazer tela nova sem dest
 
 | Token | Valor | Uso |
 | --- | --- | --- |
-| `--bg-canvas` | #0b0b10 | Janela. Barra lateral e trilho ficam direto aqui. |
-| `--bg-panel` | #131319 | Painel principal (chat, call, configurações por cima). |
-| `--bg-raised` | #1a1a22 | Cartões, dock, compositor, menus, modais. |
-| `--bg-overlay` | #22222c | Dicas (tooltips). |
-| `--bg-input` | #0e0e13 | Campos, segmentados, trilhos de medidor. |
-| `--hover` / `--selected` / `--press` | branco 4,5% / 7,5% / 10% | Estados por cima de qualquer superfície. |
-| `--line` / `--line-strong` | branco 6,5% / 11% | Fios e bordas (sempre `box-shadow` de 1 px). |
-| `--fg` | #ededf3 | Texto principal. |
-| `--fg-2` | #a6a6b6 | Secundário (descrições, ícones). |
-| `--fg-3` | #75758a | Apagado (rótulos de seção, horários, placeholder). |
-| `--fg-4` | #4d4d5c | Desligado. |
-| `--accent` | #6a5cf6 | Preenchimento com texto branco (botão principal, interruptor ligado). Contraste 4,7:1. |
-| `--accent-fg` | #ada4ff | Acento como texto ou ícone sobre o escuro (links, sua reação, sua câmera ligada). |
-| `--accent-soft` / `--accent-line` | violeta 15% / 45% | Fundo e borda de coisas "suas" (reação, chip escolhido). |
-| `--green` | #34d399 | Falando, online, na call. |
-| `--yellow` | #fbbf24 | Ausente, aviso. |
-| `--red` | #ff5c72 | Ao vivo, menção, mutado, perigo. Preenchimento com texto branco usa #dc3a50. |
+| `--bg-canvas` | #09090b | Janela. Barra lateral e trilho ficam direto aqui. |
+| `--bg-panel` | #111113 | Painel principal (chat, call, configurações por cima). |
+| `--bg-raised` | #18181b | Cartões, dock, compositor, menus, modais. |
+| `--bg-overlay` | #222226 | Item escolhido dentro de cartão. |
+| `--bg-input` | #0c0c0e | Campos, segmentados, trilhos de medidor, blocos de código. |
+| `--tint-rgb` | 255 255 255 | Base das camadas translúcidas (`rgb(var(--tint-rgb) / x)`). |
+| `--hover` / `--selected` / `--press` | branco 4,5% / 8% / 11% | Estados por cima de qualquer superfície. |
+| `--line` / `--line-strong` | branco 7% / 12% | Fios e bordas (sempre `box-shadow` de 1 px). |
+| `--scrim` | quase preto 70% | Fundo de modal e do Ctrl+K (com desfoque). |
+| `--glass` / `--glass-strong` / `--glass-fg` | grafite 74% / 88% · #f4f4f6 | Etiquetas e barras sobre vídeo e mapa; avisos. |
+| `--fg` | #f4f4f5 | Texto principal. |
+| `--fg-2` | #aaaab3 | Secundário (descrições, ícones). |
+| `--fg-3` | #888892 | Apagado (rótulos, horários, placeholder). 5:1 nos cartões. |
+| `--fg-4` | #52525b | Desligado. |
+| `--accent` | #2b6cf5 | Preenchimento com texto branco (contraste 4,6:1): botão principal, interruptor ligado, seu play, contador do dock. |
+| `--accent-rgb` | 79 140 255 | O azul elétrico (#4f8cff) pras versões translúcidas. |
+| `--accent-fg` | #7aaaff | Acento como texto ou ícone sobre o escuro (links, sua reação, item aberto, ícone ligado). |
+| `--accent-soft` / `--accent-line` | azul 14% / 45% | Fundo e borda de coisas "suas" pequenas (reação, menção no texto). |
+| `--focus-ring` · `--selection` | fio de 1,5 px a 85% · 35% | Campo com foco; texto selecionado. |
+| `--green` | #3dd68c | Falando, online, na call, atender. Só isso. |
+| `--yellow` | #ffc44d | Ausente, aviso. |
+| `--red` / `--red-fill` | #ff5a6b / #e23b50 | Ao vivo, menção, mutado, perigo. O `-fill` é o preenchimento com texto branco (contadores, AO VIVO, botão de perigo, recusar). |
 
-Regras: nunca cor solta no componente; nada de cinza puro (os neutros puxam pro violeta); vermelho é sinal, não decoração.
+Regras: nunca cor solta no componente (fora decoração de perfil e o verde do Spotify, só no bot); os neutros não puxam pra cor nenhuma; vermelho é sinal, não decoração; desligado é sempre cinza, nunca o acento apagado; azul é raro: a ação principal, o que é seu, o que está aberto.
 
 ### Tipografia
 
-Fonte **Geist** (variável, empacotada com `@fontsource-variable/geist`) e **Geist Mono** pra código, atalhos e convites. Nada vem de CDN (o CSP só aceita fonte do próprio app).
+Fonte **Geist** (variável, empacotada com `@fontsource-variable/geist`) na interface, **Bricolage Grotesque** (`@fontsource-variable/bricolage-grotesque/opsz.css`, token `--font-display`) nos títulos e **Geist Mono** pra código, atalhos e convites. Nada vem de CDN (o CSP só aceita fonte do próprio app).
 
 | Token | px | Uso |
 | --- | --- | --- |
-| `--text-3xl` | 28 | Boas-vindas do canal. Peso 650, tracking -0,025em. |
-| `--text-2xl` | 22 | Título de página (configurações, login). 650. |
-| `--text-xl` | 18 | Título de painel, nome no cartão de perfil. 600–650. |
+| `--text-3xl` | 32 | Boas-vindas do canal (Bricolage, 700, tracking -0,035em). |
+| `--text-2xl` | 24 | Títulos grandes. A página das configurações usa 28 (Bricolage, 700); o login, 30. |
+| `--text-xl` | 18 | Título de painel, nome no cartão de perfil. Cabeçalho do painel: Bricolage 17, 650; nome do servidor: 18, 700; modal: 20, 650. |
 | `--text-lg` | 15 | Texto das mensagens e título do canal. |
 | `--text-md` | 14 | Interface e rótulos (base do `body`). |
 | `--text-sm` | 13 | Itens, descrições, botões. |
@@ -65,8 +73,8 @@ Rótulos de seção em caixa normal (não em CAIXA ALTA), 12 px, peso 500, `--fg
 ### Espaço, tamanho e forma
 
 - **Grade de 4 px:** `--s-1` 4 · `--s-2` 8 · `--s-3` 12 · `--s-4` 16 · `--s-5` 20 · `--s-6` 24 · `--s-8` 32 · `--s-10` 40 · `--s-12` 48.
-- **Alturas de controle:** `--h-sm` 28 · `--h-md` 34 · `--h-lg` 40 · `--h-xl` 44. Itens de navegação 32; linhas de configuração 56 no mínimo; cabeçalhos `--header-h` 52.
-- **Raios:** `--r-xs` 4 · `--r-sm` 6 · `--r-md` 8 · `--r-lg` 10 · `--r-xl` 14 · `--r-2xl` 18 · `--r-full`.
+- **Alturas de controle:** `--h-sm` 28 · `--h-md` 34 · `--h-lg` 40 · `--h-xl` 44. Itens de navegação 34; linhas de configuração 56 no mínimo; cabeçalhos `--header-h` 56.
+- **Raios:** `--r-xs` 4 · `--r-sm` 6 · `--r-md` 9 · `--r-lg` 12 · `--r-xl` 16 · `--r-2xl` 22 · `--r-panel` 18 · `--r-full` (botões, chips, abas, segmentados).
 - **Sombras:** `--shadow-sm` (dock, painel), `--shadow-md` (dicas, barra de ações), `--shadow-lg` (menus, modais, miniatura). Sempre junto de um fio de 1 px (`0 0 0 1px var(--line-strong)`) e do `--highlight` (brilho de 1 px no topo).
 - **Movimento:** `--t-fast` 100 ms (hover), `--t` 160 ms (troca de estado), `--t-slow` 260 ms (entrada de modal/tela). Curva `--ease`. Entradas com `rs-pop-in` (sobe 6 px e aparece). Tudo respeita `prefers-reduced-motion`.
 - **Camadas:** miniatura 30 · configurações 35 · popover 40 · modal 50 · visualizador de imagem 70 · avisos 90 · dicas 100. As configurações (tela cheia) ficam abaixo de menus e modais, porque eles abrem de dentro delas.
@@ -90,7 +98,8 @@ Rótulos de seção em caixa normal (não em CAIXA ALTA), 12 px, peso 500, `--fg
 - **Dock** (rodapé do trilho e da barra lateral, de ponta a ponta): um cartão só com a call em cima (status, sinal, sair; Câmera e Tela) e você embaixo (avatar com status, nome, mutar, ensurdecer, configurações). A call aparece por cima sem mexer na sua linha. Mutar e ensurdecer têm uma setinha colada (e o botão direito) com o menu do aparelho de entrada/saída e o perfil do microfone (Isolar voz, Estúdio, Personalizado). Falando, a sua foto ganha o anel verde, por cima da moldura quando tem.
 - **Janela mínima (940 × 560):** tudo cabe. Nos protótipos, abaixo de ~780 px de painel a lista de membros e o tópico do canal saem (container query) e a coluna "Agora" do início some.
 - **Tela da call:** blocos 16:9 que crescem até ocupar a área toda (pela largura ou pela altura), sempre centralizados; foto de cada um quando não tem câmera.
-- **Configurações em tela cheia:** navegação à esquerda (236), página à direita (até 660), fechar no canto com "Esc". A navegação e o título nunca mudam de lugar entre páginas (o e2e confere).
+- **Configurações em tela cheia, com a cara do app:** navegação direto no fundo à esquerda (232–292 px, cresce com a janela) e a página num painel solto que ocupa o resto da janela (igual ao painel principal, 8 px do fundo), com o conteúdo no meio numa largura boa de ler (até 880 px; a do perfil, com o formulário e a prévia lado a lado, até 1160). A rolagem é do painel (a barra fica na borda dele) e o fechar fica parado no canto (dica "Fechar · Esc"). A navegação e o título nunca mudam de lugar entre páginas (o e2e confere).
+- **Onde fica cada opção:** Voz e vídeo = Áudio (microfone, saída, teste), Processamento da voz (redução de ruído, limiar, eco, ganho), Câmera, Conexão (melhor caminho), Transmissão (rabiscos) e Avançado (codec e estatísticas da transmissão). Aplicativo = Idioma e aparência (idioma, tamanho da interface), Comportamento (mudar de sala com clique duplo), Ao ligar o computador, Janela, Atualizações. Regra: a opção mora onde a pessoa procuraria pelo efeito dela, não pelo assunto técnico (o clique duplo mexe na navegação, não no áudio).
 
 ## Componentes (`ui/kit`)
 
@@ -116,7 +125,7 @@ Tudo exportado por `ui/kit/index.ts`. Nenhum componente do kit importa o store: 
 | `Badge` | Selos. | neutral/accent/success/warning/danger, `count` (menções), `live` (AO VIVO com pulso), `dot` (cor de cargo). |
 | `Kbd` | Atalhos. | "Ctrl + Shift + M" vira três teclas. |
 | `SignalBars` | Qualidade da conexão. | Três barras com a cor do ping; o número fica na dica. |
-| `NavItem` | Item de navegação (canal, conversa, página). | `active`, `unread` (texto forte + marquinha na borda), `muted`, `count`, `leading`/`trailing`. |
+| `NavItem` | Item de navegação (canal, conversa, página). | `active`, `unread` (texto forte + ponto azul no vão à esquerda), `muted`, `count`, `leading`/`trailing`. |
 | `Section` + `Row` | Configurações. | Cartão com linhas separadas por fio. `Row`: rótulo + descrição à esquerda, controle à direita; `stack` (controle embaixo, largura toda), `indent` (depende da de cima), `disabled`. |
 | `PageHeader` | Título de página. | Com ações à direita. |
 | `SettingsLayout` | Configurações em tela cheia. | Navegação com títulos, separadores e item de perigo (Sair). |
@@ -205,13 +214,13 @@ Tudo passa por um reverb curto e um compressor. O volume de cada som foi medido 
 
 ### Lista de canais com largura ajustável
 
-- A borda direita da lista de canais (o vão até o painel) é uma alça: o cursor vira de redimensionar e aparece uma linha violeta fina. Arrastar alarga ou estreita (216 a 420 px); duplo clique volta aos 248 px; com o foco nela, as setas mudam de 16 em 16 (Shift: 48). A largura fica guardada. Numa janela estreita a lista cede pro chat continuar cabendo.
+- A borda direita da lista de canais (o vão até o painel) é uma alça: o cursor vira de redimensionar e aparece uma linha azul fina. Arrastar alarga ou estreita (216 a 420 px); duplo clique volta aos 248 px; com o foco nela, as setas mudam de 16 em 16 (Shift: 48). A largura fica guardada. Numa janela estreita a lista cede pro chat continuar cabendo.
 
 ### Importar do Discord
 
 - **Entradas:** "Importar canais do Discord" no menu do servidor (pra quem gerencia canais) e "Trazer do Discord" no "+" do trilho (cria um servidor novo).
 - **Passo 1:** área grande pra colar (Ctrl+V), arrastar ou escolher o print, com três dicas curtas (print só da lista de canais; abrir categorias fechadas; nada é criado antes de conferir).
-- **Passo 2:** o print com uma faixa de luz violeta passando, e "Lendo os canais do print… leva uns 10 segundos".
+- **Passo 2:** o print com uma faixa de luz azul passando, e "Lendo os canais do print… leva uns 10 segundos".
 - **Passo 3 (conferir):** o print à esquerda e a lista à direita, editável: o ícone (# ou alto-falante) troca o tipo, o nome é um campo direto, o X tira. Categoria em caixa normal (o Discord mostra em CAIXA ALTA). Interruptor "Manter os emojis". Resumo no topo ("2 categorias, 3 canais de texto e 2 canais de voz"). No servidor novo, o nome vem do print (sem o ✨ do fim).
 
 ### Busca nas configurações
@@ -228,6 +237,11 @@ Tudo passa por um reverb curto e um compressor. O volume de cada som foi medido 
 - **Fora do app:** um aviso do sistema por versão, quando ela fica pronta e a janela está fora de foco.
 - **Depois de atualizar no meio de uma call:** uma pílula de vidro no alto do painel: ícone, "Você estava em **Geral** · Turma antes de atualizar.", **Reconectar** e o X ("Agora não"). Some ao reconectar, ao dispensar ou ao entrar em outra call. Ligação privada só aparece se a outra pessoa continua nela.
 
+### Painel do Spotify
+
+- **Tocando:** diálogo largo (até 940 px) em duas colunas. À esquerda o player: capa grande (a própria capa borrada vira a luz atrás), título na fonte de título (até duas linhas), artista com as tags de estilo, álbum, progresso, controles (o play redondo no verde do Spotify) e o volume no pé. À direita: as abas (Buscar, Fila, Playlists) e a busca paradas em cima, e só a lista rola (antes a busca grudava em cima da lista e as músicas passavam por baixo dela; o e2e confere que não).
+- **Pôr o Spotify na call:** os três passos numerados (librespot, app do Spotify, conta), o número fica verde quando o passo está feito; o passo a passo do app aparece num cartão recuado embaixo do passo 2.
+
 ### Rabiscos na transmissão
 
 - **Quem assiste:** lápis na barra do player quando quem compartilha deixa. Desligado por quem compartilha (ou compartilhando uma janela), o lápis fica apagado e a dica diz por quê ("Lucas não deixou rabiscar"); clicar repete num aviso. Rabiscando, aparece no topo uma pílula de vidro: "Rabiscando na tela de Fulano", Laser | Caneta e fechar (Esc também sai). O cursor vira mira. O próprio traço é desenhado aqui por cima do vídeo, igual ao de lá, cobrindo a cópia que volta atrasada pela transmissão (sem ver dobrado). O clique rápido aparece só pelo vídeo.
@@ -239,7 +253,7 @@ Tudo passa por um reverb curto e um compressor. O volume de cada som foi medido 
 ### Mensagem de voz
 
 - **Gravar:** microfone no campo de mensagem (ao lado do emoji). Gravando, a linha vira: descartar (lixeira, ou Esc), ponto vermelho pulsando, o tempo, barrinhas do volume andando da direita pra esquerda e enviar (avião, ou Enter). Depois de parar: "Preparando o áudio…" (virando MP3) e "Enviando N%". Até 15 minutos; no limite, envia sozinho. Responde a mensagem que estiver marcada.
-- **No chat** (`ui/chat/VoicePlayer.svelte`, também pra qualquer anexo de áudio): play/pausa redondo na cor de destaque, a onda (barras cinza que ficam violeta conforme toca; clicar ou setas pulam), o tempo (total parado, corrido tocando), velocidade 1× / 1,5× / 2× e baixar (o .mp3). Arquivo de áudio que não é mensagem de voz mostra o nome em cima da onda. Um toca por vez, pela saída de som escolhida.
+- **No chat** (`ui/chat/VoicePlayer.svelte`, também pra qualquer anexo de áudio): play/pausa redondo na cor de destaque, a onda (barras cinza que ficam azuis conforme toca; clicar ou setas pulam), o tempo (total parado, corrido tocando), velocidade 1× / 1,5× / 2× e baixar (o .mp3). Arquivo de áudio que não é mensagem de voz mostra o nome em cima da onda. Um toca por vez, pela saída de som escolhida.
 - **Nos resumos** (aviso do sistema, busca, fixadas): "🎤 Mensagem de voz".
 
 ### Sala pelo Cloudflare
@@ -257,15 +271,16 @@ Cada uma tem um protótipo estático com dados de exemplo em `ui/proto`. Os nome
 **Capturas:** `npm -w app run proto:shots -- <pasta>` (com `PROTO_SMALL=1`, também na janela mínima). As do app de hoje saem do e2e com `RESENHA_SHOTS=<pasta>`.
 
 ### Trilho de servidores — `#proto/server`
-- 72 px, direto no fundo. Início (logo do app) no topo, fio, servidores (squircle 44, raio 16 → 13 no hover/aberto), "+" verde no fim (criar ou entrar).
-- Marquinha branca na borda esquerda: 8 px = novidade, 20 px = hover, 36 px = aberto. Menções num contador vermelho no canto.
+- 72 px, direto no fundo. Início (logo do app) no topo, fio, servidores (azulejos de 44 com raio fixo de 14), "+" tracejado no fim (criar ou entrar), que fica azul no hover.
+- Sem a marquinha do Discord: o aberto ganha um anel azul em volta (um `outline` afastado 2 px, com o vão transparente), o hover um anel cinza, e novidade é um ponto azul no canto de cima. Os fechados ficam um pouco apagados até o mouse passar. Menções num contador vermelho no canto de baixo.
+- O cabeçalho da barra do servidor mostra o ícone dele (26 px) ao lado do nome, como um "espaço de trabalho".
 - Servidor sem ícone: degradê do id com as iniciais (sem "de/da/do").
 - **Precisa de dado:** `GuildInfo.icon` (imagem), não lidas e menções por servidor (somar `ReadState` dos canais).
 
 ### Barra do servidor — `#proto/server`, `#proto/server-menu`
 - Cabeçalho com o nome e seta; abre o menu do servidor: Convidar pessoas, Configurações do servidor, Criar canal, Criar categoria · Notificações (valor atual à direita), Silenciar · Sair do servidor (vermelho). Itens que a pessoa não pode usar não aparecem.
 - Categorias em caixa normal com seta (recolhe) e "+" no hover (criar canal, se puder).
-- Canal: `#` (privado: cadeado), não lido = negrito + marquinha, menções = contador, silenciado = apagado.
+- Canal: `#` (privado: cadeado), não lido = negrito + ponto azul, menções = contador, silenciado = apagado.
 - Canal de voz com quem está dentro: avatar 22 (anel verde falando), câmera, mutado/ensurdecido em vermelho, AO VIVO (clica pra assistir).
 - Dock igual ao de hoje; o subtítulo da call diz "canal · servidor".
 - **Precisa de dado:** `Channel.parentId`, `overwrites` (privado), `ReadState`, `NotifySettings`.
@@ -273,8 +288,8 @@ Cada uma tem um protótipo estático com dados de exemplo em `ui/proto`. Os nome
 ### Chat completo — `#proto/server`, `#proto/server-reply`
 - Cabeçalho: `#` + nome + tópico (some se faltar espaço) · Fixadas, Membros (ligado), Buscar.
 - **Resposta:** linha acima da mensagem com avatar 16, nome e começo do texto, ligada ao avatar por uma curva. No compositor, barra "Respondendo a Fulano" com ×.
-- **Menção:** pílula violeta (`@Fulano`, `#canal`, `@everyone`). Se me menciona, a linha inteira ganha fundo violeta fraco e barra na borda esquerda.
-- **Reações:** pílulas com emoji e número; a sua em violeta; "+" aparece no hover.
+- **Menção:** pílula azul (`@Fulano`, `#canal`, `@everyone`). Se me menciona, a linha inteira ganha fundo cinza bem fraco e uma barra azul reta na borda esquerda.
+- **Reações:** pílulas com emoji e número; a sua em azul; "+" aparece no hover.
 - **Prévia de link:** cartão com barra da cor do site, nome do site, título (link), descrição e imagem 16:9.
 - **Fixada:** alfinete pequeno ao lado da hora.
 - **Barra de ações no hover:** Reagir, Responder, Fixar, Mais.
@@ -302,7 +317,7 @@ Cada uma tem um protótipo estático com dados de exemplo em `ui/proto`. Os nome
 - **Precisa de dado:** `chat.search` (total e mensagens).
 
 ### Ctrl+K — `#proto/switcher`
-- Caixa de 580 no topo, sobre fundo escurecido. Resultados por grupo (Canais, Pessoas, Servidores) com as letras que bateram em violeta; o primeiro já vem escolhido (Enter). Dica: `@` pessoas, `#` canais.
+- Caixa de 580 no topo, sobre fundo escurecido. Resultados por grupo (Canais, Pessoas, Servidores) com as letras que bateram em azul; o primeiro já vem escolhido (Enter). Dica: `@` pessoas, `#` canais.
 - **Precisa de dado:** nada novo (canais, pessoas e servidores que o app já tem).
 
 ### Menus de contexto — `#proto/menus`
@@ -366,10 +381,10 @@ O "Nitro" do Resenha, pra todo mundo. Tudo opcional; sem nada, o perfil fica com
 
 ## Acessibilidade
 
-- Foco visível em tudo (anel violeta claro de 2 px, com folga de 2 px).
+- Foco visível em tudo (anel azul de 2 px, com folga de 2 px; campos ganham o `--focus-ring`).
 - Botão de ícone sempre com nome (`label`), que também é a dica.
 - Status com forma, não só cor. Ping com o número na dica e em texto escondido pra leitor de tela.
-- Contraste: texto principal ~15:1, secundário ~7:1, apagado ~4:1 no painel; botão principal 4,7:1.
+- Contraste: texto principal ~17:1, secundário ~8:1, apagado ~5:1; botão principal 4,6:1 (branco no azul).
 - Modais e menus prendem o foco e devolvem pra onde estava; Esc fecha só a camada de cima.
 - Animações curtas e desligadas com `prefers-reduced-motion`.
 

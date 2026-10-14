@@ -1,15 +1,15 @@
 import { fmt, i18n, m } from './i18n.svelte'
 
-// Cores das pessoas: um degradê por id, sempre o mesmo. As duplas seguem o
-// ícone do app (violeta, roxo, coral) e vão até o verde e o azul pra variar.
+// Cores das pessoas: um degradê por id, sempre o mesmo, de cores variadas. Nenhuma
+// dupla é da família do azul (o acento do app): um azulejo azul pareceria escolhido.
 const GRADIENTS: [string, string][] = [
   ['#8b7bff', '#b56dff'], // violeta
   ['#ff7a93', '#ffa070'], // coral
-  ['#48b9ff', '#6a6cff'], // oceano
+  ['#9edc66', '#36c492'], // verde
   ['#36d6ad', '#36a9dd'], // menta
   ['#ffc35a', '#ff8160'], // sol
   ['#ee78dc', '#9663ff'], // orquídea
-  ['#9edc66', '#36c492'], // lima
+  ['#e0a26b', '#c2683f'], // cobre
   ['#ff86ad', '#cf74ff'], // rosa
 ]
 

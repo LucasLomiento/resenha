@@ -353,7 +353,7 @@
     position: absolute;
     inset: 0 0 auto;
     height: 40px;
-    background: linear-gradient(180deg, transparent, rgb(122 108 255 / 0.45), transparent);
+    background: linear-gradient(180deg, transparent, rgb(var(--accent-rgb) / 0.45), transparent);
     animation: beam 1.6s var(--ease-in-out) infinite alternate;
   }
 

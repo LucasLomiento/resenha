@@ -55,7 +55,7 @@
   }
 
   button:hover {
-    background: rgb(255 255 255 / 0.02);
+    background: var(--hover);
   }
 
   .dot {
@@ -69,9 +69,8 @@
   }
 
   .on .dot {
-    box-shadow:
-      inset 0 0 0 5px var(--accent),
-      inset 0 0 0 9px #fff;
+    background: radial-gradient(circle at center, var(--fg-on-accent) 0 3.5px, var(--accent) 4px);
+    box-shadow: none;
   }
 
   .text {

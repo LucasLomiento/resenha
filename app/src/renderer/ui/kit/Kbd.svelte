@@ -23,7 +23,7 @@
     height: 22px;
     padding: 0 6px;
     border-radius: var(--r-sm);
-    background: rgb(255 255 255 / 0.06);
+    background: var(--selected);
     box-shadow:
       inset 0 0 0 1px var(--line-strong),
       inset 0 -1px 0 rgb(0 0 0 / 0.35);

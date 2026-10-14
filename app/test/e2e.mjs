@@ -392,9 +392,9 @@ function median(values) {
 async function login(side, username) {
   const { page } = side
   await page.getByLabel('Nome de usuário').waitFor({ timeout: 10_000 })
-  // Servidor sem a conta ainda abre em "criar conta": volta pro "entrar".
-  const toLogin = page.locator('.switch button', { hasText: 'Entrar' })
-  if (await toLogin.isVisible()) await toLogin.click({ force: true })
+  // Abre em "Entrar" (com convite pendente ou servidor vazio abriria em "Criar conta"): garante a aba.
+  const toLogin = page.getByRole('tab', { name: 'Entrar', exact: true })
+  if ((await toLogin.getAttribute('aria-selected')) !== 'true') await toLogin.click({ force: true })
   await page.getByLabel('Nome de usuário').fill(username)
   await page.getByLabel('Senha').fill(PASSWORD)
   await shot(side, '0-entrar')
@@ -1528,7 +1528,7 @@ try {
       leftovers.push(...(await portugueseOnScreen(`${lang} · ${name}`)))
       await shot(a, `7-${lang}-config-${name.toLowerCase().replace(/\W+/g, '-')}`)
     }
-    const closeSettings = () => a.page.locator('.settings .close button').click({ force: true })
+    const closeSettings = () => a.page.locator('.settings button.close').click({ force: true })
     await closeSettings()
     await a.page.waitForTimeout(200)
     leftovers.push(...(await portugueseOnScreen(`${lang} · servidor`)))
@@ -1573,11 +1573,11 @@ try {
   await a.page.keyboard.press('Escape')
   // Pelo Ctrl+K, de fora das configurações: uma opção escondida no "Avançado".
   await a.page.keyboard.press('Control+k')
-  await a.page.locator('.switcher input').fill('eco')
-  const settingItem = a.page.locator('.switcher .item', { hasText: 'Cancelamento de eco' })
+  await a.page.locator('.switcher input').fill('codec')
+  const settingItem = a.page.locator('.switcher .item', { hasText: 'Codec da transmissão' })
   const listed = await settingItem.waitFor({ timeout: 3000 }).then(() => true, () => false)
   if (listed) await settingItem.click({ force: true })
-  check(listed && (await flashed('voice.echo')), 'Ctrl+K acha configuração e abre direto nela (até dentro do "Avançado")')
+  check(listed && (await flashed('voice.codec')), 'Ctrl+K acha configuração e abre direto nela (até dentro do "Avançado")')
   await a.page.keyboard.press('Escape')
   // O melhor amigo do dono (B, o Pioneiro) abre a Plataforma só pra ver: os números, sem cadastro nem contas.
   await b.page.getByRole('button', { name: 'Configurações', exact: true }).click({ force: true })
@@ -1746,11 +1746,18 @@ try {
     pane.scrollTop = 400
     const scrolled = pane.scrollTop > before
     const playerAfter = document.querySelector('.music-panel .controls').getBoundingClientRect().top
+    // A busca fica fora da lista: rolando, as músicas não passam por baixo (nem por cima) dela.
+    const searchBox = document.querySelector('.music-panel .search')
+    const searchClear = !searchBox || (!pane.contains(searchBox) && searchBox.getBoundingClientRect().bottom <= pane.getBoundingClientRect().top + 1)
     pane.scrollTop = 0
-    return { inside: panel.top >= 0 && panel.bottom <= innerHeight, scrolled, playerStays: Math.abs(playerAfter - player.top) < 1 }
+    return { inside: panel.top >= 0 && panel.bottom <= innerHeight, scrolled, playerStays: Math.abs(playerAfter - player.top) < 1, searchClear }
   })
   await shot(b, '7e-spotify-muitos-resultados')
-  check(fits.inside && fits.scrolled && fits.playerStays, 'painel do Spotify com muitos resultados: cabe na tela, a lista rola e o player fica parado', JSON.stringify(fits))
+  check(
+    fits.inside && fits.scrolled && fits.playerStays && fits.searchClear,
+    'painel do Spotify com muitos resultados: cabe na tela, só a lista rola (a busca e o player ficam parados)',
+    JSON.stringify(fits),
+  )
   await panelB.getByRole('tab', { name: 'Playlists', exact: true }).click({ force: true })
   const playlistsOfA = await panelB.locator('.item', { hasText: 'Resenha de sexta' }).waitFor({ timeout: 8000 }).then(() => true, () => false)
   check(playlistsOfA, 'B vê as playlists da conta de A pelo bot')
@@ -1894,10 +1901,10 @@ try {
     .catch(() => 0)
   check(imported === 1, 'canais importados aparecem pra todo mundo do servidor, nas categorias certas')
 
-  // Mudar de sala com clique duplo (Voz e vídeo): já na call, um clique só em outro canal de voz não tira B de lá; o duplo leva.
+  // Mudar de sala com clique duplo (Aplicativo → Comportamento): já na call, um clique só em outro canal de voz não tira B de lá; o duplo leva.
   await b.page.getByRole('button', { name: 'Configurações', exact: true }).click({ force: true })
-  await b.page.getByRole('button', { name: 'Voz e vídeo', exact: true }).click({ force: true })
-  await b.page.locator('#voice-double-click').click({ force: true })
+  await b.page.getByRole('button', { name: 'Aplicativo', exact: true }).click({ force: true })
+  await b.page.locator('#app-double-click').click({ force: true })
   await b.page.keyboard.press('Escape')
   const jogatina = b.page.getByRole('button', { name: 'Jogatina: entrar na call', exact: true })
   await jogatina.click({ force: true })

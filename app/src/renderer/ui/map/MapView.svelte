@@ -503,14 +503,14 @@
               <div class="pin-head">
                 <span class="dot" style:--pin="#{selectedPin.color.toString(16).padStart(6, '0')}"></span>
                 <strong>{selectedPin.label}</strong>
+                {#if canDelete(selectedPin)}
+                  {@const pin = selectedPin}
+                  <IconButton icon="trash" label={t.delete} size="sm" tone="danger" onclick={(e) => deletePin(pin, e)} />
+                {/if}
                 <IconButton icon="x" label={m.common.close} size="sm" tip={false} onclick={() => (selected = null)} />
               </div>
               <p class="pin-meta">{guild.displayName(selectedPin.authorId)} · {formatStamp(selectedPin.createdAt)}</p>
               <div class="actions">
-                {#if canDelete(selectedPin)}
-                  {@const pin = selectedPin}
-                  <Button size="sm" variant="danger-soft" icon="trash" onclick={(e) => deletePin(pin, e)}>{t.delete}</Button>
-                {/if}
                 <Button size="sm" variant="secondary" icon="person-standing" onclick={() => streetAtPin(selectedPin)}>
                   {t.streetView}
                 </Button>
@@ -629,9 +629,10 @@
 
   h1 {
     flex: none;
-    font-size: var(--text-lg);
-    font-weight: 600;
-    letter-spacing: -0.01em;
+    font-family: var(--font-display);
+    font-size: 17px;
+    font-weight: 650;
+    letter-spacing: -0.02em;
   }
 
   .divider {
@@ -678,10 +679,10 @@
     align-items: center;
     gap: 6px;
     width: 188px;
-    height: 30px;
+    height: 32px;
     margin-right: 6px;
-    padding: 0 8px 0 10px;
-    border-radius: var(--r-md);
+    padding: 0 10px 0 12px;
+    border-radius: var(--r-full);
     background: var(--bg-input);
     box-shadow: inset 0 0 0 1px var(--line);
     color: var(--fg-3);
@@ -693,7 +694,7 @@
   .search:focus-within,
   .search.filled {
     width: 240px;
-    box-shadow: inset 0 0 0 1px var(--accent-line);
+    box-shadow: var(--focus-ring);
   }
 
   .search input {
@@ -723,15 +724,17 @@
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    height: 30px;
+    height: 32px;
     margin-left: 6px;
-    padding: 0 10px 0 12px;
-    border-radius: var(--r-md);
-    background: var(--hover);
-    box-shadow: inset 0 0 0 1px var(--line);
-    color: var(--fg-2);
+    padding: 0 12px 0 14px;
+    border-radius: var(--r-full);
+    background: var(--selected);
+    box-shadow:
+      inset 0 0 0 1px var(--line),
+      var(--highlight);
+    color: var(--fg);
     font-size: var(--text-sm);
-    font-weight: 500;
+    font-weight: 600;
     text-decoration: none;
     white-space: nowrap;
     transition:
@@ -740,14 +743,14 @@
   }
 
   .gmaps:hover {
-    background: var(--selected);
-    color: var(--fg);
+    background: var(--press);
   }
 
+  /* No tamanho do Button sm, que fica do lado. */
   .gmaps.small {
-    height: 28px;
-    margin-left: auto;
-    padding: 0 8px 0 10px;
+    height: var(--h-sm);
+    margin-left: 0;
+    padding: 0 10px 0 12px;
     font-size: var(--text-xs);
   }
 
@@ -820,7 +823,7 @@
     min-height: 0;
     width: 100%;
     border: 0;
-    background: #0f0f15;
+    background: #0e0e10;
   }
 
   .street-note {
@@ -859,7 +862,7 @@
     width: 16px;
     height: 16px;
     fill: none;
-    stroke: rgb(12 10 24 / 0.9);
+    stroke: rgb(12 12 18 / 0.9);
     stroke-width: 2.2;
     stroke-linecap: round;
     stroke-linejoin: round;
@@ -882,7 +885,7 @@
     padding: 2px 7px;
     border-radius: var(--r-full);
     background: var(--c);
-    color: rgb(12 10 24 / 0.88);
+    color: rgb(12 12 18 / 0.88);
     font-size: var(--text-xs);
     font-weight: 600;
     white-space: nowrap;
@@ -921,7 +924,7 @@
     min-width: 0;
     min-height: 0;
     overflow: hidden;
-    background: #0f0f15;
+    background: #0e0e10;
   }
 
   /* O MapLibre põe a fonte dele no mapa inteiro (marcadores, cartões, créditos): volta pra do app. */
@@ -952,7 +955,7 @@
     height: 32px;
     padding: 0 14px 0 8px;
     border-radius: var(--r-full);
-    background: rgb(26 26 34 / 0.92);
+    background: var(--glass-strong);
     box-shadow:
       0 0 0 1px var(--line-strong),
       var(--shadow-md);
@@ -1065,7 +1068,7 @@
     margin: 2px 0 0;
     padding: 6px 10px 4px;
     border-top: 1px solid var(--line);
-    color: var(--fg-4);
+    color: var(--fg-3);
     font-size: var(--text-2xs);
   }
 
@@ -1089,18 +1092,18 @@
 
   .draft input {
     height: var(--h-md);
-    padding: 0 10px;
+    padding: 0 12px;
     border: 0;
-    border-radius: var(--r-md);
+    border-radius: var(--r-lg);
     outline: none;
     background: var(--bg-input);
-    box-shadow: inset 0 0 0 1px var(--line);
+    box-shadow: inset 0 0 0 1px var(--line-strong);
     color: var(--fg);
     font-size: var(--text-sm);
   }
 
   .draft input:focus {
-    box-shadow: inset 0 0 0 1px var(--accent-line);
+    box-shadow: var(--focus-ring);
   }
 
   .swatches {
@@ -1136,7 +1139,7 @@
   }
 
   .pin-card {
-    width: 252px;
+    width: 280px;
     gap: 6px;
   }
 
@@ -1162,6 +1165,7 @@
   }
 
   .pin-card .actions {
+    flex-wrap: wrap;
     justify-content: flex-start;
   }
 
@@ -1192,7 +1196,7 @@
     gap: 2px;
     padding: 3px;
     border-radius: var(--r-lg);
-    background: rgb(26 26 34 / 0.88);
+    background: var(--glass-strong);
     box-shadow:
       0 0 0 1px var(--line-strong),
       var(--shadow-md);
@@ -1334,7 +1338,7 @@
   }
 
   .canvas :global(.map-pin-dot) {
-    fill: rgb(15 15 21 / 0.82);
+    fill: rgb(16 16 19 / 0.82);
   }
 
   .canvas :global(.map-pin:hover svg),
@@ -1350,7 +1354,7 @@
     overflow: hidden;
     padding: 3px 8px;
     border-radius: var(--r-sm);
-    background: rgb(19 19 25 / 0.9);
+    background: var(--glass-strong);
     box-shadow: 0 0 0 1px var(--line-strong);
     color: var(--fg);
     font-size: var(--text-xs);
@@ -1396,7 +1400,7 @@
     border-radius: var(--r-full);
     background: var(--c);
     box-shadow: 0 1px 3px rgb(0 0 0 / 0.35);
-    color: rgb(12 10 24 / 0.88);
+    color: rgb(12 12 18 / 0.88);
     font-size: var(--text-xs);
     font-weight: 600;
     white-space: nowrap;
@@ -1424,7 +1428,7 @@
 
   /* Créditos do mapa no tom do app (continuam visíveis: a licença pede). */
   .canvas :global(.maplibregl-ctrl-attrib) {
-    background: rgb(19 19 25 / 0.82);
+    background: var(--glass);
     color: var(--fg-3);
     font-size: var(--text-2xs);
   }

@@ -224,7 +224,7 @@
         {/if}
         <button class="item" class:on={i === index} role="option" aria-selected={i === index} onmouseenter={() => (index = i)} onclick={() => pick(item)}>
           {#if item.avatar}
-            <Avatar id={item.avatar.id} name={item.avatar.name} size={24} src={item.avatar.src} square={item.avatar.square} status={item.avatar.status ?? null} cutout={i === index ? '#25252f' : 'var(--bg-raised)'} />
+            <Avatar id={item.avatar.id} name={item.avatar.name} size={24} src={item.avatar.src} square={item.avatar.square} status={item.avatar.status ?? null} cutout={i === index ? 'var(--bg-overlay)' : 'var(--bg-raised)'} />
           {:else if item.icon}
             <span class="lead"><Icon name={item.icon} size={18} /></span>
           {/if}
@@ -255,7 +255,7 @@
     display: flex;
     justify-content: center;
     padding-top: 14vh;
-    background: rgb(4 4 8 / 0.66);
+    background: var(--scrim);
     backdrop-filter: blur(3px);
     animation: rs-fade-in var(--t) var(--ease);
   }
@@ -329,7 +329,7 @@
   }
 
   .item.on {
-    background: #25252f;
+    background: var(--bg-overlay);
     color: var(--fg);
   }
 

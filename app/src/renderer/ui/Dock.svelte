@@ -285,12 +285,12 @@
   .dock {
     flex: none;
     margin: 0 8px 8px;
-    border-radius: var(--r-xl);
-    background: var(--bg-raised);
+    border-radius: var(--r-panel);
+    background: linear-gradient(180deg, rgb(var(--tint-rgb) / 0.025), transparent 60%), var(--bg-raised);
     box-shadow:
       0 0 0 1px var(--line),
       var(--highlight),
-      var(--shadow-sm);
+      0 18px 50px -24px rgb(0 0 0 / 0.8);
     overflow: hidden;
   }
 
@@ -378,8 +378,9 @@
     justify-content: center;
     gap: 7px;
     height: 32px;
-    border-radius: var(--r-md);
-    background: rgb(255 255 255 / 0.055);
+    border-radius: var(--r-full);
+    background: var(--hover);
+    box-shadow: inset 0 0 0 1px var(--line);
     color: var(--fg-2);
     font-size: var(--text-sm);
     font-weight: 500;
@@ -389,7 +390,7 @@
   }
 
   .action:hover:not(:disabled) {
-    background: rgb(255 255 255 / 0.09);
+    background: var(--selected);
     color: var(--fg);
   }
 
@@ -398,22 +399,24 @@
   }
 
   .action.on {
-    background: var(--accent-soft);
+    background: var(--selected);
+    box-shadow: inset 0 0 0 1px var(--accent-line);
     color: var(--accent-fg);
   }
 
   .action.on:hover:not(:disabled) {
-    background: rgb(122 108 255 / 0.22);
+    background: var(--press);
   }
 
   .action.sharing {
     background: var(--red-soft);
+    box-shadow: inset 0 0 0 1px rgb(255 90 107 / 0.35);
     color: var(--red);
     font-weight: 600;
   }
 
   .action.sharing:hover:not(:disabled) {
-    background: rgb(255 92 114 / 0.22);
+    background: rgb(255 90 107 / 0.22);
   }
 
   /* ---------- Você ---------- */
@@ -422,7 +425,7 @@
   .split {
     display: flex;
     align-items: center;
-    border-radius: var(--r-md);
+    border-radius: var(--r-full);
   }
 
   .split:hover {

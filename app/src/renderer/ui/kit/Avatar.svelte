@@ -99,7 +99,7 @@
   }
 
   .face {
-    color: rgb(12 10 24 / 0.78);
+    color: rgb(12 12 18 / 0.78);
     font-weight: 650;
     letter-spacing: -0.02em;
     line-height: 1;

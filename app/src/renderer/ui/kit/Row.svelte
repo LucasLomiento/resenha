@@ -78,6 +78,7 @@
 
   .text p {
     margin-top: 2px;
+    text-wrap: pretty;
     color: var(--fg-3);
     font-size: var(--text-sm);
   }
@@ -119,9 +120,12 @@
     padding-left: 40px;
   }
 
-  .disabled .text,
+  /* Só o texto apaga: os controles do kit já têm o próprio desligado (apagar os dois dobrava). */
+  .disabled .text {
+    opacity: 0.45;
+  }
+
   .disabled .control {
-    opacity: 0.4;
     pointer-events: none;
   }
 </style>

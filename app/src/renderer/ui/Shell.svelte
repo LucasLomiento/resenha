@@ -242,8 +242,9 @@
     grid-template-areas:
       'rail sidebar panel'
       'dock dock panel';
+    /* Uma luz azul bem fraca no alto à esquerda. */
     background:
-      radial-gradient(520px 360px at 0% 0%, rgb(111 125 255 / 0.07), transparent 70%),
+      radial-gradient(640px 420px at -4% -6%, rgb(var(--accent-rgb) / 0.05), transparent 70%),
       var(--bg-canvas);
   }
 
@@ -315,11 +316,12 @@
     min-width: 0;
     min-height: 0;
     margin: 8px 8px 8px 0;
-    border-radius: var(--r-xl);
+    border-radius: var(--r-panel);
     background: var(--bg-panel);
     box-shadow:
       0 0 0 1px var(--line),
-      var(--shadow-sm);
+      var(--highlight),
+      0 18px 50px -24px rgb(0 0 0 / 0.8);
     overflow: hidden;
     container-type: inline-size;
     container-name: panel;
@@ -335,7 +337,7 @@
 
   .offline {
     position: absolute;
-    top: 64px;
+    top: calc(var(--header-h) + 12px);
     left: 50%;
     z-index: 20;
     display: flex;
@@ -343,11 +345,12 @@
     gap: var(--s-2);
     padding: 7px 14px 7px 12px;
     border-radius: var(--r-full);
-    background: rgb(36 30 14 / 0.95);
+    background: var(--glass-strong);
+    backdrop-filter: blur(12px);
     box-shadow:
-      0 0 0 1px rgb(251 191 36 / 0.3),
+      0 0 0 1px rgb(255 196 77 / 0.3),
       var(--shadow-md);
-    color: #fde3a1;
+    color: var(--yellow);
     font-size: var(--text-sm);
     font-weight: 500;
     translate: -50% 0;

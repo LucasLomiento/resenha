@@ -49,6 +49,22 @@
   <Row label={t.language.label} description={t.language.description}>
     <Select label={t.language.label} options={languages} bind:value={settings.language} />
   </Row>
+  {#if desktop}
+    <Row label={t.window.zoom} setting="app.zoom">
+      <div class="zoom">
+        <IconButton icon="minus" label={t.window.zoomOut} shortcut="Ctrl −" size="sm" onclick={() => zoom(-0.1)} />
+        <span class="tabular">{Math.round(desktop.zoom * 100)}%</span>
+        <IconButton icon="plus" label={t.window.zoomIn} shortcut="Ctrl +" size="sm" onclick={() => zoom(0.1)} />
+        <Button size="sm" variant="ghost" disabled={desktop.zoom === 1} onclick={() => client.setDesktop({ zoom: 1 })}>{t.window.zoomReset}</Button>
+      </div>
+    </Row>
+  {/if}
+</Section>
+
+<Section title={t.behavior.section}>
+  <Row label={t.behavior.doubleClick} for="app-double-click" setting="app.doubleClick" description={t.behavior.doubleClickDescription}>
+    <Switch id="app-double-click" bind:checked={settings.voiceDoubleClick} />
+  </Row>
 </Section>
 
 {#if desktop}
@@ -77,14 +93,6 @@
         disabled={!desktop.tray}
         onchange={(e) => client.setDesktop({ closeToTray: e.currentTarget.checked })}
       />
-    </Row>
-    <Row label={t.window.zoom} setting="app.zoom">
-      <div class="zoom">
-        <IconButton icon="minus" label={t.window.zoomOut} shortcut="Ctrl −" size="sm" onclick={() => zoom(-0.1)} />
-        <span class="tabular">{Math.round(desktop.zoom * 100)}%</span>
-        <IconButton icon="plus" label={t.window.zoomIn} shortcut="Ctrl +" size="sm" onclick={() => zoom(0.1)} />
-        <Button size="sm" variant="ghost" disabled={desktop.zoom === 1} onclick={() => client.setDesktop({ zoom: 1 })}>{t.window.zoomReset}</Button>
-      </div>
     </Row>
   </Section>
 {/if}

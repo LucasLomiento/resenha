@@ -48,7 +48,7 @@ type ThemeId = keyof typeof m.lib.profile.themes
 /** Temas prontos: [principal, destaque]. O nome sai do catálogo na hora de mostrar. */
 export const THEME_PRESETS: { id: ThemeId; readonly name: string; colors: [number, number] }[] = (
   [
-    ['resenha', [0x6a5cf6, 0xff7ab6]],
+    ['resenha', [0x2b6cf5, 0x22c3ee]],
     ['sunset', [0xff7a59, 0x8f3fd1]],
     ['ocean', [0x2e8bff, 0x2ad4b0]],
     ['forest', [0x2f9e62, 0xc8e05a]],
@@ -116,7 +116,7 @@ export function bannerFill(user: Styled): string {
   if (theme?.length === 2) return `linear-gradient(135deg, ${hex(theme[0])}, ${hex(theme[1])})`
   if (user.accent === null) return userGradient(user.id)
   const color = hex(user.accent)
-  return `linear-gradient(135deg, ${color}, color-mix(in srgb, ${color} 45%, #0b0b10))`
+  return `linear-gradient(135deg, ${color}, color-mix(in srgb, ${color} 45%, #09090b))`
 }
 
 /** Tema do cartão de perfil (variáveis pro fundo em degradê), ou null sem tema. */

@@ -360,10 +360,10 @@
     height: 32px;
     padding: 0 6px 0 6px;
     border-radius: var(--r-full);
-    background: rgb(10 10 14 / 0.62);
+    background: var(--glass);
     backdrop-filter: blur(12px);
     box-shadow: 0 0 0 1px rgb(255 255 255 / 0.08);
-    color: #f4f4f8;
+    color: var(--glass-fg);
     font-size: var(--text-sm);
     font-weight: 600;
     pointer-events: none;
@@ -387,7 +387,7 @@
     gap: 2px;
     padding: 4px;
     border-radius: var(--r-xl);
-    background: rgb(12 12 17 / 0.72);
+    background: var(--glass);
     backdrop-filter: blur(16px);
     box-shadow:
       0 0 0 1px rgb(255 255 255 / 0.09),
@@ -459,12 +459,12 @@
     gap: 10px;
     padding: 4px 4px 4px 14px;
     border-radius: var(--r-full);
-    background: rgb(12 12 17 / 0.78);
+    background: var(--glass-strong);
     backdrop-filter: blur(16px);
     box-shadow:
       0 0 0 1px rgb(255 255 255 / 0.09),
       var(--shadow-md);
-    color: #f4f4f8;
+    color: var(--glass-fg);
     font-size: var(--text-sm);
     font-weight: 600;
     white-space: nowrap;
@@ -496,13 +496,13 @@
     height: 26px;
     padding: 0 10px;
     border-radius: var(--r-full);
-    color: #b8b8c4;
+    color: #bdbdc6;
     font-size: var(--text-xs);
     font-weight: 600;
   }
 
   .ink-tools button:hover {
-    color: #f4f4f8;
+    color: var(--glass-fg);
   }
 
   .ink-tools button.on {
@@ -516,10 +516,10 @@
     top: 56px;
     padding: 10px 12px;
     border-radius: var(--r-lg);
-    background: rgb(10 10 14 / 0.72);
+    background: var(--glass);
     backdrop-filter: blur(12px);
     box-shadow: 0 0 0 1px rgb(255 255 255 / 0.08);
-    color: #c9f7e2;
+    color: #c8dcff;
     font: 12px/1.65 var(--mono);
     pointer-events: none;
   }

@@ -40,7 +40,7 @@
   const page = $derived<GuildSettingsPage>(pages.some((p) => p.id === target?.page) ? target!.page : 'overview')
 
   const nav = $derived<SettingsNavEntry[]>([
-    { heading: guild?.info.name ?? '' },
+    { heading: guild?.info.name ?? '', name: true },
     ...pages.map((p) => ({ id: p.id, label: m.server.settings.pages[p.id], icon: p.icon })),
   ])
 

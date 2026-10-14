@@ -1,10 +1,9 @@
 <script lang="ts">
-  import logo from '../../../../build/icon.svg?url'
   import { client } from '../../lib/client.svelte'
   import type { GuildState } from '../../lib/guild.svelte'
   import { m } from '../../lib/i18n.svelte'
   import { confirmAction, ui } from '../../lib/ui.svelte'
-  import { Avatar, Icon, Menu, Spinner, tooltip, type MenuItem } from '../kit'
+  import { Avatar, Icon, Mascot, Menu, Spinner, tooltip, type MenuItem } from '../kit'
 
   const route = $derived(client.route)
   const atHome = $derived(route.kind !== 'guild')
@@ -71,7 +70,7 @@
   <div class="slot" class:active={atHome}>
     <span class="indicator"></span>
     <button class="home" aria-label={t.home} use:tooltip={{ text: t.home, placement: 'right' }} onclick={() => client.openHome()}>
-      <img src={logo} alt="" width="44" height="44" draggable="false" />
+      <Mascot size={42} float={false} />
     </button>
     {#if homeBadge && !atHome}<span class="mentions">{homeBadge > 99 ? '99+' : homeBadge}</span>{/if}
   </div>
@@ -155,9 +154,9 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 8px;
+    gap: 10px;
     min-height: 0;
-    padding: 12px 0;
+    padding: 14px 0 12px;
     overflow-y: auto;
     scrollbar-width: none;
   }
@@ -174,29 +173,27 @@
     margin-top: auto;
   }
 
-  /* Marquinha na borda: 8 px = novidade, 20 px = hover, 36 px = aberto. */
+  /*
+   * Novidade: um ponto azul no canto de cima do azulejo (recortado do fundo). O aberto
+   * ganha um anel azul em volta; o resto fica um pouco apagado até o mouse passar.
+   */
   .indicator {
     position: absolute;
-    left: 0;
-    top: 50%;
-    width: 4px;
-    height: 0;
-    border-radius: 0 4px 4px 0;
-    background: var(--fg);
-    translate: 0 -50%;
-    transition: height var(--t) var(--ease);
+    top: -2px;
+    right: 11px;
+    z-index: 1;
+    width: 10px;
+    height: 10px;
+    border-radius: var(--r-full);
+    background: var(--accent);
+    box-shadow: 0 0 0 3px var(--bg-canvas);
+    scale: 0;
+    transition: scale var(--t) var(--ease);
+    pointer-events: none;
   }
 
-  .slot.unread .indicator {
-    height: 8px;
-  }
-
-  .slot:hover .indicator {
-    height: 20px;
-  }
-
-  .slot.active .indicator {
-    height: 36px;
+  .slot.unread:not(.active) .indicator {
+    scale: 1;
   }
 
   button {
@@ -205,41 +202,49 @@
     width: 44px;
     height: 44px;
     border-radius: 14px;
+    /* O anel é um contorno afastado 2 px: o vão fica transparente de verdade (o fundo tem luz). */
+    outline: 2px solid transparent;
+    outline-offset: 2px;
     transition:
-      border-radius var(--t) var(--ease),
+      outline-color var(--t) var(--ease),
       transform var(--t-fast) var(--ease),
-      background-color var(--t) var(--ease);
+      background-color var(--t) var(--ease),
+      color var(--t) var(--ease);
+  }
+
+  .slot:hover button {
+    outline-color: var(--line-strong);
+  }
+
+  .slot.active button {
+    outline-color: var(--accent);
+  }
+
+  button:focus-visible {
+    outline-color: var(--accent-fg);
   }
 
   button:active {
-    transform: translateY(1px);
+    transform: scale(0.96);
   }
 
-  .home img {
-    width: 44px;
-    height: 44px;
-    border-radius: 14px;
+  /* O início é o mascote solto (sem o quadrado do ícone); ri com o mouse em cima. */
+  .home :global(.mascot) {
+    filter: drop-shadow(0 6px 14px rgb(var(--accent-rgb) / 0.28));
   }
 
   .guild :global(.avatar),
   .guild :global(.face),
   .guild :global(img) {
-    border-radius: 16px !important;
-    transition: border-radius var(--t) var(--ease);
+    border-radius: 14px !important;
   }
 
-  .slot:hover .guild :global(.face),
-  .slot:hover .guild :global(img),
-  .slot.active .guild :global(.face),
-  .slot.active .guild :global(img) {
-    border-radius: 13px !important;
+  .slot:not(.active) :is(.guild, .home) {
+    filter: saturate(0.85) brightness(0.88);
+    transition: filter var(--t) var(--ease);
   }
 
-  .slot:not(.active) .guild {
-    filter: saturate(0.8) brightness(0.92);
-  }
-
-  .slot:hover .guild {
+  .slot:hover :is(.guild, .home) {
     filter: none;
   }
 
@@ -249,49 +254,50 @@
 
   .sep {
     flex: none;
-    width: 28px;
-    height: 2px;
+    width: 24px;
+    height: 1px;
     margin: 2px 0;
-    border-radius: 1px;
     background: var(--line-strong);
   }
 
-  .add,
-  .update {
-    background: rgb(255 255 255 / 0.05);
-    box-shadow: inset 0 0 0 1px var(--line);
-    color: var(--green);
+  .add {
+    color: var(--fg-2);
+    background: transparent;
+    border: 1.5px dashed var(--line-strong);
   }
 
-  .add:hover {
-    background: var(--green);
-    color: #062419;
+  .slot:hover .add {
+    background: var(--accent);
+    border-color: transparent;
+    color: var(--fg-on-accent);
   }
 
   .update {
+    background: var(--accent-soft);
     color: var(--accent-fg);
   }
 
-  .update:hover:not(:disabled) {
+  .slot:hover .update:not(:disabled) {
     background: var(--accent);
-    color: #fff;
+    color: var(--fg-on-accent);
   }
 
   .mentions {
     position: absolute;
-    right: 10px;
-    bottom: -2px;
+    right: 8px;
+    bottom: -4px;
     min-width: 18px;
     height: 18px;
     padding: 0 5px;
     border-radius: var(--r-full);
-    background: var(--red);
+    background: var(--red-fill);
     box-shadow: 0 0 0 3px var(--bg-canvas);
     color: #fff;
     font-size: 11px;
     font-weight: 700;
     line-height: 18px;
     text-align: center;
+    font-variant-numeric: tabular-nums;
     pointer-events: none;
   }
 </style>

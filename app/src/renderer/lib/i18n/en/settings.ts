@@ -95,12 +95,12 @@ export default {
       },
       'voice.noise': {
         label: 'Noise suppression',
-        section: 'Audio',
+        section: 'Voice processing',
         keywords: ['noise', 'background noise', 'hiss', 'noise reduction', 'rnnoise', 'krisp'],
       },
       'voice.gate': {
         label: 'Only transmit when I talk',
-        section: 'Audio',
+        section: 'Voice processing',
         keywords: ['voice activity', 'voice detection', 'sensitivity', 'threshold', 'gate', 'noise gate', 'silence'],
       },
       'voice.camera': { label: 'Camera', section: 'Camera', keywords: ['webcam', 'video', 'video device', 'cam'] },
@@ -110,16 +110,15 @@ export default {
         section: 'Streaming',
         keywords: ['draw', 'doodle', 'scribble', 'annotate', 'pen', 'laser', 'slack', 'allow', 'block drawing', 'screen'],
       },
-      'voice.echo': { label: 'Echo cancellation', section: 'Advanced', keywords: ['echo', 'speakers', 'feedback'] },
-      'voice.agc': { label: 'Automatic gain control', section: 'Advanced', keywords: ['agc', 'auto volume', 'gain'] },
+      'voice.echo': { label: 'Echo cancellation', section: 'Voice processing', keywords: ['echo', 'speakers', 'feedback'] },
+      'voice.agc': { label: 'Automatic gain control', section: 'Voice processing', keywords: ['agc', 'auto volume', 'gain'] },
       'voice.codec': {
         label: 'Stream codec',
         section: 'Advanced',
         keywords: ['vp9', 'vp8', 'h264', 'av1', 'quality', 'screen', 'stream', 'cpu', 'screen share'],
       },
       'voice.stats': { label: 'Stats in the player', section: 'Advanced', keywords: ['fps', 'ping', 'resolution', 'bitrate', 'statistics', 'lag'] },
-      'voice.doubleClick': { label: 'Switch rooms with a double click', section: 'Call', keywords: ['double click', 'double-click', 'switch room', 'change channel', 'accidental', 'join call'] },
-      'voice.smartRoute': { label: 'Best path for direct connections', section: 'Call', keywords: ['route', 'ping', 'lag', 'latency', 'delay', 'ipv4', 'ipv6', 'p2p', 'direct connection', 'path'] },
+      'voice.smartRoute': { label: 'Best path for direct connections', section: 'Connection', keywords: ['route', 'ping', 'lag', 'latency', 'delay', 'ipv4', 'ipv6', 'p2p', 'direct connection', 'path'] },
 
       // Notifications
       'notify.sounds': { label: 'App sounds', section: 'Sounds', keywords: ['sound', 'sound effects', 'mute', 'silence', 'audio'] },
@@ -144,7 +143,7 @@ export default {
       // App
       'app.language': {
         label: 'Resenha language',
-        section: 'Language',
+        section: 'Language and appearance',
         keywords: ['language', 'idioma', 'lengua', 'translation', 'english', 'portuguese', 'spanish', 'português', 'español', 'locale'],
       },
       'app.autostart': {
@@ -155,9 +154,10 @@ export default {
       'app.hidden': { label: 'Start minimized', section: 'When the computer starts', keywords: ['minimized', 'background', 'hidden', 'tray'] },
       'app.tray': { label: 'Tray icon', section: 'Window', keywords: ['tray', 'system tray', 'taskbar', 'icon'] },
       'app.close': { label: 'Closing only hides the window', section: 'Window', keywords: ['minimize on close', 'minimize to tray', 'background', 'close', 'x'] },
+      'app.doubleClick': { label: 'Switch rooms with a double click', section: 'Behavior', keywords: ['double click', 'double-click', 'switch room', 'change channel', 'accidental', 'join call'] },
       'app.zoom': {
         label: 'Interface size',
-        section: 'Window',
+        section: 'Language and appearance',
         keywords: ['zoom', 'scale', 'text size', 'font size', 'bigger', 'smaller', 'ctrl +'],
       },
       'app.update': {
@@ -352,6 +352,9 @@ export default {
       auto: 'Automatic',
       manual: 'Manual',
     },
+    processing: {
+      section: 'Voice processing',
+    },
     camera: {
       section: 'Camera',
       device: 'Device',
@@ -361,9 +364,7 @@ export default {
       close: 'Close preview',
     },
     call: {
-      section: 'Call',
-      doubleClick: 'Switch rooms with a double click',
-      doubleClickDescription: 'When you are already in a call, a single click on another voice channel won’t pull you out of the conversation.',
+      section: 'Connection',
       smartRoute: 'Best path for direct connections',
       smartRouteDescription: 'If IPv4 or IPv6 has a much lower ping with someone, the call switches to it on its own. Rooms through Cloudflare don’t change.',
     },
@@ -480,10 +481,15 @@ export default {
   app: {
     title: 'App',
     language: {
-      section: 'Language',
+      section: 'Language and appearance',
       label: 'Resenha language',
       auto: (name: string) => `Automatic (${name})`,
       description: 'Automatic follows your system language.',
+    },
+    behavior: {
+      section: 'Behavior',
+      doubleClick: 'Switch rooms with a double click',
+      doubleClickDescription: 'When you are already in a call, a single click on another voice channel won’t pull you out of the conversation.',
     },
     startup: {
       section: 'When the computer starts',

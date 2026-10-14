@@ -127,9 +127,10 @@
   }
 
   h1 {
-    font-size: var(--text-lg);
-    font-weight: 600;
-    letter-spacing: -0.01em;
+    font-family: var(--font-display);
+    font-size: 17px;
+    font-weight: 650;
+    letter-spacing: -0.02em;
   }
 
   .count {
@@ -160,11 +161,11 @@
   .tile {
     position: relative;
     aspect-ratio: 16 / 9;
-    border-radius: var(--r-xl);
+    border-radius: 20px;
     overflow: hidden;
     background:
       radial-gradient(120% 90% at 50% 40%, color-mix(in srgb, var(--tint) 16%, transparent), transparent 70%),
-      #17171e;
+      #161619;
     box-shadow:
       0 0 0 1px var(--line),
       var(--highlight);
@@ -174,7 +175,7 @@
   .tile.speaking {
     box-shadow:
       0 0 0 2px var(--green),
-      0 0 24px -4px rgb(52 211 153 / 0.45);
+      0 0 18px -6px rgb(var(--accent-rgb) / 0.3);
   }
 
   .face {
@@ -192,12 +193,12 @@
     align-items: center;
     gap: 6px;
     max-width: calc(100% - 20px);
-    height: 26px;
-    padding: 0 10px;
-    border-radius: var(--r-md);
-    background: rgb(8 8 12 / 0.6);
+    height: 28px;
+    padding: 0 12px;
+    border-radius: var(--r-full);
+    background: var(--glass);
     backdrop-filter: blur(8px);
-    color: #f2f2f6;
+    color: var(--glass-fg);
     font-size: var(--text-sm);
     font-weight: 550;
   }
@@ -213,7 +214,7 @@
   }
 
   .you {
-    color: rgb(242 242 246 / 0.55);
+    color: rgb(244 244 246 / 0.55);
     font-weight: 450;
   }
 
@@ -221,7 +222,7 @@
   .tile.music {
     display: block;
     width: 100%;
-    background: #101014;
+    background: #0e0e10;
     cursor: pointer;
   }
 
@@ -265,7 +266,7 @@
   }
 
   .song {
-    color: rgb(242 242 246 / 0.6);
+    color: rgb(244 244 246 / 0.6);
     font-weight: 450;
   }
 

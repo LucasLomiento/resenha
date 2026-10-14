@@ -132,7 +132,7 @@
     padding: 6px 10px;
     overflow: hidden;
     border-radius: 12px 12px 12px 4px;
-    background: rgb(255 255 255 / 0.06);
+    background: var(--selected);
     color: var(--fg);
     font-size: var(--text-sm);
     text-overflow: ellipsis;
@@ -182,7 +182,7 @@
     padding: 0 10px;
     border-radius: var(--r-md);
     background: var(--accent);
-    color: #fff;
+    color: var(--fg-on-accent);
     font-size: var(--text-sm);
     font-weight: 600;
   }

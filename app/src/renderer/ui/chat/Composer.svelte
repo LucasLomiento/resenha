@@ -565,7 +565,7 @@
             {/each}
           </div>
         {/if}
-        <IconButton icon="send" label={t.sendEnter} disabled={!!voiceBusy} onclick={() => void sendVoice()} />
+        <IconButton class="send-voice" icon="send" label={t.sendEnter} disabled={!!voiceBusy} onclick={() => void sendVoice()} />
       </div>
     {:else}
     <div class="input-row">
@@ -636,19 +636,22 @@
     padding: 0 16px;
   }
 
+  /* Cartão flutuando no pé do chat: o fio clareia ao escrever. */
   .box {
     border-radius: var(--r-xl);
     background: var(--bg-raised);
     box-shadow:
       0 0 0 1px var(--line),
-      var(--highlight);
+      var(--highlight),
+      0 10px 30px -18px rgb(0 0 0 / 0.9);
     transition: box-shadow var(--t) var(--ease);
   }
 
   .box:focus-within {
     box-shadow:
       0 0 0 1px var(--line-strong),
-      var(--highlight);
+      var(--highlight),
+      0 10px 30px -18px rgb(0 0 0 / 0.9);
   }
 
   .box.disabled {
@@ -690,12 +693,12 @@
     width: 24px;
     height: 24px;
     border-radius: 50%;
-    background: rgb(255 255 255 / 0.08);
+    background: var(--selected);
     color: var(--fg-2);
   }
 
   .reply-close:hover {
-    background: rgb(255 255 255 / 0.14);
+    background: var(--press);
     color: var(--fg);
   }
 
@@ -711,6 +714,17 @@
   .voice-row {
     align-items: center;
     gap: 8px;
+  }
+
+  /* Enviar a gravação: o círculo azul, como o play da mensagem de voz. */
+  .voice-row :global(.send-voice:not(:disabled)) {
+    background: var(--accent);
+    color: var(--fg-on-accent);
+  }
+
+  .voice-row :global(.send-voice:not(:disabled):hover) {
+    background: var(--accent-hover);
+    color: var(--fg-on-accent);
   }
 
   .rec-dot {
@@ -832,7 +846,7 @@
   }
 
   .option.on {
-    background: #25252f;
+    background: var(--bg-overlay);
   }
 
   .option-name {
@@ -925,14 +939,14 @@
     inset: 0;
     display: grid;
     place-items: center;
-    background: rgb(11 11 16 / 0.55);
-    color: #fff;
+    background: var(--glass);
+    color: var(--glass-fg);
     font-size: var(--text-xs);
     font-weight: 600;
   }
 
   .upload.error .thumb {
-    box-shadow: inset 0 0 0 1px rgb(255 92 114 / 0.6);
+    box-shadow: inset 0 0 0 1px rgb(255 90 107 / 0.6);
   }
 
   .upload-name {
@@ -956,7 +970,7 @@
     height: 3px;
     margin-top: 4px;
     border-radius: 2px;
-    background: rgb(255 255 255 / 0.08);
+    background: rgb(var(--tint-rgb) / 0.08);
     overflow: hidden;
   }
 
@@ -975,8 +989,8 @@
     width: 22px;
     height: 22px;
     border-radius: 50%;
-    background: rgb(11 11 16 / 0.75);
-    color: #fff;
+    background: var(--glass-strong);
+    color: var(--glass-fg);
     opacity: 0;
     transition: opacity var(--t-fast) var(--ease);
   }

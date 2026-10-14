@@ -207,8 +207,8 @@
     align-items: center;
     gap: 8px;
     height: 34px;
-    padding: 0 10px;
-    border-radius: var(--r-md);
+    padding: 0 10px 0 12px;
+    border-radius: var(--r-full);
     background: var(--bg-input);
     box-shadow: inset 0 0 0 1px var(--line-strong);
     color: var(--fg-3);
@@ -217,9 +217,7 @@
   }
 
   .search:focus-within {
-    box-shadow:
-      inset 0 0 0 1px var(--accent-line),
-      0 0 0 3px rgb(122 108 255 / 0.18);
+    box-shadow: var(--focus-ring);
   }
 
   .search input {

@@ -360,10 +360,12 @@
 {/if}
 
 <style>
+  /* Recuada 8 px dos dois lados, com cantos: o hover vira um cartão, não uma faixa de ponta a ponta. */
   article {
     position: relative;
-    margin-top: 14px;
-    padding: 3px 20px;
+    margin: 14px 8px 0;
+    padding: 4px 12px;
+    border-radius: 12px;
     transition: background-color var(--t-fast) var(--ease);
   }
 
@@ -375,17 +377,28 @@
 
   article:hover,
   article.editing {
-    background: rgb(255 255 255 / 0.022);
+    background: rgb(var(--tint-rgb) / 0.028);
   }
 
   /* Me mencionaram: a linha ganha a cor do acento e uma barra na borda. */
+  /* Fundo neutro e uma barra reta azul na borda (com o canto arredondado, a sombra entortava). */
   article.mentioned {
-    background: rgb(122 108 255 / 0.075);
-    box-shadow: inset 2px 0 0 var(--accent-fg);
+    background: rgb(var(--tint-rgb) / 0.035);
   }
 
   article.mentioned:hover {
-    background: rgb(122 108 255 / 0.1);
+    background: rgb(var(--tint-rgb) / 0.055);
+  }
+
+  article.mentioned::before {
+    content: '';
+    position: absolute;
+    top: 6px;
+    bottom: 6px;
+    left: 0;
+    width: 3px;
+    border-radius: 0 3px 3px 0;
+    background: var(--accent);
   }
 
   /* Pulou pra ela: pisca o fundo uma vez. */
@@ -396,7 +409,7 @@
   @keyframes flash {
     0%,
     40% {
-      background: rgb(251 191 36 / 0.14);
+      background: var(--yellow-soft);
     }
     100% {
       background: transparent;
@@ -725,8 +738,8 @@
     gap: 6px;
     height: 26px;
     padding: 0 8px;
-    border-radius: var(--r-md);
-    background: rgb(255 255 255 / 0.05);
+    border-radius: var(--r-full);
+    background: var(--hover);
     box-shadow: inset 0 0 0 1px var(--line);
     color: var(--fg-2);
     font-size: var(--text-sm);
@@ -735,7 +748,7 @@
   }
 
   .reaction:hover:not(:disabled) {
-    background: rgb(255 255 255 / 0.09);
+    background: var(--selected);
   }
 
   .reaction.me {

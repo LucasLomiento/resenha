@@ -100,10 +100,10 @@
     align-items: center;
     gap: 8px;
     width: 100%;
-    height: 34px;
-    padding: 0 6px 0 10px;
-    border-radius: var(--r-lg);
-    background: rgb(255 255 255 / 0.045);
+    height: 36px;
+    padding: 0 8px 0 12px;
+    border-radius: var(--r-full);
+    background: var(--hover);
     box-shadow: inset 0 0 0 1px var(--line);
     color: var(--fg-3);
     font-size: var(--text-sm);
@@ -112,11 +112,15 @@
 
   .search span {
     flex: 1;
+    min-width: 0;
+    overflow: hidden;
     text-align: left;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .search:hover {
-    background: rgb(255 255 255 / 0.07);
+    background: var(--selected);
   }
 
   nav {
@@ -135,7 +139,7 @@
     padding: 16px 2px 4px 10px;
     color: var(--fg-3);
     font-size: var(--text-xs);
-    font-weight: 500;
+    font-weight: 600;
   }
 
   .dm-row {
@@ -148,23 +152,24 @@
     align-items: center;
     gap: 10px;
     width: 100%;
-    height: 44px;
+    height: 46px;
     padding: 0 8px;
-    border-radius: var(--r-md);
+    border-radius: 12px;
     color: var(--fg-3);
     text-align: left;
     transition: background-color var(--t-fast) var(--ease);
   }
 
   .dm:hover {
-    --row-bg: color-mix(in srgb, var(--bg-canvas) 95.5%, white);
+    --row-bg: color-mix(in srgb, var(--bg-canvas) 95.5%, rgb(var(--tint-rgb)));
     background: var(--hover);
     color: var(--fg-2);
   }
 
   .dm.active {
-    --row-bg: color-mix(in srgb, var(--bg-canvas) 92.5%, white);
+    --row-bg: color-mix(in srgb, var(--bg-canvas) 92%, rgb(var(--tint-rgb)));
     background: var(--selected);
+    box-shadow: var(--highlight);
     color: var(--fg);
   }
 

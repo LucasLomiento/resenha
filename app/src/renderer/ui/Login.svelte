@@ -1,11 +1,11 @@
 <script lang="ts">
   import { onMount } from 'svelte'
   import type { InvitePreview } from '../../../../shared/protocol'
-  import logo from '../../../build/icon.svg?url'
   import { Api } from '../lib/api'
   import { client, DEFAULT_SERVER, inviteCode } from '../lib/client.svelte'
   import { m } from '../lib/i18n.svelte'
-  import { Avatar, Button, Icon, TextField } from './kit'
+  import { Avatar, Button, Icon, Mascot, TextField } from './kit'
+  import Showcase from './login/Showcase.svelte'
 
   const server = DEFAULT_SERVER
   let mode = $state<'login' | 'register'>('login')
@@ -15,15 +15,31 @@
   let invite = $state(client.pendingInvite ?? '')
   let needsInvite = $state(true)
   let open = $state(false)
+  /** Servidor sem contas: a primeira vira a dona da plataforma. */
+  let empty = $state(false)
+  /** A pessoa escolheu entrar ou criar conta: a tela não troca mais sozinha. */
+  let chosen = false
   let busy = $state(false)
   let error = $state('')
+
+  // O mascote ri de vez em quando (e enquanto entra).
+  let laughing = $state(false)
+
+  onMount(() => {
+    if (matchMedia('(prefers-reduced-motion: reduce)').matches) return
+    const timer = setInterval(() => {
+      laughing = true
+      setTimeout(() => (laughing = false), 2400)
+    }, 8000)
+    return () => clearInterval(timer)
+  })
   let preview = $state<InvitePreview | null>(null)
 
   const t = $derived(m.app.login)
   const subtitle = $derived(
     mode === 'login'
-      ? t.welcome
-      : !needsInvite && !open
+      ? t.loginSub
+      : empty
         ? t.firstAccount
         : open
           ? t.openSignup
@@ -35,8 +51,12 @@
       const status = await new Api(server).status()
       needsInvite = status.needsInvite
       open = status.signup === 'open'
-      // Servidor vazio (a primeira conta vira a dona) ou veio de um link de convite: já abre em "criar conta".
-      if (!status.needsInvite || client.pendingInvite) mode = 'register'
+      // Com o cadastro aberto o needsInvite também vem false, mas aí a plataforma já tem dono:
+      // vazio é só sem convite E sem cadastro aberto. (Antes, o cadastro aberto jogava a tela
+      // pra "criar conta" de 4 em 4 segundos, mesmo depois de a pessoa escolher "Entrar".)
+      empty = !status.needsInvite && !open
+      // Servidor vazio ou veio de um link de convite: abre em "criar conta" (só se a pessoa não escolheu).
+      if (!chosen && (empty || client.pendingInvite)) mode = 'register'
     } catch {
       // erro aparece no envio
     }
@@ -91,14 +111,19 @@
     } catch (err) {
       error = (err as Error).message
       // Alguém criou a primeira conta enquanto esta tela estava aberta: agora precisa de convite.
-      if ((err as { status?: number }).status === 403) needsInvite = true
+      if ((err as { status?: number }).status === 403) {
+        needsInvite = true
+        empty = false
+      }
     } finally {
       busy = false
     }
   }
 
-  function switchMode() {
-    mode = mode === 'login' ? 'register' : 'login'
+  function setMode(next: 'login' | 'register') {
+    chosen = true
+    if (mode === next) return
+    mode = next
     error = ''
   }
 
@@ -106,7 +131,7 @@
   // sem contas, confere de novo: alguém pode criar a primeira nesse meio-tempo.
   onMount(() => {
     checkServer()
-    const timer = setInterval(() => !needsInvite && checkServer(), 4000)
+    const timer = setInterval(() => empty && checkServer(), 4000)
     return () => clearInterval(timer)
   })
 </script>
@@ -114,9 +139,31 @@
 <div class="screen">
   <div class="glow" aria-hidden="true"></div>
 
+  <!-- A marca à esquerda (some em janela estreita); o formulário à direita. -->
+  <section class="brand" aria-hidden="true">
+    <div class="lockup">
+      <Mascot size={96} laughing={laughing || busy} class="brand-logo" />
+      <p class="wordmark">Resenha</p>
+    </div>
+    <p class="tagline">{t.tagline}</p>
+    <p class="pitch">{t.pitch}</p>
+    <Showcase />
+  </section>
+
+  <div class="side">
+  <!-- Janela estreita (sem a marca do lado): o mascote e o nome no meio, em cima do cartão. -->
+  <div class="compact-brand" aria-hidden="true">
+    <Mascot size={64} laughing={laughing || busy} />
+    <p class="compact-wordmark">Resenha</p>
+  </div>
   <form class="card" onsubmit={submit}>
-    <img class="logo" src={logo} alt="" width="56" height="56" draggable="false" />
-    <h1>{mode === 'login' ? t.title : t.register}</h1>
+    <!-- Entrar ou criar conta: sempre à vista qual dos dois está aberto (e só muda pela pessoa). -->
+    <div class="tabs" role="tablist" aria-label={t.modes}>
+      <button type="button" role="tab" aria-selected={mode === 'login'} onclick={() => setMode('login')}>{t.submit}</button>
+      <button type="button" role="tab" aria-selected={mode === 'register'} onclick={() => setMode('register')}>{t.register}</button>
+      <span class="tab-thumb" class:right={mode === 'register'} aria-hidden="true"></span>
+    </div>
+    <h1>{mode === 'login' ? t.loginHeading : t.registerHeading}</h1>
     <p class="sub">{subtitle}</p>
 
     {#if mode === 'register' && preview}
@@ -177,45 +224,109 @@
     </Button>
   </form>
 
-  <p class="switch">
-    {mode === 'login' ? t.noAccount : t.hasAccount}
-    <button type="button" onclick={switchMode}>{mode === 'login' ? t.register : t.submit}</button>
-  </p>
+  </div>
 </div>
 
 <style>
   .screen {
     position: relative;
     height: 100%;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(420px, 0.9fr);
+    overflow: auto;
+    background: var(--bg-canvas);
+  }
+
+  /* A luz azul atrás da marca, e um resto dela no alto do lado do formulário. */
+  .glow {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background:
+      radial-gradient(560px 420px at 16% 34%, rgb(var(--accent-rgb) / 0.075), transparent 70%),
+      radial-gradient(420px 360px at 84% 10%, rgb(var(--accent-rgb) / 0.035), transparent 70%);
+  }
+
+  .brand {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 14px;
+    min-width: 0;
+    padding: 48px 32px 48px clamp(40px, 8vw, 120px);
+  }
+
+  .lockup {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+
+  .lockup :global(.brand-logo) {
+    margin: -6px 0 -6px -10px;
+    filter: drop-shadow(0 18px 40px rgb(var(--accent-rgb) / 0.3));
+  }
+
+  .wordmark {
+    font-family: var(--font-display);
+    font-size: clamp(48px, 5.4vw, 84px);
+    font-weight: 750;
+    letter-spacing: -0.045em;
+    line-height: 0.92;
+    background: linear-gradient(180deg, #ffffff 30%, #c4c6d0);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  .tagline {
+    font-family: var(--font-display);
+    font-size: clamp(22px, 2.2vw, 28px);
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    color: var(--fg);
+  }
+
+  .pitch {
+    max-width: 420px;
+    text-wrap: pretty;
+    color: var(--fg-2);
+    font-size: var(--text-lg);
+    line-height: 1.5;
+  }
+
+  .side {
+    position: relative;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
     gap: var(--s-5);
     padding: var(--s-6);
-    overflow: auto;
-    background: var(--bg-canvas);
   }
 
-  /* Brilho da marca atrás do cartão: o violeta do app, como no ícone. */
-  .glow {
-    position: absolute;
-    inset: 0;
-    pointer-events: none;
-    background:
-      radial-gradient(520px 340px at calc(50% - 160px) calc(50% - 170px), rgb(122 108 255 / 0.18), transparent 70%),
-      radial-gradient(460px 320px at calc(50% + 190px) calc(50% + 190px), rgb(106 92 246 / 0.1), transparent 70%);
+  /* Janela estreita: só o formulário, no meio. */
+  @media (max-width: 960px) {
+    .screen {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .brand {
+      display: none;
+    }
   }
 
   .card {
     position: relative;
     display: flex;
     flex-direction: column;
-    width: 380px;
+    width: 400px;
     max-width: 100%;
-    padding: 32px;
-    border-radius: 22px;
-    background: rgb(19 19 25 / 0.92);
+    padding: 36px;
+    border-radius: var(--r-2xl);
+    background: rgb(17 17 19 / 0.86);
+    backdrop-filter: blur(18px);
     box-shadow:
       0 0 0 1px var(--line-strong),
       var(--highlight),
@@ -223,21 +334,91 @@
     animation: rs-pop-in var(--t-slow) var(--ease);
   }
 
-  .logo {
-    width: 56px;
-    height: 56px;
-    margin-bottom: var(--s-5);
-    filter: drop-shadow(0 8px 20px rgb(106 92 246 / 0.35));
+  .compact-brand {
+    display: none;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: -4px;
+  }
+
+  .compact-brand :global(.mascot) {
+    filter: drop-shadow(0 12px 28px rgb(var(--accent-rgb) / 0.3));
+  }
+
+  .compact-wordmark {
+    font-family: var(--font-display);
+    font-size: 40px;
+    font-weight: 750;
+    letter-spacing: -0.04em;
+    line-height: 1;
+    background: linear-gradient(180deg, #ffffff 30%, #c4c6d0);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  @media (max-width: 960px) {
+    .compact-brand {
+      display: flex;
+    }
+  }
+
+  .tabs {
+    position: relative;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    margin-bottom: 26px;
+    padding: 4px;
+    border-radius: var(--r-full);
+    background: var(--bg-input);
+    box-shadow: inset 0 0 0 1px var(--line);
+  }
+
+  .tabs button {
+    position: relative;
+    z-index: 1;
+    height: 34px;
+    border-radius: var(--r-full);
+    color: var(--fg-3);
+    font-size: var(--text-sm);
+    font-weight: 600;
+    text-align: center;
+    transition: color var(--t) var(--ease);
+  }
+
+  .tabs button:hover,
+  .tabs button[aria-selected='true'] {
+    color: var(--fg);
+  }
+
+  .tab-thumb {
+    position: absolute;
+    top: 4px;
+    bottom: 4px;
+    left: 4px;
+    width: calc(50% - 4px);
+    border-radius: var(--r-full);
+    background: rgb(var(--tint-rgb) / 0.1);
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.08),
+      0 1px 3px rgb(0 0 0 / 0.45);
+    transition: translate var(--t-slow) var(--ease);
+  }
+
+  .tab-thumb.right {
+    translate: 100% 0;
   }
 
   h1 {
-    font-size: var(--text-2xl);
-    font-weight: 650;
-    letter-spacing: -0.02em;
+    font-family: var(--font-display);
+    font-size: 30px;
+    font-weight: 700;
+    letter-spacing: -0.03em;
+    line-height: 1.1;
   }
 
   .sub {
-    margin-top: 6px;
+    margin-top: 8px;
     color: var(--fg-2);
   }
 
@@ -293,20 +474,4 @@
     white-space: nowrap;
   }
 
-  .switch {
-    position: relative;
-    color: var(--fg-3);
-    font-size: var(--text-sm);
-  }
-
-  .switch button {
-    margin-left: 4px;
-    color: var(--accent-fg);
-    font-weight: 550;
-  }
-
-  .switch button:hover {
-    text-decoration: underline;
-    text-underline-offset: 2px;
-  }
 </style>

@@ -21,9 +21,12 @@
     height: 20px;
     margin: 0;
     border-radius: var(--r-full);
-    background: rgb(255 255 255 / 0.14);
+    background: rgb(var(--tint-rgb) / 0.14);
+    box-shadow: inset 0 0 0 1px var(--line);
     cursor: pointer;
-    transition: background-color var(--t) var(--ease);
+    transition:
+      background-color var(--t) var(--ease),
+      box-shadow var(--t) var(--ease);
   }
 
   .switch::before {
@@ -34,17 +37,26 @@
     width: 16px;
     height: 16px;
     border-radius: 50%;
-    background: #fff;
-    box-shadow: 0 1px 3px rgb(0 0 0 / 0.4);
-    transition: transform var(--t) var(--ease);
+    background: #ececf0;
+    box-shadow: 0 1px 3px rgb(0 0 0 / 0.45);
+    transition:
+      transform var(--t) var(--ease),
+      background-color var(--t) var(--ease);
   }
 
   .switch:hover:not(:disabled) {
-    background: rgb(255 255 255 / 0.2);
+    background: rgb(var(--tint-rgb) / 0.2);
   }
 
+  /* Ligado: trilho azul com a bolinha branca. */
   .switch:checked {
     background: var(--accent);
+    box-shadow: none;
+  }
+
+  .switch:checked::before {
+    background: var(--fg-on-accent);
+    box-shadow: none;
   }
 
   .switch:checked:hover:not(:disabled) {
@@ -55,9 +67,19 @@
     transform: translateX(16px);
   }
 
+  /* Desligado: cinza, nunca o azul apagado. */
   .switch:disabled {
-    opacity: 0.4;
+    opacity: 0.5;
     cursor: default;
+  }
+
+  .switch:checked:disabled {
+    background: rgb(var(--tint-rgb) / 0.3);
+    box-shadow: none;
+  }
+
+  .switch:checked:disabled::before {
+    background: var(--bg-panel);
   }
 
   .sm {

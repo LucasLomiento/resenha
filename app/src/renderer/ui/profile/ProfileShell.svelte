@@ -73,9 +73,18 @@
    * principal em cima até o avatar e a de destaque embaixo.
    */
   .themed {
-    --card-top: color-mix(in oklab, var(--theme-a) 40%, #0b0b10);
-    --card-bottom: color-mix(in oklab, var(--theme-b) 40%, #0b0b10);
+    --card-top: color-mix(in oklab, var(--theme-a) 40%, var(--bg-canvas));
+    --card-bottom: color-mix(in oklab, var(--theme-b) 40%, var(--bg-canvas));
     --card-cut: var(--card-top);
+    /* Sobre as cores da pessoa, os cinzas viram branco translúcido (contraste) e o botão
+       principal fica branco: o azul do app não briga com o tema que ela escolheu. */
+    --fg-2: rgb(255 255 255 / 0.8);
+    --fg-3: rgb(255 255 255 / 0.62);
+    --line: rgb(255 255 255 / 0.13);
+    --accent: #f5f5f7;
+    --accent-hover: #ffffff;
+    --accent-press: #e6e6ea;
+    --fg-on-accent: #0c0c0e;
     background: linear-gradient(180deg, var(--card-top) 0, var(--card-top) 150px, var(--card-bottom) 100%);
   }
 

@@ -1,5 +1,5 @@
 /*
- * Resenha: sistema visual.
+ * Resenha: sistema visual "Noite elétrica" (1.13): grafite neutro e azul elétrico.
  * Dark mode primeiro. Tudo sai destes tokens; os componentes do kit (ui/kit)
  * não usam cor, tamanho ou tempo "solto". Guia completo em docs/DESIGN.md.
  */
@@ -7,56 +7,72 @@
 :root {
   color-scheme: dark;
 
-  /* ---------- Cor: superfícies (tinta fria com um fundo de violeta) ---------- */
-  --bg-canvas: #0b0b10; /* janela: barra lateral e trilho ficam direto aqui */
-  --bg-panel: #131319; /* painel principal (chat, call) */
-  --bg-raised: #1a1a22; /* cartões, compositor, menus, modais */
-  --bg-overlay: #22222c; /* tooltip, item em cima de cartão */
-  --bg-input: #0e0e13; /* campos (afundados) */
+  /* ---------- Cor: superfícies (grafite neutro, sem tinta de cor) ---------- */
+  --bg-canvas: #09090b; /* janela: barra lateral e trilho ficam direto aqui */
+  --bg-panel: #111113; /* painel principal (chat, call) */
+  --bg-raised: #18181b; /* cartões, compositor, menus, modais */
+  --bg-overlay: #222226; /* dica, item em cima de cartão */
+  --bg-input: #0c0c0e; /* campos (afundados), blocos de código */
 
-  /* Camadas de interação: brancas translúcidas, funcionam em qualquer fundo. */
-  --hover: rgb(255 255 255 / 0.045);
-  --selected: rgb(255 255 255 / 0.075);
-  --press: rgb(255 255 255 / 0.1);
+  /* Camadas de interação: brancas e translúcidas, funcionam em qualquer fundo. */
+  --tint-rgb: 255 255 255;
+  --hover: rgb(var(--tint-rgb) / 0.045);
+  --selected: rgb(var(--tint-rgb) / 0.08);
+  --press: rgb(var(--tint-rgb) / 0.11);
 
-  --line: rgb(255 255 255 / 0.065);
-  --line-strong: rgb(255 255 255 / 0.11);
+  --line: rgb(var(--tint-rgb) / 0.07);
+  --line-strong: rgb(var(--tint-rgb) / 0.12);
+
+  /* Por cima de tudo: fundo de modal e do Ctrl+K, vidro sobre vídeo e mapa. */
+  --scrim: rgb(4 4 6 / 0.7);
+  --glass: rgb(16 16 19 / 0.74);
+  --glass-strong: rgb(16 16 19 / 0.88);
+  --glass-fg: #f4f4f6;
 
   /* ---------- Cor: texto ---------- */
-  --fg: #ededf3;
-  --fg-2: #a6a6b6;
-  --fg-3: #75758a;
-  --fg-4: #4d4d5c;
+  --fg: #f4f4f5;
+  --fg-2: #aaaab3;
+  --fg-3: #888892;
+  --fg-4: #52525b;
+
+  /* ---------- Cor: marca (o azul elétrico: ação principal, o que é seu, o aberto) ---------- */
+  --brand-1-rgb: 120 196 255;
+  --brand-3-rgb: 61 107 255;
+  --brand-1: rgb(var(--brand-1-rgb));
+  --brand-2: #4f8cff;
+  --brand-3: rgb(var(--brand-3-rgb));
+  --brand-gradient: linear-gradient(135deg, var(--brand-1) 0%, var(--brand-2) 50%, var(--brand-3) 100%);
+
+  --accent-rgb: 79 140 255;
+  --accent: #2b6cf5; /* preenchimento com texto branco (contraste 4.6:1) */
+  --accent-hover: #3577f7;
+  --accent-press: #2560e0;
   --fg-on-accent: #ffffff;
-
-  /* ---------- Cor: marca (do ícone: o violeta do acento, em degradê) ---------- */
-  --brand-1: #8f84ff;
-  --brand-2: #6a5cf6;
-  --brand-3: #5244e0;
-  --brand-gradient: linear-gradient(135deg, var(--brand-1) 0%, var(--brand-2) 52%, var(--brand-3) 100%);
-
-  --accent: #6a5cf6; /* preenchimento com texto branco (contraste 4.7:1) */
-  --accent-hover: #7769ff;
-  --accent-press: #5f51e8;
-  --accent-fg: #ada4ff; /* acento como texto/ícone sobre fundo escuro */
-  --accent-soft: rgb(122 108 255 / 0.15);
-  --accent-line: rgb(122 108 255 / 0.45);
+  --accent-fg: #7aaaff; /* acento como texto/ícone sobre o escuro */
+  --accent-soft: rgb(var(--accent-rgb) / 0.14);
+  --accent-line: rgb(var(--accent-rgb) / 0.45);
+  /* Campo com foco: um fio azul nítido por dentro (sem halo borrado). Cor da seleção de texto. */
+  --focus-ring: inset 0 0 0 1.5px rgb(var(--accent-rgb) / 0.85);
+  --selection: rgb(var(--accent-rgb) / 0.35);
 
   /* ---------- Cor: estados ---------- */
-  --green: #34d399; /* falando, online, na call */
-  --green-soft: rgb(52 211 153 / 0.14);
+  --green: #3dd68c; /* falando, online, na call */
+  --green-soft: rgb(61 214 140 / 0.14);
   /* Bot do Spotify (a cor dele, só no bot: ícone, bloco na call, botão de tocar) */
   --spotify: #1ed760;
   --spotify-soft: rgb(30 215 96 / 0.14);
-  --spotify-ink: #0b0b10;
-  --yellow: #fbbf24; /* ausente, aviso */
-  --yellow-soft: rgb(251 191 36 / 0.13);
-  --red: #ff5c72; /* ao vivo, menção, mutado, perigo */
-  --red-hover: #ff7183;
-  --red-soft: rgb(255 92 114 / 0.14);
+  --spotify-ink: #09090b;
+  --yellow: #ffc44d; /* ausente, aviso */
+  --yellow-soft: rgb(255 196 77 / 0.13);
+  --red: #ff5a6b; /* ao vivo, menção, mutado, perigo */
+  --red-hover: #ff7282;
+  --red-soft: rgb(255 90 107 / 0.14);
+  --red-fill: #e23b50; /* vermelho como preenchimento com texto branco */
+  --red-fill-hover: #ec4b5f;
 
   /* ---------- Tipografia ---------- */
   --font: 'Geist Variable', 'Geist', 'Inter', system-ui, 'Segoe UI', sans-serif;
+  --font-display: 'Bricolage Grotesque Variable', var(--font);
   --mono: 'Geist Mono Variable', 'Geist Mono', ui-monospace, 'Cascadia Code', monospace;
 
   --text-2xs: 11px; /* selos */
@@ -65,8 +81,8 @@
   --text-md: 14px; /* interface */
   --text-lg: 15px; /* mensagens */
   --text-xl: 18px; /* títulos de painel */
-  --text-2xl: 22px; /* títulos de página */
-  --text-3xl: 28px; /* boas-vindas */
+  --text-2xl: 24px; /* títulos de página */
+  --text-3xl: 32px; /* boas-vindas */
 
   /* ---------- Espaço (grade de 4 px) ---------- */
   --s-1: 4px;
@@ -82,10 +98,11 @@
   /* ---------- Raios ---------- */
   --r-xs: 4px;
   --r-sm: 6px;
-  --r-md: 8px;
-  --r-lg: 10px;
-  --r-xl: 14px;
-  --r-2xl: 18px;
+  --r-md: 9px;
+  --r-lg: 12px;
+  --r-xl: 16px;
+  --r-2xl: 22px;
+  --r-panel: 18px;
   --r-full: 999px;
 
   /* ---------- Alturas de controle ---------- */
@@ -93,13 +110,13 @@
   --h-md: 34px;
   --h-lg: 40px;
   --h-xl: 44px;
-  --header-h: 52px;
+  --header-h: 56px;
 
   /* ---------- Sombras ---------- */
-  --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.4);
-  --shadow-md: 0 10px 28px -8px rgb(0 0 0 / 0.6), 0 2px 6px rgb(0 0 0 / 0.3);
-  --shadow-lg: 0 28px 70px -16px rgb(0 0 0 / 0.75), 0 6px 18px rgb(0 0 0 / 0.35);
-  --highlight: inset 0 1px 0 rgb(255 255 255 / 0.05);
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.45);
+  --shadow-md: 0 14px 34px -12px rgb(0 0 0 / 0.7), 0 2px 6px rgb(0 0 0 / 0.3);
+  --shadow-lg: 0 34px 80px -20px rgb(0 0 0 / 0.82), 0 8px 24px rgb(0 0 0 / 0.4);
+  --highlight: inset 0 1px 0 rgb(255 255 255 / 0.055);
 
   /* ---------- Movimento ---------- */
   --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
@@ -184,7 +201,7 @@ a:hover {
 }
 
 ::selection {
-  background: rgb(122 108 255 / 0.4);
+  background: var(--selection);
 }
 
 :focus {
@@ -202,14 +219,14 @@ a:hover {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgb(255 255 255 / 0.09);
+  background: rgb(var(--tint-rgb) / 0.09);
   border-radius: var(--r-full);
   border: 4px solid transparent;
   background-clip: padding-box;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background-color: rgb(255 255 255 / 0.16);
+  background-color: rgb(var(--tint-rgb) / 0.17);
 }
 
 ::-webkit-scrollbar-track,

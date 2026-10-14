@@ -32,8 +32,8 @@
     gap: 5px;
     flex: none;
     height: 20px;
-    padding: 0 7px;
-    border-radius: var(--r-sm);
+    padding: 0 8px;
+    border-radius: var(--r-full);
     font-size: var(--text-2xs);
     font-weight: 600;
     line-height: 1;
@@ -41,7 +41,7 @@
   }
 
   .neutral {
-    background: rgb(255 255 255 / 0.07);
+    background: var(--selected);
     color: var(--fg-2);
   }
 
@@ -71,7 +71,7 @@
     height: 18px;
     padding: 0 5px;
     border-radius: var(--r-full);
-    background: var(--red);
+    background: var(--red-fill);
     color: #fff;
     font-size: 11px;
     font-weight: 700;
@@ -80,9 +80,9 @@
 
   .live {
     height: 18px;
-    padding: 0 6px;
-    border-radius: 5px;
-    background: var(--red);
+    padding: 0 7px;
+    border-radius: var(--r-full);
+    background: var(--red-fill);
     color: #fff;
     font-size: 10px;
     font-weight: 700;

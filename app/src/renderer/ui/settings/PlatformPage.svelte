@@ -193,7 +193,7 @@
   {#snippet meter(label: string, part: number)}
     {@const percent = Math.round(part * 100)}
     <div class="meter tone-{tone(part)}" role="meter" aria-label={label} aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent} aria-valuetext="{percent}%">
-      <div class="fill" style:width="{part * 100}%"></div>
+      {#if part > 0}<div class="fill" style:width="{part * 100}%"></div>{/if}
     </div>
   {/snippet}
 
@@ -328,7 +328,7 @@
     height: 8px;
     margin-top: 6px;
     border-radius: var(--r-full);
-    background: var(--accent-soft);
+    background: rgb(var(--tint-rgb) / 0.08);
     overflow: hidden;
   }
 

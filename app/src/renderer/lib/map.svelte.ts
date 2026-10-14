@@ -23,7 +23,7 @@ export const MAP_STYLES = {
 export type MapStyleName = keyof typeof MAP_STYLES
 
 /** Cores dos marcadores (as primeiras dos degradês das pessoas, em `format.ts`). */
-export const PIN_COLORS = [0x8b7bff, 0xff7a93, 0x48b9ff, 0x36d6ad, 0xffc35a, 0xee78dc]
+export const PIN_COLORS = [0x4f8cff, 0xff7a93, 0x36d6ad, 0xffc35a, 0xff9a4d, 0xee78dc]
 
 /** Mostra "fulano está movendo o mapa" até esse tempo depois da última vista que chegou. */
 const MOVER_FOR = 1200

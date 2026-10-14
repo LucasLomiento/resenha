@@ -108,7 +108,7 @@
     gap: 10px;
     height: 32px;
     padding: 0 10px;
-    border-radius: var(--r-md);
+    border-radius: 8px;
     color: var(--fg);
     font-size: var(--text-sm);
     text-align: left;

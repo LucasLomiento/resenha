@@ -33,6 +33,12 @@
 </script>
 
 <aside class="members" aria-label={t.label}>
+  <!-- Mesma altura do cabeçalho do chat: o fio de baixo corre de ponta a ponta do painel. -->
+  <header class="list-head">
+    <span>{t.label}</span>
+    <span class="total">{guild.memberGroups.reduce((sum, group) => sum + group.ids.length, 0)}</span>
+  </header>
+  <div class="list">
   {#each guild.memberGroups as group (group.title)}
     <div class="group-title">{group.title} — {group.ids.length}</div>
     {#each group.ids as userId (userId)}
@@ -62,7 +68,7 @@
           decoration={user?.deleted ? null : user?.style?.decoration}
           play={hovered === userId}
           status={off ? null : presence.status}
-          cutout={selected === userId ? '#1e1e26' : 'var(--bg-panel)'}
+          cutout="var(--row)"
         />
         <span class="text">
           <span class="name-row">
@@ -83,6 +89,7 @@
       </button>
     {/each}
   {/each}
+</div>
 </aside>
 
 {#if menu}
@@ -91,8 +98,42 @@
 
 <style>
   .members {
+    display: flex;
+    flex-direction: column;
     height: 100%;
-    padding: 12px 8px 16px;
+  }
+
+  .list-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: none;
+    height: var(--header-h);
+    padding: 0 18px;
+    border-bottom: 1px solid var(--line);
+    color: var(--fg-2);
+    font-size: var(--text-sm);
+    font-weight: 600;
+  }
+
+  .total {
+    min-width: 20px;
+    height: 20px;
+    padding: 0 7px;
+    border-radius: var(--r-full);
+    background: var(--selected);
+    color: var(--fg-2);
+    font-size: var(--text-2xs);
+    font-weight: 600;
+    line-height: 20px;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .list {
+    flex: 1;
+    min-height: 0;
+    padding: 6px 8px 16px;
     overflow-y: auto;
     scrollbar-width: thin;
   }
@@ -101,30 +142,34 @@
     padding: 14px 10px 6px;
     color: var(--fg-3);
     font-size: var(--text-xs);
-    font-weight: 500;
+    font-weight: 600;
   }
 
   .group-title:first-child {
     padding-top: 4px;
   }
 
+  /* A cor de trás da linha (o recorte da bolinha de status acompanha o hover e a escolhida). */
   .member {
+    --row: var(--bg-panel);
     display: flex;
     align-items: center;
     gap: 10px;
     width: 100%;
-    height: 44px;
+    height: 46px;
     padding: 0 8px;
-    border-radius: var(--r-md);
+    border-radius: 12px;
     text-align: left;
     transition: background-color var(--t-fast) var(--ease);
   }
 
   .member:hover {
+    --row: color-mix(in srgb, var(--bg-panel) 95.5%, rgb(var(--tint-rgb)));
     background: var(--hover);
   }
 
   .member.selected {
+    --row: color-mix(in srgb, var(--bg-panel) 92%, rgb(var(--tint-rgb)));
     background: var(--selected);
   }
 

@@ -93,17 +93,15 @@
   }
 
   .control:hover {
-    box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.16);
+    box-shadow: inset 0 0 0 1px rgb(var(--tint-rgb) / 0.18);
   }
 
   .control:focus-within {
-    box-shadow:
-      inset 0 0 0 1px var(--accent-line),
-      0 0 0 3px rgb(122 108 255 / 0.18);
+    box-shadow: var(--focus-ring);
   }
 
   .invalid .control {
-    box-shadow: inset 0 0 0 1px rgb(255 92 114 / 0.55);
+    box-shadow: inset 0 0 0 1px rgb(255 90 107 / 0.55);
   }
 
   /* Só leitura (nome de usuário fixo): sem cara de campo pra digitar. */

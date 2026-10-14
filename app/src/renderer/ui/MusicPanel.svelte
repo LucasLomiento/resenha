@@ -221,7 +221,10 @@
   {/if}
 
   {#if share && hostConnId}
-    <!-- ---------- Tocando agora ---------- -->
+    <!-- ---------- Tocando agora: o player à esquerda, a busca/fila/playlists à direita ---------- -->
+    <div class="player">
+    <!-- A capa borrada como luz atrás do player. -->
+    {#if track?.cover}<img class="backdrop" src={track.cover} alt="" aria-hidden="true" />{/if}
     <div class="now">
       <div class="cover" class:empty={!track?.cover}>
         {#if track?.cover}<img src={track.cover} alt="" />{:else}<Icon name="music" size={28} />{/if}
@@ -298,14 +301,19 @@
       <Slider label={t.player.volume} bind:value={settings.musicVolume} oninput={() => call.applyMusicOutput()} />
       <span class="tabular pct">{Math.round(settings.musicVolume * 100)}%</span>
     </div>
+    </div>
 
+    <div class="browse">
     <Tabs {tabs} bind:value={tab} label={t.title} class="music-tabs" />
+    <!-- A busca fica fora da lista: só a lista rola (antes a busca grudava em cima dela e as músicas passavam por baixo). -->
+    {#if tab === 'search'}
+      <form class="search" onsubmit={(e) => (e.preventDefault(), void search())}>
+        <TextField icon="search" placeholder={t.search.placeholder} bind:value={query} oninput={typed} aria-label={t.tabs.search} />
+      </form>
+    {/if}
 
     <div class="pane">
       {#if tab === 'search'}
-        <form class="search" onsubmit={(e) => (e.preventDefault(), void search())}>
-          <TextField icon="search" placeholder={t.search.placeholder} bind:value={query} oninput={typed} aria-label={t.tabs.search} />
-        </form>
         {#if !query.trim()}
           <!-- Busca vazia: os estilos prontos (o nome que o Spotify usa, que é o que a busca entende). -->
           <h3>{t.search.styles}</h3>
@@ -364,6 +372,7 @@
           <p class="hint">{t.playlists.empty}</p>
         {/if}
       {/if}
+    </div>
     </div>
   {:else if !call.channelId}
     <p class="hint">{t.setup.joinFirst}</p>
@@ -520,26 +529,82 @@
     box-shadow: inset 0 0 0 1px var(--spotify);
   }
 
+  /* ---------- Tocando agora: duas colunas (player | lista) num diálogo mais largo ---------- */
+
+  :global(.modal.music-panel.playing) {
+    width: min(940px, 100%);
+    height: min(680px, 100%);
+  }
+
+  :global(.music-panel.playing .body) {
+    display: grid;
+    grid-template-columns: 280px minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+    gap: 0 32px;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .hosts {
+    grid-column: 1 / -1;
+  }
+
+  /* O player: a capa grande, com a própria capa borrada como luz atrás. */
+  .player {
+    position: relative;
+    grid-row: -2;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow-y: auto;
+    scrollbar-width: none;
+  }
+
+  .player > :not(.backdrop) {
+    position: relative;
+  }
+
+  .backdrop {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    aspect-ratio: 1;
+    object-fit: cover;
+    filter: blur(44px) saturate(1.5);
+    opacity: 0.35;
+    transform: scale(1.1);
+    pointer-events: none;
+  }
+
   .now {
     display: flex;
-    align-items: center;
-    gap: 16px;
+    flex-direction: column;
+    gap: 14px;
   }
 
   .cover {
-    flex: none;
-    width: 112px;
-    height: 112px;
-    border-radius: var(--r-lg);
+    width: 100%;
+    aspect-ratio: 1;
+    border-radius: var(--r-xl);
     overflow: hidden;
-    background: var(--bg-input);
-    box-shadow: 0 0 0 1px var(--line);
+    background:
+      radial-gradient(120% 120% at 30% 20%, rgb(30 215 96 / 0.18), transparent 60%),
+      var(--bg-input);
+    box-shadow:
+      0 0 0 1px var(--line),
+      0 24px 48px -22px rgb(0 0 0 / 0.85);
   }
 
   .cover.empty {
     display: grid;
     place-items: center;
     color: var(--spotify);
+  }
+
+  .cover.empty :global(svg) {
+    width: 56px;
+    height: 56px;
   }
 
   .cover img {
@@ -551,17 +616,21 @@
   .info {
     display: flex;
     flex-direction: column;
-    gap: 3px;
+    gap: 4px;
     min-width: 0;
   }
 
   .title {
-    font-size: var(--text-xl);
-    font-weight: 650;
-    letter-spacing: -0.01em;
+    display: -webkit-box;
     overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    font-family: var(--font-display);
+    font-size: 22px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    line-height: 1.15;
   }
 
   .artist-line {
@@ -578,14 +647,14 @@
   /* Estilo do artista: uma tag que busca músicas do mesmo estilo. */
   .genre {
     flex: none;
-    height: 18px;
-    padding: 0 7px;
+    height: 20px;
+    padding: 0 8px;
     border-radius: var(--r-full);
     background: var(--spotify-soft);
     color: var(--spotify);
     font-size: var(--text-2xs);
-    font-weight: 500;
-    line-height: 18px;
+    font-weight: 600;
+    line-height: 20px;
     white-space: nowrap;
     transition: background-color var(--t-fast) var(--ease);
   }
@@ -597,14 +666,14 @@
   .styles {
     display: flex;
     flex-wrap: wrap;
-    gap: 6px;
+    gap: 8px;
   }
 
   .styles .genre {
-    height: 28px;
-    padding: 0 12px;
+    height: 32px;
+    padding: 0 14px;
     font-size: var(--text-sm);
-    line-height: 28px;
+    line-height: 32px;
   }
 
   .album,
@@ -613,12 +682,21 @@
     font-size: var(--text-sm);
   }
 
+  /* No player do bot, o verde é o do Spotify (o azul é do app). */
+  .progress,
+  .controls {
+    --accent: var(--spotify);
+    --accent-fg: var(--spotify);
+    --green: var(--spotify);
+    --green-soft: var(--spotify-soft);
+  }
+
   .progress {
     display: grid;
-    grid-template-columns: 40px 1fr 40px;
+    grid-template-columns: 36px 1fr 36px;
     align-items: center;
-    gap: 10px;
-    margin-top: 14px;
+    gap: 8px;
+    margin-top: 16px;
     color: var(--fg-3);
     font-size: var(--text-xs);
   }
@@ -631,18 +709,19 @@
     display: flex;
     justify-content: center;
     align-items: center;
-    gap: 14px;
+    gap: 12px;
     margin-top: 6px;
   }
 
   .play {
     display: grid;
     place-items: center;
-    width: 44px;
-    height: 44px;
+    width: 52px;
+    height: 52px;
     border-radius: var(--r-full);
     background: var(--spotify);
     color: var(--spotify-ink);
+    box-shadow: 0 10px 24px -10px rgb(30 215 96 / 0.6);
     transition: transform var(--t-fast) var(--ease);
   }
 
@@ -657,7 +736,8 @@
   .elsewhere {
     display: flex;
     align-items: center;
-    gap: 10px;
+    flex-wrap: wrap;
+    gap: 8px 10px;
     margin-top: 12px;
     padding: 10px 12px;
     border-radius: var(--r-lg);
@@ -673,12 +753,22 @@
 
   .volume {
     display: grid;
-    grid-template-columns: auto auto 1fr 40px;
+    grid-template-columns: auto minmax(0, 1fr) 36px;
     align-items: center;
     gap: 10px;
-    margin: 14px 0 6px;
+    margin-top: auto;
+    padding-top: 16px;
     color: var(--fg-2);
     font-size: var(--text-sm);
+  }
+
+  /* O rótulo fica pra leitor de tela e dica: a coluna é estreita. */
+  .volume .label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
   }
 
   .pct {
@@ -686,42 +776,32 @@
     text-align: right;
   }
 
-  :global(.music-tabs) {
-    margin-top: 8px;
-  }
-
-  /* Com o bot tocando, o player fica parado em cima e só a lista (busca, fila, playlists) rola.
-     Numa janela muito baixa, a lista não passa de 200 px e o diálogo inteiro rola. */
-  :global(.music-panel.playing .body) {
+  /* A lista: abas e busca paradas em cima, só a lista rola. */
+  .browse {
+    grid-row: -2;
     display: flex;
     flex-direction: column;
+    min-width: 0;
+    min-height: 0;
   }
 
-  :global(.music-panel.playing .body > *) {
-    flex-shrink: 0;
+  .search {
+    flex: none;
+    margin-top: 12px;
   }
 
   .pane {
     min-height: 220px;
-    padding-top: 12px;
+    padding-top: 6px;
   }
 
-  :global(.music-panel.playing .body) > .pane {
-    flex: 1 1 auto;
-    min-height: 200px;
+  .browse .pane {
+    flex: 1;
+    min-height: 0;
     overflow-y: auto;
-    /* A barra de rolagem fica na borda, não em cima dos botões das músicas. */
-    margin-right: -16px;
-    padding-right: 16px;
-  }
-
-  .search {
-    position: sticky;
-    top: 0;
-    z-index: 1;
-    margin-bottom: 8px;
-    padding-bottom: 4px;
-    background: var(--bg-raised);
+    /* A barra de rolagem fica na borda do diálogo; à esquerda, folga pras linhas (que saem 8 px pra fora). */
+    margin: 0 -18px 0 -8px;
+    padding: 6px 18px 12px 8px;
   }
 
   h3 {
@@ -743,9 +823,9 @@
   .item {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 12px;
     padding: 6px 8px;
-    border-radius: var(--r-md);
+    border-radius: var(--r-lg);
   }
 
   .item:hover {
@@ -756,9 +836,9 @@
     flex: none;
     display: grid;
     place-items: center;
-    width: 40px;
-    height: 40px;
-    border-radius: var(--r-sm);
+    width: 42px;
+    height: 42px;
+    border-radius: var(--r-md);
     overflow: hidden;
     background: var(--bg-input);
     color: var(--fg-3);
@@ -826,11 +906,23 @@
     padding: 16px 0;
   }
 
+  /* ---------- Pôr o Spotify na call: três passos numerados ---------- */
+
+  .setup {
+    counter-reset: step;
+  }
+
   .setup .hero {
     display: flex;
     align-items: center;
-    gap: 14px;
-    margin-bottom: 16px;
+    gap: 16px;
+    margin-bottom: 18px;
+    padding: 16px;
+    border-radius: var(--r-xl);
+    background:
+      radial-gradient(120% 140% at 0% 0%, rgb(30 215 96 / 0.12), transparent 60%),
+      var(--bg-input);
+    box-shadow: inset 0 0 0 1px var(--line);
     color: var(--fg-2);
   }
 
@@ -843,15 +935,37 @@
     border-radius: var(--r-full);
     background: var(--spotify);
     color: var(--spotify-ink);
+    box-shadow: 0 10px 24px -10px rgb(30 215 96 / 0.6);
   }
 
   .step {
     display: flex;
     align-items: center;
-    gap: 12px;
-    min-height: 56px;
-    padding: 10px 0;
+    gap: 14px;
+    min-height: 60px;
+    padding: 12px 0;
     border-top: 1px solid var(--line);
+  }
+
+  .step::before {
+    counter-increment: step;
+    content: counter(step);
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: 26px;
+    height: 26px;
+    border-radius: var(--r-full);
+    background: var(--selected);
+    color: var(--fg-2);
+    font-size: var(--text-xs);
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .step:has(.ok)::before {
+    background: var(--spotify);
+    color: var(--spotify-ink);
   }
 
   .step .text {
@@ -861,13 +975,22 @@
     gap: 2px;
   }
 
+  .step .text strong {
+    font-weight: 600;
+  }
+
   .step .text span {
     color: var(--fg-3);
     font-size: var(--text-sm);
+    text-wrap: pretty;
   }
 
   .app-steps {
-    padding: 0 0 14px;
+    margin: 0 0 14px 40px;
+    padding: 14px 16px;
+    border-radius: var(--r-lg);
+    background: var(--bg-input);
+    box-shadow: inset 0 0 0 1px var(--line);
     color: var(--fg-2);
     font-size: var(--text-sm);
   }
@@ -875,7 +998,7 @@
   .app-steps ol {
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: 8px;
     margin: 0 0 12px;
     padding-left: 18px;
   }
@@ -892,9 +1015,10 @@
   }
 
   .redirect code {
-    padding: 2px 6px;
+    padding: 2px 8px;
     border-radius: var(--r-sm);
-    background: var(--bg-input);
+    background: var(--bg-raised);
+    box-shadow: inset 0 0 0 1px var(--line);
     color: var(--fg);
     font-family: var(--mono);
     font-size: var(--text-xs);
@@ -904,7 +1028,8 @@
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    color: var(--green);
+    color: var(--spotify);
     font-size: var(--text-sm);
+    font-weight: 600;
   }
 </style>

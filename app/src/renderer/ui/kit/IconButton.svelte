@@ -56,7 +56,7 @@
     flex: none;
     width: 32px;
     height: 32px;
-    border-radius: var(--r-md);
+    border-radius: var(--r-full);
     color: var(--fg-2);
     transition:
       background-color var(--t-fast) var(--ease),
@@ -75,19 +75,17 @@
   .sm {
     width: 28px;
     height: 28px;
-    border-radius: var(--r-sm);
   }
 
   .lg {
     width: 36px;
     height: 36px;
-    border-radius: var(--r-lg);
   }
 
   .xl {
     width: 40px;
     height: 40px;
-    border-radius: 12px;
+    border-radius: var(--r-full);
   }
 
   .icon-btn:hover:not(:disabled) {
@@ -96,16 +94,16 @@
   }
 
   .subtle {
-    background: rgb(255 255 255 / 0.06);
+    background: var(--selected);
     color: var(--fg);
   }
 
   .subtle:hover:not(:disabled) {
-    background: rgb(255 255 255 / 0.1);
+    background: var(--press);
   }
 
   .glass {
-    color: #f2f2f6;
+    color: var(--glass-fg);
   }
 
   .glass:hover:not(:disabled) {
@@ -120,8 +118,10 @@
     color: var(--fg);
   }
 
+  /* Ligado: fundo neutro com fio e ícone azuis. */
   .active.tone-accent {
-    background: var(--accent-soft);
+    background: var(--selected);
+    box-shadow: inset 0 0 0 1px var(--accent-line);
     color: var(--accent-fg);
   }
 
@@ -137,18 +137,18 @@
   }
 
   .active.tone-accent:hover:not(:disabled) {
-    background: rgb(122 108 255 / 0.22);
+    background: var(--press);
     color: var(--accent-fg);
   }
 
   .active.tone-danger:hover:not(:disabled),
   .active.tone-live:hover:not(:disabled) {
-    background: rgb(255 92 114 / 0.22);
+    background: rgb(255 90 107 / 0.22);
     color: var(--red-hover);
   }
 
   .active.tone-success:hover:not(:disabled) {
-    background: rgb(52 211 153 / 0.2);
+    background: rgb(var(--accent-rgb) / 0.2);
     color: var(--green);
   }
 

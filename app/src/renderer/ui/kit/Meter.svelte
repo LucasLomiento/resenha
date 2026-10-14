@@ -54,7 +54,7 @@
     flex: 1;
     height: 8px;
     border-radius: var(--r-full);
-    background: rgb(255 255 255 / 0.08);
+    background: rgb(var(--tint-rgb) / 0.08);
     overflow: hidden;
   }
 
@@ -66,7 +66,7 @@
   }
 
   .passing .fill {
-    background: linear-gradient(90deg, #22c08a, var(--green));
+    background: var(--green);
   }
 
   .idle .track {

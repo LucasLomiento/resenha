@@ -260,7 +260,7 @@
   /** A etiqueta com o nome, igual à de lá e um pouco maior (opaca, pra cobrir). */
   function label(g: CanvasRenderingContext2D, x: number, y: number, u: number, alpha: number) {
     if (!name || alpha <= 0) return
-    g.font = `bold ${13 * u}px sans-serif`
+    g.font = `700 ${13 * u}px 'Geist Variable', sans-serif`
     const padX = 7 * u
     const padY = 4 * u
     const w = g.measureText(name).width + 2 * padX + 2 * COVER + 2
@@ -273,7 +273,7 @@
     g.roundRect(left, top, w, h, h / 2)
     g.fill()
     g.globalAlpha = 0.9 * alpha
-    g.fillStyle = '#0d0b17'
+    g.fillStyle = '#0e0e10'
     g.fillText(name, left + COVER + 1 + padX, top + COVER + padY + 13 * u * 0.8)
   }
 

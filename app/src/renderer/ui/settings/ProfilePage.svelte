@@ -205,7 +205,7 @@
 <PageHeader title={m.settings.pages.profile} />
 
 {#if me}
-  <div class="profile-box">
+  <div class="profile-box wide-page">
     <form class="profile" onsubmit={save}>
       <div class="form">
         <Section>
@@ -470,8 +470,8 @@
 
   .profile {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 320px;
-    gap: 24px;
+    grid-template-columns: minmax(0, 1fr) 360px;
+    gap: 28px;
     align-items: start;
   }
 
@@ -568,9 +568,7 @@
   }
 
   .bio textarea:focus {
-    box-shadow:
-      inset 0 0 0 1px var(--accent-line),
-      0 0 0 3px rgb(122 108 255 / 0.18);
+    box-shadow: var(--focus-ring);
   }
 
   .bio small {
@@ -712,7 +710,7 @@
     width: 100%;
     height: 52px;
     border-radius: var(--r-md);
-    background: linear-gradient(180deg, color-mix(in oklab, var(--scene) 40%, #0b0b10), var(--bg-raised));
+    background: linear-gradient(180deg, color-mix(in oklab, var(--scene) 40%, var(--bg-canvas)), var(--bg-raised));
     overflow: hidden;
   }
 
@@ -756,7 +754,7 @@
 
   .preview {
     position: sticky;
-    top: 0;
+    top: 24px;
     display: flex;
     flex-direction: column;
     gap: 10px;

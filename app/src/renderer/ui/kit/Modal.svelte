@@ -86,8 +86,8 @@
     grid-template: minmax(0, 1fr) / minmax(0, 1fr);
     place-items: center;
     padding: var(--s-6);
-    background: rgb(4 4 8 / 0.66);
-    backdrop-filter: blur(3px);
+    background: var(--scrim);
+    backdrop-filter: blur(6px) saturate(0.9);
     animation: rs-fade-in var(--t) var(--ease);
   }
 
@@ -126,7 +126,7 @@
     display: flex;
     align-items: flex-start;
     gap: var(--s-3);
-    padding: 20px 16px 4px 24px;
+    padding: 22px 18px 4px 26px;
   }
 
   .titles {
@@ -136,9 +136,11 @@
   }
 
   h2 {
-    font-size: 17px;
-    font-weight: 600;
-    letter-spacing: -0.01em;
+    font-family: var(--font-display);
+    font-size: 20px;
+    font-weight: 650;
+    letter-spacing: -0.02em;
+    line-height: 1.2;
   }
 
   .titles p {
@@ -150,7 +152,7 @@
   .body {
     flex: 1;
     min-height: 0;
-    padding: 12px 24px 20px;
+    padding: 14px 26px 22px;
     overflow-y: auto;
   }
 
@@ -163,6 +165,6 @@
     justify-content: flex-end;
     align-items: center;
     gap: var(--s-2);
-    padding: 4px 24px 20px;
+    padding: 4px 26px 22px;
   }
 </style>

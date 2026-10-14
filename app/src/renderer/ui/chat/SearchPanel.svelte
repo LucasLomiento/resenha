@@ -144,8 +144,9 @@
     align-items: center;
     justify-content: space-between;
     flex: none;
-    height: 48px;
-    padding: 0 8px 0 16px;
+    height: var(--header-h);
+    padding: 0 10px 0 18px;
+    border-bottom: 1px solid var(--line);
   }
 
   .count {
@@ -155,7 +156,7 @@
   .list {
     flex: 1;
     min-height: 0;
-    padding: 4px 8px 16px;
+    padding: 8px 8px 16px;
     overflow-y: auto;
   }
 
@@ -229,8 +230,8 @@
 
   mark {
     border-radius: 3px;
-    background: rgb(251 191 36 / 0.22);
-    color: #ffe3a3;
+    background: rgb(255 196 77 / 0.22);
+    color: #ffe1a1;
   }
 
   .more {

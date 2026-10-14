@@ -55,14 +55,12 @@
   }
 
   select:hover:not(:disabled) {
-    box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.16);
+    box-shadow: inset 0 0 0 1px rgb(var(--tint-rgb) / 0.18);
   }
 
   select:focus-visible {
     outline: none;
-    box-shadow:
-      inset 0 0 0 1px var(--accent-line),
-      0 0 0 3px rgb(122 108 255 / 0.18);
+    box-shadow: var(--focus-ring);
   }
 
   select:disabled {

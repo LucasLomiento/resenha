@@ -62,7 +62,7 @@
     align-items: center;
     gap: 10px;
     width: 100%;
-    height: 32px;
+    height: 34px;
     padding: 0 8px 0 10px;
     border-radius: var(--r-md);
     color: var(--fg-3);
@@ -87,11 +87,13 @@
   .active,
   .active:hover:not(:disabled) {
     background: var(--selected);
+    box-shadow: var(--highlight);
     color: var(--fg);
+    font-weight: 550;
   }
 
   .active :global(.nav-icon) {
-    color: var(--fg-2);
+    color: var(--accent-fg);
   }
 
   .unread {
@@ -125,14 +127,16 @@
     white-space: nowrap;
   }
 
+  /* Novidade: um ponto azul no vão à esquerda do item. */
   .pip {
     position: absolute;
-    left: -8px;
+    left: -7px;
     top: 50%;
-    width: 4px;
-    height: 8px;
-    margin-top: -4px;
-    border-radius: 0 4px 4px 0;
-    background: var(--fg);
+    width: 6px;
+    height: 6px;
+    margin-top: -3px;
+    border-radius: var(--r-full);
+    background: var(--accent);
+    box-shadow: 0 0 8px rgb(var(--accent-rgb) / 0.6);
   }
 </style>

@@ -191,9 +191,7 @@
   }
 
   .topic textarea:focus {
-    box-shadow:
-      inset 0 0 0 1px var(--accent-line),
-      0 0 0 3px rgb(122 108 255 / 0.18);
+    box-shadow: var(--focus-ring);
   }
 
   .topic small {

@@ -41,7 +41,7 @@
   .slider::-webkit-slider-runnable-track {
     height: 4px;
     border-radius: var(--r-full);
-    background: linear-gradient(to right, var(--accent-fg) var(--fill), rgb(255 255 255 / 0.12) var(--fill));
+    background: linear-gradient(to right, var(--accent) var(--fill), rgb(var(--tint-rgb) / 0.12) var(--fill));
   }
 
   .slider::-webkit-slider-thumb {
@@ -67,12 +67,17 @@
 
   .slider:focus-visible::-webkit-slider-thumb {
     box-shadow:
-      0 0 0 3px rgb(122 108 255 / 0.45),
+      0 0 0 3px rgb(var(--accent-rgb) / 0.45),
       0 1px 4px rgb(0 0 0 / 0.5);
   }
 
   .slider:disabled {
-    opacity: 0.4;
+    opacity: 0.55;
     cursor: default;
+  }
+
+  /* Desligado: trilho cinza (nunca o azul apagado). */
+  .slider:disabled::-webkit-slider-runnable-track {
+    background: linear-gradient(to right, rgb(var(--tint-rgb) / 0.32) var(--fill), rgb(var(--tint-rgb) / 0.08) var(--fill));
   }
 </style>
