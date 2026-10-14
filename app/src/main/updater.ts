@@ -163,6 +163,8 @@ export async function installUpdate(rejoin?: unknown) {
   const version = state.version
   set({ status: 'installing', version })
   if (packageType() === 'pacman' && downloadedFile) return installPacman(downloadedFile, version)
+  // O instalador do Windows troca os arquivos com o app fechado: o librespot (resources/librespot.exe) não pode estar rodando.
+  cleanup()
   autoUpdater.quitAndInstall(false, true)
 }
 

@@ -26,8 +26,12 @@ jobs:
       - name: Cria a release como rascunho
         run: gh release create "$GITHUB_REF_NAME" --draft --title "Resenha ${GITHUB_REF_NAME#v}" --notes-file RELEASE_NOTES.md
 
+  # O librespot do bot do Spotify no Windows (vem do cache; compila só se não tiver).
+  librespot:
+    uses: ./.github/workflows/librespot-windows.yml
+
   build:
-    needs: draft
+    needs: [draft, librespot]
     strategy:
       fail-fast: false
       matrix:
@@ -50,6 +54,12 @@ jobs:
       # electron-builder, e o venmic já vem com o binário pronto no pacote npm.
       # No Windows o --force passa por cima do "venmic é só Linux" (lá ele nem é usado).
       - run: npm ci --ignore-scripts ${{ runner.os == 'Windows' && '--force' || '' }}
+      - name: librespot do bot do Spotify (Windows)
+        if: runner.os == 'Windows'
+        uses: actions/download-artifact@v4
+        with:
+          name: librespot-win
+          path: app/resources/win
       - name: Gera e envia pra release
         working-directory: app
         shell: bash

@@ -155,7 +155,8 @@
   let status = $state<SpotifyStatus | null>(null)
   let busy = $state<'install' | 'connect' | null>(null)
   let error = $state<string | null>(null)
-  const linux = $derived(client.platform?.platform === 'linux')
+  /** Dá pra pôr o Spotify neste sistema (Linux, ou Windows com o librespot no pacote). */
+  const supported = $derived(!!client.platform?.music)
   const account = $derived(status?.account ?? null)
   /** Trocando o app do Spotify (já conectado): o passo a passo abre de novo. */
   let changingApp = $state(false)
@@ -379,8 +380,8 @@
     </div>
   {:else if !call.channelId}
     <p class="hint">{t.setup.joinFirst}</p>
-  {:else if !linux}
-    <p class="hint">{t.setup.linuxOnly}</p>
+  {:else if !supported}
+    <p class="hint">{t.setup.unsupported}</p>
   {:else}
     <!-- ---------- Pôr o meu Spotify na call ---------- -->
     <div class="setup">
@@ -459,7 +460,7 @@
   {#snippet footer()}
     {#if share && mine}
       <Button variant="danger-soft" icon="log-out" onclick={() => call.stopMusic()}>{t.player.stop}</Button>
-    {:else if !share && call.channelId && linux}
+    {:else if !share && call.channelId && supported}
       <Button
         variant="primary"
         icon="music"

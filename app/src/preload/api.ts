@@ -15,6 +15,8 @@ export interface PlatformInfo {
   version: string
   /** No Hyprland atalho global só funciona por bind no config dele. */
   hyprland: boolean
+  /** Dá pra pôr o Spotify na call (Linux, ou Windows com o librespot embutido no pacote). */
+  music: boolean
 }
 
 export type ShortcutAction = 'toggle-mute' | 'toggle-deafen' | 'toggle-share' | 'leave-call' | 'show-window'

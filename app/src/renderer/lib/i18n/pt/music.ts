@@ -27,7 +27,7 @@ export default {
     browser: 'Confirme o login do Spotify no navegador que abriu (só desta vez).',
     browserLink: 'Abrir o login do Spotify',
     joinFirst: 'Entre numa call pra pôr o Spotify.',
-    linuxOnly: 'Por enquanto o bot do Spotify só funciona no Linux.',
+    unsupported: 'O bot do Spotify ainda não funciona neste sistema.',
     /** O app da pessoa no Spotify (a busca e os controles vão por ele). */
     app: 'App do Spotify',
     appHint: 'O Spotify só libera busca e controles pra apps cadastrados. Crie o seu uma vez (uns 2 minutos, de graça; precisa de Premium):',

@@ -82,7 +82,16 @@
         }
       ],
       "icon": "build/icon.ico",
-      "artifactName": "Resenha-${version}-win-${arch}.${ext}"
+      "artifactName": "Resenha-${version}-win-${arch}.${ext}",
+      "extraResources": [
+        {
+          "from": "resources/win",
+          "to": ".",
+          "filter": [
+            "librespot.exe"
+          ]
+        }
+      ]
     },
     "nsis": {
       "oneClick": false,

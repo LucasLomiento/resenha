@@ -25,7 +25,7 @@ export default {
     browser: 'Confirma el inicio de sesión de Spotify en el navegador que se abrió (solo esta vez).',
     browserLink: 'Abrir el inicio de sesión de Spotify',
     joinFirst: 'Entra a una llamada para poner Spotify.',
-    linuxOnly: 'Por ahora el bot de Spotify solo funciona en Linux.',
+    unsupported: 'El bot de Spotify todavía no funciona en este sistema.',
     /** O app da pessoa no Spotify (a busca e os controles vão por ele). */
     app: 'App de Spotify',
     appHint: 'Spotify solo permite búsqueda y controles a apps registradas. Crea la tuya una vez (unos 2 minutos, gratis; necesita Premium):',

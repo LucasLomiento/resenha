@@ -1,0 +1,39 @@
+# Compila o librespot pro Windows: o bot do Spotify roda ele, e o librespot não tem versão pronta
+# pra Windows. O release.yml chama este aqui e põe o .exe dentro do pacote (resources/librespot.exe).
+# Fica no cache do GitHub: rodando uma vez pela main (gh workflow run librespot-windows.yml), as
+# releases seguintes só pegam de lá. Versão nova do librespot: troque a versão e a chave do cache.
+#
+# Sem áudio nenhum além do "pipe" (o som vai pro Resenha pelo stdout), TLS do próprio Windows e a
+# biblioteca do C embutida (crt-static), pra não depender de DLL no PC de ninguém.
+
+name: librespot (Windows)
+
+on:
+  workflow_dispatch:
+  workflow_call:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - id: cache
+        uses: actions/cache@v4
+        with:
+          path: librespot-win
+          key: librespot-0.8.0-win-x64-crt-static
+      - name: Compila
+        if: steps.cache.outputs.cache-hit != 'true'
+        shell: bash
+        env:
+          RUSTFLAGS: -C target-feature=+crt-static
+        run: |
+          cargo install librespot --version 0.8.0 --locked --no-default-features --features "native-tls,with-libmdns" --root "$RUNNER_TEMP/librespot"
+          mkdir -p librespot-win
+          cp "$RUNNER_TEMP/librespot/bin/librespot.exe" librespot-win/
+      - name: Confere que roda
+        shell: bash
+        run: ./librespot-win/librespot.exe --version
+      - uses: actions/upload-artifact@v4
+        with:
+          name: librespot-win
+          path: librespot-win/librespot.exe

@@ -100,8 +100,8 @@
 
   /** Tem Spotify tocando na call (o meu ou o de alguém). */
   const musicOn = $derived(Object.keys(call.musicBots).length > 0)
-  /** Pôr o Spotify na call só funciona no Linux (o librespot): nos outros o botão nem aparece. */
-  const canMusic = $derived(client.platform?.platform === 'linux')
+  /** Pôr o Spotify na call só onde o librespot roda (Linux, Windows com ele no pacote): nos outros o botão nem aparece. */
+  const canMusic = $derived(!!client.platform?.music)
 
   function screenClick() {
     if (call.sharing) ui.sharePanel = !ui.sharePanel
@@ -133,7 +133,7 @@
         {#if call.channelId && worstLink}
           <SignalBars rtt={worstLink.rtt} route={worstLink.route} family={worstLink.family} other={otherRtt(worstLink, client.now)} />
         {/if}
-        <!-- Só onde dá pra pôr o Spotify (Linux, com o librespot). Nos outros, o bot de quem pôs
+        <!-- Só onde dá pra pôr o Spotify (onde o librespot roda). Nos outros, o bot de quem pôs
              abre pela lista do canal ou pelo bloco na call: ouvir e controlar funciona em todo lugar. -->
         {#if canMusic}
           <IconButton

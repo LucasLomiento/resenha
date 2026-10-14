@@ -40,6 +40,7 @@ import {
   spotifyStart,
   spotifyStatus,
   spotifyStop,
+  spotifySupported,
   spotifyWant,
 } from './spotify'
 import { checkForUpdates, downloadUpdate, installUpdate, setUpdaterCall, setUpdaterCleanup, setupUpdater, takeRejoin, updateState } from './updater'
@@ -298,7 +299,7 @@ handle('platform:info', (): PlatformInfo => {
   let screenAudio: PlatformInfo['screenAudio'] = 'none'
   if (isLinux && screenAudioAvailable()) screenAudio = 'venmic'
   else if (isWindows) screenAudio = windowsExcludesSelf ? 'exclude-self' : 'loopback-all'
-  return { platform: process.platform, portalPicker, screenAudio, version: app.getVersion(), hyprland: isHyprland }
+  return { platform: process.platform, portalPicker, screenAudio, version: app.getVersion(), hyprland: isHyprland, music: spotifySupported() }
 })
 
 listen('attention', () => {

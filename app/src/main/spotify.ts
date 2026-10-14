@@ -38,6 +38,7 @@ import { createHash, randomBytes } from 'node:crypto'
 import { constants, existsSync, mkdirSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { createServer, type Server } from 'node:http'
 import { Socket, type AddressInfo } from 'node:net'
+import type { Readable } from 'node:stream'
 import { tmpdir } from 'node:os'
 import { delimiter, join } from 'node:path'
 import type { MusicError, MusicList, MusicOp, MusicPlayer, MusicReply, MusicSearch, MusicTrack, SpotifyStatus } from '../preload/api'
@@ -571,8 +572,18 @@ let deviceId: string | null = null
 let target: WebContents | null = null
 /** Bytes de som que o renderer pediu e ainda não foram. */
 let wanted = 0
-/** O FIFO por onde o som chega (lido sem bloquear, pelo laço de eventos). Um por vez que o bot liga. */
-let pcm: { socket: Socket; path: string } | null = null
+/**
+ * Por onde o som chega, lido sem bloquear (pelo laço de eventos). No Linux, um FIFO por vez
+ * que o bot liga; no Windows, o stdout do librespot (`path` null).
+ */
+let pcm: { stream: Readable; path: string | null } | null = null
+/**
+ * Windows: o som vem pelo stdout do librespot. Lá o stdout de um filho é um pipe de 64 KB (no
+ * Linux é um socket com ~200 KB de folga, por isso o FIFO), e não tem FIFO nem garantia de que o
+ * librespot abre um named pipe (ele abre a saída com "criar e truncar"). RESENHA_SPOTIFY_STDOUT=1
+ * força esse caminho no Linux, pro teste passar por ele.
+ */
+const viaStdout = process.platform === 'win32' || process.env.RESENHA_SPOTIFY_STDOUT === '1'
 /**
  * Cada `spotifyStop` passa pra próxima: o que estava ligando confere depois de
  * cada espera e desiste se mudou (sair da call no meio não deixa librespot sobrando).
@@ -593,6 +604,9 @@ export function setSpotifyTarget(contents: WebContents) {
 function librespotPath(): string | null {
   const custom = process.env.RESENHA_LIBRESPOT
   if (custom) return existsSync(custom) ? custom : null
+  // No Windows ele vai dentro do pacote (compilado no build do GitHub: não tem versão pronta).
+  const bundled = app.isPackaged && process.platform === 'win32' ? join(process.resourcesPath, 'librespot.exe') : null
+  if (bundled && existsSync(bundled)) return bundled
   const name = process.platform === 'win32' ? 'librespot.exe' : 'librespot'
   for (const folder of (process.env.PATH ?? '').split(delimiter)) {
     if (folder && existsSync(join(folder, name))) return join(folder, name)
@@ -602,9 +616,18 @@ function librespotPath(): string | null {
 
 const installable = () => process.platform === 'linux' && existsSync('/usr/bin/pacman')
 
-/** Abre o FIFO do som desta vez que o bot liga. Leitura e escrita: sem isso, o librespot pausar (fecha o lado dele) seria "fim". */
-function openPcm(): string {
-  if (pcm && !pcm.socket.destroyed) return pcm.path
+/** Dá pra pôr o Spotify na call neste sistema: no Linux (o librespot vem do pacote do sistema) ou com ele embutido (Windows). */
+export function spotifySupported(): boolean {
+  return process.platform === 'linux' || !!librespotPath()
+}
+
+/**
+ * Abre o FIFO do som desta vez que o bot liga. Leitura e escrita: sem isso, o librespot pausar
+ * (fecha o lado dele) seria "fim". No Windows não tem FIFO: null (o som vem pelo stdout).
+ */
+function openPcm(): string | null {
+  if (viaStdout) return null
+  if (pcm?.path && !pcm.stream.destroyed) return pcm.path
   const path = join(process.env.XDG_RUNTIME_DIR || tmpdir(), `resenha-spotify-${process.pid}-${generation}.pcm`)
   rmSync(path, { force: true })
   if (spawnSync('mkfifo', ['-m', '600', path]).status !== 0) throw new SpotifyError('failed')
@@ -615,14 +638,14 @@ function openPcm(): string {
   const socket = new Socket(options)
   socket.on('readable', pump)
   socket.on('error', (err) => console.warn('spotify: o som parou de chegar', err.message))
-  pcm = { socket, path }
+  pcm = { stream: socket, path }
   return path
 }
 
 function closePcm(which: typeof pcm) {
   if (!which) return
-  which.socket.destroy()
-  rmSync(which.path, { force: true })
+  which.stream.destroy()
+  if (which.path) rmSync(which.path, { force: true })
   if (pcm === which) pcm = null
 }
 
@@ -661,7 +684,7 @@ const CONNECT_GRACE = 3000
 function launch(bin: string, token: string | null): Promise<boolean> {
   return new Promise((resolve, reject) => {
     mkdirSync(cacheDir(), { recursive: true })
-    let fifo: string
+    let fifo: string | null
     try {
       fifo = openPcm()
     } catch (err) {
@@ -669,7 +692,18 @@ function launch(bin: string, token: string | null): Promise<boolean> {
     }
     const env = { ...process.env, ...(token ? { LIBRESPOT_ACCESS_TOKEN: token } : {}) }
     if (!token) delete env.LIBRESPOT_ACCESS_TOKEN
-    const proc = spawn(bin, [...args([]), '--device', fifo], { stdio: ['ignore', 'ignore', 'pipe'], env })
+    // Sem --device, o librespot escreve o som no stdout (Windows). windowsHide: sem a janela preta do console.
+    const proc = spawn(bin, [...args([]), ...(fifo ? ['--device', fifo] : [])], {
+      stdio: ['ignore', fifo ? 'ignore' : 'pipe', 'pipe'],
+      env,
+      windowsHide: true,
+    })
+    if (!fifo) {
+      const out = proc.stdout!
+      out.on('readable', pump)
+      out.on('error', (err) => console.warn('spotify: o som parou de chegar', err.message))
+      pcm = { stream: out, path: null }
+    }
     const born = generation
     child = proc
     let log = ''
@@ -838,9 +872,9 @@ export function spotifyKill() {
   closePcm(pcm)
 }
 
-/** Manda pro renderer o som que ele pediu, só o que já chegou (o resto espera no FIFO). */
+/** Manda pro renderer o som que ele pediu, só o que já chegou (o resto espera no FIFO, ou no pipe do stdout). */
 function pump() {
-  const out = pcm?.socket
+  const out = pcm?.stream
   if (!out || !running || !target || target.isDestroyed()) return
   while (wanted >= FRAME) {
     const available = out.readableLength - (out.readableLength % FRAME)
@@ -864,7 +898,7 @@ export function spotifyWant(bytes: unknown) {
 
 /** Trocou de música: o que estava esperando no meio do caminho é da anterior (joga fora só quadros inteiros). */
 export function spotifyFlush() {
-  const out = pcm?.socket
+  const out = pcm?.stream
   if (!out) return
   const whole = out.readableLength - (out.readableLength % FRAME)
   if (whole > 0) out.read(whole)

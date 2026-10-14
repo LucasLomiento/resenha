@@ -9,3 +9,6 @@ out/
 CLAUDE.md
 .mcp.json
 __pycache__/
+
+# librespot do Windows: compilado no build do GitHub (.github/workflows/librespot-windows.yml)
+app/resources/win/
