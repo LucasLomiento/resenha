@@ -37,7 +37,7 @@ interface HomeConn {
   resumable?: boolean
   /** Outra conexão com a mesma chave tomou o lugar desta: ao fechar, não mexe em nada. */
   replaced?: boolean
-  /** App do celular (não segura o push: ver `pushAllowed`). */
+  /** App do celular (não segura o push: ver `pushDevices`). */
   mobile?: boolean
 }
 
@@ -704,9 +704,14 @@ export class Home extends DurableObject<Env> {
         const row = this.sql.exec<DmRow>('SELECT * FROM dms WHERE channel_id = ?', channelId).one()
         if (peer) this.broadcast({ t: 'dm.channel', channel: this.toDm(row, peer) })
       }
-      if (!mine) this.ctx.waitUntil(this.pushDm(channelId, peerId, event.message))
+      // Quem recebe o push se decide agora (o computador pode virar "ausente" enquanto o nome chega).
+      const devices = mine ? [] : this.pushDevices()
+      if (devices.length) this.ctx.waitUntil(this.pushDm(devices, channelId, peerId, event.message))
     }
-    if (event.t === 'call.ringing') this.ctx.waitUntil(this.pushCall(channelId, event.from, event.video))
+    if (event.t === 'call.ringing') {
+      const devices = this.pushDevices()
+      if (devices.length) this.ctx.waitUntil(this.pushCall(devices, channelId, event.from, event.video))
+    }
     this.broadcast(event)
   }
 
@@ -722,7 +727,7 @@ export class Home extends DurableObject<Env> {
     /** Nome de quem foi mencionado (pro texto: <@id> vira @nome). */
     names: Record<string, string>
   }) {
-    await this.push((text, preview) => ({
+    await this.push(this.pushDevices(), (text, preview) => ({
       title: text.inChannel(input.author, input.channel, input.server),
       body: preview ? pushBody(input.content, input.attachments, (id) => input.names[id] ?? null, text) || text.hidden : text.hidden,
       data: { kind: 'channel', guildId: input.guildId, channelId: input.channelId },
@@ -733,25 +738,23 @@ export class Home extends DurableObject<Env> {
 
   // ---------- Push (celular) ----------
 
-  /** Tem aparelho com push? (Antes de buscar nomes e montar texto.) */
-  private hasPush(): boolean {
-    return this.pusher.enabled && this.sql.exec('SELECT 1 FROM push_tokens LIMIT 1').toArray().length > 0
-  }
-
-  /** Push só sem "Não perturbe" e sem a pessoa ativa no computador (lá ela já vê e ouve o aviso). */
-  private pushAllowed(): boolean {
-    if (this.manual().status === 'dnd') return false
-    return !this.sockets().some((ws) => {
+  /**
+   * Os aparelhos que recebem push agora: nenhum com "Não perturbe" nem com a pessoa ativa no
+   * computador (lá ela já vê e ouve o aviso). Decidido na hora em que o aviso nasce.
+   */
+  private pushDevices(): PushRow[] {
+    if (!this.pusher.enabled || this.manual().status === 'dnd') return []
+    const active = this.sockets().some((ws) => {
       const s = this.state(ws)
       return !s.pending && !s.mobile && s.status !== 'idle'
     })
+    return active ? [] : this.sql.exec<PushRow>('SELECT * FROM push_tokens').toArray()
   }
 
   /** Manda pros aparelhos: uma mensagem por idioma (e por "mostrar o texto"); tira os tokens que morreram. */
-  private async push(build: (text: (typeof PUSH_TEXT)[PushLocale], preview: boolean) => PushMessage) {
-    if (!this.hasPush() || !this.pushAllowed()) return
+  private async push(devices: PushRow[], build: (text: (typeof PUSH_TEXT)[PushLocale], preview: boolean) => PushMessage) {
     const groups = new Map<string, PushRow[]>()
-    for (const row of this.sql.exec<PushRow>('SELECT * FROM push_tokens').toArray()) {
+    for (const row of devices) {
       const key = `${row.locale}:${row.preview}`
       groups.set(key, [...(groups.get(key) ?? []), row])
     }
@@ -769,11 +772,10 @@ export class Home extends DurableObject<Env> {
     }
   }
 
-  private async pushDm(channelId: string, peerId: string, message: Message) {
-    if (!this.hasPush()) return
+  private async pushDm(devices: PushRow[], channelId: string, peerId: string, message: Message) {
     const peer = await directory(this.env).getUser(peerId)
     const name = peer?.name ?? '…'
-    await this.push((text, preview) => ({
+    await this.push(devices, (text, preview) => ({
       title: name,
       body: preview ? pushBody(message.content, message.attachments, (id) => (id === peerId ? name : null), text) || text.hidden : text.hidden,
       data: { kind: 'dm', channelId },
@@ -782,10 +784,9 @@ export class Home extends DurableObject<Env> {
     }))
   }
 
-  private async pushCall(channelId: string, from: string, video: boolean) {
-    if (!this.hasPush()) return
+  private async pushCall(devices: PushRow[], channelId: string, from: string, video: boolean) {
     const name = (await directory(this.env).getUser(from))?.name ?? '…'
-    await this.push((text) => ({
+    await this.push(devices, (text) => ({
       title: video ? text.videoCalling(name) : text.calling(name),
       body: text.tapToAnswer,
       data: { kind: 'call', channelId },

@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "214060917869",
+    "project_id": "resenha-5e289",
+    "storage_bucket": "resenha-5e289.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:214060917869:android:e5c6072c299a073aff0b64",
+        "android_client_info": {
+          "package_name": "com.lucasreis.resenha"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBlKwdHmO204mX98G0PDKNesp66aaKHONo"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

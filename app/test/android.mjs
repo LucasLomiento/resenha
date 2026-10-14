@@ -7,11 +7,13 @@
 // Ferramentas: RESENHA_ANDROID_HOME (padrão ~/.local/share/resenha-android, com jdk/ e sdk/).
 //   RESENHA_SHOTS=pasta          capturas da tela do aparelho (com as barras do sistema)
 //   RESENHA_ANDROID_SKIP_BUILD=1 usa o APK que já está instalado
+// Com o Firebase configurado (mobile/android/app/google-services.json e FCM_SERVICE_ACCOUNT no
+// server/.dev.vars), confere também o push de verdade, com o app no fundo.
 //
 // Uso: npm -w app run test:android
 
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { _android as android } from 'playwright-core'
@@ -25,6 +27,9 @@ const SERVER = `http://127.0.0.1:${PORT}`
 const PASSWORD = 'senha-de-teste-1'
 const SHOTS = process.env.RESENHA_SHOTS
 const TOOLS = process.env.RESENHA_ANDROID_HOME ?? join(homedir(), '.local/share/resenha-android')
+const DEV_VARS = join(ROOT, 'server/.dev.vars')
+const PUSH =
+  existsSync(join(MOBILE, 'android/app/google-services.json')) && existsSync(DEV_VARS) && /^FCM_SERVICE_ACCOUNT=/m.test(readFileSync(DEV_VARS, 'utf8'))
 
 const env = {
   ...process.env,
@@ -79,6 +84,36 @@ async function inviteFor(guildId, token) {
       }
     }
   })
+}
+
+/** Manda uma mensagem privada pelo Home de quem escreve (como o app faz). */
+async function sendDm(from, toUserId, content) {
+  const ws = new WebSocket(`${SERVER.replace('http', 'ws')}/api/home/${from.user.id}/ws`)
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('a mensagem privada não saiu')), 10_000)
+    ws.onopen = () => ws.send(JSON.stringify({ t: 'auth', token: from.token }))
+    ws.onmessage = (event) => {
+      const msg = JSON.parse(event.data)
+      if (msg.t === 'ready') ws.send(JSON.stringify({ t: 'dm.open', userId: toUserId, reqId: 'o' }))
+      if (msg.t === 'dm.channel' && msg.reqId === 'o') {
+        ws.send(JSON.stringify({ t: 'dm.send', channelId: msg.channel.id, content, attachmentIds: [], nonce: 'n' }))
+      }
+      if (msg.t === 'dm.message' && msg.nonce === 'n') {
+        clearTimeout(timer)
+        ws.close()
+        resolve(msg.channelId)
+      }
+    }
+  })
+}
+
+/** Avisos do app na gaveta do Android: o canal e o texto de cada um. */
+function notifications() {
+  const dump = adb('shell', 'dumpsys', 'notification', '--noredact')
+  return dump
+    .split(/\n\s*NotificationRecord\(/)
+    .filter((record) => record.includes(`pkg=${PACKAGE}`))
+    .map((record) => ({ channel: /channel=(\S+)/.exec(record)?.[1] ?? '', text: /android\.text=String \((.*)\)/.exec(record)?.[1] ?? '' }))
 }
 
 /** Microfone e câmera de mentira (o emulador não tem, e o do PC não pode entrar no teste). */
@@ -291,6 +326,36 @@ try {
   check(await page.locator('.settings-nav').isVisible(), 'o voltar da página volta pra lista das configurações')
   await back(page)
   check((await page.locator('.settings').count()) === 0, 'o voltar da lista fecha as configurações')
+
+  // ---------- Push de verdade (Firebase), com o app no fundo ----------
+  if (PUSH) {
+    const token = await page.evaluate(() => window.resenha.push?.token() ?? null)
+    check(typeof token === 'string' && token.length > 20, 'o celular pega o token do push no Firebase')
+    await page.waitForTimeout(1000)
+    adb('shell', 'input', 'keyevent', 'KEYCODE_HOME')
+    await page.waitForTimeout(1500)
+    await sendDm(duarte, owner.user.id, 'push de verdade')
+    let got = []
+    for (let i = 0; i < 40 && !got.length; i++) {
+      got = notifications().filter((n) => n.text === 'push de verdade')
+      if (!got.length) await new Promise((r) => setTimeout(r, 500))
+    }
+    check(got.length === 1 && got[0].channel === 'messages', 'com o app no fundo, a mensagem privada chega pelo push (uma vez só)', JSON.stringify(got))
+    adb('shell', 'cmd', 'statusbar', 'expand-notifications')
+    await page.waitForTimeout(800)
+    if (SHOTS) writeFileSync(join(SHOTS, '12-push.png'), await device.screenshot())
+    const tapped = await tapSystem(page, 'push de verdade')
+    const opened =
+      tapped &&
+      (await page
+        .getByPlaceholder('Mensagem pra Duarte')
+        .waitFor({ timeout: 10_000 })
+        .then(() => true, () => false))
+    check(opened && (await pane(page)) === 'main', 'tocar no aviso abre a conversa')
+    await shot(page, '13-aberto-pelo-push')
+  } else {
+    console.log('(sem o Firebase configurado: o push de verdade não foi testado)')
+  }
 } finally {
   await device?.close().catch(() => {})
   try {

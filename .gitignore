@@ -12,3 +12,6 @@ __pycache__/
 
 # librespot do Windows: compilado no build do GitHub (.github/workflows/librespot-windows.yml)
 app/resources/win/
+
+# Chave privada da conta de serviço do Firebase (vai só pro secret FCM_SERVICE_ACCOUNT do Worker)
+*firebase-adminsdk*.json
