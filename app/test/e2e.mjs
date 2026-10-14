@@ -1678,9 +1678,10 @@ try {
     // O librespot entra com o login do app de computador (a Web API, que dá 429 com ele, vai pelo app da pessoa).
     spotify.state.started?.token === 'token-do-player' &&
       !librespotArgs.includes('--access-token') &&
-      librespotArgs.includes('--device') &&
+      // Som pelo FIFO (--device); com RESENHA_SPOTIFY_STDOUT=1 (o caminho do Windows), pelo stdout.
+      librespotArgs.includes('--device') !== (process.env.RESENHA_SPOTIFY_STDOUT === '1') &&
       spotify.state.log.some((c) => c.route === 'PUT /v1/me/player'),
-    'Spotify: A conecta a conta e o bot entra (librespot com o token do login pelo ambiente, som pelo FIFO, Spotify passado pro bot)',
+    `Spotify: A conecta a conta e o bot entra (librespot com o token do login pelo ambiente, som pelo ${process.env.RESENHA_SPOTIFY_STDOUT === '1' ? 'stdout' : 'FIFO'}, Spotify passado pro bot)`,
     librespotArgs.filter((x) => x.startsWith('--')).join(' '),
   )
   await panelA.getByPlaceholder('Música, artista, playlist ou álbum').fill('evid')
