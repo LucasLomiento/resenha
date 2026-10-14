@@ -71,16 +71,16 @@ export const SETTINGS: SettingEntry[] = [
 
   // Voz e vídeo
   { id: 'voice.input', page: 'voice' },
-  { id: 'voice.output', page: 'voice' },
+  { id: 'voice.output', page: 'voice', desktop: true },
   { id: 'voice.test', page: 'voice' },
   { id: 'voice.noise', page: 'voice' },
   { id: 'voice.gate', page: 'voice' },
-  { id: 'voice.camera', page: 'voice' },
+  { id: 'voice.camera', page: 'voice', desktop: true },
   { id: 'voice.preview', page: 'voice' },
-  { id: 'voice.ink', page: 'voice' },
+  { id: 'voice.ink', page: 'voice', desktop: true },
   { id: 'voice.echo', page: 'voice' },
   { id: 'voice.agc', page: 'voice' },
-  { id: 'voice.codec', page: 'voice' },
+  { id: 'voice.codec', page: 'voice', desktop: true },
   { id: 'voice.stats', page: 'voice' },
   { id: 'voice.smartRoute', page: 'voice' },
 
@@ -92,12 +92,12 @@ export const SETTINGS: SettingEntry[] = [
   { id: 'notify.content', page: 'notifications' },
 
   // Atalhos
-  { id: 'shortcuts.toggle-mute', page: 'shortcuts' },
-  { id: 'shortcuts.toggle-deafen', page: 'shortcuts' },
-  { id: 'shortcuts.toggle-share', page: 'shortcuts' },
-  { id: 'shortcuts.leave-call', page: 'shortcuts' },
-  { id: 'shortcuts.show-window', page: 'shortcuts' },
-  { id: 'shortcuts.all', page: 'shortcuts' },
+  { id: 'shortcuts.toggle-mute', page: 'shortcuts', desktop: true },
+  { id: 'shortcuts.toggle-deafen', page: 'shortcuts', desktop: true },
+  { id: 'shortcuts.toggle-share', page: 'shortcuts', desktop: true },
+  { id: 'shortcuts.leave-call', page: 'shortcuts', desktop: true },
+  { id: 'shortcuts.show-window', page: 'shortcuts', desktop: true },
+  { id: 'shortcuts.all', page: 'shortcuts', desktop: true },
   { id: 'shortcuts.hyprland', page: 'shortcuts', hyprland: true },
 
   // Aplicativo

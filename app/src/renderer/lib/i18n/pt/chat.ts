@@ -57,6 +57,7 @@ export default {
     encoding: 'Preparando o áudio…',
     uploadingPercent: (percent: number) => `Enviando ${percent}%`,
     sendEnter: 'Enviar (Enter)',
+    send: 'Enviar',
     attach: 'Anexar arquivo',
     slowmode: 'Modo lento',
     emoji: 'Emoji',

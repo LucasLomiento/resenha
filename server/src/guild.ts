@@ -21,6 +21,7 @@ import {
   type MapViewer,
   type StreetSpot,
   type Member,
+  type Message,
   type NotifyLevel,
   type MusicStatus,
   type NotifySettings,
@@ -59,7 +60,7 @@ import {
   type MemberLike,
 } from '../../shared/permissions'
 import { aggregate, samePresence } from './presence'
-import { directory } from './stubs'
+import { directory, home } from './stubs'
 import { parseStyle, styleText } from './style'
 import { unfurlAll } from './unfurl'
 import { cleanLine, cleanMusic, cleanText, color } from './validate'
@@ -1691,7 +1692,48 @@ export class Guild extends DurableObject<Env> {
     this.markRead(userId, channel.id, row.id)
     const [message] = await this.store.load([row])
     this.broadcast({ t: 'chat.message', message, nonce }, { channelId: channel.id })
+    this.ctx.waitUntil(this.pushMessage(message, channel))
     await this.refreshEmbeds(row.id, channel.id, content)
+  }
+
+  // ---------- Push no celular ----------
+
+  /** Nome de alguém neste servidor (o apelido, senão o nome da conta). */
+  private displayName(userId: string): string | null {
+    return this.member(userId)?.nick ?? this.user(userId)?.name ?? null
+  }
+
+  /** Quem quer ser avisado dessa mensagem, pelo nível de aviso dele (o mesmo que o app usa). */
+  private wantsPush(row: MemberRow, message: Message): boolean {
+    const now = Date.now()
+    const settings = this.notifySettings(row.user_id)
+    const own = settings.channels[message.channelId]
+    if ((own?.mutedUntil ?? 0) > now || (settings.mutedUntil ?? 0) > now) return false
+    const level = own?.level ?? settings.level
+    if (level !== 'mentions') return level === 'all'
+    const roles = parseJsonList(row.roles)
+    return message.mentions.includes(row.user_id) || message.mentionEveryone || message.mentionRoles.some((r) => roles.includes(r))
+  }
+
+  /** Push pros celulares (o Home de cada um decide se manda: computador ativo, "Não perturbe"). */
+  private async pushMessage(message: Message, channel: Channel) {
+    const targets = this.members().filter(
+      (row) => row.user_id !== message.authorId && this.wantsPush(row, message) && this.can(row.user_id, channel.id, P.VIEW_CHANNEL),
+    )
+    if (targets.length === 0) return
+    const names: Record<string, string> = {}
+    for (const id of message.mentions) names[id] = this.displayName(id) ?? '…'
+    const input = {
+      guildId: this.id,
+      channelId: channel.id,
+      author: this.displayName(message.authorId) ?? '…',
+      channel: channel.name,
+      server: this.info().name,
+      content: message.content,
+      attachments: message.attachments.map((a) => ({ name: a.name })),
+      names,
+    }
+    await Promise.allSettled(targets.map((row) => home(this.env, row.user_id).guildPush(input)))
   }
 
   /** Busca as prévias dos links (depois que a mensagem já chegou pra todo mundo). */

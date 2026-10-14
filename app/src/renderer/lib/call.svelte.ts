@@ -14,6 +14,9 @@ import { PRESETS, settings } from './settings.svelte'
 import { SfuPublisher, SfuViewer } from './sfu'
 import { playSound, type SoundName } from './sounds'
 
+/** App do celular (build próprio): câmera pela frente/trás em vez do aparelho escolhido. */
+const MOBILE = import.meta.env.VITE_MOBILE === '1'
+
 /** Ping recente da família que não está em uso (pra dica do ping), arredondado. */
 export function otherRtt(link: LinkStats | undefined, now = Date.now()): number | null {
   if (!link?.family) return null
@@ -112,6 +115,8 @@ export class Call {
   /** Minha câmera (null = desligada) e as câmeras que chegam (connId -> stream). */
   camera = $state.raw<MediaStream | null>(null)
   cameras = $state.raw<Record<string, MediaStream>>({})
+  /** Celular: a câmera da frente (espelhada na prévia) ou a de trás. */
+  cameraFacing = $state<'user' | 'environment'>('user')
   joining = $state(false)
   /** Estou falando (com uma folga pra não piscar), pro ícone da bandeja. */
   selfSpeaking = $state(false)
@@ -732,7 +737,7 @@ export class Call {
     if (!this.channelId) return
     let stream: MediaStream
     try {
-      stream = await getCameraStream()
+      stream = await getCameraStream(MOBILE ? this.cameraFacing : undefined)
     } catch (err) {
       const name = (err as Error).name
       const t = m.lib.call
@@ -764,13 +769,34 @@ export class Call {
   async reloadCamera() {
     if (!this.camera) return
     try {
-      const stream = await getCameraStream()
+      const stream = await getCameraStream(MOBILE ? this.cameraFacing : undefined)
       const old = this.camera
       this.camera = stream
       await Promise.all(this.peerList.map((p) => p.sendCamera(stream)))
       for (const track of old.getTracks()) track.stop()
     } catch (err) {
       this.deps.toast(m.lib.call.cameraSwitchFailed((err as Error).message))
+    }
+  }
+
+  /** Celular: troca entre a câmera da frente e a de trás. */
+  async flipCamera() {
+    const old = this.camera
+    if (!old) return
+    this.cameraFacing = this.cameraFacing === 'user' ? 'environment' : 'user'
+    // Muito celular não abre as duas câmeras juntas: solta a atual antes de abrir a outra.
+    for (const track of old.getTracks()) track.stop()
+    try {
+      const stream = await getCameraStream(this.cameraFacing)
+      if (this.camera !== old) return void stream.getTracks().forEach((track) => track.stop())
+      stream.getVideoTracks()[0].addEventListener('ended', () => {
+        if (this.camera === stream) this.stopCamera()
+      })
+      this.camera = stream
+      await Promise.all(this.peerList.map((p) => p.sendCamera(stream)))
+    } catch (err) {
+      this.deps.toast(m.lib.call.cameraSwitchFailed((err as Error).message))
+      this.stopCamera()
     }
   }
 

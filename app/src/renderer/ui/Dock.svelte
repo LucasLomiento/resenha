@@ -28,14 +28,6 @@
   /** Mouse em cima de você: a foto animada e a moldura se mexem. */
   let meHover = $state(false)
 
-  async function toggleCamera() {
-    if (call.camera) return call.toggleCamera()
-    // Mais de uma câmera: escolhe qual, como no compartilhar tela. Com uma (ou nenhuma), liga direto.
-    if (namedDevices((await listDevices()).cameras).length > 1) return void (ui.camera = true)
-    await call.toggleCamera()
-    if (call.camera) client.view = 'call'
-  }
-
   /** Mapa compartilhado do servidor da call (chamada privada não tem). */
   const mapGuild = $derived(call.guildId ? (client.guilds[call.guildId] ?? null) : null)
   const mapOpen = $derived(!!mapGuild && client.mapGuild?.id === mapGuild.id)
@@ -103,6 +95,10 @@
   /** Pôr o Spotify na call só onde o librespot roda (Linux, Windows com ele no pacote): nos outros o botão nem aparece. */
   const canMusic = $derived(!!client.platform?.music)
 
+  /** Celular não compartilha a tela nem escolhe a saída do som: os botões nem aparecem. */
+  const mobile = $derived(!!client.platform?.mobile)
+  const actions = $derived(1 + (mobile ? 0 : 1) + (mapGuild ? 1 : 0))
+
   function screenClick() {
     if (call.sharing) ui.sharePanel = !ui.sharePanel
     else ui.share = true
@@ -148,7 +144,7 @@
         <IconButton icon="phone-off" label={t.leave} tone="danger" disabled={!call.channelId} onclick={() => client.leaveCall()} />
       </div>
 
-      <div class="call-actions" class:three={!!mapGuild}>
+      <div class="call-actions" style:--n={actions}>
         <button
           class="action"
           class:on={!!call.camera}
@@ -156,28 +152,30 @@
           aria-label={call.camera ? t.cameraOff : t.cameraOn}
           aria-pressed={!!call.camera}
           use:tooltip={call.camera ? t.cameraOff : t.cameraOn}
-          onclick={toggleCamera}
+          onclick={() => client.toggleCamera()}
         >
           <Icon name="camera" size={16} />
           {t.camera}
         </button>
-        <button
-          class="action"
-          class:sharing={call.sharing}
-          disabled={!call.channelId}
-          aria-label={call.sharing ? t.liveOptions : t.shareScreen}
-          aria-expanded={call.sharing ? ui.sharePanel : undefined}
-          use:tooltip={call.sharing ? t.streamOptions : t.shareScreen}
-          onclick={screenClick}
-        >
-          {#if call.sharing}
-            <span class="dot"></span>
-            {t.live}
-          {:else}
-            <Icon name="screen" size={16} />
-            {t.screen}
-          {/if}
-        </button>
+        {#if !mobile}
+          <button
+            class="action"
+            class:sharing={call.sharing}
+            disabled={!call.channelId}
+            aria-label={call.sharing ? t.liveOptions : t.shareScreen}
+            aria-expanded={call.sharing ? ui.sharePanel : undefined}
+            use:tooltip={call.sharing ? t.streamOptions : t.shareScreen}
+            onclick={screenClick}
+          >
+            {#if call.sharing}
+              <span class="dot"></span>
+              {t.live}
+            {:else}
+              <Icon name="screen" size={16} />
+              {t.screen}
+            {/if}
+          </button>
+        {/if}
         {#if mapGuild}
           <button
             class="action"
@@ -246,7 +244,7 @@
         <Icon name="chevron-down" size={12} />
       </button>
     </div>
-    <div class="split" oncontextmenu={(e) => (e.preventDefault(), openDevices('output', e.currentTarget as HTMLElement))} role="group">
+    <div class="split" oncontextmenu={(e) => (e.preventDefault(), !mobile && openDevices('output', e.currentTarget as HTMLElement))} role="group">
       <IconButton
         icon={call.deafened ? 'headphones-off' : 'headphones'}
         label={call.deafened ? t.undeafen : t.deafen}
@@ -255,16 +253,18 @@
         aria-pressed={call.deafened}
         onclick={() => call.toggleDeafen()}
       />
-      <button
-        class="chevron"
-        aria-label={t.devices.audioOptions}
-        aria-haspopup="menu"
-        aria-expanded={deviceMenu?.kind === 'output'}
-        use:tooltip={t.devices.audioOptions}
-        onclick={(e) => openDevices('output', e.currentTarget.parentElement!)}
-      >
-        <Icon name="chevron-down" size={12} />
-      </button>
+      {#if !mobile}
+        <button
+          class="chevron"
+          aria-label={t.devices.audioOptions}
+          aria-haspopup="menu"
+          aria-expanded={deviceMenu?.kind === 'output'}
+          use:tooltip={t.devices.audioOptions}
+          onclick={(e) => openDevices('output', e.currentTarget.parentElement!)}
+        >
+          <Icon name="chevron-down" size={12} />
+        </button>
+      {/if}
     </div>
     <IconButton icon="settings" label={t.settings} onclick={() => (ui.settings = 'profile')} />
   </div>
@@ -359,13 +359,9 @@
 
   .call-actions {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(var(--n), 1fr);
     gap: 6px;
     margin-top: 6px;
-  }
-
-  .call-actions.three {
-    grid-template-columns: repeat(3, 1fr);
   }
 
   .count {

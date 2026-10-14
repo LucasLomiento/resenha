@@ -56,6 +56,8 @@
   const canSend = $derived(target.canSend && !uploading && waiting === 0 && (text.trim().length > 0 || uploads.some((u) => u.attachment)))
   const length = $derived(text.length)
   const t = $derived(m.chat.composer)
+  /** Celular: o Enter do teclado pula linha e quem envia é o botão; trocar de conversa não abre o teclado. */
+  const mobile = $derived(!!client.platform?.mobile)
 
   // Trocou de conversa: guarda o rascunho desta e traz o da outra. Só quando o id muda de
   // verdade: a conversa pode chegar como um objeto novo com o mesmo id (e aí não pode
@@ -74,7 +76,7 @@
       waitUntil = 0
       requestAnimationFrame(() => {
         resize()
-        input?.focus()
+        if (!mobile) input?.focus()
       })
     })
   })
@@ -440,7 +442,7 @@
         return
       }
     }
-    if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
+    if (event.key === 'Enter' && !event.shiftKey && !event.isComposing && !mobile) {
       event.preventDefault()
       send()
       return
@@ -599,7 +601,19 @@
           <IconButton icon="emoji" label={t.emoji} active={emojiOpen} onclick={() => (emojiOpen = !emojiOpen)} />
         </span>
       {/if}
-      {#if target.canAttach && target.canSend}
+      {#if mobile && target.canSend && (text.trim() || uploads.length)}
+        <!-- O teclado continua aberto depois de enviar, como nos apps de conversa. -->
+        <IconButton
+          class="send"
+          icon="send"
+          label={t.send}
+          disabled={!canSend}
+          onclick={() => {
+            send()
+            input?.focus()
+          }}
+        />
+      {:else if target.canAttach && target.canSend}
         <IconButton icon="mic" label={t.record} onclick={() => void startVoice()} />
       {/if}
     </div>
@@ -716,7 +730,8 @@
     gap: 8px;
   }
 
-  /* Enviar a gravação: o círculo azul, como o play da mensagem de voz. */
+  /* Enviar a gravação (e, no celular, a mensagem): o círculo azul, como o play da mensagem de voz. */
+  .input-row :global(.send:not(:disabled)),
   .voice-row :global(.send-voice:not(:disabled)) {
     background: var(--accent);
     color: var(--fg-on-accent);

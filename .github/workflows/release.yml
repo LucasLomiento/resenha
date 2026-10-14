@@ -1,7 +1,7 @@
 # Gera e publica uma versão nova quando uma tag vX.Y.Z é enviada:
 #   git tag v0.2.0 && git push origin v0.2.0
 # A versão em app/package.json precisa ser a mesma da tag.
-# O app instalado procura atualização nas Releases (electron-updater).
+# O app instalado procura atualização nas Releases (electron-updater; no celular, o APK).
 
 name: Release
 
@@ -65,8 +65,45 @@ jobs:
         shell: bash
         run: npx electron-vite build && npx electron-builder ${{ matrix.targets }} --publish always
 
+  # App de Android: a mesma interface no Capacitor, APK assinado com a chave do Resenha
+  # (secrets ANDROID_KEYSTORE, em base64, e ANDROID_KEYSTORE_PASSWORD: mobile/scripts/android-key.sh).
+  # O push liga sozinho quando o mobile/android/app/google-services.json existe.
+  android:
+    needs: draft
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+      - run: npm ci --ignore-scripts
+      - name: Chave de assinatura
+        env:
+          KEYSTORE: ${{ secrets.ANDROID_KEYSTORE }}
+        run: |
+          test -n "$KEYSTORE" || { echo "::error::Falta o secret ANDROID_KEYSTORE (rode mobile/scripts/android-key.sh)"; exit 1; }
+          echo "$KEYSTORE" | base64 -d > "$RUNNER_TEMP/resenha.keystore"
+      - name: Interface do celular
+        run: npm -w app run build:mobile && (cd mobile && npx cap sync android)
+      - name: APK assinado
+        working-directory: mobile/android
+        env:
+          RESENHA_KEYSTORE: ${{ runner.temp }}/resenha.keystore
+          RESENHA_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: ./gradlew assembleRelease --no-daemon
+      - name: Envia pra release
+        run: |
+          apk="Resenha-${GITHUB_REF_NAME#v}.apk"
+          cp mobile/android/app/build/outputs/apk/release/app-release.apk "$apk"
+          gh release upload "$GITHUB_REF_NAME" "$apk"
+
   publish:
-    needs: build
+    needs: [build, android]
     runs-on: ubuntu-latest
     permissions:
       contents: write

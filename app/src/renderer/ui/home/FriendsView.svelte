@@ -4,6 +4,7 @@
   import type { GuildState } from '../../lib/guild.svelte'
   import { around, fmt, m } from '../../lib/i18n.svelte'
   import { confirmAction, openProfile } from '../../lib/ui.svelte'
+  import BackButton from '../BackButton.svelte'
   import { Avatar, Badge, Button, EmptyState, Icon, IconButton, Menu, Spinner, Tabs, TextField, type MenuItem } from '../kit'
 
   type Tab = 'online' | 'all' | 'pending' | 'blocked' | 'add'
@@ -233,6 +234,7 @@
 <div class="page">
   <section class="main">
     <header>
+      <BackButton />
       <Icon name="users" size={20} class="header-icon" />
       <h1>{t.title}</h1>
       <span class="divider" aria-hidden="true"></span>
@@ -798,5 +800,31 @@
 
   .now :global(.now-empty p) {
     font-size: var(--text-sm);
+  }
+
+  /* Celular: as abas descem pra uma linha só delas, e o título volta. */
+  @container panel (max-width: 520px) {
+    header {
+      flex-wrap: wrap;
+      gap: 4px 8px;
+      height: auto;
+      padding: 8px 10px 0 6px;
+    }
+
+    header h1 {
+      position: static;
+      width: auto;
+      height: auto;
+      clip: auto;
+    }
+
+    header :global(.friend-tabs) {
+      order: 5;
+      flex-basis: 100%;
+    }
+
+    .content {
+      padding: 12px 14px;
+    }
   }
 </style>

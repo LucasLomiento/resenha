@@ -1,6 +1,8 @@
 <script lang="ts">
   import { onMount } from 'svelte'
   import { client } from '../lib/client.svelte'
+  import { ui } from '../lib/ui.svelte'
+  import { closeTopLayer } from './kit'
   import Login from './Login.svelte'
   import Shell from './Shell.svelte'
   import Toasts from './Toasts.svelte'
@@ -20,6 +22,17 @@
   }
 
   let proto = $state(readProto())
+
+  // Botão voltar do celular: fecha a camada de cima (como o Esc); sem nenhuma, volta do
+  // conteúdo pra lista.
+  window.resenha.onBack?.(() => {
+    if (closeTopLayer()) return true
+    if (ui.compact && ui.pane === 'main' && client.phase === 'app') {
+      ui.pane = 'nav'
+      return true
+    }
+    return false
+  })
 
   onMount(() => {
     const onhash = () => (proto = readProto())

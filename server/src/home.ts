@@ -8,11 +8,13 @@ import {
   type HomeClientMessage,
   type HomeServerMessage,
   type Me,
+  type Message,
   type Presence,
   type Status,
   type User,
 } from '../../shared/protocol'
 import { aggregate, samePresence } from './presence'
+import { PUSH_TEXT, Pusher, pushBody, type PushLocale, type PushMessage } from './push'
 import { CONN_KEY, GHOST_QUEUE, connIdFor, graceFor, unexpectedClose } from './resume'
 import { conversation, directory, home } from './stubs'
 import { cleanLine } from './validate'
@@ -35,6 +37,16 @@ interface HomeConn {
   resumable?: boolean
   /** Outra conexão com a mesma chave tomou o lugar desta: ao fechar, não mexe em nada. */
   replaced?: boolean
+  /** App do celular (não segura o push: ver `pushAllowed`). */
+  mobile?: boolean
+}
+
+interface PushRow {
+  token: string
+  session: string
+  locale: string
+  preview: number
+  [key: string]: SqlStorageValue
 }
 
 /** Conexão que caiu sem avisar, esperando o app voltar. */
@@ -63,6 +75,9 @@ const MAX_FRAME = 64 * 1024
 /** Conexões abertas que ainda não se autenticaram (o resto espera). */
 const MAX_PENDING = 20
 const STATUSES: Status[] = ['online', 'idle', 'dnd', 'invisible']
+/** Token do Firebase: letras, números e pontuação simples (uns 160 caracteres hoje). */
+const PUSH_TOKEN = /^[\w:.-]{20,4096}$/
+const MAX_PUSH_DEVICES = 10
 
 /** Cabeçalho que o Worker põe com o id do dono deste Home. */
 export const HOME_HEADER = 'X-Resenha-Home'
@@ -75,10 +90,13 @@ export class Home extends DurableObject<Env> {
   private ghosts = new Map<string, Ghost>()
   /** Sockets que já saíram (o fechamento e o erro podem chegar os dois). */
   private retired = new WeakSet<WebSocket>()
+  /** Push pro celular (Firebase); sem a chave, não manda nada. Os testes trocam o `fetchImpl`. */
+  private pusher: Pusher
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env)
     this.sql = ctx.storage.sql
+    this.pusher = new Pusher(env.FCM_SERVICE_ACCOUNT)
     ctx.blockConcurrencyWhile(async () => {
       this.sql.exec('CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)')
       this.sql.exec(`CREATE TABLE IF NOT EXISTS dms (
@@ -89,6 +107,14 @@ export class Home extends DurableObject<Env> {
         last_read_id TEXT,
         unread INTEGER NOT NULL DEFAULT 0,
         open INTEGER NOT NULL DEFAULT 1
+      )`)
+      // Aparelhos com push (celular), cada um preso à sessão em que entrou.
+      this.sql.exec(`CREATE TABLE IF NOT EXISTS push_tokens (
+        token TEXT PRIMARY KEY,
+        session TEXT NOT NULL,
+        locale TEXT NOT NULL DEFAULT 'pt',
+        preview INTEGER NOT NULL DEFAULT 1,
+        created_at INTEGER NOT NULL
       )`)
       this.userId = this.meta('user_id') ?? ''
     })
@@ -342,6 +368,7 @@ export class Home extends DurableObject<Env> {
       status: STATUSES.includes(msg.status as Status) ? (msg.status as Status) : manual.status,
       text: msg.text === undefined ? manual.text : cleanLine(msg.text, 1, 128),
       call,
+      mobile: msg.mobile === true,
     }
     // Caiu de novo enquanto voltava: continua esperando (com a chamada e o que estava guardado).
     if (ws.readyState !== WebSocket.OPEN) {
@@ -488,6 +515,29 @@ export class Home extends DurableObject<Env> {
           this.broadcast({ t: 'presence.self', status: msg.status, text }, { except: state.connId })
         }
         return this.announce(before)
+      }
+
+      case 'push.token': {
+        if (!this.allow(`push:${state.connId}`, 5, 60_000)) return
+        // O aparelho troca de token de vez em quando: o desta sessão sai e o novo entra.
+        this.sql.exec('DELETE FROM push_tokens WHERE session = ?', state.session)
+        if (typeof msg.token !== 'string' || !PUSH_TOKEN.test(msg.token)) return
+        const locale = msg.locale === 'en' || msg.locale === 'es' ? msg.locale : 'pt'
+        this.sql.exec(
+          `INSERT INTO push_tokens (token, session, locale, preview, created_at) VALUES (?, ?, ?, ?, ?)
+           ON CONFLICT (token) DO UPDATE SET session = excluded.session, locale = excluded.locale, preview = excluded.preview`,
+          msg.token,
+          state.session,
+          locale,
+          msg.preview === false ? 0 : 1,
+          Date.now(),
+        )
+        // Aparelhos demais (sessões esquecidas): ficam os mais novos.
+        this.sql.exec(
+          'DELETE FROM push_tokens WHERE token NOT IN (SELECT token FROM push_tokens ORDER BY created_at DESC LIMIT ?)',
+          MAX_PUSH_DEVICES,
+        )
+        return
       }
 
       case 'dm.open': {
@@ -654,8 +704,94 @@ export class Home extends DurableObject<Env> {
         const row = this.sql.exec<DmRow>('SELECT * FROM dms WHERE channel_id = ?', channelId).one()
         if (peer) this.broadcast({ t: 'dm.channel', channel: this.toDm(row, peer) })
       }
+      if (!mine) this.ctx.waitUntil(this.pushDm(channelId, peerId, event.message))
     }
+    if (event.t === 'call.ringing') this.ctx.waitUntil(this.pushCall(channelId, event.from, event.video))
     this.broadcast(event)
+  }
+
+  /** Mensagem num servidor que pede aviso (menção, ou canal em "todas as mensagens"): vem do Guild. */
+  async guildPush(input: {
+    guildId: string
+    channelId: string
+    author: string
+    channel: string
+    server: string
+    content: string
+    attachments: { name: string }[]
+    /** Nome de quem foi mencionado (pro texto: <@id> vira @nome). */
+    names: Record<string, string>
+  }) {
+    await this.push((text, preview) => ({
+      title: text.inChannel(input.author, input.channel, input.server),
+      body: preview ? pushBody(input.content, input.attachments, (id) => input.names[id] ?? null, text) || text.hidden : text.hidden,
+      data: { kind: 'channel', guildId: input.guildId, channelId: input.channelId },
+      tag: `channel:${input.channelId}`,
+      kind: 'message',
+    }))
+  }
+
+  // ---------- Push (celular) ----------
+
+  /** Tem aparelho com push? (Antes de buscar nomes e montar texto.) */
+  private hasPush(): boolean {
+    return this.pusher.enabled && this.sql.exec('SELECT 1 FROM push_tokens LIMIT 1').toArray().length > 0
+  }
+
+  /** Push só sem "Não perturbe" e sem a pessoa ativa no computador (lá ela já vê e ouve o aviso). */
+  private pushAllowed(): boolean {
+    if (this.manual().status === 'dnd') return false
+    return !this.sockets().some((ws) => {
+      const s = this.state(ws)
+      return !s.pending && !s.mobile && s.status !== 'idle'
+    })
+  }
+
+  /** Manda pros aparelhos: uma mensagem por idioma (e por "mostrar o texto"); tira os tokens que morreram. */
+  private async push(build: (text: (typeof PUSH_TEXT)[PushLocale], preview: boolean) => PushMessage) {
+    if (!this.hasPush() || !this.pushAllowed()) return
+    const groups = new Map<string, PushRow[]>()
+    for (const row of this.sql.exec<PushRow>('SELECT * FROM push_tokens').toArray()) {
+      const key = `${row.locale}:${row.preview}`
+      groups.set(key, [...(groups.get(key) ?? []), row])
+    }
+    for (const rows of groups.values()) {
+      const locale = (rows[0].locale in PUSH_TEXT ? rows[0].locale : 'pt') as PushLocale
+      try {
+        const dead = await this.pusher.send(
+          rows.map((r) => r.token),
+          build(PUSH_TEXT[locale], rows[0].preview === 1),
+        )
+        for (const token of dead) this.sql.exec('DELETE FROM push_tokens WHERE token = ?', token)
+      } catch (err) {
+        console.error('push', err)
+      }
+    }
+  }
+
+  private async pushDm(channelId: string, peerId: string, message: Message) {
+    if (!this.hasPush()) return
+    const peer = await directory(this.env).getUser(peerId)
+    const name = peer?.name ?? '…'
+    await this.push((text, preview) => ({
+      title: name,
+      body: preview ? pushBody(message.content, message.attachments, (id) => (id === peerId ? name : null), text) || text.hidden : text.hidden,
+      data: { kind: 'dm', channelId },
+      tag: `dm:${channelId}`,
+      kind: 'message',
+    }))
+  }
+
+  private async pushCall(channelId: string, from: string, video: boolean) {
+    if (!this.hasPush()) return
+    const name = (await directory(this.env).getUser(from))?.name ?? '…'
+    await this.push((text) => ({
+      title: video ? text.videoCalling(name) : text.calling(name),
+      body: text.tapToAnswer,
+      data: { kind: 'call', channelId },
+      tag: `call:${channelId}`,
+      kind: 'call',
+    }))
   }
 
   /** Quem esta pessoa bloqueou/desbloqueou: a conversa entre os dois (se existir) fica sabendo. */
@@ -677,6 +813,8 @@ export class Home extends DurableObject<Env> {
 
   async closeSessions(tokenHashes: string[]) {
     const set = new Set(tokenHashes)
+    // Saiu (ou a sessão foi encerrada): aquele aparelho para de receber push.
+    for (const hash of set) this.sql.exec('DELETE FROM push_tokens WHERE session = ?', hash)
     for (const ws of this.ctx.getWebSockets()) {
       const state = this.state(ws)
       if (state.pending || !set.has(state.session)) continue

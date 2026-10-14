@@ -34,7 +34,7 @@
   <button class="search" onclick={() => (ui.switcher = true)}>
     <Icon name="search" size={16} />
     <span>{t.find}</span>
-    <Kbd keys={['Ctrl', 'K']} />
+    {#if !client.platform?.mobile}<Kbd keys={['Ctrl', 'K']} />{/if}
   </button>
 </header>
 

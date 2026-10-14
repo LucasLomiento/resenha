@@ -29,7 +29,7 @@
     { heading: t.nav.app },
     { id: 'voice', label: t.pages.voice, icon: 'mic' },
     { id: 'notifications', label: t.pages.notifications, icon: 'bell' },
-    { id: 'shortcuts', label: t.pages.shortcuts, icon: 'keyboard' },
+    ...(client.desktop ? [{ id: 'shortcuts', label: t.pages.shortcuts, icon: 'keyboard' } as const] : []),
     { id: 'app', label: t.pages.app, icon: 'sliders' },
     ...(seesPlatform(client.me) ? admin : []),
     { separator: true },

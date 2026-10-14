@@ -84,7 +84,15 @@ export class HomeState {
   constructor(private host: HomeHost) {
     this.conn = new Connection<HomeServerMessage, HomeClientMessage>(
       () => host.http().wsUrl(`/api/home/${encodeURIComponent(host.userId())}/ws`),
-      () => ({ t: 'auth', token: host.token(), ...host.presence(), key: this.key, call: host.dmCallId() ?? undefined }),
+      () => ({
+        t: 'auth',
+        token: host.token(),
+        ...host.presence(),
+        key: this.key,
+        call: host.dmCallId() ?? undefined,
+        // Celular: o servidor manda push pra ele mesmo com o app aberto em outro lugar (só o computador ativo segura).
+        mobile: import.meta.env.VITE_MOBILE === '1' || undefined,
+      }),
       {
         message: (msg) => this.handle(msg),
         status: (status) => (this.status = status),

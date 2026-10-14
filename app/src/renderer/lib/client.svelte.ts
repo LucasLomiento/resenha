@@ -14,9 +14,11 @@ import type { DesktopPrefs, PlatformInfo, SavedSession, ShortcutAction, UpdateSt
 import { untrack } from 'svelte'
 import { Api, HttpError } from './api'
 import { Call, type CallTransport } from './call.svelte'
+import { listDevices, namedDevices } from './devices'
 import { GuildState, type GuildHost } from './guild.svelte'
 import { HomeState, type HomeHost } from './home.svelte'
-import { m } from './i18n.svelte'
+import { i18n, m } from './i18n.svelte'
+import { notify } from './notify'
 import { badgeOf } from './profile'
 import { attachmentLabel } from './voice-note'
 import { settings } from './settings.svelte'
@@ -110,8 +112,7 @@ class Client implements GuildHost, HomeHost {
   home = $state<HomeState | null>(null)
   guilds = $state<Record<string, GuildState>>({})
   route = $state<Route>({ kind: 'home' })
-  /** Área principal: conversa, transmissão em tela cheia, a grade da call ou o mapa do servidor. */
-  view = $state<'chat' | 'stream' | 'call' | 'map'>('chat')
+  #view = $state<'chat' | 'stream' | 'call' | 'map'>('chat')
   /** Status escolhido (vale pra todos os aparelhos). */
   status = $state<Status>('online')
   statusText = $state<string | null>(null)
@@ -188,7 +189,7 @@ class Client implements GuildHost, HomeHost {
 
   async boot() {
     this.platform = await window.resenha.platform()
-    const os = this.platform.platform === 'win32' ? 'Windows' : this.platform.platform === 'darwin' ? 'macOS' : 'Linux'
+    const os = { win32: 'Windows', darwin: 'macOS', android: 'Android' }[this.platform.platform] ?? 'Linux'
     Api.device = `App no ${os}`
     this.desktop = await window.resenha.desktop.get()
     this.rejoin = await takeRejoin()
@@ -196,6 +197,7 @@ class Client implements GuildHost, HomeHost {
     window.resenha.update.onState((state) => (this.update = state))
     window.resenha.onAction((action) => this.runAction(action))
     window.resenha.onInvite((code) => (this.pendingInvite = code))
+    window.resenha.push?.onOpen((data) => this.openFromPush(data))
     this.pendingInvite = await window.resenha.pendingInvite()
     const saved = await window.resenha.session.get()
     if (saved) await this.start(saved)
@@ -520,6 +522,7 @@ class Client implements GuildHost, HomeHost {
   /** A conexão pessoal (re)abriu: abre uma conexão pra cada servidor da lista. */
   private homeReady(reconnected: boolean, resumed: boolean) {
     const home = this.home!
+    void this.syncPush(true)
     const wanted = new Set(home.guilds.map((g) => g.id))
     for (const id of Object.keys(this.guilds)) {
       if (!wanted.has(id)) this.dropGuild(id)
@@ -650,15 +653,18 @@ class Client implements GuildHost, HomeHost {
   ringing(channelId: string, from: string, video: boolean) {
     this.incomingCall = { channelId, from, video }
     // Não perturbe: a ligação aparece, mas sem tocar nem notificar.
-    if (this.status === 'dnd') return
+    if (this.status === 'dnd' || this.pushCovers()) return
     playSound('ring')
     this.ringTimer = setInterval(() => playSound('ring'), 2600)
     if (!document.hasFocus()) {
       const name = this.home?.dm(channelId)?.user.name ?? m.lib.someone
-      new Notification(m.lib.notify.calling(name), { body: m.lib.notify.callingBody, silent: true }).onclick = () => {
-        window.resenha.showWindow()
-        this.navigate({ kind: 'dm', channelId })
-      }
+      notify(m.lib.notify.calling(name), {
+        body: m.lib.notify.callingBody,
+        onclick: () => {
+          window.resenha.showWindow()
+          this.navigate({ kind: 'dm', channelId })
+        },
+      })
       window.resenha.attention()
     }
   }
@@ -680,12 +686,39 @@ class Client implements GuildHost, HomeHost {
 
   // ---------- Notificações ----------
 
+  /** Celular com push: com o app no fundo, quem avisa é o push (o aviso do app sairia dobrado). */
+  private pushToken: string | null = null
+
+  /**
+   * Manda pro servidor o token do push deste aparelho, com o idioma e o "esconder o texto"
+   * (a cada conexão, e quando um dos dois muda). `ask`: pega o token (na primeira vez pede a permissão).
+   */
+  async syncPush(ask = false) {
+    const push = window.resenha.push
+    if (!push || !this.home) return
+    if (ask) this.pushToken = await push.token()
+    if (!this.pushToken) return
+    this.home.send({ t: 'push.token', token: this.pushToken, locale: i18n.locale, preview: settings.notifyContent })
+  }
+
+  /** Tocou num aviso do push: abre a conversa (a ligação toca de novo quando a conexão volta). */
+  private openFromPush(data: Record<string, string>) {
+    if (!data.channelId) return
+    if (data.kind === 'channel' && data.guildId) this.navigate({ kind: 'guild', guildId: data.guildId, channelId: data.channelId })
+    else if (data.kind === 'dm' || data.kind === 'call') this.navigate({ kind: 'dm', channelId: data.channelId })
+  }
+
+  /** O app está no fundo e o push cuida do aviso (som incluído). */
+  private pushCovers(): boolean {
+    return !!this.pushToken && !document.hasFocus()
+  }
+
   private guildMessage(guild: GuildState, message: Message) {
     if (this.status === 'dnd') return
     const level = guild.levelFor(message.channelId)
     if (level === 'none' || (level === 'mentions' && !guild.mentionsMe(message))) return
     const focused = document.hasFocus()
-    if (focused && this.viewing(guild.id, message.channelId)) return
+    if ((focused && this.viewing(guild.id, message.channelId)) || this.pushCovers()) return
     playSound(guild.mentionsMe(message) ? 'mention' : 'message')
     if (focused) return
     const channel = guild.channel(message.channelId)?.name ?? ''
@@ -697,7 +730,7 @@ class Client implements GuildHost, HomeHost {
   private dmMessage(channelId: string, message: Message) {
     if (this.status === 'dnd') return
     const focused = document.hasFocus()
-    if (focused && this.viewing(channelId)) return
+    if ((focused && this.viewing(channelId)) || this.pushCovers()) return
     playSound('message')
     if (focused) return
     const name = this.home?.dm(channelId)?.user.name ?? m.lib.someone
@@ -707,11 +740,13 @@ class Client implements GuildHost, HomeHost {
   private notify(title: string, message: Message, open: () => void) {
     const body = message.content || (message.attachments.length ? attachmentLabel(message.attachments[0]) : '')
     // Com "esconder o texto", a notificação só diz que chegou mensagem (bom com a tela compartilhada).
-    const notification = new Notification(title, { body: settings.notifyContent ? body.slice(0, 200) : m.lib.notify.hiddenMessage, silent: true })
-    notification.onclick = () => {
-      window.resenha.showWindow()
-      open()
-    }
+    notify(title, {
+      body: settings.notifyContent ? body.slice(0, 200) : m.lib.notify.hiddenMessage,
+      onclick: () => {
+        window.resenha.showWindow()
+        open()
+      },
+    })
     window.resenha.attention()
   }
 
@@ -724,9 +759,22 @@ class Client implements GuildHost, HomeHost {
 
   // ---------- Navegação ----------
 
+  /** Área principal: conversa, transmissão em tela cheia, a grade da call ou o mapa do servidor. */
+  get view() {
+    return this.#view
+  }
+
+  set view(view: 'chat' | 'stream' | 'call' | 'map') {
+    this.#view = view
+    // No celular, abrir a call, a transmissão ou o mapa mostra o conteúdo.
+    if (view !== 'chat') ui.pane = 'main'
+  }
+
+  /** Abre uma conversa (canal, mensagem privada ou amigos); no celular, mostra o conteúdo. */
   navigate(route: Route) {
     this.route = route
     this.view = 'chat'
+    ui.pane = 'main'
     if (route.kind === 'guild') {
       const guild = this.guilds[route.guildId]
       if (guild) this.ensureChannel(guild)
@@ -899,6 +947,15 @@ class Client implements GuildHost, HomeHost {
     if (!incoming) return
     this.stopRinging()
     this.home?.send({ t: 'call.answer', channelId: incoming.channelId, accept: false })
+  }
+
+  /** Liga ou desliga a câmera. No computador, com mais de uma, pergunta qual antes. */
+  async toggleCamera() {
+    const call = this.call
+    if (call.camera) return call.toggleCamera()
+    if (!this.platform?.mobile && namedDevices((await listDevices()).cameras).length > 1) return void (ui.camera = true)
+    await call.toggleCamera()
+    if (call.camera) this.view = 'call'
   }
 
   leaveCall() {

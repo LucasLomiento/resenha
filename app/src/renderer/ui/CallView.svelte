@@ -4,18 +4,20 @@
   import { m } from '../lib/i18n.svelte'
   import { badgeOf } from '../lib/profile'
   import { ui } from '../lib/ui.svelte'
-  import { Avatar, Badge, Button, UserBadge, Icon } from './kit'
+  import BackButton from './BackButton.svelte'
+  import { Avatar, Badge, Button, UserBadge, Icon, IconButton } from './kit'
   import VideoTile from './VideoTile.svelte'
 
   const call = client.call
   const t = $derived(m.app.call)
+  const dock = $derived(m.app.dock)
   const place = $derived(client.callPlace)
   const members = $derived(client.callMembers)
   /** O Spotify de alguém é mais um bloco na call, logo depois de quem pôs. */
   const bots = $derived(Object.entries(call.musicBots))
   const tiles = $derived(members.length + bots.length)
-  // Até 1 bloco: grande; até 4: 2 colunas; mais que isso: 3.
-  const cols = $derived(tiles <= 1 ? 1 : tiles <= 4 ? 2 : 3)
+  // Até 1 bloco: grande; até 4: 2 colunas; mais que isso: 3. No celular (em pé): 1 coluna até 2, depois 2.
+  const cols = $derived(ui.compact ? (tiles <= 2 ? 1 : 2) : tiles <= 1 ? 1 : tiles <= 4 ? 2 : 3)
   const rows = $derived(Math.max(1, Math.ceil(tiles / cols)))
   const hostName = (connId: string) => {
     const userId = members.find((x) => x.connId === connId)?.userId
@@ -28,9 +30,11 @@
   }
 </script>
 
-<!-- Só os blocos: os controles da call ficam no painel da barra lateral, sempre no mesmo lugar. -->
-<section aria-label={t.label}>
+<!-- Só os blocos: os controles da call ficam no painel da barra lateral, sempre no mesmo lugar
+     (no celular, que não vê a barra lateral junto, eles ficam também embaixo da call). -->
+<section aria-label={t.label} class:compact={ui.compact}>
   <header>
+    <BackButton />
     <Icon name="volume" size={20} class="header-icon" />
     <h1>{place?.name ?? ''}</h1>
     <span class="count">{members.length <= 1 ? t.alone : t.people(members.length)}</span>
@@ -44,7 +48,7 @@
         {@const stream = self ? call.camera : call.cameras[member.connId]}
         <div class="tile" class:speaking={call.speaking[member.connId]} style:--tint={userColor(member.userId)}>
           {#if stream}
-            <VideoTile {stream} mirror={self} />
+            <VideoTile {stream} mirror={self && call.cameraFacing === 'user'} />
           {:else}
             <div class="face">
               <Avatar
@@ -100,6 +104,48 @@
       {/each}
     </div>
   </div>
+
+  {#if ui.compact}
+    <div class="controls">
+      <IconButton
+        icon={call.muted ? 'mic-off' : 'mic'}
+        label={call.muted ? dock.unmute : dock.mute}
+        size="xl"
+        variant="subtle"
+        tone="danger"
+        tip={false}
+        active={call.muted}
+        aria-pressed={call.muted}
+        onclick={() => call.toggleMute()}
+      />
+      <IconButton
+        icon={call.deafened ? 'headphones-off' : 'headphones'}
+        label={call.deafened ? dock.undeafen : dock.deafen}
+        size="xl"
+        variant="subtle"
+        tone="danger"
+        tip={false}
+        active={call.deafened}
+        aria-pressed={call.deafened}
+        onclick={() => call.toggleDeafen()}
+      />
+      <IconButton
+        icon={call.camera ? 'camera' : 'camera-off'}
+        label={call.camera ? dock.cameraOff : dock.cameraOn}
+        size="xl"
+        variant="subtle"
+        tone="accent"
+        tip={false}
+        active={!!call.camera}
+        aria-pressed={!!call.camera}
+        onclick={() => client.toggleCamera()}
+      />
+      {#if call.camera && client.platform?.mobile}
+        <IconButton icon="repeat" label={t.flipCamera} size="xl" variant="subtle" tip={false} onclick={() => call.flipCamera()} />
+      {/if}
+      <IconButton icon="phone-off" label={dock.leave} size="xl" variant="subtle" tone="danger" tip={false} active onclick={() => client.leaveCall()} />
+    </div>
+  {/if}
 </section>
 
 <style>
@@ -136,6 +182,33 @@
   .count {
     color: var(--fg-3);
     font-size: var(--text-sm);
+  }
+
+  .compact header {
+    gap: 8px;
+    padding: 0 12px 0 6px;
+  }
+
+  .compact .stage {
+    padding: 12px;
+  }
+
+  /* Celular em pé: os blocos são mais altos que largos (16:9 ficaria uma faixa fina). */
+  .compact .tile {
+    aspect-ratio: 4 / 3;
+  }
+
+  .compact .grid {
+    max-width: calc((100cqh - (var(--rows) - 1) * 12px) / var(--rows) * 4 / 3 * var(--cols) + (var(--cols) - 1) * 12px);
+  }
+
+  .controls {
+    display: flex;
+    justify-content: center;
+    gap: 14px;
+    flex: none;
+    padding: 12px 16px 16px;
+    border-top: 1px solid var(--line);
   }
 
   .stage {

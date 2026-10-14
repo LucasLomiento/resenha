@@ -17,6 +17,14 @@ function onKeydown(event: KeyboardEvent) {
   stack[stack.length - 1].close()
 }
 
+/** Fecha a camada de cima (botão voltar do celular); false se não tinha nenhuma. */
+export function closeTopLayer(): boolean {
+  const top = stack[stack.length - 1]
+  if (!top) return false
+  top.close()
+  return true
+}
+
 /** Registra uma camada aberta; devolve a função que a tira da pilha (chame ao fechar). */
 export function pushLayer(close: () => void): () => void {
   if (!listening) {

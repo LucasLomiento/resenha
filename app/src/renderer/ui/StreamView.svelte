@@ -4,6 +4,8 @@
   import type { VideoStats } from '../lib/peer'
   import { settings } from '../lib/settings.svelte'
   import { client } from '../lib/client.svelte'
+  import { ui } from '../lib/ui.svelte'
+  import BackButton from './BackButton.svelte'
   import { Avatar, Badge, Icon, IconButton, Slider, Spinner } from './kit'
   import InkLayer from './InkLayer.svelte'
 
@@ -16,6 +18,8 @@
   const user = $derived(sharer ? client.user(sharer.userId, call.guildId) : null)
   const link = $derived(call.watching ? call.links[call.watching] : undefined)
   const t = $derived(m.app.stream)
+  /** Celular: sem janelinha flutuante do sistema nem tela cheia (a transmissão já ocupa a tela). */
+  const mobile = $derived(!!client.platform?.mobile)
 
   let video = $state<HTMLVideoElement>()
   let container = $state<HTMLDivElement>()
@@ -221,8 +225,12 @@
     <button class="drag-surface" aria-label={t.open} onpointerdown={(e) => startDrag(e, 'move')}></button>
   {/if}
 
+  {#if full && ui.compact}
+    <div class="back"><BackButton variant="glass" /></div>
+  {/if}
+
   {#if user && sharer}
-    <div class="who">
+    <div class="who" class:after-back={full && ui.compact}>
       <Avatar id={sharer.userId} name={user.name} size={20} src={client.avatarOf(sharer.userId, call.guildId)} />
       <span>{self ? t.yourScreen : user.name}</span>
       <Badge tone="live">{m.app.liveBadge}</Badge>
@@ -261,10 +269,14 @@
     {:else if inkBlocked}
       <IconButton variant="glass" icon="pen" label={inkBlocked} class="ink-blocked" onclick={() => client.toast(inkBlocked, 'info')} />
     {/if}
-    <IconButton variant="glass" icon="pip" label={t.pip} active={nativePip} onclick={togglePip} />
+    {#if !mobile}
+      <IconButton variant="glass" icon="pip" label={t.pip} active={nativePip} onclick={togglePip} />
+    {/if}
     {#if full}
       <IconButton variant="glass" icon="minimize" label={t.minimize} onclick={() => (client.view = 'chat')} />
-      <IconButton variant="glass" icon="fullscreen" label={fullscreen ? t.exitFullscreen : t.fullscreen} onclick={toggleFullscreen} />
+      {#if !mobile}
+        <IconButton variant="glass" icon="fullscreen" label={fullscreen ? t.exitFullscreen : t.fullscreen} onclick={toggleFullscreen} />
+      {/if}
     {:else}
       <IconButton variant="glass" icon="maximize" label={t.expand} onclick={() => (client.view = 'stream')} />
     {/if}
@@ -350,6 +362,13 @@
     cursor: grabbing;
   }
 
+  .back {
+    position: absolute;
+    top: 12px;
+    left: 12px;
+    z-index: 4;
+  }
+
   .who {
     position: absolute;
     top: 12px;
@@ -369,6 +388,10 @@
     pointer-events: none;
     opacity: 0;
     transition: opacity var(--t) var(--ease);
+  }
+
+  .who.after-back {
+    left: 56px;
   }
 
   .mini .who {

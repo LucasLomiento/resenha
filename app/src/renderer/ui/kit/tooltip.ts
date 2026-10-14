@@ -58,8 +58,9 @@ export function tooltip(node: HTMLElement, param: TooltipParam) {
     warmUntil = Date.now() + 500
   }
 
-  function enter() {
-    if (!options) return
+  function enter(event: PointerEvent) {
+    // No toque não tem "passar o mouse": a dica só atrapalharia.
+    if (!options || event.pointerType === 'touch') return
     if (timer) clearTimeout(timer)
     timer = setTimeout(show, Date.now() < warmUntil ? 0 : 420)
   }

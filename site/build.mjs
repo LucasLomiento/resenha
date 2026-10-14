@@ -153,6 +153,7 @@ function downloads(latest) {
     appimage: find((n) => n.endsWith('.AppImage')),
     setup: find((n) => /Setup.*\.exe$/.test(n)),
     zip: find((n) => n.endsWith('.zip')),
+    apk: find((n) => n.endsWith('.apk')),
   }
   const link = (asset) => (asset ? esc(asset.browser_download_url) : `https://github.com/${REPO}/releases/latest`)
   const size = (asset) => (asset ? mb(asset.size) : '')
@@ -199,6 +200,8 @@ ${messages(releases.slice(OPEN), false)}
     SETUP_URL: link(pick.setup),
     SETUP_SIZE: size(pick.setup),
     ZIP_URL: link(pick.zip),
+    APK_URL: link(pick.apk),
+    APK_SIZE: size(pick.apk),
     CHANGELOG: changelog,
     YEAR: String(new Date().getFullYear()),
   }

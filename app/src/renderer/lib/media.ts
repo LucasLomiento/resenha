@@ -21,10 +21,12 @@ export async function getMicTrack(): Promise<MediaStreamTrack> {
   }
 }
 
-/** Câmera em 720p a 30 fps (pra call em grupo, mais que isso só pesa no upload). */
-export async function getCameraStream(): Promise<MediaStream> {
+/** Câmera em 720p a 30 fps (pra call em grupo, mais que isso só pesa no upload). No celular,
+ *  `facing` escolhe a da frente ou a de trás (no lugar do aparelho das configurações). */
+export async function getCameraStream(facing?: 'user' | 'environment'): Promise<MediaStream> {
   const base: MediaTrackConstraints = { width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30, max: 30 } }
-  const device = settings.cameraDevice !== 'default' ? { deviceId: { exact: settings.cameraDevice } } : {}
+  if (facing) base.facingMode = { ideal: facing }
+  const device = !facing && settings.cameraDevice !== 'default' ? { deviceId: { exact: settings.cameraDevice } } : {}
   let stream: MediaStream
   try {
     stream = await navigator.mediaDevices.getUserMedia({ video: { ...base, ...device } })

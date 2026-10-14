@@ -751,11 +751,11 @@ function copyButtons() {
 /** Destaca o download do sistema de quem está vendo. */
 function mySystem() {
   const ua = navigator.userAgent
-  const os = /Windows/i.test(ua) ? 'windows' : /Linux|X11/i.test(ua) && !/Android/i.test(ua) ? 'arch' : null
+  const os = /Android/i.test(ua) ? 'android' : /Windows/i.test(ua) ? 'windows' : /Linux|X11/i.test(ua) ? 'arch' : null
   if (!os) return
   $(`.dl[data-os="${os}"]`)?.classList.add('mine')
   const cta = $('[data-cta]')
-  if (cta) cta.textContent = os === 'windows' ? 'Baixar pro Windows' : 'Baixar pro Linux'
+  if (cta) cta.textContent = { windows: 'Baixar pro Windows', android: 'Baixar pro Android' }[os] ?? 'Baixar pro Linux'
 }
 
 drawer()

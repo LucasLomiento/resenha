@@ -113,6 +113,13 @@ export default {
     you: 'you',
     watchMine: 'View my screen',
     watch: 'Watch',
+    flipCamera: 'Flip camera',
+  },
+
+  /** Celular: os canais de aviso do Android (aparecem nas configurações do sistema). */
+  pushChannels: {
+    messages: 'Messages',
+    calls: 'Calls',
   },
 
   incoming: {

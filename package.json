@@ -3,7 +3,8 @@
   "private": true,
   "workspaces": [
     "server",
-    "app"
+    "app",
+    "mobile"
   ],
   "scripts": {
     "dev:server": "npm -w server run dev",

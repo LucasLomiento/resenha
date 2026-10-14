@@ -299,7 +299,7 @@ handle('platform:info', (): PlatformInfo => {
   let screenAudio: PlatformInfo['screenAudio'] = 'none'
   if (isLinux && screenAudioAvailable()) screenAudio = 'venmic'
   else if (isWindows) screenAudio = windowsExcludesSelf ? 'exclude-self' : 'loopback-all'
-  return { platform: process.platform, portalPicker, screenAudio, version: app.getVersion(), hyprland: isHyprland, music: spotifySupported() }
+  return { platform: process.platform, portalPicker, screenAudio, version: app.getVersion(), hyprland: isHyprland, music: spotifySupported(), mobile: false }
 })
 
 listen('attention', () => {

@@ -9,6 +9,7 @@
   import type { LngLat, SharedMap } from '../../lib/map-canvas'
   import { MAP_STYLES, PIN_COLORS, streetEmbedUrl, streetPageUrl, type MapListener, type MapStyleName } from '../../lib/map.svelte'
   import { confirmAction } from '../../lib/ui.svelte'
+  import BackButton from '../BackButton.svelte'
   import { Avatar, Button, EmptyState, Icon, IconButton, Kbd, Menu, Spinner, layer, tooltip, type MenuItem } from '../kit'
 
   let { guild }: { guild: GuildState } = $props()
@@ -351,6 +352,7 @@
 
 <section class="map-pane" class:with-aside={pinsOpen} class:with-street={!!street} aria-label={t.title}>
   <header>
+    <BackButton />
     <Icon name="map" size={20} class="header-icon" />
     <h1>{t.title}</h1>
     {#if people.length}
@@ -916,6 +918,72 @@
 
     .with-aside .body {
       grid-template-columns: minmax(0, 1fr) 240px;
+    }
+  }
+
+  /* Celular: o título sai (o ícone diz que é o mapa), a busca vira a lupa e abre por cima do
+     cabeçalho, o Street View fica embaixo do mapa e os pins cobrem o mapa. */
+  @container panel (max-width: 520px) {
+    header {
+      position: relative;
+      gap: 6px;
+      padding: 0 6px;
+    }
+
+    h1 {
+      display: none;
+    }
+
+    .search {
+      width: 32px;
+      margin-right: 0;
+      padding: 0 0 0 8px;
+      background: transparent;
+      box-shadow: none;
+      cursor: pointer;
+    }
+
+    .search input {
+      opacity: 0;
+    }
+
+    .search:focus-within,
+    .search.filled {
+      position: absolute;
+      inset: 8px 8px;
+      z-index: 2;
+      width: auto;
+      height: auto;
+      padding: 0 10px 0 12px;
+      background: var(--bg-input);
+    }
+
+    .search:focus-within input,
+    .search.filled input {
+      opacity: 1;
+    }
+
+    .with-street .body,
+    .with-street.with-aside .body {
+      grid-template-columns: minmax(0, 1fr);
+      grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+    }
+
+    .with-aside .body {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .street {
+      border-top: 1px solid var(--line);
+      border-left: 0;
+    }
+
+    .aside {
+      position: absolute;
+      inset: 0;
+      z-index: 6;
+      border-left: 0;
+      background: var(--bg-panel);
     }
   }
 

@@ -9,8 +9,9 @@
 </script>
 
 <script lang="ts">
-  import type { Snippet } from 'svelte'
+  import { untrack, type Snippet } from 'svelte'
   import { m } from '../../lib/i18n.svelte'
+  import { ui } from '../../lib/ui.svelte'
   import Icon from './Icon.svelte'
   import { layer } from './layers'
   import NavItem from './NavItem.svelte'
@@ -46,21 +47,51 @@
   } = $props()
 
   let content = $state<HTMLElement>()
+  /** Celular: a lista de páginas e a página aparecem uma de cada vez; abre na lista. */
+  let showPage = $state(false)
+  let shownActive = untrack(() => active)
 
-  // Trocou de página: começa do topo.
+  // Trocou de página: começa do topo (no celular, mostra a página).
   $effect(() => {
-    void active
+    if (active !== shownActive) showPage = true
+    shownActive = active
     content?.scrollTo({ top: 0 })
   })
 
-  const closeLayer = (node: HTMLElement) => (inline ? undefined : layer(node, () => onclose()))
+  function select(id: string) {
+    onselect(id)
+    showPage = true
+  }
+
+  /** Esc (ou o voltar do celular): da página volta pra lista; da lista, fecha. */
+  function back() {
+    if (ui.compact && showPage) showPage = false
+    else onclose()
+  }
+
+  const closeLayer = (node: HTMLElement) => (inline ? undefined : layer(node, back))
 </script>
 
 <!-- Configurações em tela cheia, com a cara do app: navegação direto no fundo à esquerda e a
      página num painel solto que ocupa o resto da janela; fechar no canto do painel (Esc). -->
 <!-- data-portal-root: modais e menus abertos daqui entram nesta camada (senão ficariam atrás dela). -->
-<div class="settings" role="dialog" aria-modal="true" aria-label={title} data-portal-root={inline ? undefined : ''} use:closeLayer>
+<div
+  class="settings"
+  class:compact={ui.compact}
+  class:show-page={showPage}
+  role="dialog"
+  aria-modal="true"
+  aria-label={title}
+  data-portal-root={inline ? undefined : ''}
+  use:closeLayer
+>
     <nav class="settings-nav" aria-label={title}>
+      {#if ui.compact}
+        <div class="nav-head">
+          <span>{title}</span>
+          <button type="button" class="close" aria-label={m.common.close} onclick={onclose}><Icon name="x" size={18} /></button>
+        </div>
+      {/if}
       {#if search}<div class="search">{@render search()}</div>{/if}
       {#if results}
         {@render results()}
@@ -76,7 +107,7 @@
             icon={entry.icon}
             tone={entry.tone}
             active={entry.id === active}
-            onclick={() => onselect(entry.id)}
+            onclick={() => select(entry.id)}
           />
         {/if}
       {/each}
@@ -91,15 +122,21 @@
         </div>
       </main>
 
-      <button
-        type="button"
-        class="close"
-        aria-label={m.common.close}
-        use:tooltip={{ text: m.common.close, shortcut: 'Esc', placement: 'left' }}
-        onclick={onclose}
-      >
-        <Icon name="x" size={18} />
-      </button>
+      {#if ui.compact}
+        <button type="button" class="close back" aria-label={m.common.back} onclick={back}>
+          <Icon name="arrow-left" size={18} />
+        </button>
+      {:else}
+        <button
+          type="button"
+          class="close"
+          aria-label={m.common.close}
+          use:tooltip={{ text: m.common.close, shortcut: 'Esc', placement: 'left' }}
+          onclick={onclose}
+        >
+          <Icon name="x" size={18} />
+        </button>
+      {/if}
     </div>
 </div>
 
@@ -239,5 +276,58 @@
   .close:hover {
     background: var(--selected);
     color: var(--fg);
+  }
+
+  /* Celular: primeiro a lista de páginas (com o fechar no topo); tocar numa abre a página
+     inteira, com o voltar no canto. */
+  .settings.compact {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .compact .settings-nav {
+    padding: 12px 12px 20px;
+  }
+
+  .compact .panel {
+    display: none;
+    margin: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .compact.show-page .settings-nav {
+    display: none;
+  }
+
+  .compact.show-page .panel {
+    display: block;
+  }
+
+  .compact .page {
+    padding: 64px 16px 0;
+  }
+
+  .compact .back {
+    top: 12px;
+    right: auto;
+    left: 12px;
+  }
+
+  .nav-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 12px;
+    padding-left: 6px;
+    font-family: var(--font-display);
+    font-size: 19px;
+    font-weight: 650;
+    letter-spacing: -0.02em;
+  }
+
+  .nav-head .close {
+    position: static;
+    flex: none;
   }
 </style>

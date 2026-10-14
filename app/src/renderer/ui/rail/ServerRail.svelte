@@ -69,7 +69,15 @@
 <nav class="rail" aria-label={t.label}>
   <div class="slot" class:active={atHome}>
     <span class="indicator"></span>
-    <button class="home" aria-label={t.home} use:tooltip={{ text: t.home, placement: 'right' }} onclick={() => client.openHome()}>
+    <button
+      class="home"
+      aria-label={t.home}
+      use:tooltip={{ text: t.home, placement: 'right' }}
+      onclick={() => {
+        client.openHome()
+        ui.pane = 'nav'
+      }}
+    >
       <Mascot size={42} float={false} />
     </button>
     {#if homeBadge && !atHome}<span class="mentions">{homeBadge > 99 ? '99+' : homeBadge}</span>{/if}
@@ -102,7 +110,10 @@
         class:loading={!guild.loaded}
         aria-label={guild.info.name}
         use:tooltip={{ text: guild.info.name, placement: 'right' }}
-        onclick={() => client.openGuild(guild.id)}
+        onclick={() => {
+          client.openGuild(guild.id)
+          ui.pane = 'nav'
+        }}
         oncontextmenu={(e) => {
           e.preventDefault()
           menu = { guild, anchor: { x: e.clientX, y: e.clientY } }

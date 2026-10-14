@@ -10,5 +10,5 @@
     "skipLibCheck": true,
     "isolatedModules": true
   },
-  "include": ["electron.vite.config.ts", "src/main", "src/preload"]
+  "include": ["electron.vite.config.ts", "vite.mobile.config.ts", "csp.ts", "src/main", "src/preload"]
 }

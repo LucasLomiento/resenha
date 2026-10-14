@@ -1,7 +1,8 @@
 <script lang="ts">
+  import { untrack } from 'svelte'
   import type { ShortcutAction } from '../../preload/api'
   import { client } from '../lib/client.svelte'
-  import { m } from '../lib/i18n.svelte'
+  import { i18n, m } from '../lib/i18n.svelte'
   import { settings } from '../lib/settings.svelte'
   import { acceleratorFrom } from '../lib/shortcuts'
   import { ui } from '../lib/ui.svelte'
@@ -94,7 +95,15 @@
       deafened: client.call.deafened,
       sharing: client.call.sharing,
       speaking: client.call.selfSpeaking,
+      place: client.callPlace ? `${client.callPlace.name} · ${client.callPlace.where}` : undefined,
     })
+  })
+
+  // Celular: trocou o idioma ou o "esconder o texto" dos avisos: o push passa a seguir.
+  $effect(() => {
+    void i18n.locale
+    void settings.notifyContent
+    untrack(() => void client.syncPush())
   })
 
   // Menções e mensagens privadas não lidas no ícone do app.
@@ -158,25 +167,34 @@
 
 <svelte:window onkeydown={onKeydown} onfocus={() => client.focused()} />
 
-<div class="shell" class:resizing data-status={client.connection} style:--sidebar-w="{clampWidth(settings.sidebarWidth)}px">
+<div
+  class="shell"
+  class:resizing
+  class:compact={ui.compact}
+  class:main-open={ui.pane === 'main'}
+  data-status={client.connection}
+  style:--sidebar-w="{clampWidth(settings.sidebarWidth)}px"
+>
   <ServerRail />
-  <aside class="sidebar" bind:this={sidebarEl}>
-    <!-- Borda arrastável: alarga ou estreita a lista de canais (duplo clique volta ao normal). -->
-    <!-- Um separador focável é o "divisor de janela" do ARIA (interativo), que o lint do Svelte não conhece. -->
-    <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
-    <div
-      class="sidebar-resize"
-      role="separator"
-      aria-orientation="vertical"
-      aria-label={m.app.shell.sidebarWidth}
-      aria-valuemin={SIDEBAR.min}
-      aria-valuemax={SIDEBAR.max}
-      aria-valuenow={clampWidth(settings.sidebarWidth)}
-      tabindex="0"
-      onpointerdown={startResize}
-      ondblclick={() => (settings.sidebarWidth = SIDEBAR.default)}
-      onkeydown={resizeKey}
-    ></div>
+  <aside class="sidebar" bind:this={sidebarEl} inert={ui.compact && ui.pane === 'main'}>
+    {#if !ui.compact}
+      <!-- Borda arrastável: alarga ou estreita a lista de canais (duplo clique volta ao normal). -->
+      <!-- Um separador focável é o "divisor de janela" do ARIA (interativo), que o lint do Svelte não conhece. -->
+      <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
+      <div
+        class="sidebar-resize"
+        role="separator"
+        aria-orientation="vertical"
+        aria-label={m.app.shell.sidebarWidth}
+        aria-valuemin={SIDEBAR.min}
+        aria-valuemax={SIDEBAR.max}
+        aria-valuenow={clampWidth(settings.sidebarWidth)}
+        tabindex="0"
+        onpointerdown={startResize}
+        ondblclick={() => (settings.sidebarWidth = SIDEBAR.default)}
+        onkeydown={resizeKey}
+      ></div>
+    {/if}
     {#if guild}
       {#key guild.id}
         <GuildSidebar {guild} />
@@ -187,7 +205,7 @@
   </aside>
   <!-- O painel de baixo vai de ponta a ponta: embaixo do trilho de servidores e da lista. -->
   <div class="dock-area"><Dock /></div>
-  <main class="panel">
+  <main class="panel" inert={ui.compact && ui.pane === 'nav'}>
     <div class="content" class:hidden={streamFull || callOpen || mapOpen}>
       {#if client.route.kind === 'home'}
         <FriendsView />
@@ -248,6 +266,37 @@
     background:
       radial-gradient(640px 420px at -4% -6%, rgb(var(--accent-rgb) / 0.05), transparent 70%),
       var(--bg-canvas);
+  }
+
+  /* Celular: a lista (trilho, canais e o painel de baixo) ocupa a tela, e o conteúdo é outra
+     tela inteira que desliza por cima dela. */
+  .shell.compact {
+    position: relative;
+    overflow: hidden;
+    grid-template-columns: 72px minmax(0, 1fr);
+    grid-template-areas:
+      'rail sidebar'
+      'dock dock';
+  }
+
+  .compact .panel {
+    position: absolute;
+    inset: 0;
+    z-index: 10;
+    margin: 0;
+    border-radius: 0;
+    box-shadow: none;
+    transform: translateX(100%);
+    visibility: hidden;
+    transition:
+      transform var(--t-slow) var(--ease),
+      visibility 0s var(--t-slow);
+  }
+
+  .compact.main-open .panel {
+    transform: none;
+    visibility: visible;
+    transition: transform var(--t-slow) var(--ease);
   }
 
   .shell > :global(.rail) {
@@ -355,6 +404,8 @@
     color: var(--yellow);
     font-size: var(--text-sm);
     font-weight: 500;
+    /* Com o left: 50%, sobraria só meia tela de largura e o aviso quebraria em duas linhas. */
+    white-space: nowrap;
     translate: -50% 0;
     animation: rs-pop-in var(--t) var(--ease);
   }

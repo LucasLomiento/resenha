@@ -24,6 +24,8 @@
   let list = $state<HTMLDivElement>()
 
   const t = $derived(m.app.quickSwitcher)
+  /** Celular: sem as dicas de teclado. */
+  const mobile = $derived(!!client.platform?.mobile)
   /** A dica do rodapé, com o @ e o # em negrito no lugar dos marcadores. */
   const tip = $derived.by(() => {
     const [beforeAt, rest] = around(t.tip, '{at}')
@@ -214,7 +216,7 @@
         onkeydown={onKeydown}
         use:autofocus
       />
-      <Kbd keys="Esc" />
+      {#if !mobile}<Kbd keys="Esc" />{/if}
     </div>
 
     <div class="results" role="listbox" bind:this={list}>
@@ -232,7 +234,7 @@
             {#each marked(item.name) as part, j (j)}{#if part.on}<mark>{part.t}</mark>{:else}{part.t}{/if}{/each}
           </span>
           <span class="hint">{item.hint}</span>
-          {#if i === index}<Kbd keys="Enter" />{/if}
+          {#if i === index && !mobile}<Kbd keys="Enter" />{/if}
         </button>
       {:else}
         <p class="empty">{query.trim() ? t.noMatch : t.empty}</p>
@@ -240,8 +242,10 @@
     </div>
 
     <div class="foot">
-      <span><Kbd keys="↑" /><Kbd keys="↓" /> {t.pick}</span>
-      <span><Kbd keys="Enter" /> {t.open}</span>
+      {#if !mobile}
+        <span><Kbd keys="↑" /><Kbd keys="↓" /> {t.pick}</span>
+        <span><Kbd keys="Enter" /> {t.open}</span>
+      {/if}
       <span class="tip">{tip.beforeAt}<b>@</b>{tip.beforeHash}<b>#</b>{tip.end}</span>
     </div>
   </div>

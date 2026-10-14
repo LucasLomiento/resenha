@@ -17,6 +17,8 @@ export interface PlatformInfo {
   hyprland: boolean
   /** Dá pra pôr o Spotify na call (Linux, ou Windows com o librespot embutido no pacote). */
   music: boolean
+  /** App de celular (Android): sem o que é só de computador (compartilhar tela, bandeja, atalhos, zoom...). */
+  mobile: boolean
 }
 
 export type ShortcutAction = 'toggle-mute' | 'toggle-deafen' | 'toggle-share' | 'leave-call' | 'show-window'
@@ -41,6 +43,8 @@ export interface CallState {
   sharing: boolean
   /** Falando agora: o ícone da bandeja "acende". */
   speaking: boolean
+  /** Onde ("sala · servidor"), pra notificação da call no celular. */
+  place?: string
 }
 
 export type UpdateState =
@@ -214,6 +218,17 @@ export interface ResenhaApi {
   pendingInvite(): Promise<string | null>
   /** Convite aberto por um link resenha:// com o app já aberto. */
   onInvite(callback: (code: string) => void): void
+  /** Aviso do sistema. Sem isso (computador), o app usa o Notification do navegador. */
+  notify?(title: string, body: string, onclick?: () => void): void
+  /** Celular: notificação push (Firebase). Sem isso (computador, ou APK sem Firebase), os avisos são os do app aberto. */
+  push?: {
+    /** O token deste aparelho (pede a permissão na primeira vez); null se não deu. */
+    token(): Promise<string | null>
+    /** Tocou num aviso: o `data` que o servidor pôs nele. Chega também o toque que abriu o app. */
+    onOpen(callback: (data: Record<string, string>) => void): void
+  }
+  /** Botão voltar do celular: a função devolve false quando não tinha o que fechar (aí o app vai pro fundo). */
+  onBack?(callback: () => boolean): void
   /** Abre a verificação anti-robô do servidor; devolve o token (ou null se fechou). */
   turnstile(server: string): Promise<string | null>
   /** Baixa um anexo com o diálogo de salvar do sistema. */
@@ -221,7 +236,8 @@ export interface ResenhaApi {
   /** A interface trocou de idioma: bandeja, avisos e corretor acompanham. */
   setLocale(locale: 'pt' | 'en' | 'es'): void
   desktop: {
-    get(): Promise<DesktopPrefs>
+    /** null: sem nada disso (celular: sem bandeja, atalhos nem zoom). */
+    get(): Promise<DesktopPrefs | null>
     /** Aplica e salva; devolve as preferências e os atalhos que o sistema recusou. */
     set(patch: Partial<DesktopPrefs>): Promise<{ prefs: DesktopPrefs; failed: ShortcutAction[] }>
     /** Os atalhos que o sistema recusou da última vez (tecla já usada, por exemplo). */

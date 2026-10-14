@@ -1,6 +1,7 @@
 <script lang="ts">
   import { client } from '../lib/client.svelte'
   import { m } from '../lib/i18n.svelte'
+  import { notify } from '../lib/notify'
   import { settings } from '../lib/settings.svelte'
   import { Button, Icon, IconButton } from './kit'
 
@@ -25,7 +26,7 @@
     if (update.status !== 'ready' || notified === update.version || settings.updateDismissed === update.version) return
     notified = update.version
     if (document.hasFocus()) return
-    new Notification(t.title, { body: t.ready(update.version), silent: true }).onclick = () => window.resenha.showWindow()
+    notify(t.title, { body: t.ready(update.version), onclick: () => window.resenha.showWindow() })
   })
 </script>
 

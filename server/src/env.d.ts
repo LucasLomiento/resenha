@@ -10,6 +10,8 @@ interface Env {
   /** Conferência do que o Cloudflare mediu (token só com "Account Analytics: Read"). */
   CF_ACCOUNT_ID?: string
   CF_ANALYTICS_TOKEN?: string
+  /** Conta de serviço do Firebase (o JSON inteiro): push no celular. Sem ela, não sai push. */
+  FCM_SERVICE_ACCOUNT?: string
   /** Só nos testes: encurta a espera por quem caiu da call. */
   RESUME_GRACE_MS?: string
 }

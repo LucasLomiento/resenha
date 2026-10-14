@@ -737,8 +737,15 @@ export type HomeClientMessage =
       key?: string
       /** Conversa da chamada privada em que o app estava: o `ready` traz como ela está agora. */
       call?: string
+      /** App do celular: não conta como "no computador" (o push só fica quieto com a pessoa ativa no computador). */
+      mobile?: boolean
     }
   | { t: 'presence'; status: Status; text: string | null; auto?: boolean }
+  /**
+   * Celular: o token do push (Firebase) deste aparelho, o idioma dos avisos e se eles mostram o
+   * texto da mensagem; `token: null` desliga. Vale até a sessão acabar (sair, ou encerrada).
+   */
+  | { t: 'push.token'; token: string | null; locale?: 'pt' | 'en' | 'es'; preview?: boolean }
   | { t: 'dm.open'; userId: string; reqId: string }
   | {
       t: 'dm.send'

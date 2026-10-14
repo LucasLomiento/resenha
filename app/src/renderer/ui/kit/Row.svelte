@@ -48,8 +48,9 @@
 <style>
   .row {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
-    gap: var(--s-4);
+    gap: var(--s-3) var(--s-4);
     min-height: 56px;
     padding: 10px 16px;
   }
@@ -59,8 +60,10 @@
     border-top: 1px solid var(--line);
   }
 
+  /* O texto não fica mais estreito que isso: numa tela estreita (celular), o controle largo
+     desce pra linha de baixo em vez de espremer o texto. */
   .text {
-    flex: 1;
+    flex: 1 1 200px;
     min-width: 0;
   }
 

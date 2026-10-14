@@ -149,11 +149,14 @@
       <Select label={t.audio.input} options={options(inputs, t.audio.input)} bind:value={settings.inputDevice} onchange={micChanged} />
     </div>
   </Row>
-  <Row label={t.audio.output} setting="voice.output">
-    <div class="select">
-      <Select label={t.audio.outputLabel} options={options(outputs, t.audio.speaker)} bind:value={settings.outputDevice} onchange={() => call.applyOutput()} />
-    </div>
-  </Row>
+  <!-- Celular: o som sai pelo que o Android escolher (alto-falante ou fone). -->
+  {#if client.desktop}
+    <Row label={t.audio.output} setting="voice.output">
+      <div class="select">
+        <Select label={t.audio.outputLabel} options={options(outputs, t.audio.speaker)} bind:value={settings.outputDevice} onchange={() => call.applyOutput()} />
+      </div>
+    </Row>
+  {/if}
   <Row stack setting="voice.test" description={testing ? t.audio.testing : undefined}>
     <div class="test">
       <Button icon={testing ? 'x' : 'mic'} onclick={() => (testing ? stopTest() : startTest())}>
@@ -214,11 +217,14 @@
 </Section>
 
 <Section title={t.camera.section}>
-  <Row label={t.camera.device} setting="voice.camera">
-    <div class="select">
-      <Select label={t.camera.label} options={options(cameras, t.camera.label)} bind:value={settings.cameraDevice} onchange={cameraChanged} />
-    </div>
-  </Row>
+  <!-- Celular: a câmera da frente ou a de trás, pelo botão na call. -->
+  {#if client.desktop}
+    <Row label={t.camera.device} setting="voice.camera">
+      <div class="select">
+        <Select label={t.camera.label} options={options(cameras, t.camera.label)} bind:value={settings.cameraDevice} onchange={cameraChanged} />
+      </div>
+    </Row>
+  {/if}
   <Row label={t.camera.preview} setting="voice.preview">
     <Button icon={preview ? 'camera-off' : 'camera'} onclick={togglePreview}>{preview ? t.camera.close : t.camera.open}</Button>
   </Row>
@@ -233,11 +239,14 @@
   </Row>
 </Section>
 
-<Section title={t.stream.section}>
-  <Row label={t.stream.ink} for="voice-ink" setting="voice.ink" description={t.stream.inkDescription}>
-    <Switch id="voice-ink" checked={settings.inkAllowed} onchange={(e) => call.ink.setEnabled(e.currentTarget.checked)} />
-  </Row>
-</Section>
+<!-- Rabiscar e o codec são de quem compartilha a tela: o celular não compartilha. -->
+{#if client.desktop}
+  <Section title={t.stream.section}>
+    <Row label={t.stream.ink} for="voice-ink" setting="voice.ink" description={t.stream.inkDescription}>
+      <Switch id="voice-ink" checked={settings.inkAllowed} onchange={(e) => call.ink.setEnabled(e.currentTarget.checked)} />
+    </Row>
+  </Section>
+{/if}
 
 <section class="advanced">
   <button class="advanced-toggle" aria-expanded={advanced} onclick={() => (advanced = !advanced)}>
@@ -246,14 +255,16 @@
   </button>
   {#if advanced}
     <Section>
-      <Row label={t.advanced.codec} setting="voice.codec" description={t.advanced.codecDescription}>
-        <Segmented
-          label={t.advanced.codec}
-          options={(['VP9', 'VP8', 'H264', 'AV1'] as VideoCodec[]).map((codec) => ({ value: codec, label: codec }))}
-          bind:value={settings.codec}
-          onchange={() => call.updateShare()}
-        />
-      </Row>
+      {#if client.desktop}
+        <Row label={t.advanced.codec} setting="voice.codec" description={t.advanced.codecDescription}>
+          <Segmented
+            label={t.advanced.codec}
+            options={(['VP9', 'VP8', 'H264', 'AV1'] as VideoCodec[]).map((codec) => ({ value: codec, label: codec }))}
+            bind:value={settings.codec}
+            onchange={() => call.updateShare()}
+          />
+        </Row>
+      {/if}
       <Row label={t.advanced.stats} setting="voice.stats" for="voice-stats" description={t.advanced.statsDescription}>
         <Switch id="voice-stats" bind:checked={settings.showStats} />
       </Row>

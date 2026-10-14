@@ -17,7 +17,14 @@ export interface ConfirmRequest {
 /** Onde o cartão de perfil encosta (elemento clicado ou ponto do clique). */
 export type Anchor = HTMLElement | { x: number; y: number }
 
+/** Tela de celular: abaixo disso, a lista e o conteúdo aparecem um de cada vez. */
+const COMPACT = '(max-width: 720px)'
+
 export const ui = $state<{
+  /** Celular (tela estreita): a lista de canais e o conteúdo ocupam a tela um de cada vez. */
+  compact: boolean
+  /** No celular, qual das duas telas aparece: a lista (trilho, canais, conversas) ou o conteúdo. */
+  pane: 'nav' | 'main'
   /** Página das configurações abertas (tela cheia), ou null. */
   settings: SettingsPage | null
   /** Configuração achada pela busca: a página abre nela e ela pisca (id do índice de settings-search). */
@@ -55,6 +62,8 @@ export const ui = $state<{
   /** Confirmação de algo que não dá pra desfazer. */
   confirm: ConfirmRequest | null
 }>({
+  compact: matchMedia(COMPACT).matches,
+  pane: 'nav',
   settings: null,
   settingsTarget: null,
   guildSettings: null,
@@ -75,6 +84,8 @@ export const ui = $state<{
   lightbox: null,
   confirm: null,
 })
+
+matchMedia(COMPACT).addEventListener('change', (event) => (ui.compact = event.matches))
 
 function loadMembersPref(): boolean {
   try {

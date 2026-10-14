@@ -5,8 +5,9 @@
   import { formatDay } from '../../lib/format'
   import { around, m } from '../../lib/i18n.svelte'
   import { toggleMembers, ui } from '../../lib/ui.svelte'
+  import BackButton from '../BackButton.svelte'
   import MemberList from '../guild/MemberList.svelte'
-  import { Avatar, Button, EmptyState, Icon, IconButton, Spinner } from '../kit'
+  import { Avatar, Button, EmptyState, Icon, IconButton, layer, Spinner } from '../kit'
   import ProfileBody from '../profile/ProfileBody.svelte'
   import Composer from './Composer.svelte'
   import MessageItem from './Message.svelte'
@@ -45,6 +46,8 @@
   let pinsOpen = $state(false)
   let searchText = $state('')
   let searchQuery = $state('')
+  /** Celular: membros (ou o perfil, na conversa privada) numa gaveta por cima do chat. */
+  let drawer = $state(false)
   let refs: Record<string, { startEdit(): void } | undefined> = {}
 
   // Trocou de conversa: fecha o que era da anterior.
@@ -55,15 +58,21 @@
     lastTargetId = id
     replyTo = null
     pinsOpen = false
+    drawer = false
     highlighted = null
   })
 
   const aside = $derived.by((): 'members' | 'search' | 'profile' | null => {
     if (!target) return null
     if (guild && searchQuery) return 'search'
-    if (ui.members) return guild ? 'members' : 'profile'
+    if (ui.compact ? drawer : ui.members) return guild ? 'members' : 'profile'
     return null
   })
+
+  function toggleAside() {
+    if (ui.compact) drawer = !drawer
+    else toggleMembers()
+  }
 
   // ---------- Agrupamento e divisórias ----------
 
@@ -213,6 +222,7 @@
       ondrop={onDrop}
     >
       <header>
+        <BackButton />
         {#if peer}
           <Avatar id={peer.id} name={peer.name} size={24} src={client.avatarOf(peer.id)} status={peerPresence?.status ?? null} cutout="var(--bg-panel)" />
           <h1>{peer.name}</h1>
@@ -227,12 +237,12 @@
           {#if peer}
             <IconButton icon="phone" label={t.call} tip="bottom" disabled={inThisCall || !target.canSend} onclick={() => client.startDmCall(target.id)} />
             <IconButton icon="camera" label={t.videoCall} tip="bottom" disabled={inThisCall || !target.canSend} onclick={() => client.startDmCall(target.id, true)} />
-            <IconButton icon="user" label={t.profile} tip="bottom" active={ui.members} onclick={toggleMembers} />
+            <IconButton icon="user" label={t.profile} tip="bottom" active={aside === 'profile'} onclick={toggleAside} />
           {:else}
             <span bind:this={pinsButton}>
               <IconButton icon="pin" label={m.chat.pins.label} tip="bottom" active={pinsOpen} onclick={() => (pinsOpen = !pinsOpen)} />
             </span>
-            <IconButton icon="users" label={t.members} tip="bottom" active={ui.members && !searchQuery} onclick={() => (searchQuery ? (searchQuery = '') : toggleMembers())} />
+            <IconButton icon="users" label={t.members} tip="bottom" active={aside === 'members'} onclick={() => (searchQuery ? (searchQuery = '') : toggleAside())} />
             <label class="search" class:filled={!!searchText}>
               <Icon name="search" size={15} />
               <input placeholder={m.common.search} bind:value={searchText} aria-label={t.searchLabel} onkeydown={submitSearch} data-own-escape />
@@ -324,7 +334,16 @@
       {/if}
     </section>
 
-    {#if aside === 'members' && guild}
+    {#if ui.compact && drawer && (aside === 'members' || aside === 'profile')}
+      <!-- Celular: a gaveta fecha com o voltar do Android (é uma camada, como um menu). -->
+      <div class="aside drawer" use:layer={() => (drawer = false)}>
+        {#if aside === 'members' && guild}
+          <MemberList {guild} />
+        {:else if peer}
+          <ProfileBody userId={peer.id} guildId={null} flat />
+        {/if}
+      </div>
+    {:else if aside === 'members' && guild}
       <div class="aside"><MemberList {guild} /></div>
     {:else if aside === 'search' && guild}
       <div class="aside search-aside">
@@ -372,8 +391,10 @@
       display: none;
     }
 
-    /* A busca não some: os resultados abrem numa gaveta por cima do chat. */
-    .aside.search-aside {
+    /* A busca não some: os resultados abrem numa gaveta por cima do chat (no celular, os
+       membros também). */
+    .aside.search-aside,
+    .aside.drawer {
       display: block;
       position: absolute;
       top: var(--header-h);
@@ -741,5 +762,55 @@
     place-items: center;
     height: 100%;
     color: var(--fg-3);
+  }
+
+  /* Celular: a busca vira só a lupa e, ao tocar, ocupa o cabeçalho inteiro. */
+  @container panel (max-width: 520px) {
+    header {
+      position: relative;
+      gap: 6px;
+      padding: 0 8px 0 6px;
+    }
+
+    h1 {
+      flex: 1;
+      max-width: none;
+      min-width: 0;
+    }
+
+    .search {
+      width: 32px;
+      margin-left: 0;
+      padding: 0 0 0 8px;
+      background: transparent;
+      box-shadow: none;
+      cursor: pointer;
+    }
+
+    /* O campo continua lá (fino e invisível) pra receber o toque na lupa. */
+    .search input {
+      opacity: 0;
+    }
+
+    .search:focus-within,
+    .search.filled {
+      position: absolute;
+      inset: 8px 8px;
+      z-index: 2;
+      width: auto;
+      height: auto;
+      padding: 0 10px 0 12px;
+      background: var(--bg-input);
+    }
+
+    .search:focus-within input,
+    .search.filled input {
+      opacity: 1;
+    }
+
+    .aside.search-aside,
+    .aside.drawer {
+      width: 100%;
+    }
   }
 </style>
