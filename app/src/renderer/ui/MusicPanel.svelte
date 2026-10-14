@@ -226,8 +226,11 @@
     <!-- A capa borrada como luz atrás do player. -->
     {#if track?.cover}<img class="backdrop" src={track.cover} alt="" aria-hidden="true" />{/if}
     <div class="now">
-      <div class="cover" class:empty={!track?.cover}>
-        {#if track?.cover}<img src={track.cover} alt="" />{:else}<Icon name="music" size={28} />{/if}
+      <!-- A capa encolhe quando falta altura (artista com nome comprido, janela baixa): o volume nunca some embaixo. -->
+      <div class="art">
+        <div class="cover" class:empty={!track?.cover}>
+          {#if track?.cover}<img src={track.cover} alt="" />{:else}<Icon name="music" size={28} />{/if}
+        </div>
       </div>
       <div class="info">
         {#if track}
@@ -581,10 +584,18 @@
     display: flex;
     flex-direction: column;
     gap: 14px;
+    min-height: 0;
+  }
+
+  /* A caixa da capa ocupa a largura da coluna e encolhe com a altura; a capa é o maior quadrado que cabe nela. */
+  .art {
+    flex: 0 1 280px;
+    min-height: 96px;
+    container-type: size;
   }
 
   .cover {
-    width: 100%;
+    width: min(100cqw, 100cqh);
     aspect-ratio: 1;
     border-radius: var(--r-xl);
     overflow: hidden;
@@ -615,6 +626,7 @@
 
   .info {
     display: flex;
+    flex: none;
     flex-direction: column;
     gap: 4px;
     min-width: 0;

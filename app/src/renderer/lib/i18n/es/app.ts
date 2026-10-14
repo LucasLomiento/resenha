@@ -167,6 +167,14 @@ export default {
     start: 'Compartir',
   },
 
+  camera: {
+    title: 'Elegir cámara',
+    sources: 'Cámaras',
+    unnamed: (n: number) => `Cámara ${n}`,
+    noPreview: 'Sin imagen. Puede que otra app la esté usando.',
+    start: 'Encender cámara',
+  },
+
   sharePanel: {
     label: 'Transmisión',
     live: 'En vivo',

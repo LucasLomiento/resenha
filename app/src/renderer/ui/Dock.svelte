@@ -29,9 +29,11 @@
   let meHover = $state(false)
 
   async function toggleCamera() {
-    const turningOn = !call.camera
+    if (call.camera) return call.toggleCamera()
+    // Mais de uma câmera: escolhe qual, como no compartilhar tela. Com uma (ou nenhuma), liga direto.
+    if (namedDevices((await listDevices()).cameras).length > 1) return void (ui.camera = true)
     await call.toggleCamera()
-    if (turningOn && call.camera) client.view = 'call'
+    if (call.camera) client.view = 'call'
   }
 
   /** Mapa compartilhado do servidor da call (chamada privada não tem). */

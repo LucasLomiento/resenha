@@ -158,8 +158,18 @@ function installFakeMic() {
       g.fillRect(0, 0, 640, 360)
     }, 33)
     const camStream = cam.captureStream(30)
+    // Duas câmeras de mentira (o PC de quem roda o teste pode ter qualquer número delas).
+    const realEnumerate = navigator.mediaDevices.enumerateDevices.bind(navigator.mediaDevices)
+    navigator.mediaDevices.enumerateDevices = async () => [
+      ...(await realEnumerate()).filter((d) => d.kind !== 'videoinput'),
+      ...[1, 2].map((n) => ({ kind: 'videoinput', deviceId: `fake-cam-${n}`, groupId: 'fake-cams', label: `Câmera de teste ${n}`, toJSON: () => ({}) })),
+    ]
     navigator.mediaDevices.getUserMedia = async (constraints) => {
-      if (constraints?.video) return new MediaStream([camStream.getVideoTracks()[0].clone()])
+      if (constraints?.video) {
+        // A última câmera pedida (a prévia do diálogo pede cada uma; a de verdade vem depois).
+        window.__lastCamera = constraints.video.deviceId?.exact ?? 'default'
+        return new MediaStream([camStream.getVideoTracks()[0].clone()])
+      }
       if (constraints?.audio?.deviceId?.exact) return real(constraints)
       return new MediaStream([dest.stream.getAudioTracks()[0].clone()])
     }
@@ -1105,10 +1115,25 @@ try {
   check(outputDefault === 1 && stillSpeaking === 1, 'setinha do fone mostra a saída, e a voz continua chegando depois de trocar o perfil', `${outputDefault}/${stillSpeaking}`)
   check(micFallbacks.length === 0, 'microfone passa pelo processador (RNNoise/limiar) carregado no AudioWorklet')
 
-  // Webcam: B liga, A abre a tela da call e vê o vídeo; B desliga e volta o avatar.
+  // Webcam: B tem duas câmeras, então ligar abre a escolha (com as duas ao vivo); B liga a segunda.
+  // A abre a tela da call e vê o vídeo; B desliga e volta o avatar.
   const camBefore = await rectOf(b.page, 'Ligar câmera')
   await b.page.getByRole('button', { name: 'Ligar câmera', exact: true }).click({ force: true })
+  const camDialog = b.page.getByRole('dialog', { name: 'Escolher câmera' })
+  const camPreviews = await camDialog
+    .waitFor({ timeout: 5000 })
+    .then(() => b.page.waitForFunction(() => [...document.querySelectorAll('[role="dialog"] .camera video')].filter((v) => v.videoWidth > 0).length === 2, null, { timeout: 8000 }))
+    .then(() => true, () => false)
+  await shot(b, '2a-escolher-camera')
+  await camDialog.getByRole('option', { name: /Câmera de teste 2/ }).click({ force: true })
+  await camDialog.getByRole('button', { name: 'Ligar câmera', exact: true }).click({ force: true })
   await a.page.locator('li.member', { hasText: 'Duarte' }).locator('.soft').waitFor({ timeout: 10_000 })
+  const camChosen = await b.page.evaluate(() => window.__lastCamera)
+  check(
+    camPreviews && camChosen === 'fake-cam-2' && (await camDialog.count()) === 0,
+    'com duas câmeras, ligar abre a escolha com as duas ao vivo e liga a escolhida',
+    `${camPreviews}/${camChosen}`,
+  )
   const camAfter = await rectOf(b.page, 'Desligar câmera')
   check(camBefore === camAfter, 'botão da câmera fica no mesmo lugar ligado e desligado', `${camBefore} → ${camAfter}`)
   await a.page.getByRole('button', { name: 'Abrir a call', exact: true }).click({ force: true })
@@ -1752,10 +1777,19 @@ try {
     pane.scrollTop = 0
     return { inside: panel.top >= 0 && panel.bottom <= innerHeight, scrolled, playerStays: Math.abs(playerAfter - player.top) < 1, searchClear }
   })
+  // Artista com nome comprido (quebra em várias linhas): a capa encolhe e o volume continua aparecendo.
+  fits.volume = await b.page.evaluate(async () => {
+    document.querySelector('.music-panel .artists').textContent = 'MC Fulano, DJ Ciclano, Beltrano da Quebrada, Tropa do Teste e Convidados Especiais'
+    document.querySelector('.music-panel .title').textContent = 'Uma música com o nome bem comprido pra quebrar a linha'
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
+    const player = document.querySelector('.music-panel .player')
+    const volume = document.querySelector('.music-panel .volume').getBoundingClientRect()
+    return volume.bottom <= player.getBoundingClientRect().bottom + 1 && player.scrollHeight <= player.clientHeight + 1
+  })
   await shot(b, '7e-spotify-muitos-resultados')
   check(
-    fits.inside && fits.scrolled && fits.playerStays && fits.searchClear,
-    'painel do Spotify com muitos resultados: cabe na tela, só a lista rola (a busca e o player ficam parados)',
+    fits.inside && fits.scrolled && fits.playerStays && fits.searchClear && fits.volume,
+    'painel do Spotify com muitos resultados: cabe na tela, só a lista rola (a busca e o player ficam parados), e o volume aparece mesmo com nome comprido',
     JSON.stringify(fits),
   )
   await panelB.getByRole('tab', { name: 'Playlists', exact: true }).click({ force: true })

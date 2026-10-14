@@ -43,6 +43,8 @@ export const ui = $state<{
   /** Lista de membros à direita (nos servidores). */
   members: boolean
   share: boolean
+  /** Escolher a câmera (só abre com mais de uma). */
+  camera: boolean
   /** Painel rápido da transmissão em andamento (qualidade, parar). */
   sharePanel: boolean
   /** Painel do bot do Spotify (`connId` de quem pôs o bot que está aberto; null: o primeiro, ou ligar o meu). */
@@ -66,6 +68,7 @@ export const ui = $state<{
   shortcutsHelp: false,
   members: loadMembersPref(),
   share: false,
+  camera: false,
   sharePanel: false,
   music: null,
   recordingShortcut: false,

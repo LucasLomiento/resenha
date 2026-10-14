@@ -172,6 +172,14 @@ export default {
     start: 'Compartilhar',
   },
 
+  camera: {
+    title: 'Escolher câmera',
+    sources: 'Câmeras',
+    unnamed: (n: number) => `Câmera ${n}`,
+    noPreview: 'Sem imagem. Pode estar em uso por outro app.',
+    start: 'Ligar câmera',
+  },
+
   sharePanel: {
     label: 'Transmissão',
     live: 'Ao vivo',

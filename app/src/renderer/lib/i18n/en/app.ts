@@ -167,6 +167,14 @@ export default {
     start: 'Share',
   },
 
+  camera: {
+    title: 'Choose a camera',
+    sources: 'Cameras',
+    unnamed: (n: number) => `Camera ${n}`,
+    noPreview: 'No picture. Another app may be using it.',
+    start: 'Turn on camera',
+  },
+
   sharePanel: {
     label: 'Stream',
     live: 'Live',
