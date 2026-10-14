@@ -1,7 +1,8 @@
-## 1.13.1: escolher a câmera
+## 1.13.2: arrastar pra mudar de sala
 
-- **Escolher a câmera:** com mais de uma câmera, o botão "Câmera" abre a escolha, como no compartilhar tela: cada uma aparece ao vivo e a escolhida já vem marcada na próxima vez (ela vira a câmera das configurações). Clique duplo numa câmera também liga. Com uma câmera só, liga direto como antes.
-- **Spotify:** com o nome dos artistas comprido (quebrando em mais de uma linha), o volume sumia embaixo do player. Agora a capa encolhe quando falta espaço e o volume sempre aparece.
+- **Mover gente arrastando:** quem pode mover pessoas na call (pelo cargo) agora segura alguém na lista do canal de voz e solta em outra sala. A sala de destino acende enquanto você arrasta. Quem não tem a permissão não consegue arrastar ninguém.
+- **Sem o "#" azul** em cima do título, no começo de cada canal.
+- **Só aparece o que funciona no seu sistema:** no Windows, o botão de pôr o Spotify na call não aparece mais (o bot só liga no Linux). O Spotify que alguém pôs continua aparecendo na call pra você ouvir, mudar o volume e controlar. A opção de som no "compartilhar tela" também some quando o sistema não tem como capturar o som.
 
 ## Como atualizar
 

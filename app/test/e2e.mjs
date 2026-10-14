@@ -1950,6 +1950,20 @@ try {
   await b.page.getByRole('button', { name: 'Geral: entrar na call', exact: true }).dblclick({ force: true })
   await b.page.locator('.dock .where', { hasText: 'Geral' }).waitFor({ timeout: 10_000 })
 
+  // Arrastar pra outra sala: A (dono, pode mover gente) arrasta B pra Jogatina e de volta; B, sem a
+  // permissão de mover, não arrasta ninguém.
+  const channelsA = a.page.getByRole('navigation', { name: 'Canais' })
+  const draggableForB = await b.page.getByRole('navigation', { name: 'Canais' }).locator('li.member', { hasText: 'Lucas' }).first().getAttribute('draggable')
+  await channelsA.locator('li.member', { hasText: 'Duarte' }).first().dragTo(channelsA.locator('.channel-row', { hasText: 'Jogatina' }))
+  const draggedAway = await b.page.locator('.dock .where', { hasText: 'Jogatina' }).waitFor({ timeout: 10_000 }).then(() => true, () => false)
+  await channelsA.locator('li.member', { hasText: 'Duarte' }).first().dragTo(channelsA.locator('.channel-row', { hasText: /Geral/ }).first())
+  const draggedBack = await b.page.locator('.dock .where', { hasText: 'Geral' }).waitFor({ timeout: 10_000 }).then(() => true, () => false)
+  check(
+    draggedAway && draggedBack && draggableForB !== 'true',
+    'quem pode mover gente arrasta alguém pra outra sala (e quem não pode não arrasta)',
+    `${draggedAway}/${draggedBack}/${draggableForB}`,
+  )
+
   // Servidor novo direto do print: nome do print e só os canais importados.
   await a.page.getByRole('button', { name: 'Criar ou entrar num servidor', exact: true }).click({ force: true })
   await a.page.getByRole('button', { name: /Trazer do Discord/ }).click({ force: true })

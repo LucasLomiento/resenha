@@ -266,7 +266,6 @@
               <h2>{peer.name}</h2>
               <p>{t.dmStart(peer.username)}</p>
             {:else}
-              <div class="start-icon"><Icon name="hash" size={28} /></div>
               <h2>{t.channelWelcome(target.title)}</h2>
               <p>{t.channelStart}</p>
             {/if}
@@ -559,21 +558,6 @@
     align-items: flex-start;
     gap: 6px;
     padding: 32px 20px 16px;
-  }
-
-  .start-icon {
-    display: grid;
-    place-items: center;
-    width: 64px;
-    height: 64px;
-    margin-bottom: 10px;
-    border-radius: 20px;
-    background:
-      linear-gradient(var(--bg-raised), var(--bg-raised)) padding-box,
-      linear-gradient(135deg, rgb(var(--brand-1-rgb) / 0.75), rgb(var(--accent-rgb) / 0.2), rgb(var(--brand-3-rgb) / 0.6)) border-box;
-    border: 1px solid transparent;
-    color: var(--accent-fg);
-    box-shadow: 0 14px 36px -18px rgb(var(--accent-rgb) / 0.25);
   }
 
   .start :global(.avatar) {

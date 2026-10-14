@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { P, type Channel, type NotifyLevel, type VoiceMember } from '../../../../../shared/protocol'
+  import { P, has, type Channel, type NotifyLevel, type VoiceMember } from '../../../../../shared/protocol'
   import { client } from '../../lib/client.svelte'
   import { otherRtt } from '../../lib/call.svelte'
   import type { GuildState } from '../../lib/guild.svelte'
@@ -8,7 +8,7 @@
   import { badgeOf } from '../../lib/profile'
   import { confirmAction, ui, type Anchor } from '../../lib/ui.svelte'
   import { Avatar, Icon, IconButton, Menu, NavItem, SignalBars, Slider, Spinner, UserBadge, tooltip, type MenuItem } from '../kit'
-  import { memberMenu } from './memberMenu'
+  import { canModerate, memberMenu } from './memberMenu'
 
   let { guild }: { guild: GuildState } = $props()
 
@@ -259,6 +259,10 @@
   }
 
   function dragOver(event: DragEvent, over: Channel | null) {
+    if (draggingMember) {
+      if (over) memberDragOver(event, over)
+      return
+    }
     const next = over ? dropFor(event, over) : dragging?.kind === 'category' ? { id: null, place: 'before' as const } : null
     if (!next) return
     event.preventDefault()
@@ -268,20 +272,59 @@
 
   /** Fora de qualquer alvo: some a marca (soltar ali não faz nada). */
   function dragOverNav(event: DragEvent) {
-    if (!event.defaultPrevented) drop = null
+    if (event.defaultPrevented) return
+    drop = null
+    memberDrop = null
   }
 
   function dragEnd() {
     dragging = null
     drop = null
+    draggingMember = null
+    memberDrop = null
   }
 
   function dropHere(event: DragEvent) {
     event.preventDefault()
     const moving = dragging
     const where = drop
+    const person = draggingMember
+    const room = memberDrop
     dragEnd()
+    if (person && room) return guild.moderateVoice(person.userId, { moveTo: room })
     if (moving && where) move(moving, where)
+  }
+
+  // ---------- Arrastar alguém pra outra sala ----------
+  // Como o "Mover para…" do menu: só quem pode mover gente e está acima da pessoa na
+  // hierarquia (o servidor confere de novo, e também se a pessoa pode ver a sala).
+
+  let draggingMember = $state<{ userId: string; channelId: string } | null>(null)
+  /** Sala onde a pessoa cai se soltar agora. */
+  let memberDrop = $state<string | null>(null)
+
+  function canMove(member: VoiceMember): boolean {
+    return has(guild.guildPermissions, P.MOVE_MEMBERS) && canModerate(guild, member.userId)
+  }
+
+  function memberDragStart(event: DragEvent, member: VoiceMember) {
+    if (!canMove(member)) return event.preventDefault()
+    draggingMember = { userId: member.userId, channelId: member.channelId }
+    menu = null
+    volumeFor = null
+    if (event.dataTransfer) {
+      event.dataTransfer.effectAllowed = 'move'
+      event.dataTransfer.setData('text/plain', guild.displayName(member.userId))
+    }
+  }
+
+  /** Outra sala de voz em que eu posso entrar. */
+  function memberDragOver(event: DragEvent, channel: Channel) {
+    const moving = draggingMember
+    if (!moving || channel.kind !== 'voice' || channel.id === moving.channelId || !guild.can(channel.id, P.CONNECT)) return
+    event.preventDefault()
+    if (event.dataTransfer) event.dataTransfer.dropEffect = 'move'
+    memberDrop = channel.id
   }
 
   /** Renumera o grupo de destino e manda só o que mudou (cada linha é uma escrita no servidor). */
@@ -435,6 +478,7 @@
             class:dragging={dragging?.id === channel.id}
             class:drop-before={drop?.id === channel.id && drop.place === 'before'}
             class:drop-after={drop?.id === channel.id && drop.place === 'after'}
+            class:member-drop={memberDrop === channel.id}
             draggable={canDrag(channel)}
             ondragstart={(e) => dragStart(e, channel)}
             ondragover={(e) => dragOver(e, channel)}
@@ -465,13 +509,24 @@
           </div>
 
           {#if members.length}
-            <ul class="members">
+            <!-- Soltar alguém em cima de quem já está numa sala também leva pra ela. -->
+            <ul class="members" ondragover={(e) => memberDragOver(e, channel)} role="presentation">
               {#each members as member (member.connId)}
                 {@const name = guild.displayName(member.userId)}
                 {@const self = member.connId === guild.connId}
                 {@const link = call.links[member.connId]}
                 {@const badge = badgeOf(client.user(member.userId, guild.id))}
-                <li class="member" use:arrival={badge}>
+                {@const movable = canMove(member)}
+                <li
+                  class="member"
+                  class:movable
+                  class:moving={draggingMember?.userId === member.userId}
+                  use:arrival={badge}
+                  draggable={movable}
+                  ondragstart={(e) => memberDragStart(e, member)}
+                  ondragend={dragEnd}
+                  role="presentation"
+                >
                   <button
                     class="member-main"
                     class:dim={!here}
@@ -755,6 +810,21 @@
     border-radius: 2px;
     background: var(--accent-fg);
     pointer-events: none;
+  }
+
+  /* Alguém sendo arrastado pra essa sala. */
+  .channel-row.member-drop :global(.channel) {
+    background: var(--accent-soft);
+    box-shadow: inset 0 0 0 1px var(--accent-line);
+    color: var(--fg);
+  }
+
+  .member.movable {
+    cursor: grab;
+  }
+
+  .member.moving {
+    opacity: 0.45;
   }
 
   .channel-row.drop-before::before {

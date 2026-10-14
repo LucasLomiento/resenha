@@ -131,14 +131,16 @@
     </div>
   </div>
 
-  <div class="audio" class:off={platform.screenAudio === 'none'}>
+  <!-- Sem como capturar o som do sistema (sem PipeWire, macOS): a opção nem aparece. -->
+  {#if platform.screenAudio !== 'none'}
+  <div class="audio">
     <div class="audio-row">
       <span class="audio-icon"><Icon name="volume" size={18} /></span>
       <label for="share-audio" class="audio-text">
         <span class="audio-title">{t.audio}</span>
         <span class="audio-note" class:warn={platform.screenAudio === 'loopback-all'}>{audioNote}</span>
       </label>
-      <Switch id="share-audio" bind:checked={settings.screenAudio} disabled={platform.screenAudio === 'none'} />
+      <Switch id="share-audio" bind:checked={settings.screenAudio} />
     </div>
 
     {#if platform.screenAudio === 'venmic' && settings.screenAudio}
@@ -179,6 +181,7 @@
       </div>
     {/if}
   </div>
+  {/if}
 
   <div class="audio ink">
     <div class="audio-row">
@@ -329,10 +332,6 @@
 
   .audio.ink {
     margin-top: 10px;
-  }
-
-  .audio.off {
-    opacity: 0.55;
   }
 
   .audio-row {
