@@ -1429,6 +1429,12 @@ try {
   await a.page.getByRole('button', { name: 'Configurações', exact: true }).click({ force: true })
   await a.page.waitForTimeout(300)
   await shot(a, '6-configuracoes')
+  // Linha empilhada sem sobra: na 1.14.0, a base de 200 px do texto (pensada pro celular) virou
+  // altura e abriu um buraco em cima da foto e do banner.
+  const photoRow = await a.page.evaluate(() =>
+    Math.round(document.querySelector('.settings-content [data-setting="profile.photo"]')?.getBoundingClientRect().height ?? -1),
+  )
+  check(photoRow > 0 && photoRow < 200, 'a linha da foto no Perfil não tem espaço sobrando', `${photoRow} px`)
   // Configurações em tela cheia: a navegação e o título da página não mudam de lugar entre as páginas.
   const positions = () =>
     a.page.evaluate(() => {

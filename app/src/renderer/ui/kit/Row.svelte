@@ -48,7 +48,6 @@
 <style>
   .row {
     display: flex;
-    flex-wrap: wrap;
     align-items: center;
     gap: var(--s-3) var(--s-4);
     min-height: 56px;
@@ -60,11 +59,22 @@
     border-top: 1px solid var(--line);
   }
 
-  /* O texto não fica mais estreito que isso: numa tela estreita (celular), o controle largo
-     desce pra linha de baixo em vez de espremer o texto. */
   .text {
-    flex: 1 1 200px;
+    flex: 1;
     min-width: 0;
+  }
+
+  /* Celular: o texto não fica mais estreito que 200 px; o controle largo desce pra linha de
+     baixo em vez de espremer o texto. (Só nas linhas lado a lado: na empilhada, a base de
+     200 px viraria altura.) */
+  @media (max-width: 720px) {
+    .row:not(.stack) {
+      flex-wrap: wrap;
+    }
+
+    .row:not(.stack) .text {
+      flex: 1 1 200px;
+    }
   }
 
   label,
