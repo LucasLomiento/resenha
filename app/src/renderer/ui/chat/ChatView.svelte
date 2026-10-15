@@ -130,8 +130,22 @@
     })
   })
 
+  // Quem está no fim continua no fim quando a área da conversa muda de tamanho (a caixa de
+  // texto crescendo com várias linhas, ou voltando ao normal depois de enviar).
+  let stuck = true
+  $effect(() => {
+    const el = scroller
+    if (!el) return
+    const observer = new ResizeObserver(() => {
+      if (stuck && !target?.hasNewer) el.scrollTop = el.scrollHeight
+    })
+    observer.observe(el)
+    return () => observer.disconnect()
+  })
+
   function onScroll() {
     if (!scroller || !target) return
+    stuck = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 40
     if (scroller.scrollTop < 300 && target.hasMore && !target.loading && messages[0]) target.loadMore()
     const bottom = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 80
     if (bottom && target.hasNewer && !target.loading) target.loadNewer()

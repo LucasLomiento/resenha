@@ -297,7 +297,9 @@
     replyTo = null
     for (const u of sent) if (u.preview) URL.revokeObjectURL(u.preview)
     uploads = uploads.filter((u) => !sent.some((s) => s.key === u.key))
-    resize()
+    // Mede depois que o campo vazio chega na tela: medido na hora, ainda tinha o texto de várias
+    // linhas e a caixa ficava grande depois de enviar.
+    void tick().then(resize)
     if (target.slowmode) waitUntil = Date.now() + target.slowmode * 1000
     try {
       await target.send(content, ids, reply)

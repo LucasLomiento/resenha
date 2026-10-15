@@ -196,8 +196,14 @@
   }
 </script>
 
-{#snippet who(user: User, sub: string, status: VisibleStatus | null, call = false)}
-  <button type="button" class="who" aria-label={describe(user, sub, status)} onclick={(e) => openProfile(user.id, null, e.currentTarget)}>
+<!-- Clique na pessoa: abre a conversa (na lista de amigos) ou o perfil (pedidos e bloqueados). -->
+{#snippet who(user: User, sub: string, status: VisibleStatus | null, call = false, dm = false)}
+  <button
+    type="button"
+    class="who"
+    aria-label={describe(user, sub, status)}
+    onclick={(e) => (dm ? client.openDm(user.id) : openProfile(user.id, null, e.currentTarget))}
+  >
     <Avatar id={user.id} name={user.name} size={36} src={client.api?.avatar(user) ?? null} {status} cutout="var(--row-bg)" />
     <span class="text">
       <span class="name">{user.name} <span class="username">{user.username}</span></span>
@@ -213,7 +219,7 @@
   {@const presence = client.presenceOf(user.id)}
   {@const channel = inCall.get(user.id)}
   <div class="person" class:open={menu?.user.id === user.id}>
-    {@render who(user, channel ? t.inCall(channel) : (presence.text ?? m.common.presence[presence.status]), presence.status, !!channel)}
+    {@render who(user, channel ? t.inCall(channel) : (presence.text ?? m.common.presence[presence.status]), presence.status, !!channel, true)}
     <IconButton icon="message" label={t.message} disabled={busy[user.id]} onclick={() => client.openDm(user.id)} />
     <IconButton icon="ellipsis" label={m.common.more} disabled={busy[user.id]} onclick={(e) => toggleMenu(user, e.currentTarget)} />
   </div>

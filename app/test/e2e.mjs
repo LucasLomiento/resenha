@@ -810,6 +810,7 @@ try {
 
   // Rolagem do chat: com mensagem suficiente, a lista tem que rolar. Mensagens altas e com
   // calma (o servidor segura mais de 5 a cada 5 s).
+  const oneLine = await composerB.evaluate((el) => el.offsetHeight)
   for (let i = 0; i < 6; i++) {
     await composerB.fill(`mensagem ${i}`)
     for (let line = 0; line < 8; line++) await composerB.press('Shift+Enter')
@@ -824,6 +825,17 @@ try {
     return { scrollable: el.scrollHeight > el.clientHeight + 50, moved: before !== el.scrollTop }
   })
   check(scroll.scrollable && scroll.moved, 'chat rola quando tem mensagem que não cabe')
+  // Depois de enviar texto de várias linhas, a caixa volta a ter uma linha e quem mandou continua no fim da conversa.
+  const afterSend = await b.page.evaluate(() => {
+    const box = document.querySelector('.composer textarea')
+    const list = document.querySelector('.scroller')
+    return { height: box?.offsetHeight ?? -1, gap: list ? Math.round(list.scrollHeight - list.scrollTop - list.clientHeight) : -1 }
+  })
+  check(
+    afterSend.height <= oneLine + 2 && afterSend.gap >= 0 && afterSend.gap < 40,
+    'depois de enviar texto de várias linhas, a caixa volta ao tamanho de uma linha e a conversa fica no fim',
+    `${oneLine} → ${afterSend.height} px, ${afterSend.gap} px do fim`,
+  )
 
   // Queda rápida da conexão com o servidor (o comum no Cloudflare): volta sozinha, sem o aviso de
   // "Conectando…" e sem esvaziar o chat; a mensagem que chegou enquanto estava fora aparece.
@@ -1143,6 +1155,21 @@ try {
   await live.click({ force: true })
   await b.page.waitForFunction(() => document.querySelector('.stream video')?.videoWidth > 0, null, { timeout: 15_000 })
   check(true, 'B recebeu o vídeo da tela de A')
+  // Controles da transmissão: somem sozinhos, mexer no meio da imagem não traz de volta, a faixa de baixo traz.
+  {
+    const box = await b.page.locator('.stream').boundingBox()
+    const shown = () => b.page.locator('.stream.shown').count()
+    await b.page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+    await b.page.waitForTimeout(3200)
+    const hidden = (await shown()) === 0
+    await b.page.mouse.move(box.x + box.width / 2 + 40, box.y + box.height / 2 + 20)
+    await b.page.waitForTimeout(200)
+    const middle = (await shown()) === 0
+    await b.page.mouse.move(box.x + box.width / 2, box.y + box.height - 30)
+    await b.page.waitForTimeout(200)
+    const bottom = (await shown()) === 1
+    check(hidden && middle && bottom, 'controles da transmissão somem sozinhos e voltam com o mouse na parte de baixo', `${hidden}/${middle}/${bottom}`)
+  }
   if (viaSfu) {
     // Com uma pessoa assistindo (sfuMinViewers 1), A publica no SFU e B troca pra lá.
     await b.page.getByRole('button', { name: 'Estatísticas', exact: true }).click({ force: true })

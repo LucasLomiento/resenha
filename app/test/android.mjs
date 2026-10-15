@@ -235,9 +235,11 @@ try {
 
   await page.locator('aside.sidebar').getByRole('button', { name: /Amigos/ }).first().click()
   await page.getByRole('tab', { name: /Todos/ }).click()
-  await page.getByRole('button', { name: 'Mensagem', exact: true }).first().click()
+  // Tocar no amigo abre a conversa (o perfil fica no menu "⋯").
+  await page.locator('.person .who', { hasText: 'Duarte' }).click()
   const composer = page.getByPlaceholder('Mensagem pra Duarte')
   await composer.waitFor({ timeout: 5000 })
+  check(true, 'tocar no amigo abre a conversa com ele')
   await composer.fill('oi do celular')
   // No celular, o Enter do teclado pula linha: quem envia é o botão.
   await page.getByRole('button', { name: 'Enviar', exact: true }).click()
@@ -355,7 +357,10 @@ try {
     await shot(page, '13-aberto-pelo-push')
 
     // Aviso de teste (Configurações → Notificações): chega com o app no fundo, mesmo com o computador olhando.
-    await back(page)
+    // A gaveta de notificações do sistema pode ainda estar recolhendo e gastar o voltar: fecha ela e usa a setinha.
+    adb('shell', 'cmd', 'statusbar', 'collapse')
+    await page.waitForTimeout(500)
+    await page.getByRole('button', { name: 'Voltar', exact: true }).first().click()
     await page.locator('.dock').getByRole('button', { name: 'Configurações', exact: true }).click()
     await page.locator('.settings-nav').getByRole('button', { name: 'Notificações' }).click()
     await page.getByText('Ligados. Enquanto você está olhando', { exact: false }).waitFor({ timeout: 5000 })

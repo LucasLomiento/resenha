@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onDestroy, onMount } from 'svelte'
   import { setSink } from '../lib/devices'
   import { formatBitrate, userColor } from '../lib/format'
   import { m } from '../lib/i18n.svelte'
@@ -40,6 +41,41 @@
   })
   const myName = $derived(client.me ? (client.user(client.me.id, call.guildId)?.name ?? client.me.name) : '')
   let inking = $state(false)
+
+  // ---------- Controles que somem sozinhos ----------
+  // Aparecem quando o mouse entra (e quando a transmissão abre) e somem um tempo depois. Mexer o
+  // mouse no meio da imagem não traz de volta: só levar o mouse pra faixa de baixo, onde eles
+  // ficam, ou sair e entrar de novo. Com o mouse em cima deles, não somem.
+  const HIDE_AFTER = 2500
+  /** Altura da faixa de baixo que traz os controles de volta (no máximo um terço da transmissão). */
+  const BOTTOM_ZONE = 120
+  let shown = $state(true)
+  let overControls = false
+  let hideTimer: ReturnType<typeof setTimeout> | null = null
+
+  function showControls() {
+    shown = true
+    if (hideTimer) clearTimeout(hideTimer)
+    hideTimer = setTimeout(() => {
+      hideTimer = null
+      if (!overControls) shown = false
+    }, HIDE_AFTER)
+  }
+
+  function hideControls() {
+    if (hideTimer) clearTimeout(hideTimer)
+    hideTimer = null
+    shown = false
+  }
+
+  function onPointerMove(event: PointerEvent) {
+    if (!container || event.pointerType === 'touch') return
+    const box = container.getBoundingClientRect()
+    if (box.bottom - event.clientY <= Math.min(BOTTOM_ZONE, box.height / 3)) showControls()
+  }
+
+  onMount(showControls)
+  onDestroy(() => hideTimer && clearTimeout(hideTimer))
   $effect(() => {
     if (!canInk) inking = false
   })
@@ -174,11 +210,18 @@
   }}
 />
 
+<!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
   class="stream"
   class:full
   class:mini={!full}
+  class:shown
+  class:inking
   bind:this={container}
+  onpointerenter={(e) => e.pointerType !== 'touch' && showControls()}
+  onpointerleave={(e) => e.pointerType !== 'touch' && hideControls()}
+  onpointermove={onPointerMove}
+  onpointerdown={(e) => e.pointerType === 'touch' && (shown ? hideControls() : showControls())}
   style:left={full ? null : `${placed.x}px`}
   style:top={full ? null : `${placed.y}px`}
   style:width={full ? null : `${placed.width}px`}
@@ -239,7 +282,16 @@
   {/if}
 
   <!-- Controles sempre centralizados embaixo, na mesma ordem, em qualquer tamanho de tela. -->
-  <div class="controls">
+  <div
+    class="controls"
+    role="toolbar"
+    tabindex="-1"
+    onpointerenter={() => (overControls = true)}
+    onpointerleave={() => {
+      overControls = false
+      showControls()
+    }}
+  >
     {#if full}
       <div class="volume">
         <IconButton
@@ -428,10 +480,15 @@
     border-radius: 12px;
   }
 
-  .stream:hover .controls,
-  .stream:hover .who,
-  .stream:focus-within .controls {
+  .stream.shown .controls,
+  .stream.shown .who,
+  .controls:has(:focus-visible) {
     opacity: 1;
+  }
+
+  /* Em tela cheia, o cursor some junto com os controles (menos rabiscando). */
+  .full:not(.shown):not(.inking) {
+    cursor: none;
   }
 
   .divider {
