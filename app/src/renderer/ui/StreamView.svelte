@@ -216,7 +216,6 @@
   class:full
   class:mini={!full}
   class:shown
-  class:inking
   bind:this={container}
   onpointerenter={(e) => e.pointerType !== 'touch' && showControls()}
   onpointerleave={(e) => e.pointerType !== 'touch' && hideControls()}
@@ -486,10 +485,6 @@
     opacity: 1;
   }
 
-  /* Em tela cheia, o cursor some junto com os controles (menos rabiscando). */
-  .full:not(.shown):not(.inking) {
-    cursor: none;
-  }
 
   .divider {
     width: 1px;
