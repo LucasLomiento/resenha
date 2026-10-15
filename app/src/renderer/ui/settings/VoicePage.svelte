@@ -5,7 +5,7 @@
   import { MicPipeline } from '../../lib/mic'
   import { settings, type VideoCodec } from '../../lib/settings.svelte'
   import { client } from '../../lib/client.svelte'
-  import { listDevices, namedDevices } from '../../lib/devices'
+  import { listDevices, namedDevices, setSink } from '../../lib/devices'
   import { ui } from '../../lib/ui.svelte'
   import { Button, Icon, Meter, PageHeader, Row, Section, Segmented, Select, Switch } from '../kit'
   import VideoTile from '../VideoTile.svelte'
@@ -67,7 +67,7 @@
       testMic = await MicPipeline.create(await getMicTrack())
       testAudio = new Audio()
       testAudio.srcObject = new MediaStream([testMic.track])
-      await testAudio.setSinkId(settings.outputDevice === 'default' ? '' : settings.outputDevice).catch(() => {})
+      await setSink(testAudio, settings.outputDevice)
       await testAudio.play()
       testing = true
       loadDevices()

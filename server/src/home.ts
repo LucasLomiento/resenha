@@ -10,6 +10,7 @@ import {
   type Me,
   type Message,
   type Presence,
+  type PushTestResult,
   type Status,
   type User,
 } from '../../shared/protocol'
@@ -39,6 +40,8 @@ interface HomeConn {
   replaced?: boolean
   /** App do celular (não segura o push: ver `pushDevices`). */
   mobile?: boolean
+  /** Computador com a pessoa olhando o app agora (janela em foco e mexida há pouco): segura o push. */
+  attention?: boolean
 }
 
 interface PushRow {
@@ -78,6 +81,8 @@ const STATUSES: Status[] = ['online', 'idle', 'dnd', 'invisible']
 /** Token do Firebase: letras, números e pontuação simples (uns 160 caracteres hoje). */
 const PUSH_TOKEN = /^[\w:.-]{20,4096}$/
 const MAX_PUSH_DEVICES = 10
+/** O aviso de teste sai depois disso: o tempo de sair do app (com ele na frente, o Android não mostra). */
+const PUSH_TEST_DELAY = 5000
 
 /** Cabeçalho que o Worker põe com o id do dono deste Home. */
 export const HOME_HEADER = 'X-Resenha-Home'
@@ -369,6 +374,7 @@ export class Home extends DurableObject<Env> {
       text: msg.text === undefined ? manual.text : cleanLine(msg.text, 1, 128),
       call,
       mobile: msg.mobile === true,
+      attention: msg.attention === true,
     }
     // Caiu de novo enquanto voltava: continua esperando (com a chamada e o que estava guardado).
     if (ws.readyState !== WebSocket.OPEN) {
@@ -515,6 +521,29 @@ export class Home extends DurableObject<Env> {
           this.broadcast({ t: 'presence.self', status: msg.status, text }, { except: state.connId })
         }
         return this.announce(before)
+      }
+
+      case 'attention': {
+        if (state.mobile || !this.allow(`attention:${state.connId}`, 30, 60_000)) return
+        this.save(ws, { ...state, attention: msg.on === true })
+        return
+      }
+
+      case 'push.test': {
+        if (!this.allow(`push-test:${state.connId}`, 3, 60_000)) return
+        const devices = this.sql.exec<PushRow>('SELECT * FROM push_tokens WHERE session = ?', state.session).toArray()
+        if (!this.pusher.enabled || devices.length === 0) {
+          return this.send(ws, { t: 'push.test', result: this.pusher.enabled ? 'no-device' : 'off' })
+        }
+        // Daqui a 5 s: com o app aberto na frente, o Android não mostra o aviso (quem testa sai do app).
+        this.ctx.waitUntil(
+          (async () => {
+            await new Promise((r) => setTimeout(r, Number(this.env.PUSH_TEST_DELAY_MS ?? PUSH_TEST_DELAY)))
+            const result = await this.pushTest(devices)
+            if (ws.readyState === WebSocket.OPEN) this.send(ws, { t: 'push.test', result })
+          })(),
+        )
+        return
       }
 
       case 'push.token': {
@@ -739,16 +768,35 @@ export class Home extends DurableObject<Env> {
   // ---------- Push (celular) ----------
 
   /**
-   * Os aparelhos que recebem push agora: nenhum com "Não perturbe" nem com a pessoa ativa no
-   * computador (lá ela já vê e ouve o aviso). Decidido na hora em que o aviso nasce.
+   * Os aparelhos que recebem push agora: nenhum com "Não perturbe" nem com a pessoa olhando o
+   * app no computador (lá ela já vê o aviso). Só o computador aberto, em outra janela ou com a
+   * pessoa longe, não segura: até a 1.14.1 segurava por 10 min depois da última mexida (e pra
+   * sempre com a janela em foco), e o celular de quem deixava o computador ligado não avisava.
+   * Decidido na hora em que o aviso nasce.
    */
   private pushDevices(): PushRow[] {
     if (!this.pusher.enabled || this.manual().status === 'dnd') return []
-    const active = this.sockets().some((ws) => {
+    const looking = this.sockets().some((ws) => {
       const s = this.state(ws)
-      return !s.pending && !s.mobile && s.status !== 'idle'
+      return !s.pending && !s.mobile && s.attention === true
     })
-    return active ? [] : this.sql.exec<PushRow>('SELECT * FROM push_tokens').toArray()
+    return looking ? [] : this.sql.exec<PushRow>('SELECT * FROM push_tokens').toArray()
+  }
+
+  /** O aviso de teste pros aparelhos desta sessão (sem as regras de quando segurar). */
+  private async pushTest(devices: PushRow[]): Promise<PushTestResult> {
+    const text = PUSH_TEXT[(devices[0].locale in PUSH_TEXT ? devices[0].locale : 'pt') as PushLocale]
+    try {
+      const { dead, failed } = await this.pusher.send(
+        devices.map((d) => d.token),
+        { title: text.testTitle, body: text.testBody, data: { kind: 'test' }, tag: 'test', kind: 'message' },
+      )
+      for (const token of dead) this.sql.exec('DELETE FROM push_tokens WHERE token = ?', token)
+      return dead.length === devices.length ? 'dead' : failed.length === devices.length ? 'failed' : 'sent'
+    } catch (err) {
+      console.error('push de teste', err)
+      return 'failed'
+    }
   }
 
   /** Manda pros aparelhos: uma mensagem por idioma (e por "mostrar o texto"); tira os tokens que morreram. */
@@ -761,7 +809,7 @@ export class Home extends DurableObject<Env> {
     for (const rows of groups.values()) {
       const locale = (rows[0].locale in PUSH_TEXT ? rows[0].locale : 'pt') as PushLocale
       try {
-        const dead = await this.pusher.send(
+        const { dead } = await this.pusher.send(
           rows.map((r) => r.token),
           build(PUSH_TEXT[locale], rows[0].preview === 1),
         )

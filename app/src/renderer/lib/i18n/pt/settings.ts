@@ -419,6 +419,22 @@ export default {
       content: 'Mostrar o texto da mensagem',
       contentDescription: 'Desligado, o aviso só diz que chegou mensagem.',
     },
+    phone: {
+      section: 'Avisos no celular',
+      label: 'Avisos deste celular',
+      on: 'Ligados. Enquanto você está olhando o Resenha no computador, quem avisa é ele.',
+      denied: 'O Android bloqueou os avisos do Resenha. Libere em Configurações do Android → Apps → Resenha → Notificações.',
+      unavailable: 'Este celular não conseguiu ligar os avisos (eles precisam do Google Play).',
+      test: 'Mandar um aviso de teste',
+      results: {
+        waiting: 'Saia do app: o aviso chega em 5 segundos.',
+        sent: 'O aviso saiu. Se não apareceu, veja se a economia de bateria do Android não está segurando o Resenha.',
+        off: 'O servidor está sem a chave dos avisos.',
+        'no-device': 'Este celular ainda não ligou os avisos.',
+        dead: 'O registro deste celular venceu: feche e abra o app pra ligar de novo.',
+        failed: 'O Firebase recusou o aviso.',
+      },
+    },
   },
 
   shortcuts: {

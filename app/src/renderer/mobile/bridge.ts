@@ -221,6 +221,10 @@ const api: ResenhaApi = {
   push: PUSH
     ? {
         token: () => (pushToken ??= registerPush().then((token) => token ?? ((pushToken = null), null))),
+        permission: async () => {
+          const { receive } = await PushNotifications.checkPermissions()
+          return receive === 'granted' ? 'granted' : receive === 'denied' ? 'denied' : 'prompt'
+        },
         onOpen: (callback) => {
           pushOpen = callback
           if (pendingOpen) callback(pendingOpen)

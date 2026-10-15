@@ -1,5 +1,6 @@
 import type { SignalData, StreamKind } from '../../../../shared/protocol'
 import { boostContext, setBoostOutput } from './boost'
+import { setSink } from './devices'
 import type { PathSample } from './route'
 import { audioMidsOf, candidateFamily, ipFamily, keepFamily, tuneScreenOpus, type IpFamily } from './sdp'
 import type { ScreenMode, VideoCodec } from './settings.svelte'
@@ -472,9 +473,8 @@ export class Peer {
   }
 
   setOutput(deviceId: string) {
-    const sink = deviceId === 'default' ? '' : deviceId
-    this.audio.setSinkId(sink).catch(() => {})
-    this.musicAudio.setSinkId(sink).catch(() => {})
+    void setSink(this.audio, deviceId)
+    void setSink(this.musicAudio, deviceId)
     setBoostOutput(deviceId)
   }
 

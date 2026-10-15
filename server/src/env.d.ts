@@ -12,6 +12,8 @@ interface Env {
   CF_ANALYTICS_TOKEN?: string
   /** Conta de serviço do Firebase (o JSON inteiro): push no celular. Sem ela, não sai push. */
   FCM_SERVICE_ACCOUNT?: string
+  /** Só nos testes: encurta a espera do aviso de teste do push. */
+  PUSH_TEST_DELAY_MS?: string
   /** Só nos testes: encurta a espera por quem caiu da call. */
   RESUME_GRACE_MS?: string
 }

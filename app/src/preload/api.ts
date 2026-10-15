@@ -224,6 +224,8 @@ export interface ResenhaApi {
   push?: {
     /** O token deste aparelho (pede a permissão na primeira vez); null se não deu. */
     token(): Promise<string | null>
+    /** Se o Android deixa o app avisar (`prompt`: ainda não perguntou). */
+    permission(): Promise<'granted' | 'denied' | 'prompt'>
     /** Tocou num aviso: o `data` que o servidor pôs nele. Chega também o toque que abriu o app. */
     onOpen(callback: (data: Record<string, string>) => void): void
   }

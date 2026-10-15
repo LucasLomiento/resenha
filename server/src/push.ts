@@ -11,11 +11,13 @@ export type PushLocale = 'pt' | 'en' | 'es'
 
 export const PUSH_TEXT: Record<
   PushLocale,
-  { voiceNote: string; hidden: string; calling: (name: string) => string; videoCalling: (name: string) => string; tapToAnswer: string; inChannel: (name: string, channel: string, server: string) => string }
+  { voiceNote: string; hidden: string; testTitle: string; testBody: string; calling: (name: string) => string; videoCalling: (name: string) => string; tapToAnswer: string; inChannel: (name: string, channel: string, server: string) => string }
 > = {
   pt: {
     voiceNote: 'Mandou uma mensagem de voz',
     hidden: 'Mensagem nova',
+    testTitle: 'Aviso de teste',
+    testBody: 'Se você está vendo isso, os avisos do Resenha chegam neste celular.',
     calling: (name) => `${name} está ligando`,
     videoCalling: (name) => `${name} está fazendo uma chamada de vídeo`,
     tapToAnswer: 'Toque pra atender',
@@ -24,6 +26,8 @@ export const PUSH_TEXT: Record<
   en: {
     voiceNote: 'Sent a voice message',
     hidden: 'New message',
+    testTitle: 'Test notification',
+    testBody: 'If you can see this, Resenha notifications reach this phone.',
     calling: (name) => `${name} is calling`,
     videoCalling: (name) => `${name} is video calling`,
     tapToAnswer: 'Tap to answer',
@@ -32,6 +36,8 @@ export const PUSH_TEXT: Record<
   es: {
     voiceNote: 'Envió un mensaje de voz',
     hidden: 'Mensaje nuevo',
+    testTitle: 'Aviso de prueba',
+    testBody: 'Si ves esto, los avisos de Resenha llegan a este celular.',
     calling: (name) => `${name} te está llamando`,
     videoCalling: (name) => `${name} te está haciendo una videollamada`,
     tapToAnswer: 'Toca para contestar',
@@ -125,12 +131,16 @@ export class Pusher {
     return json.access_token
   }
 
-  /** Manda pra cada aparelho; devolve os tokens que não valem mais (app desinstalado, token trocado). */
-  async send(tokens: string[], message: PushMessage): Promise<string[]> {
-    if (!this.account || tokens.length === 0) return []
+  /**
+   * Manda pra cada aparelho. Devolve os tokens que não valem mais (`dead`: app desinstalado,
+   * token trocado) e os que o Firebase recusou por outro motivo (`failed`).
+   */
+  async send(tokens: string[], message: PushMessage): Promise<{ dead: string[]; failed: string[] }> {
+    if (!this.account || tokens.length === 0) return { dead: [], failed: [] }
     const access = await this.accessToken()
     const url = `https://fcm.googleapis.com/v1/projects/${this.account.project_id}/messages:send`
     const dead: string[] = []
+    const failed: string[] = []
     await Promise.all(
       tokens.map(async (token) => {
         const res = await this.fetchImpl(url, {
@@ -159,10 +169,12 @@ export class Pusher {
         if (res.ok) return
         const error = (await res.json().catch(() => ({}))) as { error?: { status?: string; details?: { errorCode?: string }[] } }
         const code = error.error?.details?.find((d) => d.errorCode)?.errorCode ?? error.error?.status
-        if (res.status === 404 || code === 'UNREGISTERED') dead.push(token)
+        if (res.status === 404 || code === 'UNREGISTERED') return void dead.push(token)
+        failed.push(token)
+        console.error('push recusado pelo Firebase', res.status, code)
       }),
     )
-    return dead
+    return { dead, failed }
   }
 }
 

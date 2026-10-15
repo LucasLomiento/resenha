@@ -1,11 +1,15 @@
 <script lang="ts">
   import { client } from '../lib/client.svelte'
   import { settings } from '../lib/settings.svelte'
+  import { ui } from '../lib/ui.svelte'
   import { Icon } from './kit'
 
-  /** No app, os avisos ficam no meio do painel (não em cima do dock), acima do campo de mensagem. */
+  /**
+   * No app, os avisos ficam no meio do painel (não em cima do dock), acima do campo de mensagem.
+   * No celular o painel é a tela toda: sem deslocar (deslocado, o aviso saía espremido na borda).
+   */
   const inApp = $derived(client.phase === 'app')
-  const shift = $derived(inApp ? Math.round((72 + Math.min(Math.max(settings.sidebarWidth, 216), 420)) / 2) : 0)
+  const shift = $derived(inApp && !ui.compact ? Math.round((72 + Math.min(Math.max(settings.sidebarWidth, 216), 420)) / 2) : 0)
 </script>
 
 <div class="toasts" class:in-app={inApp} style:--shift="{shift}px" aria-live="polite">

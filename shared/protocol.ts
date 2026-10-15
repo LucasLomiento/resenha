@@ -737,8 +737,10 @@ export type HomeClientMessage =
       key?: string
       /** Conversa da chamada privada em que o app estava: o `ready` traz como ela está agora. */
       call?: string
-      /** App do celular: não conta como "no computador" (o push só fica quieto com a pessoa ativa no computador). */
+      /** App do celular: não segura o push (só o computador com a pessoa olhando segura). */
       mobile?: boolean
+      /** Computador: a pessoa está olhando o app agora (ver `attention`). */
+      attention?: boolean
     }
   | { t: 'presence'; status: Status; text: string | null; auto?: boolean }
   /**
@@ -746,6 +748,13 @@ export type HomeClientMessage =
    * texto da mensagem; `token: null` desliga. Vale até a sessão acabar (sair, ou encerrada).
    */
   | { t: 'push.token'; token: string | null; locale?: 'pt' | 'en' | 'es'; preview?: boolean }
+  /**
+   * Computador: a pessoa está (ou deixou de estar) olhando o app: janela em foco e mexida nos
+   * últimos 2 minutos. Enquanto alguma conexão do computador está assim, o celular não recebe push.
+   */
+  | { t: 'attention'; on: boolean }
+  /** Celular: manda um aviso de teste pra este aparelho daqui a 5 s (o tempo de sair do app). */
+  | { t: 'push.test' }
   | { t: 'dm.open'; userId: string; reqId: string }
   | {
       t: 'dm.send'
@@ -781,6 +790,8 @@ export type HomeClientMessage =
       music?: MusicStatus | null
     }
   | { t: 'call.signal'; channelId: string; to: string; data: SignalData }
+
+export type PushTestResult = 'sent' | 'off' | 'no-device' | 'dead' | 'failed'
 
 export type HomeServerMessage =
   | {
@@ -822,6 +833,12 @@ export type HomeServerMessage =
   | { t: 'call.state'; channelId: string; members: VoiceMember[]; ringing: string[] }
   | { t: 'call.ended'; channelId: string }
   | { t: 'call.signal'; channelId: string; from: string; data: SignalData }
+  /**
+   * Resultado do aviso de teste: `sent` (o Firebase aceitou), `off` (servidor sem a chave),
+   * `no-device` (este aparelho não mandou o token), `dead` (o Firebase não conhece mais o token),
+   * `failed` (o Firebase recusou por outro motivo).
+   */
+  | { t: 'push.test'; result: PushTestResult }
   | { t: 'session.revoked' }
   | { t: 'error'; message: string; nonce?: string }
 

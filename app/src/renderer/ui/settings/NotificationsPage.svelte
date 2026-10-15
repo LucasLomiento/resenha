@@ -1,13 +1,36 @@
 <script lang="ts">
+  import { onMount } from 'svelte'
+  import { client } from '../../lib/client.svelte'
   import { m } from '../../lib/i18n.svelte'
   import { settings } from '../../lib/settings.svelte'
   import { SOUND_LABELS, playSound } from '../../lib/sounds'
   import { Button, IconButton, PageHeader, Row, Section, Slider, Switch } from '../kit'
 
   const t = $derived(m.settings.notifications)
+
+  // Celular com push: se o Android deixa avisar, e o aviso de teste (pra descobrir onde trava).
+  const push = window.resenha.push
+  let permission = $state<'granted' | 'denied' | 'prompt' | null>(null)
+  let registered = $state(false)
+  onMount(() => {
+    void push?.permission().then((value) => (permission = value))
+    void push?.token().then((token) => (registered = !!token))
+  })
+  const phoneState = $derived(permission === 'denied' ? t.phone.denied : registered ? t.phone.on : permission ? t.phone.unavailable : null)
 </script>
 
 <PageHeader title={m.settings.pages.notifications} />
+
+{#if push}
+  <Section title={t.phone.section}>
+    <Row label={t.phone.label} description={phoneState ?? undefined} stack>
+      <div class="test">
+        <Button icon="bell" disabled={permission === 'denied' || client.pushTest === 'waiting'} onclick={() => client.testPush()}>{t.phone.test}</Button>
+        {#if client.pushTest}<p class="test-result" role="status">{t.phone.results[client.pushTest]}</p>{/if}
+      </div>
+    </Row>
+  </Section>
+{/if}
 
 <Section title={t.sounds.section}>
   <Row label={t.sounds.app} setting="notify.sounds" for="notify-sounds" description={t.sounds.appDescription}>
@@ -38,6 +61,18 @@
 </Section>
 
 <style>
+  .test {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .test-result {
+    color: var(--fg-2);
+    font-size: var(--text-sm);
+  }
+
   .sounds {
     display: flex;
     flex-wrap: wrap;

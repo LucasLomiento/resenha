@@ -8,6 +8,7 @@ import {
   type Me,
   type Message,
   type Presence,
+  type PushTestResult,
   type SignalData,
   type Status,
   type User,
@@ -40,6 +41,10 @@ export interface HomeHost {
   ringing(channelId: string, from: string, video: boolean): void
   callSignal(channelId: string, from: string, data: SignalData): void
   presenceSelf(status: Status, text: string | null): void
+  /** Computador: a pessoa está olhando o app agora (vai no `auth`; ver `attention` no protocolo). */
+  attention(): boolean
+  /** Celular: resultado do aviso de teste do push. */
+  pushTested(result: PushTestResult): void
 }
 
 export interface DmCall {
@@ -90,8 +95,9 @@ export class HomeState {
         ...host.presence(),
         key: this.key,
         call: host.dmCallId() ?? undefined,
-        // Celular: o servidor manda push pra ele mesmo com o app aberto em outro lugar (só o computador ativo segura).
+        // Celular: o servidor manda push pra ele mesmo com o app aberto em outro lugar (só o computador com a pessoa olhando segura).
         mobile: import.meta.env.VITE_MOBILE === '1' || undefined,
+        attention: host.attention() || undefined,
       }),
       {
         message: (msg) => this.handle(msg),
@@ -327,6 +333,10 @@ export class HomeState {
 
       case 'call.signal':
         this.host.callSignal(msg.channelId, msg.from, msg.data)
+        return
+
+      case 'push.test':
+        this.host.pushTested(msg.result)
         return
 
       case 'session.revoked':

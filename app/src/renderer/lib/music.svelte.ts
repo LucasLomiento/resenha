@@ -12,6 +12,7 @@
 
 import type { MusicStatus } from '../../../../shared/protocol'
 import type { MusicError, MusicList, MusicOp, MusicPlayer, MusicReply, MusicSearch, MusicTrack } from '../../preload/api'
+import { setSink } from './devices'
 import workletUrl from './music-worklet.ts?worker&url'
 
 export type { MusicError, MusicList, MusicOp, MusicPlayer, MusicReply, MusicSearch, MusicTrack }
@@ -323,7 +324,7 @@ export class MusicBot {
   setOutput(volume: number, muted: boolean, deviceId: string) {
     this.local.volume = Math.max(0, Math.min(1, volume))
     this.local.muted = muted
-    this.local.setSinkId(deviceId === 'default' ? '' : deviceId).catch(() => {})
+    void setSink(this.local, deviceId)
   }
 
   private onPcm(chunk: Uint8Array) {

@@ -12,6 +12,7 @@ export default defineConfig({
         bindings: {
           FILE_SECRET: 'segredo-de-teste',
           RESUME_GRACE_MS: '400',
+          PUSH_TEST_DELAY_MS: '50',
           REALTIME_APP_ID: '',
           REALTIME_APP_SECRET: '',
           TURN_KEY_ID: '',

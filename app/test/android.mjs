@@ -353,6 +353,30 @@ try {
         .then(() => true, () => false))
     check(opened && (await pane(page)) === 'main', 'tocar no aviso abre a conversa')
     await shot(page, '13-aberto-pelo-push')
+
+    // Aviso de teste (Configurações → Notificações): chega com o app no fundo, mesmo com o computador olhando.
+    await back(page)
+    await page.locator('.dock').getByRole('button', { name: 'Configurações', exact: true }).click()
+    await page.locator('.settings-nav').getByRole('button', { name: 'Notificações' }).click()
+    await page.getByText('Ligados. Enquanto você está olhando', { exact: false }).waitFor({ timeout: 5000 })
+    await shot(page, '14-avisos-do-celular')
+    await page.getByRole('button', { name: 'Mandar um aviso de teste' }).click()
+    await page.getByText('Saia do app: o aviso chega em 5 segundos.').waitFor({ timeout: 3000 })
+    adb('shell', 'input', 'keyevent', 'KEYCODE_HOME')
+    let test = []
+    for (let i = 0; i < 40 && !test.length; i++) {
+      test = notifications().filter((n) => n.text.startsWith('Se você está vendo isso'))
+      if (!test.length) await new Promise((r) => setTimeout(r, 500))
+    }
+    check(test.length === 1, 'o aviso de teste chega no celular com o app no fundo', JSON.stringify(test))
+    adb('shell', 'am', 'start', '-n', `${PACKAGE}/.MainActivity`)
+    const said = await page
+      .getByText('O aviso saiu.', { exact: false })
+      .waitFor({ timeout: 5000 })
+      .then(() => true, () => false)
+    check(said, 'a tela diz que o aviso de teste saiu')
+    await back(page)
+    await back(page)
   } else {
     console.log('(sem o Firebase configurado: o push de verdade não foi testado)')
   }

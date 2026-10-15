@@ -402,6 +402,22 @@ export default {
       content: 'Show the message text',
       contentDescription: 'When off, the notification only says a message arrived.',
     },
+    phone: {
+      section: 'Phone notifications',
+      label: 'Notifications on this phone',
+      on: 'On. While you are looking at Resenha on your computer, the computer notifies you instead.',
+      denied: 'Android blocked Resenha notifications. Allow them in Android Settings → Apps → Resenha → Notifications.',
+      unavailable: 'This phone could not turn notifications on (they need Google Play).',
+      test: 'Send a test notification',
+      results: {
+        waiting: 'Leave the app: the notification arrives in 5 seconds.',
+        sent: 'The notification was sent. If it did not show up, check that Android battery saving is not holding Resenha back.',
+        off: 'The server is missing the notifications key.',
+        'no-device': 'This phone has not turned notifications on yet.',
+        dead: 'This phone’s registration expired: close and reopen the app to turn it on again.',
+        failed: 'Firebase rejected the notification.',
+      },
+    },
   },
 
   shortcuts: {

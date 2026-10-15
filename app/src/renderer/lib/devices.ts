@@ -1,5 +1,15 @@
 // Aparelhos de áudio e câmera (pra Voz e vídeo e pros menus do microfone e do fone na dock).
 
+/**
+ * Toca um elemento de som ou vídeo pela saída escolhida ("default": a do sistema). No celular
+ * (o WebView do Android) não tem como escolher: o `setSinkId` nem existe, e chamar dava erro
+ * no meio da montagem da call (na 1.14, o som da call do celular não saía).
+ */
+export function setSink(element: HTMLMediaElement | null | undefined, deviceId: string): Promise<void> {
+  if (!element || typeof element.setSinkId !== 'function') return Promise.resolve()
+  return element.setSinkId(deviceId === 'default' ? '' : deviceId).catch(() => {})
+}
+
 export interface Devices {
   inputs: MediaDeviceInfo[]
   outputs: MediaDeviceInfo[]

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { setSink } from '../lib/devices'
   import { formatBitrate, userColor } from '../lib/format'
   import { m } from '../lib/i18n.svelte'
   import type { VideoStats } from '../lib/peer'
@@ -57,7 +58,7 @@
   })
 
   $effect(() => {
-    video?.setSinkId(settings.outputDevice === 'default' ? '' : settings.outputDevice).catch(() => {})
+    void setSink(video, settings.outputDevice)
   })
 
   $effect(() => {

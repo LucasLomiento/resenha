@@ -1,6 +1,10 @@
-## 1.14.1: configurações sem buraco
+## 1.14.2: call e avisos no celular
 
-- **Corrigido:** na 1.14.0, as configurações do perfil abriam um espaço grande em branco em cima da foto, do banner e da cor do perfil. Voltou ao normal.
+- **Call pelo celular:** quem entrava numa sala de voz pelo celular aparecia falando, mas ninguém ouvia, e às vezes aparecia "Calma! Muitas ações de uma vez". Corrigido: o som do celular chega pra todo mundo da call (e o de todo mundo chega no celular).
+- **Avisos no celular com o computador ligado:** antes, era só o Resenha estar aberto no computador pro celular ficar quieto. Agora o celular só fica quieto enquanto você está **olhando** o Resenha no computador. Saiu de perto ou foi pra outra janela: o celular avisa.
+- **Aviso de teste:** em Configurações → Notificações, o celular mostra se o Android está deixando o Resenha avisar e tem um botão pra mandar um aviso de teste.
+- Os avisos na tela do celular ("Calma!...", erros) não saem mais espremidos na borda.
+- No chat, o horário que aparece ao passar o mouse numa mensagem não quebra mais em duas linhas (em inglês, "9:58 PM").
 
 ## Como atualizar
 

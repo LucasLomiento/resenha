@@ -4,6 +4,7 @@ import type {
   Message,
   Presence,
   ProfileStyle,
+  PushTestResult,
   SignalData,
   Status,
   User,
@@ -43,6 +44,8 @@ export type Route =
 
 /** Sem mexer no PC esse tempo, o status vira "ausente" sozinho. */
 const IDLE_AFTER = 10 * 60_000
+/** Computador: "olhando o app" é janela em foco e mexida há menos que isso (segura o push do celular). */
+const LOOKING_FOR = 2 * 60_000
 /** Conexão fora por menos que isso não vira aviso: a queda rápida volta sozinha, sem ninguém notar. */
 const NOTICE_AFTER = 4000
 const LAST_CHANNEL_KEY = 'resenha.lastChannel'
@@ -171,6 +174,7 @@ class Client implements GuildHost, HomeHost {
     setInterval(() => {
       this.now = Date.now()
       this.checkIdle()
+      this.checkAttention()
     }, 1000)
     for (const event of ['pointermove', 'keydown', 'wheel', 'pointerdown']) {
       window.addEventListener(event, () => this.activity(), { passive: true, capture: true })
@@ -414,6 +418,7 @@ class Client implements GuildHost, HomeHost {
 
   private activity() {
     this.lastInput = Date.now()
+    this.checkAttention()
     if (this.idle) {
       this.idle = false
       if (this.status === 'online') this.pushAuto()
@@ -424,6 +429,22 @@ class Client implements GuildHost, HomeHost {
     if (this.idle || document.hasFocus() || Date.now() - this.lastInput < IDLE_AFTER) return
     this.idle = true
     if (this.status === 'online') this.pushAuto()
+  }
+
+  /** Computador: a pessoa está olhando o app agora (janela em foco e mexida há pouco)? */
+  private looking = false
+
+  attention(): boolean {
+    return this.looking
+  }
+
+  /** Avisa o servidor quando a pessoa começa ou para de olhar o app: enquanto olha, o celular dela não recebe push. */
+  private checkAttention() {
+    if (this.platform?.mobile !== false) return
+    const looking = document.hasFocus() && Date.now() - this.lastInput < LOOKING_FOR
+    if (looking === this.looking) return
+    this.looking = looking
+    this.home?.send({ t: 'attention', on: looking })
   }
 
   private pushAuto() {
@@ -699,6 +720,20 @@ class Client implements GuildHost, HomeHost {
     if (ask) this.pushToken = await push.token()
     if (!this.pushToken) return
     this.home.send({ t: 'push.token', token: this.pushToken, locale: i18n.locale, preview: settings.notifyContent })
+  }
+
+  /** Celular: o que aconteceu com o último aviso de teste (Configurações → Notificações). */
+  pushTest = $state<PushTestResult | 'waiting' | null>(null)
+
+  /** Celular: pede um aviso de teste pra este aparelho (chega em 5 s, o tempo de sair do app). */
+  async testPush() {
+    if (!this.pushToken) await this.syncPush(true)
+    this.pushTest = 'waiting'
+    if (!this.home?.send({ t: 'push.test' })) this.pushTest = null
+  }
+
+  pushTested(result: PushTestResult) {
+    this.pushTest = result
   }
 
   /** Tocou num aviso do push: abre a conversa (a ligação toca de novo quando a conexão volta). */

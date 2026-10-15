@@ -1,7 +1,7 @@
 {
   "name": "resenha",
   "productName": "Resenha",
-  "version": "1.14.1",
+  "version": "1.14.2",
   "private": true,
   "description": "Voz, chat e compartilhamento de tela pro grupo",
   "author": "Lucas Reis",
@@ -12,6 +12,7 @@
     "build": "electron-vite build",
     "build:mobile": "vite build --config vite.mobile.config.ts",
     "test:android": "node test/android.mjs",
+    "test:android:call": "node test/android-call.mjs",
     "start": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && svelte-check --tsconfig tsconfig.web.json --threshold error",
     "dist:arch": "electron-vite build && electron-builder --linux pacman",

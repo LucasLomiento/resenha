@@ -484,11 +484,14 @@
     transform: translateY(1px);
   }
 
+  /* Sempre numa linha: "9:58 PM" (inglês) não cabe nos 36 px da coluna e quebrava em duas,
+     esticando a mensagem; passa um pouco pros lados, centrado. */
   .time-hover {
     visibility: hidden;
     color: var(--fg-3);
-    font-size: 10.5px;
+    font-size: 10px;
     line-height: 22px;
+    white-space: nowrap;
   }
 
   article:hover .time-hover {

@@ -16,6 +16,10 @@ const SERVER_SRC = join(import.meta.dirname, '../../server/src')
 // Frases do servidor que o app não mostra (vão pro arquivo exportado, não pra tela).
 const NOT_SHOWN = new Set(['As mensagens ficam em cada servidor e conversa; você pode apagar as suas a qualquer momento.'])
 
+// Textos do push do celular: o servidor já manda cada um no idioma do aparelho (`PUSH_TEXT`),
+// sem passar pelo catálogo do app.
+const OWN_LANGUAGES = new Set(['push.ts'])
+
 // O que entra no lugar de cada `${…}` de uma mensagem com parte variável.
 const SAMPLE = '7'
 
@@ -60,7 +64,7 @@ const isConsoleCall = (node: ts.Node) =>
 /** As mensagens do `server/src`, lidas pela árvore do TypeScript (comentários e console ficam de fora). */
 function serverMessages(): Found[] {
   const found: Found[] = []
-  for (const file of readdirSync(SERVER_SRC).filter((f) => f.endsWith('.ts') && !f.endsWith('.d.ts'))) {
+  for (const file of readdirSync(SERVER_SRC).filter((f) => f.endsWith('.ts') && !f.endsWith('.d.ts') && !OWN_LANGUAGES.has(f))) {
     const source = ts.createSourceFile(file, readFileSync(join(SERVER_SRC, file), 'utf8'), ts.ScriptTarget.Latest, true)
     const visit = (node: ts.Node): void => {
       if (isConsoleCall(node)) return

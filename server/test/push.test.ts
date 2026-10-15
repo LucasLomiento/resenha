@@ -6,6 +6,7 @@ import { homeSocket, login, post, tick, world } from './helpers'
 
 const TOKEN_A = 'aparelho-do-duarte:APA91b-token-de-teste-1'
 const TOKEN_B = 'aparelho-velho-desinstalado:APA91b-token-2'
+const TOKEN_C = 'aparelho-de-outro-projeto:APA91b-token-3'
 
 /** Conta de serviço de mentira, com uma chave RSA de verdade (a assinatura é conferida). */
 async function serviceAccount() {
@@ -22,7 +23,7 @@ async function serviceAccount() {
 }
 
 /** Google e Firebase de mentira: troca o JWT por um token e guarda os pushes. */
-function fakeGoogle(dead: string[] = []) {
+function fakeGoogle(dead: string[] = [], rejected: string[] = []) {
   const sent: { token: string; message: any; auth: string | null }[] = []
   let exchanges = 0
   const impl = (async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -37,6 +38,7 @@ function fakeGoogle(dead: string[] = []) {
     const { message } = JSON.parse(String(init?.body))
     sent.push({ token: message.token, message, auth: new Headers(init?.headers).get('Authorization') })
     if (dead.includes(message.token)) return Response.json({ error: { status: 'NOT_FOUND', details: [{ errorCode: 'UNREGISTERED' }] } }, { status: 404 })
+    if (rejected.includes(message.token)) return Response.json({ error: { status: 'PERMISSION_DENIED', details: [{ errorCode: 'SENDER_ID_MISMATCH' }] } }, { status: 403 })
     return Response.json({ name: 'projects/resenha-teste/messages/1' })
   }) as typeof fetch
   return { impl, sent, exchanges: () => exchanges }
@@ -62,15 +64,15 @@ describe('push: Firebase (unidade)', () => {
     expect(ok).toBe(true)
   })
 
-  it('manda pra cada aparelho, guarda o token de acesso e devolve os que morreram', async () => {
+  it('manda pra cada aparelho, guarda o token de acesso e devolve os que morreram e os recusados', async () => {
     const account = await serviceAccount()
-    const google = fakeGoogle([TOKEN_B])
+    const google = fakeGoogle([TOKEN_B], [TOKEN_C])
     const pusher = new Pusher(account.json, google.impl)
     const message: PushMessage = { title: 'Duarte', body: 'oi', data: { kind: 'dm', channelId: 'dm:a:b' }, tag: 'dm:dm:a:b', kind: 'message' }
-    expect(await pusher.send([TOKEN_A, TOKEN_B], message)).toEqual([TOKEN_B])
-    expect(await pusher.send([TOKEN_A], { ...message, kind: 'call' })).toEqual([])
+    expect(await pusher.send([TOKEN_A, TOKEN_B, TOKEN_C], message)).toEqual({ dead: [TOKEN_B], failed: [TOKEN_C] })
+    expect(await pusher.send([TOKEN_A], { ...message, kind: 'call' })).toEqual({ dead: [], failed: [] })
     expect(google.exchanges()).toBe(1)
-    expect(google.sent).toHaveLength(3)
+    expect(google.sent).toHaveLength(4)
     expect(google.sent[0]).toMatchObject({
       token: TOKEN_A,
       auth: 'Bearer acesso-123',
@@ -80,7 +82,7 @@ describe('push: Firebase (unidade)', () => {
         android: { priority: 'high', notification: { tag: 'dm:dm:a:b', channel_id: 'messages', icon: 'ic_stat_resenha' } },
       },
     })
-    expect(google.sent[2].message.android).toMatchObject({ ttl: '30s', notification: { channel_id: 'calls' } })
+    expect(google.sent[3].message.android).toMatchObject({ ttl: '30s', notification: { channel_id: 'calls' } })
   })
 
   it('sem a chave (ou com uma quebrada), não manda nada', async () => {
@@ -88,7 +90,7 @@ describe('push: Firebase (unidade)', () => {
     for (const secret of [undefined, '', '{"project_id":"x"}', 'não é json']) {
       const pusher = new Pusher(secret, google.impl)
       expect(pusher.enabled).toBe(false)
-      expect(await pusher.send([TOKEN_A], { title: 't', body: 'b', data: {}, tag: 't', kind: 'message' })).toEqual([])
+      expect(await pusher.send([TOKEN_A], { title: 't', body: 'b', data: {}, tag: 't', kind: 'message' })).toEqual({ dead: [], failed: [] })
     }
     expect(google.sent).toHaveLength(0)
   })
@@ -118,7 +120,7 @@ async function until(check: () => boolean, ms = 2000) {
 }
 
 describe('push: quando o celular recebe', () => {
-  it('mensagem privada e ligação vão pro celular; computador ativo segura; "Não perturbe" também', async () => {
+  it('mensagem privada e ligação vão pro celular; só o computador com a pessoa olhando segura; "Não perturbe" também', async () => {
     const { owner, friend } = await world()
     const google = await fakePush(friend.user.id)
     const phone = await homeSocket(friend.user.id, friend.token, { mobile: true })
@@ -147,26 +149,43 @@ describe('push: quando o celular recebe', () => {
     })
     homeA.send({ t: 'call.hangup', channelId })
 
-    // Com o computador aberto e ativo, o aviso fica lá: o celular não toca.
+    // Computador aberto, mas ninguém olhando (outra janela, ou a pessoa longe): o celular avisa.
     const desktop = await homeSocket(friend.user.id, friend.token)
     await desktop.next('ready')
     homeA.send({ t: 'dm.send', channelId, content: 'tá aí?', attachmentIds: [], nonce: '2' })
-    await desktop.next('dm.message', (m) => m.message.content === 'tá aí?')
-    // Ausente no computador (sem mexer): o celular volta a receber.
-    desktop.send({ t: 'presence', status: 'idle', text: null, auto: true })
-    await tick(100)
-    homeA.send({ t: 'dm.send', channelId, content: 'acorda', attachmentIds: [], nonce: '3' })
     await until(() => google.sent.length === 3)
-    expect(google.sent.map((s) => s.message.notification.body)).toEqual(['oi @…', 'Toque pra atender', 'acorda'])
 
-    // "Não perturbe" escolhido: nada.
-    phone.send({ t: 'presence', status: 'dnd', text: null })
+    // Olhando o app no computador: o aviso fica lá, o celular não toca.
+    desktop.send({ t: 'attention', on: true })
     await tick(100)
-    homeA.send({ t: 'dm.send', channelId, content: 'psiu', attachmentIds: [], nonce: '4' })
+    homeA.send({ t: 'dm.send', channelId, content: 'tá vendo?', attachmentIds: [], nonce: '3' })
+    await desktop.next('dm.message', (m) => m.message.content === 'tá vendo?')
+    // O celular dizendo que "olha" não conta (só o computador segura).
+    phone.send({ t: 'attention', on: true })
+    // Saiu da frente do computador: o celular volta a receber.
+    desktop.send({ t: 'attention', on: false })
+    await tick(100)
+    homeA.send({ t: 'dm.send', channelId, content: 'acorda', attachmentIds: [], nonce: '4' })
+    await until(() => google.sent.length === 4)
+    expect(google.sent.map((s) => s.message.notification.body)).toEqual(['oi @…', 'Toque pra atender', 'tá aí?', 'acorda'])
+
+    // Voltando (a conexão caiu e reconectou) já olhando: segura desde o começo.
+    desktop.drop()
+    const back = await homeSocket(friend.user.id, friend.token, { attention: true })
+    await back.next('ready')
+    homeA.send({ t: 'dm.send', channelId, content: 'voltou?', attachmentIds: [], nonce: '5' })
+    await back.next('dm.message', (m) => m.message.content === 'voltou?')
+    back.send({ t: 'attention', on: false })
+    await tick(100)
+
+    // "Não perturbe" escolhido: nada. (Espera o limite de 5 mensagens em 5 s de quem manda.)
+    phone.send({ t: 'presence', status: 'dnd', text: null })
+    await tick(5500)
+    homeA.send({ t: 'dm.send', channelId, content: 'psiu', attachmentIds: [], nonce: '6' })
     await homeA.next('dm.message', (m) => m.message.content === 'psiu')
     await tick(200)
-    expect(google.sent).toHaveLength(3)
-  })
+    expect(google.sent).toHaveLength(4)
+  }, 15_000)
 
   it('idioma e "esconder o texto" de cada aparelho; token morto sai; sair da conta para o push', async () => {
     const { owner, friend } = await world()
@@ -206,6 +225,34 @@ describe('push: quando o celular recebe', () => {
     await homeA.next('dm.message', (m) => m.message.content === 'sumiu?')
     await tick(200)
     expect(google.sent).toHaveLength(3)
+  })
+
+  it('aviso de teste: vai só pro aparelho que pediu, mesmo com o computador olhando, e diz o que houve', async () => {
+    const { friend } = await world()
+    const google = await fakePush(friend.user.id, [TOKEN_B])
+    const phone = await homeSocket(friend.user.id, friend.token, { mobile: true })
+    await phone.next('ready')
+    // Sem token deste aparelho ainda: avisa na hora.
+    phone.send({ t: 'push.test' })
+    expect((await phone.next('push.test')).result).toBe('no-device')
+
+    phone.send({ t: 'push.token', token: TOKEN_A, locale: 'es' })
+    const desktop = await homeSocket(friend.user.id, friend.token, { attention: true })
+    await desktop.next('ready')
+    phone.send({ t: 'push.test' })
+    expect((await phone.next('push.test')).result).toBe('sent')
+    expect(google.sent).toHaveLength(1)
+    expect(google.sent[0]).toMatchObject({ token: TOKEN_A, message: { notification: { title: 'Aviso de prueba' }, data: { kind: 'test' } } })
+
+    // Outro celular, com um token que o Firebase já esqueceu: o teste conta, e o token sai.
+    const other = await login('duarte')
+    const oldPhone = await homeSocket(friend.user.id, other.body.token, { mobile: true })
+    await oldPhone.next('ready')
+    oldPhone.send({ t: 'push.token', token: TOKEN_B })
+    oldPhone.send({ t: 'push.test' })
+    expect((await oldPhone.next('push.test')).result).toBe('dead')
+    oldPhone.send({ t: 'push.test' })
+    expect((await oldPhone.next('push.test')).result).toBe('no-device')
   })
 
   it('servidor: segue o nível de aviso (todas, só menções, nada, silenciado)', async () => {

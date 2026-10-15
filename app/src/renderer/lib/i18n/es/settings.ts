@@ -406,6 +406,22 @@ export default {
       content: 'Mostrar el texto del mensaje',
       contentDescription: 'Desactivado, el aviso solo dice que llegó un mensaje.',
     },
+    phone: {
+      section: 'Avisos en el celular',
+      label: 'Avisos de este celular',
+      on: 'Activados. Mientras estás mirando Resenha en la computadora, avisa la computadora.',
+      denied: 'Android bloqueó los avisos de Resenha. Actívalos en Ajustes de Android → Apps → Resenha → Notificaciones.',
+      unavailable: 'Este celular no pudo activar los avisos (necesitan Google Play).',
+      test: 'Enviar un aviso de prueba',
+      results: {
+        waiting: 'Sal de la app: el aviso llega en 5 segundos.',
+        sent: 'El aviso salió. Si no apareció, revisa que el ahorro de batería de Android no esté frenando a Resenha.',
+        off: 'Al servidor le falta la clave de los avisos.',
+        'no-device': 'Este celular todavía no activó los avisos.',
+        dead: 'El registro de este celular venció: cierra y abre la app para activarlo de nuevo.',
+        failed: 'Firebase rechazó el aviso.',
+      },
+    },
   },
 
   shortcuts: {

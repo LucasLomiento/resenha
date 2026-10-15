@@ -4,6 +4,7 @@
 </script>
 
 <script lang="ts">
+  import { setSink } from '../../lib/devices'
   import { formatSize } from '../../lib/format'
   import { fmt, m } from '../../lib/i18n.svelte'
   import { settings } from '../../lib/settings.svelte'
@@ -51,7 +52,7 @@
   })
 
   $effect(() => {
-    audio?.setSinkId(settings.outputDevice === 'default' ? '' : settings.outputDevice).catch(() => {})
+    void setSink(audio, settings.outputDevice)
   })
 
   // Tocando: o progresso anda a cada quadro (o timeupdate do <audio> pula de 250 em 250 ms).
