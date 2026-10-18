@@ -9,6 +9,7 @@ import type { CallState, DesktopPrefs, ShortcutAction } from '../preload/api'
 import { onLocaleChange, tm } from './i18n'
 import { hasHyprland, setHyprShortcuts } from './hyprland'
 import { setPortalShortcuts, usesPortalShortcuts } from './portal-shortcuts'
+import { whenTrayHostReady } from './tray-host'
 
 type Dispatch = (action: ShortcutAction) => void
 
@@ -33,6 +34,8 @@ export function appIcon(): NativeImage {
 // ---------- Bandeja ----------
 
 let tray: Tray | null = null
+/** Cancela a espera pela barra antes de criar o ícone; null quando não está esperando. */
+let cancelTrayWait: (() => void) | null = null
 let lastState: CallState = { inCall: false, muted: false, deafened: false, sharing: false, speaking: false }
 /** O que o menu e os botões chamam, e a janela: guardados pra refazer tudo quando o idioma muda. */
 let actions: { show: () => void; dispatch: Dispatch } | null = null
@@ -75,19 +78,26 @@ function trayTooltip(state: CallState) {
 export function setTray(enabled: boolean, show: () => void, dispatch: Dispatch) {
   actions = { show, dispatch }
   if (!enabled) {
+    cancelTrayWait?.()
+    cancelTrayWait = null
     tray?.destroy()
     tray = null
     return
   }
-  if (tray) return
-  tray = new Tray(stateIcon(lastState))
-  tray.setToolTip(trayTooltip(lastState))
-  tray.on('click', show)
-  tray.setContextMenu(trayMenu(lastState, show, dispatch))
+  if (tray || cancelTrayWait) return
+  // Criado antes da barra, o ícone não aparece nunca (tray-host.ts).
+  cancelTrayWait = whenTrayHostReady(() => {
+    cancelTrayWait = null
+    tray = new Tray(stateIcon(lastState))
+    tray.setToolTip(trayTooltip(lastState))
+    tray.on('click', show)
+    tray.setContextMenu(trayMenu(lastState, show, dispatch))
+  })
 }
 
+/** Esperando a barra conta como bandeja: a janela fica escondida e o ícone chega logo. */
 export function hasTray() {
-  return tray !== null
+  return tray !== null || cancelTrayWait !== null
 }
 
 /** Atualiza bandeja e barra de tarefas quando muta, ensurdece, fala, entra ou sai da call. */

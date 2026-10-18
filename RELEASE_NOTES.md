@@ -1,6 +1,6 @@
-## 1.14.4: cursor de volta na transmissão
+## 1.14.5: ícone na bandeja ao ligar o computador
 
-- **Corrigido:** na 1.14.3, o cursor do mouse sumia junto com os controles da transmissão em tela cheia. Agora o cursor fica sempre visível; só os controles somem sozinhos (e voltam com o mouse na parte de baixo, ou tirando e pondo o mouse na transmissão).
+- **Corrigido:** com o Resenha abrindo junto com o computador, às vezes o ícone dele não aparecia na bandeja (os aplicativos em segundo plano da barra). O app abria antes da barra estar pronta e ficava escondido sem ícone, sem como reabrir a janela por ali. Agora ele espera a barra e o ícone aparece sempre.
 
 ## Como atualizar
 
