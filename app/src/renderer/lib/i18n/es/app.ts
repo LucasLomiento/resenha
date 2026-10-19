@@ -295,6 +295,7 @@ export default {
     ready: (version: string) => `La versión ${version} está lista para instalar.`,
     arrived: (version: string) => `Llegó Resenha ${version}`,
     afterCall: 'Se descarga sola cuando salgas de la llamada.',
+    apk: 'Toca descargar: el APK nuevo se abre en el navegador.',
     downloading: (percent: number) => `Descargando… ${percent}%`,
     installing: 'Instalando. Si pide contraseña, es para esto.',
     leavesCall: 'Reiniciar ahora te saca de la llamada.',

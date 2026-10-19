@@ -293,6 +293,7 @@ export default {
     ready: (version: string) => `Version ${version} is ready to install.`,
     arrived: (version: string) => `Resenha ${version} is here`,
     afterCall: 'Downloads by itself when you leave the call.',
+    apk: 'Tap download: the new APK opens in your browser.',
     downloading: (percent: number) => `Downloading… ${percent}%`,
     installing: "Installing. If it asks for a password, that's why.",
     leavesCall: 'Restarting now takes you out of the call.',

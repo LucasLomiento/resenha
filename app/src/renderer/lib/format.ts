@@ -103,35 +103,3 @@ export function formatBitrate(bps: number): string {
   return bps >= 1_000_000 ? `${(bps / 1_000_000).toFixed(1)} Mbps` : `${Math.round(bps / 1000)} kbps`
 }
 
-export type Segment =
-  | { kind: 'text'; text: string }
-  | { kind: 'link'; text: string }
-  | { kind: 'code'; text: string }
-  | { kind: 'block'; text: string }
-
-const URL_RE = /https?:\/\/[^\s<>()]+[^\s<>().,;:!?'"]/g
-
-function linkify(text: string, out: Segment[]) {
-  let last = 0
-  for (const match of text.matchAll(URL_RE)) {
-    if (match.index! > last) out.push({ kind: 'text', text: text.slice(last, match.index) })
-    out.push({ kind: 'link', text: match[0] })
-    last = match.index! + match[0].length
-  }
-  if (last < text.length) out.push({ kind: 'text', text: text.slice(last) })
-}
-
-/** Texto da mensagem em pedaços: ```bloco```, `código`, links e texto puro. */
-export function parseMessage(content: string): Segment[] {
-  const out: Segment[] = []
-  const re = /```(?:[\w-]*\n)?([\s\S]*?)```|`([^`\n]+)`/g
-  let last = 0
-  for (const match of content.matchAll(re)) {
-    if (match.index! > last) linkify(content.slice(last, match.index), out)
-    if (match[1] !== undefined) out.push({ kind: 'block', text: match[1].replace(/\n$/, '') })
-    else out.push({ kind: 'code', text: match[2] })
-    last = match.index! + match[0].length
-  }
-  if (last < content.length) linkify(content.slice(last), out)
-  return out
-}

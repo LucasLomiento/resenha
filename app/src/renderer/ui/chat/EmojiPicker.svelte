@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { CATEGORIES, recentEmoji, rememberEmoji, searchEmoji } from '../../lib/emoji'
+  import { CATEGORIES, emojiName, emojiWords, recentEmoji, rememberEmoji, searchEmoji } from '../../lib/emoji'
   import { m } from '../../lib/i18n.svelte'
   import { Icon, Popover } from '../kit'
   import type { Placement } from '../kit/position'
@@ -74,7 +74,7 @@
         {#if results.length}
           <div class="emojis">
             {#each results as entry (entry.e)}
-              <button class="emoji" aria-label={entry.k.split(' ')[0]} title={entry.k} onclick={() => pick(entry.e)}>{entry.e}</button>
+              <button class="emoji" aria-label={emojiName(entry)} title={emojiWords(entry)} onclick={() => pick(entry.e)}>{entry.e}</button>
             {/each}
           </div>
         {:else}
@@ -91,7 +91,7 @@
           <div class="label" data-section={category.id}>{category.label}</div>
           <div class="emojis">
             {#each category.list as entry (entry.e)}
-              <button class="emoji" aria-label={entry.k.split(' ')[0]} title={entry.k} onclick={() => pick(entry.e)}>{entry.e}</button>
+              <button class="emoji" aria-label={emojiName(entry)} title={emojiWords(entry)} onclick={() => pick(entry.e)}>{entry.e}</button>
             {/each}
           </div>
         {/each}

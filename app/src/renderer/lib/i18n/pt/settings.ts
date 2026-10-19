@@ -256,10 +256,6 @@ export default {
     preview: 'Prévia',
     previewLabel: 'Prévia do perfil',
     since: 'No Resenha desde',
-    unsaved: {
-      label: 'Alterações não salvas',
-      text: 'Você tem alterações não salvas.',
-    },
   },
 
   devices: {
@@ -426,6 +422,7 @@ export default {
       denied: 'O Android bloqueou os avisos do Resenha. Libere em Configurações do Android → Apps → Resenha → Notificações.',
       unavailable: 'Este celular não conseguiu ligar os avisos (eles precisam do Google Play).',
       test: 'Mandar um aviso de teste',
+      noAnswer: 'O servidor não respondeu. Confira a conexão e tente de novo.',
       results: {
         waiting: 'Saia do app: o aviso chega em 5 segundos.',
         sent: 'O aviso saiu. Se não apareceu, veja se a economia de bateria do Android não está segurando o Resenha.',

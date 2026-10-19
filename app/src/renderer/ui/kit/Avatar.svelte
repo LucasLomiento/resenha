@@ -40,6 +40,9 @@
   } = $props()
 
   const dot = $derived(Math.max(8, Math.round(size * 0.3)))
+  /** Foto que não abriu (apagada, link vencido): volta pras iniciais em vez de um quadrado vazio. */
+  let failed = $state<string | null>(null)
+  const photo = $derived(src && src !== failed ? src : null)
 </script>
 
 <span
@@ -49,8 +52,8 @@
   role="img"
   aria-label={name}
 >
-  {#if src}
-    <img src={src} alt="" draggable="false" />
+  {#if photo}
+    <img src={photo} alt="" draggable="false" onerror={() => (failed = photo)} />
     <!-- A animada entra por cima da parada: enquanto carrega, a parada continua ali. -->
     {#if play && animated}<img class="animated" src={animated} alt="" draggable="false" />{/if}
   {:else}

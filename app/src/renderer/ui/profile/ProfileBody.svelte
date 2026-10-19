@@ -108,7 +108,8 @@
   }
 
   function saveNick() {
-    if (!guild) return
+    // O Esc (e o Enter, que já salvou) tiram o campo da tela, e isso dispara o blur: aí não salva de novo.
+    if (!guild || !editingNick) return
     const value = nick.trim()
     if (value !== (member?.nick ?? '')) guild.setNick(userId, value || null)
     editingNick = false

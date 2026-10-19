@@ -17,6 +17,15 @@
     void push?.token().then((token) => (registered = !!token))
   })
   const phoneState = $derived(permission === 'denied' ? t.phone.denied : registered ? t.phone.on : permission ? t.phone.unavailable : null)
+
+  /** A resposta do aviso de teste não veio (a conexão caiu no meio): o botão volta a funcionar. */
+  let noAnswer = $state(false)
+  $effect(() => {
+    noAnswer = false
+    if (client.pushTest !== 'waiting') return
+    const timer = setTimeout(() => (noAnswer = true), 20_000)
+    return () => clearTimeout(timer)
+  })
 </script>
 
 <PageHeader title={m.settings.pages.notifications} />
@@ -25,8 +34,8 @@
   <Section title={t.phone.section}>
     <Row label={t.phone.label} description={phoneState ?? undefined} stack>
       <div class="test">
-        <Button icon="bell" disabled={permission === 'denied' || client.pushTest === 'waiting'} onclick={() => client.testPush()}>{t.phone.test}</Button>
-        {#if client.pushTest}<p class="test-result" role="status">{t.phone.results[client.pushTest]}</p>{/if}
+        <Button icon="bell" disabled={permission === 'denied' || (client.pushTest === 'waiting' && !noAnswer)} onclick={() => client.testPush()}>{t.phone.test}</Button>
+        {#if client.pushTest}<p class="test-result" role="status">{noAnswer ? t.phone.noAnswer : t.phone.results[client.pushTest]}</p>{/if}
       </div>
     </Row>
   </Section>

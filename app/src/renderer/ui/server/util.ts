@@ -83,9 +83,16 @@ export function fold(text: string): string {
     .toLowerCase()
 }
 
-/** Igual ao servidor: espaços juntos e sem sobra nas pontas. */
+/**
+ * Caracteres invisíveis que o servidor tira dos nomes (os de controle, os de largura zero, os
+ * de troca de direção e os que parecem espaço). O ZWJ (U+200D) fica: ele monta emoji compostos.
+ */
+const INVISIBLE =
+  /[\u0000-\u001f\u007f-\u009f\u00ad\u034f\u061c\u115f\u1160\u17b4\u17b5\u180e\u200b\u200e\u200f\u2028-\u202e\u2060-\u2064\u2066-\u206f\u2800\u3164\ufeff\uffa0]/g
+
+/** Igual ao servidor: sem invisíveis, espaços juntos e sem sobra nas pontas (senão quem espera o nome novo nunca acha). */
 export function cleanName(text: string): string {
-  return text.replace(/\s+/g, ' ').trim()
+  return text.replace(INVISIBLE, '').replace(/\s+/g, ' ').trim()
 }
 
 /** "agora", "há 3 horas", "ontem", "em 6 dias". */

@@ -137,9 +137,12 @@
 </Section>
 
 <Section title={t.data.section}>
-  <Row setting="privacy.export" label={t.data.export} description={t.data.exportDescription}>
-    <Button icon="download" loading={exporting} onclick={download}>{t.data.download}</Button>
-  </Row>
+  <!-- No celular o WebView não baixa o arquivo: a opção fica só no computador. -->
+  {#if !client.platform?.mobile}
+    <Row setting="privacy.export" label={t.data.export} description={t.data.exportDescription}>
+      <Button icon="download" loading={exporting} onclick={download}>{t.data.download}</Button>
+    </Row>
+  {/if}
   <Row setting="privacy.delete" label={t.remove.label} description={t.remove.description}>
     <Button variant="danger-soft" icon="trash" onclick={openDelete}>{t.remove.label}</Button>
   </Row>

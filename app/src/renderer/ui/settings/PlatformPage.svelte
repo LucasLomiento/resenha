@@ -9,11 +9,14 @@
   import { Avatar, Badge, Button, Icon, IconButton, PageHeader, RadioGroup, Row, Section, Spinner, TextField, UserBadge } from '../kit'
 
   const GB = 1024 ** 3
+  /** A cota de mídia é contada como o Cloudflare cobra: em GB decimais (850 × 10⁹). */
+  const GB_DECIMAL = 1e9
   /** O dono mexe em tudo; o melhor amigo dele só vê os números. */
   const owner = $derived(!!client.me?.staff)
   const t = $derived(m.settings.platform)
 
   const bytes = (n: number) => (n >= GB ? `${fmt.number(n / GB, { maximumFractionDigits: 1 })} GB` : formatSize(n))
+  const mediaBytes = (n: number) => (n >= GB_DECIMAL ? `${fmt.number(n / GB_DECIMAL, { maximumFractionDigits: 1 })} GB` : formatSize(n))
   /** Data curta: no português, "5 de out. de 2026" vira "5 out 2026" (os outros idiomas já vêm curtos). */
   const date = (ms: number) => fmt.date(ms, { day: 'numeric', month: 'short', year: 'numeric' }).replaceAll(' de ', ' ').replace('.', '')
 
@@ -180,7 +183,7 @@
     </div>
     <div class="stat wide" data-setting="platform.media">
       <span class="stat-label">{t.stats.media}</span>
-      <span class="stat-value">{bytes(panel.mediaUsed ?? 0)} <small>{t.stats.of(bytes(panel.mediaLimit ?? 0))}</small></span>
+      <span class="stat-value">{mediaBytes(panel.mediaUsed ?? 0)} <small>{t.stats.of(mediaBytes(panel.mediaLimit ?? 0))}</small></span>
       {@render meter(t.stats.media, media)}
       {#if tone(media) === 'full'}
         <span class="stat-note tone-full"><Icon name="circle-alert" size={14} />{t.mediaFull}</span>

@@ -192,18 +192,30 @@ const EMOJI_UNIT = /\p{Regional_Indicator}{2}|(?:\p{Extended_Pictographic}|[#*0-
 /** Mensagem só de emoji (até 27): aparece grande, como no Discord. */
 export function isJumbo(content: string): boolean {
   const text = content.trim()
-  if (!text || !EMOJI_ONLY.test(text) || /^[\d#*\s]+$/.test(text)) return false
+  if (!text || !EMOJI_ONLY.test(text)) return false
   const count = text.match(EMOJI_UNIT)?.length ?? 0
-  return count > 0 && count <= 27
+  // Número ou # solto junto do emoji ("2 🍕", "#1 🍕") não é emoji: a mensagem fica do tamanho normal.
+  const rest = text.replace(EMOJI_UNIT, '').replace(/[\s️‍]/gu, '')
+  return count > 0 && count <= 27 && rest === ''
 }
 
-/** Texto puro (pra notificação, resposta, prévia): menções viram nomes. */
-export function plainText(content: string, names: { user(id: string): string; role(id: string): string; channel(id: string): string }): string {
-  return content
+type Names = { user(id: string): string; role(id: string): string; channel(id: string): string }
+
+const withNames = (content: string, names: Names) =>
+  content
     .replace(/<@!?([\w-]{1,64})>/g, (_, id) => `@${names.user(id)}`)
     .replace(/<@&([\w-]{1,64})>/g, (_, id) => `@${names.role(id)}`)
     .replace(/<#([\w-]{1,64})>/g, (_, id) => `#${names.channel(id)}`)
+
+/** Texto puro (pra notificação, resposta, prévia): menções viram nomes. */
+export function plainText(content: string, names: Names): string {
+  return withNames(content, names)
     .replace(/```[\w+#.-]*\n?([\s\S]*?)```/g, '$1')
     .replace(/\|\|([\s\S]+?)\|\|/g, '▒▒▒')
     .replace(/(\*\*|__|~~|\*|`)/g, '')
+}
+
+/** Texto pra copiar: as menções viram nomes e o resto fica como foi escrito (código, contas e formatação intactos). */
+export function copyText(content: string, names: Names): string {
+  return withNames(content, names)
 }

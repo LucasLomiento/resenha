@@ -33,7 +33,8 @@
     title: string
     nav: SettingsNavEntry[]
     active: string
-    onselect: (id: string) => void
+    /** Devolve false quando a escolha não abre página (ex.: "Sair", que só pergunta). */
+    onselect: (id: string) => unknown
     onclose: () => void
     /** Protótipos: sem a camada do Esc. */
     inline?: boolean
@@ -59,8 +60,7 @@
   })
 
   function select(id: string) {
-    onselect(id)
-    showPage = true
+    if (onselect(id) !== false) showPage = true
   }
 
   /** Esc (ou o voltar do celular): da página volta pra lista; da lista, fecha. */

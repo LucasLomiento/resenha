@@ -1,8 +1,10 @@
 // Emojis do seletor (reações e campo de texto), com nomes em português pra
-// busca. Só Unicode: aparece igual em qualquer computador. O nome das
-// categorias sai do catálogo (`m.lib.emoji`) na hora de mostrar.
+// busca (os de inglês e espanhol ficam em emoji-names.ts). Só Unicode: aparece
+// igual em qualquer computador. O nome das categorias sai do catálogo
+// (`m.lib.emoji`) na hora de mostrar.
 
-import { m } from './i18n.svelte'
+import { EMOJI_NAMES } from './emoji-names'
+import { i18n, m } from './i18n.svelte'
 
 export interface EmojiEntry {
   e: string
@@ -613,11 +615,37 @@ export function fold(text: string): string {
   return text.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
 }
 
+/** Palavras de cada emoji em inglês e espanhol (montado na primeira vez que o idioma é usado). */
+const localized = new Map<'en' | 'es', Map<string, string>>()
+
+function namesFor(locale: string): Map<string, string> | null {
+  if (locale !== 'en' && locale !== 'es') return null
+  let names = localized.get(locale)
+  if (!names) {
+    names = new Map(parse(EMOJI_NAMES[locale]).map((x) => [x.e, x.k]))
+    localized.set(locale, names)
+  }
+  return names
+}
+
+/** As palavras do emoji no idioma do app (pro `title` do seletor). */
+export function emojiWords(entry: EmojiEntry): string {
+  return namesFor(i18n.locale)?.get(entry.e) ?? entry.k
+}
+
+/** O nome do emoji no idioma do app: o `:nome:` das sugestões e o que o leitor de tela fala. */
+export function emojiName(entry: EmojiEntry): string {
+  return emojiWords(entry).split(' ')[0]
+}
+
+/** Busca pelo idioma do app e pelo português (quem aprendeu os nomes de um continua achando). */
 export function searchEmoji(query: string, limit = 48): EmojiEntry[] {
   const q = fold(query.trim())
   if (!q) return []
-  const starts = ALL_EMOJI.filter((x) => x.k.split(' ').some((w) => w.startsWith(q)))
-  const contains = ALL_EMOJI.filter((x) => !starts.includes(x) && x.k.includes(q))
+  const names = namesFor(i18n.locale)
+  const words = (x: EmojiEntry) => (names ? `${names.get(x.e) ?? ''} ${x.k}` : x.k)
+  const starts = ALL_EMOJI.filter((x) => words(x).split(' ').some((w) => w.startsWith(q)))
+  const contains = ALL_EMOJI.filter((x) => !starts.includes(x) && words(x).includes(q))
   return [...starts, ...contains].slice(0, limit)
 }
 

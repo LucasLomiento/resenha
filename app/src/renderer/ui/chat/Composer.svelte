@@ -7,7 +7,7 @@
   import { tick, untrack } from 'svelte'
   import { MAX_MESSAGE_LENGTH, MAX_UPLOAD_BYTES, type Attachment, type Message } from '../../../../../shared/protocol'
   import { client } from '../../lib/client.svelte'
-  import { searchEmoji } from '../../lib/emoji'
+  import { emojiName, searchEmoji } from '../../lib/emoji'
   import { formatSize } from '../../lib/format'
   import { around, m } from '../../lib/i18n.svelte'
   import { compressImage } from '../../lib/media'
@@ -21,11 +21,14 @@
     target,
     replyTo = $bindable(null),
     oneditlast,
+    onsent,
   }: {
     target: ChatTarget
     replyTo?: Message | null
     /** Seta pra cima com o campo vazio: editar a última mensagem minha. */
     oneditlast: () => void
+    /** Saiu uma mensagem desta conversa: o chat desce até ela. */
+    onsent?: () => void
   } = $props()
 
   interface Upload {
@@ -125,6 +128,8 @@
   }
 
   async function startUpload(key: number, original: File) {
+    // O destino é o de agora: trocar de conversa no meio limpa a lista, e o arquivo não vai pra outra.
+    const dest = target
     // Imagem sempre vai diminuída (WebP, até 2560 px): a pessoa não precisa pensar nisso.
     const file = await compressImage(original)
     const current = uploads.find((u) => u.key === key)
@@ -133,7 +138,8 @@
       return update(key, { preparing: false, error: m.chat.composer.tooBig(formatSize(MAX_UPLOAD_BYTES)) })
     }
     const size = await mediaSize(file)
-    const job = client.api.upload(target.uploadPath, file, (fraction) => update(key, { progress: fraction }), size)
+    if (!uploads.some((u) => u.key === key) || !client.api) return // removido (ou trocou de conversa) enquanto media
+    const job = client.api.upload(dest.uploadPath, file, (fraction) => update(key, { progress: fraction }), size)
     update(key, { file, preparing: false, abort: job.abort })
     job.promise.then((attachment) => update(key, { attachment, progress: 1 })).catch((err: Error) => update(key, { error: err.message }))
   }
@@ -198,15 +204,24 @@
   /** Depois de parar: convertendo pra MP3, ou enviando. */
   let voiceBusy = $state<'encoding' | 'uploading' | null>(null)
   let voiceProgress = $state(0)
-  let voiceAbort: (() => void) | null = null
+  /**
+   * Envio de voz que a tela acompanha. Trocar de conversa (ou sair do chat) solta a tela
+   * dele: o áudio continua indo pra conversa onde foi gravado, só sem a barrinha.
+   */
+  let voiceJob = 0
   let starting = false
+  let destroyed = false
 
   async function startVoice() {
     if (recording || voiceBusy || starting || !client.api || !target.canAttach || !target.canSend) return
     starting = true
     emojiOpen = false
+    const id = target.id
     try {
-      recording = await VoiceRecording.start()
+      const rec = await VoiceRecording.start()
+      // Trocou de conversa (ou saiu do chat) enquanto o microfone abria: não grava na outra.
+      if (destroyed || target.id !== id) return rec.cancel()
+      recording = rec
       recordSeconds = 0
       levels = []
     } catch (err) {
@@ -244,20 +259,33 @@
     }
   })
 
-  // Saiu da conversa (ou fechou o chat) no meio da gravação: descarta.
-  $effect(() => () => untrack(() => cancelVoice()))
+  // Saiu do chat (Amigos, outra tela): descarta a gravação e guarda o rascunho, como na troca de conversa.
+  $effect(() => () =>
+    untrack(() => {
+      destroyed = true
+      if (currentId) drafts.set(currentId, { text, tokens })
+      clearUploads()
+    }),
+  )
 
+  /** Descarta a gravação em andamento. Um áudio que já está sendo enviado continua. */
   function cancelVoice() {
     recording?.cancel()
     recording = null
-    voiceAbort?.()
-    voiceAbort = null
+    if (voiceBusy) {
+      voiceJob++
+      voiceBusy = null
+    }
   }
 
   async function sendVoice() {
     const rec = recording
     if (!rec || voiceBusy || !client.api) return
     if (waiting) return client.toast(m.chat.composer.slowmodeWait(waiting))
+    // A conversa onde foi gravado: trocar de conversa enquanto converte não manda pra outra.
+    const dest = target
+    const job = ++voiceJob
+    const mine = () => job === voiceJob
     recording = null
     voiceBusy = 'encoding'
     voiceProgress = 0
@@ -265,20 +293,23 @@
     try {
       const { file } = await rec.finish()
       if (file.size > MAX_UPLOAD_BYTES) throw new Error(m.chat.composer.voiceTooBig(formatSize(MAX_UPLOAD_BYTES)))
-      voiceBusy = 'uploading'
-      const job = client.api.upload(target.uploadPath, file, (fraction) => (voiceProgress = fraction), null)
-      voiceAbort = job.abort
-      const attachment = await job.promise
-      voiceAbort = null
-      replyTo = null
-      if (target.slowmode) waitUntil = Date.now() + target.slowmode * 1000
-      await target.send('', [attachment.id], reply)
+      if (mine()) voiceBusy = 'uploading'
+      const upload = client.api.upload(dest.uploadPath, file, (fraction) => mine() && (voiceProgress = fraction), null)
+      const attachment = await upload.promise
+      const here = mine() && dest.id === currentId
+      if (here) {
+        replyTo = null
+        if (dest.slowmode) waitUntil = Date.now() + dest.slowmode * 1000
+        onsent?.()
+      }
+      await dest.send('', [attachment.id], reply)
     } catch (err) {
       if ((err as Error).name !== 'AbortError') client.toast((err as Error).message || m.chat.composer.voiceFailed)
     } finally {
-      voiceBusy = null
-      voiceAbort = null
-      void tick().then(() => input?.focus())
+      if (mine()) {
+        voiceBusy = null
+        if (!destroyed) void tick().then(() => input?.focus())
+      }
     }
   }
 
@@ -287,30 +318,40 @@
     const typed = text.trim()
     const content = toRaw(typed, tokens)
     if (content.length > MAX_MESSAGE_LENGTH) return client.toast(m.chat.composer.tooLong(MAX_MESSAGE_LENGTH))
+    const dest = target
     const sent = uploads.filter((u) => u.attachment)
     const ids = sent.map((u) => u.attachment!.id)
-    const reply = replyTo?.id ?? null
+    const reply = replyTo
     const sentTokens = tokens
     // Limpa na hora; o que for anexado enquanto isso envia não é afetado.
     text = ''
     tokens = new Map()
     replyTo = null
-    for (const u of sent) if (u.preview) URL.revokeObjectURL(u.preview)
     uploads = uploads.filter((u) => !sent.some((s) => s.key === u.key))
     // Mede depois que o campo vazio chega na tela: medido na hora, ainda tinha o texto de várias
     // linhas e a caixa ficava grande depois de enviar.
     void tick().then(resize)
-    if (target.slowmode) waitUntil = Date.now() + target.slowmode * 1000
+    if (dest.slowmode) waitUntil = Date.now() + dest.slowmode * 1000
+    onsent?.()
     try {
-      await target.send(content, ids, reply)
+      await dest.send(content, ids, reply?.id ?? null)
+      for (const u of sent) if (u.preview) URL.revokeObjectURL(u.preview)
     } catch (err) {
-      // Não foi: o texto volta pro campo (se a pessoa não começou outro).
-      if (!text) {
-        text = typed
-        tokens = sentTokens
-        requestAnimationFrame(resize)
+      // Não foi: texto, anexos e resposta voltam pro campo (se a pessoa não começou outro).
+      if (dest.id === currentId && !destroyed) {
+        if (!text) {
+          text = typed
+          tokens = sentTokens
+          requestAnimationFrame(resize)
+        }
+        uploads = [...sent, ...uploads]
+        if (!replyTo) replyTo = reply
+        waitUntil = 0
+      } else {
+        // Já está em outra conversa: o texto fica no rascunho da conversa de antes.
+        if (!drafts.get(dest.id)?.text) drafts.set(dest.id, { text: typed, tokens: sentTokens })
+        for (const u of sent) if (u.preview) URL.revokeObjectURL(u.preview)
       }
-      waitUntil = 0
       client.toast((err as Error).message || m.chat.composer.sendFailed)
     }
   }
@@ -336,6 +377,8 @@
 
   /** O que a pessoa está digitando agora: "@lu", "#ger" ou ":sor". */
   const trigger = $derived.by(() => {
+    // -1: Esc ou saiu do campo (o slice(0, -1) ainda casaria com o "@lu" e o Enter completaria errado).
+    if (caret < 0) return null
     const before = text.slice(0, caret)
     const match = /(^|\s)([@#:])([\p{L}\p{N}_.-]*)$/u.exec(before)
     if (!match) return null
@@ -352,7 +395,7 @@
     const q = fold(t.query)
     const guild = target.guild
     if (t.sigil === ':') {
-      return searchEmoji(t.query, 8).map((e) => ({ key: e.e, label: `:${e.k.split(' ')[0]}:`, emoji: e.e, insert: e.e }))
+      return searchEmoji(t.query, 8).map((e) => ({ key: e.e, label: `:${emojiName(e)}:`, emoji: e.e, insert: e.e }))
     }
     if (t.sigil === '#') {
       if (!guild) return []

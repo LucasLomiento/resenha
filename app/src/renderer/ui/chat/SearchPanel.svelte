@@ -47,10 +47,13 @@
   async function more() {
     const last = hits.at(-1)
     if (!last || loading) return
+    const q = query.trim()
     loading = true
     try {
-      const result = await guild.search(query.trim(), { before: last.id })
-      hits = [...hits, ...result.messages]
+      const result = await guild.search(q, { before: last.id })
+      if (query.trim() === q) hits = [...hits, ...result.messages]
+    } catch (err) {
+      client.toast((err as Error).message)
     } finally {
       loading = false
     }

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { isJumbo, parseInline, parseMarkdown, plainText } from '../src/renderer/lib/markdown.ts'
+import { copyText, isJumbo, parseInline, parseMarkdown, plainText } from '../src/renderer/lib/markdown.ts'
 
 test('negrito, itálico, sublinhado, riscado, spoiler e código', () => {
   assert.deepEqual(parseInline('**a** *b* __c__ ~~d~~ ||e|| `f`'), [
@@ -76,9 +76,21 @@ test('emoji grande só quando a mensagem é só emoji', () => {
   assert.equal(isJumbo('oi 😂'), false)
   assert.equal(isJumbo('123'), false)
   assert.equal(isJumbo('😂'.repeat(28)), false)
+  // Número junto do emoji não vira texto gigante; o emoji de tecla (1️⃣) continua grande.
+  assert.equal(isJumbo('2 🍕'), false)
+  assert.equal(isJumbo('1 2 3 😀'), false)
+  assert.equal(isJumbo('#1 🍕'), false)
+  assert.equal(isJumbo('1️⃣ 🔟'), true)
+  assert.equal(isJumbo('❤️‍🔥 ☠️'), true)
 })
 
 test('texto puro com nomes', () => {
   const names = { user: () => 'Lucas', role: () => 'Mod', channel: () => 'geral' }
   assert.equal(plainText('**oi** <@1> <@&2> <#3> ||segredo||', names), 'oi @Lucas @Mod #geral ▒▒▒')
+})
+
+test('copiar texto: só as menções viram nomes, o resto fica como foi escrito', () => {
+  const names = { user: () => 'Lucas', role: () => 'Mod', channel: () => 'geral' }
+  assert.equal(copyText('def __init__(self, *args): return a * b', names), 'def __init__(self, *args): return a * b')
+  assert.equal(copyText('2*3=6 `x` <@1> <@&2> <#3> ||segredo||', names), '2*3=6 `x` @Lucas @Mod #geral ||segredo||')
 })
