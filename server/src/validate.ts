@@ -4,16 +4,26 @@
 import type { MusicStatus } from '../../shared/protocol'
 
 // Caracteres de controle e invisíveis (espaço de largura zero, troca de direção
-// do texto, separadores de linha…), usados pra disfarçar nomes. O ZWJ (U+200D)
-// fica: ele monta emoji compostos.
-const INVISIBLE = /[\u0000-\u001f\u007f-\u009f\u200b\u200e\u200f\u2028-\u202e\u2060-\u2064\u2066-\u206f\ufeff]/g
-const INVISIBLE_KEEP_LINES = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f\u200b\u200e\u200f\u2028-\u202e\u2060-\u2064\u2066-\u206f\ufeff]/g
+// do texto, separadores de linha, os "preenchimentos" do hangul e do braille…),
+// usados pra disfarçar nomes. O ZWJ (U+200D) fica: ele monta emoji compostos.
+const INVISIBLE =
+  /[\u0000-\u001f\u007f-\u009f\u00ad\u034f\u061c\u115f\u1160\u17b4\u17b5\u180e\u200b\u200e\u200f\u2028-\u202e\u2060-\u2064\u2066-\u206f\u2800\u3164\ufeff\uffa0]/g
+const INVISIBLE_KEEP_LINES =
+  /[\u0000-\u0008\u000b-\u001f\u007f-\u009f\u00ad\u034f\u061c\u115f\u1160\u17b4\u17b5\u180e\u200b\u200e\u200f\u2028-\u202e\u2060-\u2064\u2066-\u206f\u2800\u3164\ufeff\uffa0]/g
+/** Pelo menos uma letra, número, pontuação ou símbolo (emoji conta): nome só de espaço e acento solto não passa. */
+const VISIBLE = /[\p{L}\p{N}\p{P}\p{S}]/u
 
 /** Texto livre de uma linha: sem caracteres de controle, espaços normalizados. */
 export function cleanLine(value: unknown, min: number, max: number): string | null {
   if (typeof value !== 'string') return null
   const text = value.replace(INVISIBLE, '').replace(/\s+/g, ' ').trim()
+  if (min > 0 && !VISIBLE.test(text)) return null
   return text.length >= min && text.length <= max ? text : null
+}
+
+/** Nome de arquivo: sem controle, invisível (a troca de direção disfarça um ".exe" de ".png") nem barra. */
+export function cleanFileName(value: string): string {
+  return value.replace(INVISIBLE, '').replace(/[/\\]/g, '_').trim().slice(0, 200) || 'arquivo'
 }
 
 /** Texto de várias linhas (bio, tópico): tira controle mas mantém quebras. */

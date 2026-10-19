@@ -7,15 +7,17 @@ import {
   type InvitePreview,
   type StatusResponse,
 } from '../../shared/protocol'
-import { hashIp, verifyFileSignature, verifyLegacyFileSignature, verifyProxyUrl } from './auth'
+import { hashIp, ipPrefix, verifyFileSignature, verifyLegacyFileSignature, verifyProxyUrl } from './auth'
 import type { AuthContext, ClientInfo, Result } from './directory'
-import { readDiscordPrint } from './discord-import'
+import { mimeOf, readDiscordPrint } from './discord-import'
 import { MEDIA_BUDGET, Sfu, SfuError, cleanLocalTracks, cleanRemoteTracks, cleanSdp, sessionToken, sfuConfig, validToken } from './media'
 import { LEGACY_HEADER, USER_HEADER } from './guild'
 import { HOME_HEADER } from './home'
+import { IP_HEADER } from './resume'
 import { conversation, directory, guild, home } from './stubs'
-import { getIceServers } from './turn'
-import { safeUrl } from './unfurl'
+import { STUN_ONLY, TURN_TTL, getIceServers } from './turn'
+import { safeFetch, safeUrl } from './unfurl'
+import { id as validId } from './validate'
 
 export { Conversation } from './conversation'
 export { Directory } from './directory'
@@ -30,7 +32,7 @@ const CORS = {
 }
 
 /** Cabeçalhos que só o Worker põe: o que vier de fora com eles é descartado. */
-const INTERNAL_HEADERS = [USER_HEADER, LEGACY_HEADER, HOME_HEADER]
+const INTERNAL_HEADERS = [USER_HEADER, LEGACY_HEADER, HOME_HEADER, IP_HEADER]
 const MAX_JSON = 64 * 1024
 const MAX_IMAGE = MAX_AVATAR_BYTES
 const MAX_PROXY = 8 * 1024 * 1024
@@ -141,16 +143,16 @@ function invitePage(preview: InvitePreview | null, code: string): Response {
     ? `${icon}<p class="small">${preview.inviter ? `${escapeHtml(preview.inviter.name)} te convidou pra entrar em` : 'Você foi convidado pra entrar em'}</p>
 <h1>${escapeHtml(preview.guild.name)}</h1><p class="small">${preview.memberCount} ${preview.memberCount === 1 ? 'membro' : 'membros'}</p>
 <a class="button" href="resenha://invite/${escapeHtml(code)}">Abrir no Resenha</a>
-<p class="small">Ainda não tem o app? <a href="https://github.com/LucasLomiento/resenha/releases/latest">Baixe aqui</a> e use o código <code>${escapeHtml(code)}</code>.</p>`
+<p class="small">Ainda não tem o app? <a href="https://lucaslomiento.github.io/resenha/#baixar">Baixe aqui</a> e use o código <code>${escapeHtml(code)}</code>.</p>`
     : `<h1>Convite inválido</h1><p class="small">Esse convite venceu ou já foi usado. Peça um novo pra quem te convidou.</p>`
   const html = `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${title} · Resenha</title><meta name="robots" content="noindex">
-<style>html,body{height:100%;margin:0}body{background:#0f0d16;color:#ecebf3;font:15px/1.5 system-ui,sans-serif;display:grid;place-items:center;padding:16px;box-sizing:border-box}
-main{max-width:380px;width:100%;text-align:center;background:#17151f;border:1px solid #2a2636;border-radius:20px;padding:32px 24px}
-img,.icon{width:72px;height:72px;border-radius:22px;object-fit:cover;margin:0 auto 12px;display:grid;place-items:center;background:#6a5cf6;font-size:28px;font-weight:600}
-h1{font-size:22px;margin:4px 0}.small{color:#a7a3b8;font-size:13px;margin:6px 0}a{color:#a99ffb}
-.button{display:block;margin:20px 0 12px;padding:12px;border-radius:12px;background:#6a5cf6;color:#fff;text-decoration:none;font-weight:600}
-code{background:#221f2c;padding:2px 6px;border-radius:6px}</style></head><body><main>${body}</main></body></html>`
+<style>html,body{height:100%;margin:0}body{background:#09090b;color:#ececef;font:15px/1.5 system-ui,sans-serif;display:grid;place-items:center;padding:16px;box-sizing:border-box}
+main{max-width:380px;width:100%;text-align:center;background:#141417;border:1px solid #26262b;border-radius:20px;padding:32px 24px}
+img,.icon{width:72px;height:72px;border-radius:22px;object-fit:cover;margin:0 auto 12px;display:grid;place-items:center;background:#2b6cf5;font-size:28px;font-weight:600}
+h1{font-size:22px;margin:4px 0}.small{color:#a1a1aa;font-size:13px;margin:6px 0}a{color:#6f9bff}
+.button{display:block;margin:20px 0 12px;padding:12px;border-radius:12px;background:#2b6cf5;color:#fff;text-decoration:none;font-weight:600}
+code{background:#1f1f24;padding:2px 6px;border-radius:6px}</style></head><body><main>${body}</main></body></html>`
   return new Response(html, {
     status: preview ? 200 : 404,
     headers: {
@@ -166,6 +168,15 @@ function clean(request: Request, extra: Record<string, string> = {}): Request {
   for (const h of INTERNAL_HEADERS) headers.delete(h)
   for (const [k, v] of Object.entries(extra)) headers.set(k, v)
   return new Request(request, { headers })
+}
+
+/** Pedaço de URL decodificado; malformado (`%E0%A4%A`) dá null em vez de erro 500. */
+function decoded(text: string): string | null {
+  try {
+    return decodeURIComponent(text)
+  } catch {
+    return null
+  }
 }
 
 function bearer(request: Request): string {
@@ -190,7 +201,7 @@ function signupOpen(env: Env): boolean {
   return !!env.TURNSTILE_SITE_KEY && !!env.TURNSTILE_SECRET
 }
 
-async function turnstileOk(env: Env, token: unknown, ip: string | null): Promise<boolean> {
+async function turnstileOk(env: Env, token: unknown, ip: string | null, host: string): Promise<boolean> {
   if (!env.TURNSTILE_SECRET || typeof token !== 'string' || !token || token.length > 4096) return false
   const form = new FormData()
   form.append('secret', env.TURNSTILE_SECRET)
@@ -198,7 +209,9 @@ async function turnstileOk(env: Env, token: unknown, ip: string | null): Promise
   if (ip) form.append('remoteip', ip)
   try {
     const res = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', { method: 'POST', body: form })
-    return !!((await res.json()) as { success?: boolean }).success
+    const result = (await res.json()) as { success?: boolean; hostname?: string }
+    // O desafio tem que ter sido resolvido na nossa página (/verify), não num site qualquer com a mesma chave.
+    return !!result.success && (!result.hostname || result.hostname === host)
   } catch {
     return false
   }
@@ -235,16 +248,17 @@ async function proxyImage(request: Request, url: URL, env: Env, ctx: ExecutionCo
 
   let res: Response
   try {
-    res = await fetch(safe.href, {
+    const fetched = await safeFetch(safe, {
       headers: { 'User-Agent': 'Mozilla/5.0 (compatible; ResenhaBot/1.0; link preview)', Accept: 'image/*' },
-      redirect: 'follow',
       signal: AbortSignal.timeout(8000),
     })
+    if (!fetched) return error(415, 'Não é uma imagem.')
+    res = fetched.res
   } catch {
     return error(502, 'Não deu pra buscar a imagem.')
   }
   const type = (res.headers.get('Content-Type') ?? '').split(';')[0].trim().toLowerCase()
-  if (!res.ok || !/^image\/(png|jpeg|gif|webp|avif)$/.test(type) || !safeUrl(res.url || safe.href)) {
+  if (!res.ok || !/^image\/(png|jpeg|gif|webp|avif)$/.test(type)) {
     res.body?.cancel().catch(() => {})
     return error(415, 'Não é uma imagem.')
   }
@@ -282,7 +296,7 @@ async function mediaRoute(
   pathname: string,
   method: string,
   me: string,
-  dir: { mediaUsage(): Promise<MediaUsage>; addMediaUsage(bytes: number): Promise<MediaUsage> },
+  dir: { mediaUsage(): Promise<MediaUsage>; addMediaUsage(userId: string, bytes: number): Promise<MediaUsage> },
 ): Promise<Response> {
   const config = sfuConfig(env)
   if (pathname === '/api/media' && method === 'GET') {
@@ -291,11 +305,12 @@ async function mediaRoute(
   }
   if (pathname === '/api/media/usage' && method === 'POST') {
     const body = await readJson(request)
-    const usage = await dir.addMediaUsage(Number(body.bytes))
+    const usage = await dir.addMediaUsage(me, Number(body.bytes))
     return json({ allowed: usage.allowed })
   }
   if (!config) return error(503, 'O servidor não tem o SFU configurado.')
-  if (!(await dir.mediaUsage()).allowed) return error(503, 'A cota de mídia do mês acabou: a tela vai direto (P2P).')
+  // Fechar (parar de puxar ou publicar) sempre vale, até com a cota no fim: é o que economiza.
+  if (!/\/close$/.test(pathname) && !(await dir.mediaUsage()).allowed) return error(503, 'A cota de mídia do mês acabou: a tela vai direto (P2P).')
   const sfu = new Sfu(config)
   try {
     if (pathname === '/api/media/sessions' && method === 'POST') {
@@ -340,12 +355,14 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
   const method = request.method
   const dir = directory(env)
   const ip = request.headers.get('CF-Connecting-IP')
+  // IPv6 conta pelo /64: trocar o fim do endereço não zera o limite.
+  const ipKey = ip ? ipPrefix(ip) : null
   let m: RegExpMatchArray | null
 
-  if (await limited(env.IP_LIMITER, ip)) return error(429, 'Muitos pedidos. Espere um pouco.')
-  // Entrar, criar conta e ver convite: limite bem mais apertado por IP.
-  const sensitive = /^\/(api\/(register|login|invites\/)|verify|i\/)/.test(pathname) && method !== 'OPTIONS'
-  if (sensitive && (await limited(env.AUTH_LIMITER, ip))) return error(429, 'Muitas tentativas. Espere um minuto.')
+  if (await limited(env.IP_LIMITER, ipKey)) return error(429, 'Muitos pedidos. Espere um pouco.')
+  // Entrar, criar conta, trocar a senha e ver convite: limite bem mais apertado por IP.
+  const sensitive = /^\/(api\/(register|login|invites\/|me\/password|me\/delete)|verify|i\/)/.test(pathname) && method !== 'OPTIONS'
+  if (sensitive && (await limited(env.AUTH_LIMITER, ipKey))) return error(429, 'Muitas tentativas. Espere um minuto.')
 
   // ---------- Sem login ----------
 
@@ -361,7 +378,7 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
 
   if (pathname === '/api/register' && method === 'POST') {
     const body = await readJson(request)
-    const human = signupOpen(env) && !body.invite ? await turnstileOk(env, body.turnstileToken, request.headers.get('CF-Connecting-IP')) : false
+    const human = signupOpen(env) && !body.invite ? await turnstileOk(env, body.turnstileToken, request.headers.get('CF-Connecting-IP'), url.hostname) : false
     return fromResult(
       await dir.register(
         { username: body.username, name: body.name, password: body.password, invite: body.invite, turnstile: human },
@@ -403,7 +420,8 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
   // Arquivos: a assinatura na URL substitui o login, porque <img src> não manda cabeçalho.
   if ((m = pathname.match(/^\/api\/(g|c)\/([^/]+)\/files\/([\w-]+)\/[^/]+$/)) && method === 'GET') {
     const kind = m[1] as 'g' | 'c'
-    const scopeId = decodeURIComponent(m[2])
+    const scopeId = decoded(m[2])
+    if (scopeId === null) return error(400, 'Link inválido.')
     const valid = await verifyFileSignature(env.FILE_SECRET, { kind, id: scopeId }, m[3], url.searchParams.get('exp'), url.searchParams.get('sig'))
     if (!valid) return error(403, 'Link vencido ou inválido.')
     return kind === 'g' ? guild(env, scopeId).fetch(clean(request)) : conversation(env, scopeId).fetch(clean(request))
@@ -415,15 +433,19 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
     return guild(env, 'main').fetch(clean(request))
   }
 
-  // WebSockets: o token vai na primeira mensagem (nunca na URL).
-  if (pathname === '/ws') return guild(env, 'main').fetch(clean(request, { [LEGACY_HEADER]: '1' }))
+  // WebSockets: o token vai na primeira mensagem (nunca na URL). O DO recebe o IP embaralhado
+  // (vaga das conexões sem login por IP); pedido sem upgrade nem chega a acordar o Directory.
+  const socket = pathname === '/ws' || /^\/api\/(g|home)\/[\w-]{1,64}\/ws$/.test(pathname)
+  if (socket && request.headers.get('Upgrade') !== 'websocket') return error(426, 'Esperava WebSocket.')
+  const ipHeader: Record<string, string> = socket && ip ? { [IP_HEADER]: await hashIp(env.FILE_SECRET, ip) } : {}
+  if (pathname === '/ws') return guild(env, 'main').fetch(clean(request, { [LEGACY_HEADER]: '1', ...ipHeader }))
   if ((m = pathname.match(/^\/api\/g\/([\w-]{1,64})\/ws$/))) {
     if (!(await dir.guildInfo(m[1]))) return error(404, 'Servidor não existe.')
-    return guild(env, m[1]).fetch(clean(request))
+    return guild(env, m[1]).fetch(clean(request, ipHeader))
   }
   if ((m = pathname.match(/^\/api\/home\/([\w-]{1,64})\/ws$/))) {
     if (!(await dir.getUser(m[1]))) return error(404, 'Conta não existe.')
-    return home(env, m[1]).fetch(clean(request, { [HOME_HEADER]: m[1] }))
+    return home(env, m[1]).fetch(clean(request, { [HOME_HEADER]: m[1], ...ipHeader }))
   }
 
   // ---------- Daqui pra baixo, só logado ----------
@@ -438,11 +460,28 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
     return json({ ok: true })
   }
   if (pathname === '/api/ice' && method === 'GET') {
+    // Sala direta e chamada privada (app 1.15+): só o STUN, sem nem pedir credencial.
+    if (url.searchParams.get('scope') === 'direct') return json({ iceServers: STUN_ONLY })
     // Cada pedido gera credencial do TURN (que custa banda): poucos por pessoa.
     if (await limited(env.USER_LIMITER, `ice:${me}`)) return error(429, 'Muitos pedidos. Espere um pouco.')
     // Passou da cota de mídia do mês: só STUN (tudo P2P).
-    const usage = await dir.mediaUsage()
-    return json({ iceServers: await getIceServers(usage.allowed ? env : { ...env, TURN_KEY_ID: undefined }) })
+    if (!env.TURN_KEY_ID || !(await dir.mediaUsage()).allowed) return json({ iceServers: STUN_ONLY })
+    // App 1.15+ diz a sala: o TURN só vai pra quem vai entrar numa sala pelo Cloudflare (e pode
+    // entrar nela). Sem a sala é o app antigo, que continua recebendo como antes.
+    const guildId = url.searchParams.get('guild')
+    const channelId = url.searchParams.get('channel')
+    if (guildId !== null || channelId !== null) {
+      const allowed =
+        !!validId(guildId) &&
+        !!validId(channelId) &&
+        (await dir.isMember(guildId!, me)) &&
+        (await guild(env, guildId!).relayAccess(me, channelId!))
+      if (!allowed) return json({ iceServers: STUN_ONLY })
+    }
+    const { servers, turnUser } = await getIceServers(env)
+    // Anotada pra ser revogada se a cota do mês acabar antes de ela vencer.
+    if (turnUser) ctx.waitUntil(dir.recordTurn(turnUser, Date.now() + TURN_TTL * 1000))
+    return json({ iceServers: servers })
   }
 
   // Mídia pelo Cloudflare (media.ts): SFU pra tela com várias pessoas assistindo.
@@ -527,6 +566,8 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
     if (await limited(env.IMPORT_LIMITER, `import:${me}`)) return error(429, 'Muitos prints seguidos. Espere um minuto.')
     const image = await readImage(request, MAX_IMPORT_IMAGE)
     if (!image) return error(413, 'O print pode ter até 1,5 MB.')
+    // GIF e afins: o modelo não lê, e antes isso virava "não achei canais".
+    if (!mimeOf(new Uint8Array(image.slice(0, 16)))) return error(415, 'Use um print em PNG, JPEG ou WebP.')
     try {
       const structure = await readDiscordPrint(env.AI, image)
       if (!structure || structure.categories.length + structure.channels.length === 0) {
@@ -550,8 +591,11 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
     return guild(env, m[1]).fetch(clean(request, { [USER_HEADER]: me }))
   }
   if ((m = pathname.match(/^\/api\/c\/([^/]+)\/files$/)) && method === 'POST') {
-    const channelId = decodeURIComponent(m[1])
-    if (!dmMembers(channelId)?.includes(me)) return error(404, 'Conversa não encontrada.')
+    const channelId = decoded(m[1])
+    // O Home da pessoa confere antes que a conversa existe: um id inventado não cria DO à toa.
+    if (!channelId || !dmMembers(channelId)?.includes(me) || !(await home(env, me).knowsDm(channelId))) {
+      return error(404, 'Conversa não encontrada.')
+    }
     return conversation(env, channelId).fetch(clean(request, { [USER_HEADER]: me }))
   }
 

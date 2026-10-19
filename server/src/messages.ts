@@ -8,8 +8,9 @@ import {
   type MessageRef,
   type Reaction,
 } from '../../shared/protocol'
-import { randomToken, signFileUrl, type FileScope } from './auth'
+import { randomToken, resignProxyUrl, signFileUrl, type FileScope } from './auth'
 import { FileTooLarge, SqlFileStore } from './files'
+import { cleanFileName } from './validate'
 
 // Mensagens, anexos, reações e busca. O mesmo código serve os servidores
 // (Guild) e as conversas privadas (Conversation): cada um tem o seu SQLite.
@@ -53,6 +54,8 @@ export interface NewMessage {
   mentions: string[]
   mentionRoles: string[]
   mentionEveryone: boolean
+  /** O `nonce` que o app mandou junto: um reenvio da mesma mensagem não duplica. */
+  nonce?: string
 }
 
 /** Colunas que a 0.5 não tinha (entram com ALTER TABLE no banco antigo). */
@@ -65,6 +68,8 @@ const MESSAGE_COLUMNS: [string, string][] = [
   ['embeds', "TEXT NOT NULL DEFAULT '[]'"],
   // Linha correspondente no índice de busca (0 = nada indexado, null = falta indexar).
   ['fts_id', 'INTEGER'],
+  // 1.15: o nonce do envio (reenvio depois de uma queda não duplica).
+  ['nonce', 'TEXT'],
 ]
 
 export const SEARCH_PAGE = 25
@@ -199,15 +204,29 @@ export class MessageStore {
     return this.sql.exec<MessageRow>('SELECT * FROM messages WHERE id = ?', id).toArray()[0] ?? null
   }
 
+  /**
+   * A mensagem dessa pessoa com esse nonce, mandada nos últimos 10 minutos (o reenvio do app vem
+   * em segundos). Pelo índice do autor: só lê as mensagens recentes dela.
+   */
+  byNonce(authorId: string, nonce: string, now = Date.now()): MessageRow | null {
+    const since = (now - 10 * 60_000).toString(36).padStart(10, '0')
+    return (
+      this.sql
+        .exec<MessageRow>('SELECT * FROM messages WHERE author_id = ? AND id > ? AND nonce = ? LIMIT 1', authorId, since, nonce)
+        .toArray()[0] ?? null
+    )
+  }
+
   lastIds(channelIds: string[]): Record<string, string> {
     if (channelIds.length === 0) return {}
+    // Uma busca no índice por canal: o GROUP BY lia o índice das mensagens inteiro a cada `ready`.
     const rows = this.sql
-      .exec<{ channel_id: string; id: string }>(
-        `SELECT channel_id, MAX(id) AS id FROM messages WHERE channel_id ${IN_LIST} GROUP BY channel_id`,
+      .exec<{ channel_id: string; id: string | null }>(
+        'SELECT value AS channel_id, (SELECT MAX(id) FROM messages WHERE channel_id = value) AS id FROM json_each(?)',
         list(channelIds),
       )
       .toArray()
-    return Object.fromEntries(rows.map((r) => [r.channel_id, r.id]))
+    return Object.fromEntries(rows.filter((r) => r.id).map((r) => [r.channel_id, r.id!]))
   }
 
   async load(rows: MessageRow[]): Promise<Message[]> {
@@ -260,6 +279,17 @@ export class MessageStore {
       }
     }
 
+    // A imagem da prévia vem assinada de novo a cada leitura (a assinatura guardada vence em 2 a 3 dias).
+    const embeds = new Map<string, Embed[]>()
+    for (const r of rows) {
+      const list = parseEmbeds(r.embeds)
+      if (list.length === 0) continue
+      embeds.set(
+        r.id,
+        await Promise.all(list.map(async (e) => (e.image ? { ...e, image: await resignProxyUrl(this.secret, e.image) } : e))),
+      )
+    }
+
     return rows.map((r) => ({
       id: r.id,
       channelId: r.channel_id,
@@ -275,7 +305,7 @@ export class MessageStore {
       mentionRoles: parseJsonList(r.mention_roles),
       mentionEveryone: r.mention_everyone === 1,
       pinned: r.pinned_at !== null,
-      embeds: parseEmbeds(r.embeds),
+      embeds: embeds.get(r.id) ?? [],
     }))
   }
 
@@ -390,8 +420,8 @@ export class MessageStore {
 
   insert(m: NewMessage, attachmentIds: string[], now = Date.now()): MessageRow {
     this.sql.exec(
-      `INSERT INTO messages (id, channel_id, author_id, content, created_at, reply_to, mentions, mention_roles, mention_everyone)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO messages (id, channel_id, author_id, content, created_at, reply_to, mentions, mention_roles, mention_everyone, nonce)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       m.id,
       m.channelId,
       m.authorId,
@@ -401,6 +431,7 @@ export class MessageStore {
       JSON.stringify(m.mentions),
       JSON.stringify(m.mentionRoles),
       m.mentionEveryone ? 1 : 0,
+      m.nonce ?? null,
     )
     if (attachmentIds.length > 0) {
       this.sql.exec(
@@ -600,7 +631,7 @@ export class MessageStore {
     } catch {
       // nome mal codificado, fica o padrão
     }
-    name = name.replace(/[\u0000-\u001f\u007f/\\]/g, '_').slice(0, 200)
+    name = cleanFileName(name)
     const type = (request.headers.get('Content-Type') || 'application/octet-stream').slice(0, 100)
     const id = randomToken(12)
     // Tamanho da imagem/vídeo, que o app mede antes de enviar (só pra reservar espaço na tela).
@@ -670,6 +701,13 @@ export class MessageStore {
 
   /** Anexos enviados e nunca usados numa mensagem. Devolve quantos bytes liberou. */
   removeOrphans(olderThan: number): number {
+    // Pedaços de um envio que caiu no meio (o DO reiniciou antes de o anexo existir): ninguém
+    // chega neles, e nenhuma conta de espaço contava.
+    this.sql.exec(
+      `DELETE FROM file_chunks WHERE file_id NOT IN (SELECT id FROM attachments)
+       AND file_id NOT IN (SELECT value FROM json_each(?))`,
+      JSON.stringify([...this.files.writing]),
+    )
     const orphans = this.sql
       .exec<{ id: string; size: number }>('SELECT id, size FROM attachments WHERE message_id IS NULL AND created_at < ?', olderThan)
       .toArray()

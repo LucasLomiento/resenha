@@ -70,6 +70,28 @@ describe('amigos', () => {
     expect((await homeA.next('friends', (m) => m.friends.length === 0)).friends).toEqual([])
   })
 
+  it('invisível vale pros amigos mesmo com o app abrindo (e reconectando) como "online", e em todos os aparelhos', async () => {
+    const { owner, third } = await strangers()
+    await post('/api/friends', { username: 'zeca' }, owner.token)
+    await post(`/api/friends/${owner.user.id}/accept`, {}, third.token)
+    const homeA = await homeSocket(owner.user.id, owner.token)
+    await homeA.next('ready')
+    const phone = await homeSocket(third.user.id, third.token, { status: 'online' })
+    await phone.next('ready')
+    await homeA.next('presence', (m) => m.userId === third.user.id && m.presence.status === 'online')
+    phone.send({ t: 'presence', status: 'invisible', text: null })
+    await homeA.next('presence', (m) => m.userId === third.user.id && m.presence.status === 'offline')
+    // O computador abre (o app manda "online" no auth, antes de saber o escolhido): continua invisível.
+    const desktop = await homeSocket(third.user.id, third.token, { status: 'online' })
+    expect((await desktop.next('ready')).presence.status).toBe('invisible')
+    await homeA.nothing('presence', (m) => m.userId === third.user.id && m.presence.status !== 'offline')
+    // Voltando pro online num aparelho, vale pros dois; o ausente automático de um só não conta.
+    desktop.send({ t: 'presence', status: 'online', text: null })
+    await homeA.next('presence', (m) => m.userId === third.user.id && m.presence.status === 'online')
+    phone.send({ t: 'presence', status: 'idle', text: null, auto: true })
+    await homeA.nothing('presence', (m) => m.userId === third.user.id && m.presence.status === 'idle')
+  })
+
   it('pedido dos dois lados vira amizade direto', async () => {
     const { owner, third } = await strangers()
     await post('/api/friends', { username: 'zeca' }, owner.token)
@@ -205,6 +227,47 @@ describe('chamada privada', () => {
     await homeA.next('call.state', (m) => m.members.length === 1)
     homeA.send({ t: 'call.hangup', channelId })
     await homeB.next('call.ended')
+  })
+
+  it('quem conecta depois vê a ligação tocando no ready (o celular depois do push)', async () => {
+    const { owner, friend } = await world()
+    const homeA = await homeSocket(owner.user.id, owner.token)
+    await homeA.next('ready')
+    const channelId = dmChannelId(owner.user.id, friend.user.id)
+    homeA.send({ t: 'dm.open', userId: friend.user.id, reqId: 'o' })
+    await homeA.next('dm.channel')
+    homeA.send({ t: 'call.ring', channelId, video: false, state: { muted: true, deafened: false } })
+    const state = await homeA.next('call.state')
+    // Entrou mutado: os outros já veem certo.
+    expect(state.members[0]).toMatchObject({ muted: true })
+    const homeB = await homeSocket(friend.user.id, friend.token)
+    const ready = await homeB.next('ready')
+    expect(ready.calls).toEqual([expect.objectContaining({ channelId, ringing: [friend.user.id] })])
+    // "Ligar" na conversa que está tocando é o mesmo que atender: sai do "tocando".
+    homeB.send({ t: 'call.ring', channelId, video: false })
+    const both = await homeA.next('call.state', (m) => m.members.length === 2)
+    expect(both.ringing).toEqual([])
+  })
+
+  it('quem desligou enquanto estava sem conexão não volta pra ligação ao reconectar', async () => {
+    const { owner, friend } = await world()
+    const key = 'chave-de-teste-do-app-b'
+    const homeA = await homeSocket(owner.user.id, owner.token)
+    await homeA.next('ready')
+    const homeB = await homeSocket(friend.user.id, friend.token, { key })
+    await homeB.next('ready')
+    const channelId = dmChannelId(owner.user.id, friend.user.id)
+    homeA.send({ t: 'dm.open', userId: friend.user.id, reqId: 'o' })
+    await homeA.next('dm.channel')
+    homeA.send({ t: 'call.ring', channelId, video: false })
+    await homeB.next('call.ringing')
+    homeB.send({ t: 'call.answer', channelId, accept: true })
+    await homeA.next('call.state', (m) => m.members.length === 2)
+    // B cai, desliga no app (o pedido não chega) e volta sem estar em chamada nenhuma.
+    homeB.drop()
+    const back = await homeSocket(friend.user.id, friend.token, { key })
+    expect((await back.next('ready')).resumed).toBe(false)
+    await homeA.next('call.state', (m) => m.members.length === 1)
   })
 
   it('cair da conexão sai da chamada', async () => {

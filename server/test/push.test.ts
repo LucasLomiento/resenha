@@ -69,7 +69,8 @@ describe('push: Firebase (unidade)', () => {
     const google = fakeGoogle([TOKEN_B], [TOKEN_C])
     const pusher = new Pusher(account.json, google.impl)
     const message: PushMessage = { title: 'Duarte', body: 'oi', data: { kind: 'dm', channelId: 'dm:a:b' }, tag: 'dm:dm:a:b', kind: 'message' }
-    expect(await pusher.send([TOKEN_A, TOKEN_B, TOKEN_C], message)).toEqual({ dead: [TOKEN_B], failed: [TOKEN_C] })
+    // Token de outro projeto do Firebase (SENDER_ID_MISMATCH) nunca vai valer: sai junto com o desinstalado.
+    expect(await pusher.send([TOKEN_A, TOKEN_B, TOKEN_C], message)).toEqual({ dead: [TOKEN_B, TOKEN_C], failed: [] })
     expect(await pusher.send([TOKEN_A], { ...message, kind: 'call' })).toEqual({ dead: [], failed: [] })
     expect(google.exchanges()).toBe(1)
     expect(google.sent).toHaveLength(4)
@@ -96,8 +97,12 @@ describe('push: Firebase (unidade)', () => {
   })
 
   it('texto do aviso: menções com nome, anexo e mensagem de voz', () => {
-    const names = (id: string) => (id === 'u1' ? 'Duarte' : null)
+    const names = { user: (id: string) => (id === 'u1' ? 'Duarte' : null) }
     expect(pushBody('oi <@u1> e <@u9>, olha <#c1> <@&r1>', [], names, PUSH_TEXT.pt)).toBe('oi @Duarte e @…, olha #… @…')
+    const all = { ...names, role: (id: string) => (id === 'r1' ? 'mods' : null), channel: (id: string) => (id === 'c1' ? 'geral' : null) }
+    expect(pushBody('olha <#c1> <@&r1>', [], all, PUSH_TEXT.pt)).toBe('olha #geral @mods')
+    // Spoiler não aparece na tela de bloqueio.
+    expect(pushBody('o final é ||ele morre||', [], names, PUSH_TEXT.pt)).toBe('o final é ▒▒▒')
     expect(pushBody('', [{ name: 'foto.webp' }], names, PUSH_TEXT.pt)).toBe('📎 foto.webp')
     expect(pushBody('', [{ name: 'mensagem-de-voz-123.mp3' }], names, PUSH_TEXT.en)).toBe('Sent a voice message')
     expect(pushBody('a'.repeat(400), [], names, PUSH_TEXT.pt)).toHaveLength(300)

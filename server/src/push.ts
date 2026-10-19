@@ -141,7 +141,8 @@ export class Pusher {
     const url = `https://fcm.googleapis.com/v1/projects/${this.account.project_id}/messages:send`
     const dead: string[] = []
     const failed: string[] = []
-    await Promise.all(
+    // Um aparelho que falhou (rede) não derruba os outros: os tokens mortos já vistos continuam valendo.
+    const results = await Promise.allSettled(
       tokens.map(async (token) => {
         const res = await this.fetchImpl(url, {
           method: 'POST',
@@ -169,26 +170,39 @@ export class Pusher {
         if (res.ok) return
         const error = (await res.json().catch(() => ({}))) as { error?: { status?: string; details?: { errorCode?: string }[] } }
         const code = error.error?.details?.find((d) => d.errorCode)?.errorCode ?? error.error?.status
-        if (res.status === 404 || code === 'UNREGISTERED') return void dead.push(token)
+        // Token de outro projeto do Firebase também não vai valer nunca.
+        if (res.status === 404 || code === 'UNREGISTERED' || code === 'SENDER_ID_MISMATCH') return void dead.push(token)
+        // O token de acesso guardado não vale mais (chave trocada, revogada): pega outro na próxima.
+        if (res.status === 401 || res.status === 403) accessTokens.delete(this.account!.client_email)
         failed.push(token)
         console.error('push recusado pelo Firebase', res.status, code)
       }),
     )
+    results.forEach((r, i) => {
+      if (r.status === 'rejected') {
+        failed.push(tokens[i])
+        console.error('push não saiu', (r.reason as Error)?.message)
+      }
+    })
     return { dead, failed }
   }
 }
 
-/** Texto da mensagem pro push: menções viram @nome (quem não conhece, "@…") e o anexo, o nome dele (como no app). */
+/**
+ * Texto da mensagem pro push: menções viram @nome, #canal e @cargo (quem não conhece, "…"),
+ * spoiler fica escondido (aparece na tela de bloqueio) e o anexo vira o nome dele (como no app).
+ */
 export function pushBody(
   content: string,
   attachments: { name: string }[],
-  names: (id: string) => string | null,
+  names: { user: (id: string) => string | null; role?: (id: string) => string | null; channel?: (id: string) => string | null },
   text: (typeof PUSH_TEXT)[PushLocale],
 ): string {
   const clean = content
-    .replace(/<@!?([\w-]{1,64})>/g, (_, id: string) => `@${names(id) ?? '…'}`)
-    .replace(/<@&[\w-]{1,64}>/g, '@…')
-    .replace(/<#[\w-]{1,64}>/g, '#…')
+    .replace(/<@!?([\w-]{1,64})>/g, (_, id: string) => `@${names.user(id) ?? '…'}`)
+    .replace(/<@&([\w-]{1,64})>/g, (_, id: string) => `@${names.role?.(id) ?? '…'}`)
+    .replace(/<#([\w-]{1,64})>/g, (_, id: string) => `#${names.channel?.(id) ?? '…'}`)
+    .replace(/\|\|([\s\S]+?)\|\|/g, '▒▒▒')
     .trim()
   if (clean) return clean.length > 300 ? `${clean.slice(0, 299)}…` : clean
   const first = attachments[0]

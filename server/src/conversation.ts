@@ -143,6 +143,8 @@ export class Conversation extends DurableObject<Env> {
     channelId: string,
     userId: string,
     input: { content?: unknown; attachmentIds?: unknown; nonce?: unknown; replyTo?: unknown },
+    /** Endereço do nosso servidor: a prévia de link nunca busca ele mesmo. */
+    selfHost = '',
   ): Promise<Result<null>> {
     const m = this.member(channelId, userId)
     if (!m) return fail(404, 'Conversa não encontrada.')
@@ -175,20 +177,21 @@ export class Conversation extends DurableObject<Env> {
       { t: 'dm.message', channelId, message, nonce: typeof input.nonce === 'string' ? input.nonce.slice(0, 64) : undefined },
       m.pair,
     )
-    await this.refreshEmbeds(row.id, content, m.pair)
+    await this.refreshEmbeds(row.id, content, m.pair, selfHost)
     return ok(null)
   }
 
-  private async refreshEmbeds(messageId: string, content: string, pair: [string, string]) {
-    const embeds = await unfurlAll(content, this.env.FILE_SECRET, '')
+  private async refreshEmbeds(messageId: string, content: string, pair: [string, string], selfHost = '') {
+    const embeds = await unfurlAll(content, this.env.FILE_SECRET, selfHost)
     const row = this.store.get(messageId)
-    if (!row || row.embeds === JSON.stringify(embeds)) return
+    // Editada enquanto a prévia carregava: a da versão antiga não sobrescreve a da nova.
+    if (!row || row.content !== content || row.embeds === JSON.stringify(embeds)) return
     this.store.setEmbeds(messageId, embeds)
     const message = await this.store.loadOne(messageId)
     if (message) await this.deliver({ t: 'dm.edited', channelId: this.channelId, message }, pair)
   }
 
-  async edit(channelId: string, userId: string, id: unknown, contentInput: unknown): Promise<Result<null>> {
+  async edit(channelId: string, userId: string, id: unknown, contentInput: unknown, selfHost = ''): Promise<Result<null>> {
     const m = this.member(channelId, userId)
     const row = this.store.get(id)
     if (!m || !row || row.author_id !== userId) return fail(404, 'Mensagem não encontrada.')
@@ -202,7 +205,7 @@ export class Conversation extends DurableObject<Env> {
     this.store.edit(row, content, { mentions: parseMentions(row.mentions), mentionRoles: [], mentionEveryone: false })
     const message = (await this.store.loadOne(row.id))!
     await this.deliver({ t: 'dm.edited', channelId, message }, m.pair)
-    await this.refreshEmbeds(row.id, content, m.pair)
+    await this.refreshEmbeds(row.id, content, m.pair, selfHost)
     return ok(null)
   }
 
@@ -212,7 +215,9 @@ export class Conversation extends DurableObject<Env> {
     const row = this.store.get(id)
     if (!m || !row || row.author_id !== userId) return fail(404, 'Mensagem não encontrada.')
     const freed = this.store.removeRows([row])
-    await this.deliver({ t: 'dm.deleted', channelId, id: row.id }, m.pair)
+    // Com a última que sobrou: a lista de conversas e a contagem de não lidas acompanham.
+    const last = this.last()
+    await this.deliver({ t: 'dm.deleted', channelId, id: row.id, last: { id: last.id, at: last.at } }, m.pair)
     if (freed > 0) await this.reportStorage()
     return ok(null)
   }
@@ -351,21 +356,40 @@ export class Conversation extends DurableObject<Env> {
     return { members: call.members.map((m) => ({ ...m, channelId: this.channelId })), ringing: call.ringing }
   }
 
-  /** Liga (ou entra na chamada que já está rolando). */
-  async callRing(channelId: string, userId: string, connId: string, video: boolean): Promise<Result<null>> {
+  /** Liga (ou entra na chamada que já está rolando). `state`: como entra (mutado, com câmera…). */
+  async callRing(
+    channelId: string,
+    userId: string,
+    connId: string,
+    video: boolean,
+    state?: { muted?: unknown; deafened?: unknown; camera?: unknown },
+  ): Promise<Result<null>> {
     const m = this.member(channelId, userId)
     if (!m) return fail(404, 'Conversa não encontrada.')
     if (!(await this.canSend(userId, m.peer))) return fail(403, 'Não dá pra ligar pra essa pessoa.')
+    // Quem ficou na chamada depois de um reinício (a conexão sumiu sem sair): não conta mais.
+    const stale = new Set<string>()
+    for (const x of this.call()?.members ?? []) {
+      if (x.userId !== userId && !(await home(this.env, x.userId).connAlive(x.connId))) stale.add(x.connId)
+    }
+    // Daqui até salvar, sem esperar nada: duas pessoas ligando juntas não se sobrescrevem.
     const call = this.call() ?? { members: [], ringing: [], ringUntil: 0, video: !!video }
-    call.members = call.members.filter((x) => x.userId !== userId)
-    call.members.push({ connId, userId, muted: false, deafened: false, sharing: false, camera: false })
-    if (!call.members.some((x) => x.userId === m.peer) && !call.ringing.includes(m.peer)) {
+    const flags = state && typeof state === 'object' ? state : {}
+    call.members = call.members.filter((x) => x.userId !== userId && !stale.has(x.connId))
+    call.members.push({ connId, userId, muted: flags.muted === true, deafened: flags.deafened === true, sharing: false, camera: flags.camera === true })
+    // Ligou de volta enquanto tocava pra ela: é o mesmo que atender (e os outros aparelhos dela param).
+    call.ringing = call.ringing.filter((id) => id !== userId)
+    const ring = !call.members.some((x) => x.userId === m.peer) && !call.ringing.includes(m.peer)
+    if (ring) {
       call.ringing = [m.peer]
       call.ringUntil = Date.now() + RING_TIMEOUT
+    }
+    this.saveCall(call)
+    if (ring) {
       await home(this.env, m.peer).dmEvent(channelId, userId, { t: 'call.ringing', channelId, from: userId, video: !!video })
       await this.ctx.storage.setAlarm(call.ringUntil)
     }
-    await this.broadcastCall(call, m.pair)
+    await this.broadcastCall(this.call(), m.pair)
     return ok(null)
   }
 

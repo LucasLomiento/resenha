@@ -128,6 +128,17 @@ export async function signProxyUrl(secret: string, url: string, now = Date.now()
   return `/api/proxy?u=${u}&exp=${exp}&sig=${await sign(secret, `proxy:${u}:${exp}`)}`
 }
 
+/**
+ * A prévia guarda o link do proxy já assinado, e a assinatura vence em 2 a 3 dias: quem
+ * lê a mensagem depois recebe outra, com a validade de agora (a imagem não some).
+ */
+export async function resignProxyUrl(secret: string, signed: string, now = Date.now()): Promise<string> {
+  const match = /^\/api\/proxy\?u=([\w-]+)&/.exec(signed)
+  if (!match) return signed
+  const exp = shortExpiry(now)
+  return `/api/proxy?u=${match[1]}&exp=${exp}&sig=${await sign(secret, `proxy:${match[1]}:${exp}`)}`
+}
+
 export async function verifyProxyUrl(secret: string, u: string | null, exp: string | null, sig: string | null, now = Date.now()) {
   if (!u || !fresh(exp, now) || !(await verify(secret, `proxy:${u}:${exp}`, sig))) return null
   try {
@@ -137,7 +148,26 @@ export async function verifyProxyUrl(secret: string, u: string | null, exp: stri
   }
 }
 
+/**
+ * O "endereço" de quem conta nos limites: IPv4 inteiro, IPv6 só o /64 (o que o provedor dá
+ * pra uma casa). Sem isso, quem tem um /64 troca o fim do endereço a cada pedido e cada um
+ * começa o limite do zero.
+ */
+export function ipPrefix(ip: string): string {
+  if (!ip.includes(':')) return ip
+  const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/i.exec(ip)
+  if (mapped) return mapped[1]
+  const [head, tail] = ip.split('::')
+  const left = head ? head.split(':') : []
+  const right = tail ? tail.split(':') : []
+  const groups = tail === undefined ? left : [...left, ...Array(Math.max(0, 8 - left.length - right.length)).fill('0'), ...right]
+  return `${groups
+    .slice(0, 4)
+    .map((g) => g.toLowerCase().replace(/^0+(?=.)/, '') || '0')
+    .join(':')}::/64`
+}
+
 /** Esconde o IP antes de guardar (limite de tentativas): o servidor nunca grava IP puro. */
 export async function hashIp(secret: string, ip: string): Promise<string> {
-  return (await sign(secret, `ip:${ip}`)).slice(0, 22)
+  return (await sign(secret, `ip:${ipPrefix(ip)}`)).slice(0, 22)
 }

@@ -58,7 +58,6 @@ export default {
     'Essa pessoa só recebe mensagem de amigos.': 'Esta persona solo recibe mensajes de amigos.',
 
     // Servidores
-    'O nome do servidor precisa ter de 2 a 64 caracteres.': 'El nombre del servidor debe tener de 2 a 64 caracteres.',
     'O nome do servidor precisa ter de 2 a 100 caracteres.': 'El nombre del servidor debe tener de 2 a 100 caracteres.',
     'Você já criou muitos servidores hoje. Tente amanhã.': 'Ya creaste demasiados servidores hoy. Inténtalo mañana.',
     'Servidor não existe.': 'Ese servidor no existe.',
@@ -145,6 +144,16 @@ export default {
 
     // Conversas privadas e ligações
     'Conversa não encontrada.': 'No se encontró la conversación.',
+    // 1.15
+    'Esse canal não existe mais.': 'Ese canal ya no existe.',
+    'A conta dona da plataforma não pode ser excluída.': 'La cuenta dueña de la plataforma no se puede eliminar.',
+    'Esse convite já trouxe gente demais hoje. Tente amanhã.': 'Esta invitación ya trajo demasiada gente hoy. Inténtalo mañana.',
+    'Não deu pra entrar no servidor agora. Tente de novo.': 'No se pudo entrar al servidor ahora. Inténtalo de nuevo.',
+    'Não deu pra fazer isso agora. Tente de novo.': 'No se pudo hacer eso ahora. Inténtalo de nuevo.',
+    'O anexo não está mais disponível. Envie de novo.': 'El adjunto ya no está disponible. Envíalo de nuevo.',
+    'Use um print em PNG, JPEG ou WebP.': 'Usa una captura en PNG, JPEG o WebP.',
+    'Link inválido.': 'Enlace inválido.',
+    'Esperava WebSocket.': 'Se esperaba un WebSocket.',
     'Não dá pra mandar mensagem pra essa pessoa.': 'No puedes enviarle mensajes a esta persona.',
     'Não dá pra editar mensagens nessa conversa.': 'No puedes editar mensajes en esta conversación.',
     'Não dá pra reagir nessa conversa.': 'No puedes reaccionar en esta conversación.',

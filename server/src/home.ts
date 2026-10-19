@@ -13,10 +13,11 @@ import {
   type PushTestResult,
   type Status,
   type User,
+  type VoiceMember,
 } from '../../shared/protocol'
-import { aggregate, samePresence } from './presence'
+import { samePresence } from './presence'
 import { PUSH_TEXT, Pusher, pushBody, type PushLocale, type PushMessage } from './push'
-import { CONN_KEY, GHOST_QUEUE, connIdFor, graceFor, unexpectedClose } from './resume'
+import { CLOSE_RETRY, CONN_KEY, GHOST_QUEUE, GHOST_QUEUE_BYTES, IP_HEADER, admitPending, connIdFor, graceFor, unexpectedClose } from './resume'
 import { conversation, directory, home } from './stubs'
 import { cleanLine } from './validate'
 
@@ -30,8 +31,13 @@ interface HomeConn {
   session: string
   connectedAt: number
   pending?: boolean
-  status?: Status
-  text?: string | null
+  /** IP embaralhado de quem abriu (só pra vaga das conexões sem login). */
+  ip?: string
+  /**
+   * Ausente automático desta conexão (o aparelho parado). O status escolhido (invisível, não
+   * perturbe…) é da pessoa e fica no `meta`: vale pra todas as conexões, até as que acabaram de abrir.
+   */
+  idle?: boolean
   /** Conversa privada em cuja chamada esta conexão está. */
   call?: string | null
   /** Mandou chave no `auth`: se cair, dá pra voltar na chamada (ver resume.ts). */
@@ -58,6 +64,8 @@ interface Ghost {
   timer: ReturnType<typeof setTimeout>
   /** Sinalização da chamada que chegou enquanto isso, entregue na volta. */
   queue: string[]
+  /** Tamanho do que está na fila. */
+  bytes: number
 }
 
 interface DmRow {
@@ -75,8 +83,10 @@ const AUTH_TIMEOUT = 15_000
 const DEAD_AFTER = 75_000
 const SWEEP_EVERY = 60_000
 const MAX_FRAME = 64 * 1024
-/** Conexões abertas que ainda não se autenticaram (o resto espera). */
+/** Conexões abertas que ainda não se autenticaram. */
 const MAX_PENDING = 20
+/** Conexões autenticadas ao mesmo tempo (aparelhos e janelas do app, de sobra). */
+const MAX_CONNECTIONS = 20
 const STATUSES: Status[] = ['online', 'idle', 'dnd', 'invisible']
 /** Token do Firebase: letras, números e pontuação simples (uns 160 caracteres hoje). */
 const PUSH_TOKEN = /^[\w:.-]{20,4096}$/
@@ -95,6 +105,8 @@ export class Home extends DurableObject<Env> {
   private ghosts = new Map<string, Ghost>()
   /** Sockets que já saíram (o fechamento e o erro podem chegar os dois). */
   private retired = new WeakSet<WebSocket>()
+  /** Mandaram o `auth` e o Directory ainda está conferindo o token. */
+  private authenticating = new WeakSet<WebSocket>()
   /** Push pro celular (Firebase); sem a chave, não manda nada. Os testes trocam o `fetchImpl`. */
   private pusher: Pusher
 
@@ -121,6 +133,8 @@ export class Home extends DurableObject<Env> {
         preview INTEGER NOT NULL DEFAULT 1,
         created_at INTEGER NOT NULL
       )`)
+      // Chamadas privadas em andamento nas conversas da pessoa (o `ready` traz como estão agora).
+      this.sql.exec('CREATE TABLE IF NOT EXISTS calls (channel_id TEXT PRIMARY KEY, at INTEGER NOT NULL)')
       this.userId = this.meta('user_id') ?? ''
     })
     ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair('ping', 'pong'))
@@ -213,9 +227,21 @@ export class Home extends DurableObject<Env> {
     return { status: status && STATUSES.includes(status) ? status : 'online', text: this.meta('text') }
   }
 
-  /** O que os amigos veem: invisível aparece offline; vários aparelhos, vale o "mais online". */
+  /**
+   * O que os amigos veem: o status escolhido vale pra todos os aparelhos (invisível aparece
+   * offline), e "online" só vira "ausente" com todos os aparelhos parados. Até a 1.14 valia o
+   * status que cada conexão dizia, e o app recém-aberto dizia "online" antes de saber o escolhido.
+   */
   presence(exceptConnId?: string): Presence {
-    return aggregate([...this.sockets(exceptConnId).map((ws) => this.state(ws)), ...this.ghostStates(exceptConnId)])
+    return this.presenceOf([...this.sockets(exceptConnId).map((ws) => this.state(ws)), ...this.ghostStates(exceptConnId)])
+  }
+
+  private presenceOf(states: HomeConn[]): Presence {
+    if (states.length === 0) return { status: 'offline', text: null }
+    const { status, text } = this.manual()
+    if (status === 'invisible') return { status: 'offline', text: null }
+    if (status === 'dnd') return { status: 'dnd', text }
+    return { status: status === 'idle' || states.every((s) => s.idle === true) ? 'idle' : 'online', text }
   }
 
   private ghostStates(exceptConnId?: string): HomeConn[] {
@@ -228,9 +254,11 @@ export class Home extends DurableObject<Env> {
   private holdGhost(state: HomeConn, queue: string[] = []) {
     const existing = this.ghosts.get(state.connId)
     if (existing) clearTimeout(existing.timer)
+    const kept = existing?.queue ?? queue
     this.ghosts.set(state.connId, {
       state,
-      queue: existing?.queue ?? queue,
+      queue: kept,
+      bytes: existing?.bytes ?? kept.reduce((n, text) => n + text.length, 0),
       timer: setTimeout(() => {
         this.releaseGhost(state.connId).catch((err) => console.error('não deu pra encerrar a conexão que caiu', err))
       }, graceFor(this.env)),
@@ -250,13 +278,18 @@ export class Home extends DurableObject<Env> {
 
   /** Tira os fantasmas que batem (sessão encerrada, conta excluída), desligando as chamadas deles. */
   private async dropGhosts(match: (state: HomeConn) => boolean) {
+    const before = this.presence()
+    let dropped = false
     for (const [connId, ghost] of [...this.ghosts]) {
       if (!match(ghost.state)) continue
       clearTimeout(ghost.timer)
       this.ghosts.delete(connId)
+      dropped = true
       const { call } = ghost.state
       if (call) await conversation(this.env, call).callHangup(call, this.userId, connId)
     }
+    // Sem isso, os amigos continuavam vendo online quem teve a sessão encerrada.
+    if (dropped) await this.announce(before)
   }
 
   /**
@@ -315,20 +348,30 @@ export class Home extends DurableObject<Env> {
     if (request.headers.get('Upgrade') !== 'websocket') return new Response('Esperava WebSocket', { status: 426 })
     const owner = request.headers.get(HOME_HEADER)
     if (!owner || !this.own(owner)) return new Response('Conta errada', { status: 403 })
-    if (this.ctx.getWebSockets().filter((ws) => this.state(ws).pending).length >= MAX_PENDING) {
-      return new Response('Ocupado, tente de novo', { status: 503 })
-    }
+    // O endereço do nosso servidor (a prévia de link nunca busca ele mesmo).
+    const host = new URL(request.url).hostname
+    if (this.meta('host') !== host) this.setMeta('host', host)
+    const ip = request.headers.get(IP_HEADER)
+    const pending = this.ctx
+      .getWebSockets()
+      .filter((ws) => ws.readyState === WebSocket.OPEN && this.state(ws).pending)
+      .map((ws) => ({ ws, ...this.state(ws) }))
+    if (!admitPending(pending, ip, MAX_PENDING)) return new Response('Ocupado, tente de novo', { status: 503 })
     const [client, server] = Object.values(new WebSocketPair())
     this.ctx.acceptWebSocket(server)
-    const pending: HomeConn = {
+    const now = Date.now()
+    const state: HomeConn = {
       userId: '',
       connId: crypto.randomUUID().replace(/-/g, '').slice(0, 12),
       session: '',
-      connectedAt: Date.now(),
+      connectedAt: now,
       pending: true,
+      ...(ip ? { ip } : {}),
     }
-    server.serializeAttachment(pending)
-    if ((await this.ctx.storage.getAlarm()) === null) await this.ctx.storage.setAlarm(Date.now() + SWEEP_EVERY)
+    server.serializeAttachment(state)
+    // A varredura vem logo depois do prazo do `auth` (quem não se autentica não fica ocupando vaga).
+    const at = await this.ctx.storage.getAlarm()
+    if (at === null || at > now + AUTH_TIMEOUT + 1000) await this.ctx.storage.setAlarm(now + AUTH_TIMEOUT + 1000)
     return new Response(null, { status: 101, webSocket: client })
   }
 
@@ -355,11 +398,23 @@ export class Home extends DurableObject<Env> {
     const connId = key ? await connIdFor(auth.me.id, key) : pending.connId
     if (ws.readyState !== WebSocket.OPEN) return
 
+    // Aparelhos demais da mesma pessoa (um script abrindo conexões): a nova espera e tenta depois.
+    if (this.sockets().filter((s) => this.state(s).connId !== connId).length >= MAX_CONNECTIONS) {
+      return ws.close(1013, 'Conexões demais')
+    }
+
     const manual = this.manual()
     const before = this.presence()
     const resumed = key ? this.takeOver(ws, connId) : { call: null, queue: [] }
+    const claimed = typeof msg.call === 'string' && this.known(msg.call) ? msg.call : null
+    // O app saiu da chamada enquanto estava sem conexão (o "desligar" não chegou): a conexão
+    // anterior sai dela agora, em vez de voltar pra lá sem o app saber.
+    if (resumed.call && resumed.call !== claimed) {
+      await conversation(this.env, resumed.call).callHangup(resumed.call, this.userId, connId)
+      resumed.call = null
+    }
     // A chamada em que o app estava (a retomada, ou a que ele diz): como está agora.
-    const asked = resumed.call ?? (typeof msg.call === 'string' && this.known(msg.call) ? msg.call : null)
+    const asked = resumed.call ?? claimed
     const callNow = asked ? await conversation(this.env, asked).callSnapshot(asked, this.userId) : null
     // Só volta na chamada se ela ainda conta com esta conexão.
     const call = resumed.call && callNow?.members.some((m) => m.connId === connId) ? resumed.call : null
@@ -370,8 +425,8 @@ export class Home extends DurableObject<Env> {
       userId: auth.me.id,
       session: auth.tokenHash,
       pending: false,
-      status: STATUSES.includes(msg.status as Status) ? (msg.status as Status) : manual.status,
-      text: msg.text === undefined ? manual.text : cleanLine(msg.text, 1, 128),
+      // O status vem do que a pessoa escolheu (no `meta`); a conexão só diz se está parada.
+      idle: msg.status === 'idle',
       call,
       mobile: msg.mobile === true,
       attention: msg.attention === true,
@@ -395,6 +450,7 @@ export class Home extends DurableObject<Env> {
         if (p.status !== 'offline') presences[id] = p
       }),
     )
+    const calls = await this.activeCalls(asked && callNow ? { channelId: asked, ...callNow } : null)
     if (ws.readyState !== WebSocket.OPEN) return
     this.send(ws, {
       t: 'ready',
@@ -411,9 +467,30 @@ export class Home extends DurableObject<Env> {
       presences,
       resumed: !!call,
       ...(asked ? { call: callNow ? { channelId: asked, ...callNow } : null } : {}),
+      calls,
     })
     if (call) for (const queued of resumed.queue) this.raw(ws, queued)
     await this.announce(before)
+  }
+
+  /**
+   * As chamadas privadas que estão rolando nas conversas da pessoa, como estão agora: quem
+   * volta (o celular depois do push, uma queda no meio do toque) vê a ligação tocando, ou
+   * que ela já acabou. `known`: a que já foi buscada (a do `auth.call`).
+   */
+  private async activeCalls(known: { channelId: string; members: VoiceMember[]; ringing: string[] } | null) {
+    const ids = this.sql.exec<{ channel_id: string }>('SELECT channel_id FROM calls').toArray().map((r) => r.channel_id)
+    const out: { channelId: string; members: VoiceMember[]; ringing: string[] }[] = []
+    await Promise.allSettled(
+      ids.map(async (channelId) => {
+        if (known?.channelId === channelId) return void out.push(known)
+        const snapshot = this.known(channelId) ? await conversation(this.env, channelId).callSnapshot(channelId, this.userId) : null
+        if (snapshot) out.push({ channelId, ...snapshot })
+        else this.sql.exec('DELETE FROM calls WHERE channel_id = ?', channelId)
+      }),
+    )
+    if (known && !out.some((c) => c.channelId === known.channelId)) out.push(known)
+    return out
   }
 
   async webSocketMessage(ws: WebSocket, raw: string | ArrayBuffer) {
@@ -427,12 +504,34 @@ export class Home extends DurableObject<Env> {
     if (!msg || typeof msg !== 'object') return
     const state = this.state(ws)
     if (state.pending) {
-      if (msg.t !== 'auth') return ws.close(4001, 'Faltou autenticar')
-      return this.completeAuth(ws, state, msg)
+      // O app até a 1.14 manda coisas logo depois do `auth`, sem esperar o `ready`. Enquanto o
+      // Directory confere o token, o que chega fica de fora: antes fechava com 4001, e o app
+      // tratava como sessão vencida (deslogava e saía da call).
+      if (this.authenticating.has(ws)) return
+      if (msg.t !== 'auth') return ws.close(CLOSE_RETRY, 'Faltou autenticar')
+      this.authenticating.add(ws)
+      try {
+        return await this.completeAuth(ws, state, msg)
+      } catch (err) {
+        // Directory reiniciando (deploy) ou sobrecarregado: o app tenta de novo, sem deslogar.
+        console.error('não deu pra autenticar a conexão', err)
+        try {
+          ws.close(1011, 'Erro no servidor')
+        } catch {
+          // já estava fechando
+        }
+        return
+      } finally {
+        this.authenticating.delete(ws)
+      }
     }
-    // Limite por conexão: sinalização da chamada tem folga maior (muitos candidatos ICE de uma vez).
+    // Limite por conexão (sinalização da chamada tem folga maior: muitos candidatos ICE de uma vez),
+    // e um da pessoa, somando os aparelhos: abrir conexões não multiplica o que dá pra mandar.
     const signal = msg.t === 'call.signal'
-    if (!this.allow(`${signal ? 'sig' : 'ws'}:${state.connId}`, signal ? 400 : 120, 10_000)) {
+    if (
+      !this.allow(`${signal ? 'sig' : 'ws'}:${state.connId}`, signal ? 400 : 120, 10_000) ||
+      !this.allow(signal ? 'sig' : 'ws', signal ? 800 : 240, 10_000)
+    ) {
       if (this.allow(`warn:${state.connId}`, 1, 10_000)) this.send(ws, { t: 'error', message: 'Calma! Muitas ações de uma vez.' })
       return
     }
@@ -465,7 +564,7 @@ export class Home extends DurableObject<Env> {
     if (this.sockets().some((s) => s !== ws && this.state(s).connId === state.connId)) return
     if (unexpected && state.resumable) return this.holdGhost(state)
     // O socket que caiu já não está aberto: o "antes" inclui ele à mão.
-    const before = aggregate([...this.sockets(state.connId).map((s) => this.state(s)), ...this.ghostStates(state.connId), state])
+    const before = this.presenceOf([...this.sockets(state.connId).map((s) => this.state(s)), ...this.ghostStates(state.connId), state])
     if (state.call) await conversation(this.env, state.call).callHangup(state.call, this.userId, state.connId)
     await this.announce(before, state.connId)
   }
@@ -477,9 +576,12 @@ export class Home extends DurableObject<Env> {
 
   async alarm() {
     const now = Date.now()
+    let next = now + SWEEP_EVERY
     for (const ws of this.ctx.getWebSockets()) {
       const state = this.state(ws)
-      if (state.pending && state.connectedAt < now - AUTH_TIMEOUT) ws.close(4001, 'Faltou autenticar')
+      if (!state.pending) continue
+      if (state.connectedAt < now - AUTH_TIMEOUT) ws.close(CLOSE_RETRY, 'Faltou autenticar')
+      else next = Math.min(next, state.connectedAt + AUTH_TIMEOUT + 1000)
     }
     for (const ws of this.sockets()) {
       const state = this.state(ws)
@@ -489,7 +591,7 @@ export class Home extends DurableObject<Env> {
         await this.dropConnection(ws, state, true)
       }
     }
-    if (this.ctx.getWebSockets().length > 0) await this.ctx.storage.setAlarm(now + SWEEP_EVERY)
+    if (this.ctx.getWebSockets().length > 0) await this.ctx.storage.setAlarm(next)
   }
 
   // ---------- Mensagens do app ----------
@@ -503,28 +605,34 @@ export class Home extends DurableObject<Env> {
 
   private async handle(ws: WebSocket, state: HomeConn, msg: HomeClientMessage) {
     const me = this.userId
-    const error = (message: string) => this.send(ws, { t: 'error', message })
+    // Com `reqId`, quem pediu sabe na hora que falhou (sem esperar o tempo-limite).
+    const error = (message: string, reqId?: unknown) =>
+      this.send(ws, { t: 'error', message, ...(typeof reqId === 'string' ? { reqId: reqId.slice(0, 64) } : {}) })
     const result = (r: { ok: true } | { ok: false; error: string }) => {
       if (!r.ok) error(r.error)
     }
 
     switch (msg.t) {
       case 'presence': {
-        if (!STATUSES.includes(msg.status) || !this.allow(`presence:${state.connId}`, 10, 60_000)) return
-        const text = cleanLine(msg.text, 1, 128)
+        if (!STATUSES.includes(msg.status) || !this.allow(`presence:${state.connId}`, 30, 60_000)) return
         const before = this.presence()
-        this.save(ws, { ...state, status: msg.status, text })
-        if (!msg.auto) {
-          // Escolha da pessoa (não o "ausente" automático): vale pra todos os aparelhos.
+        if (msg.auto) {
+          // Ausente automático (o aparelho parado): só desta conexão.
+          this.save(ws, { ...state, idle: msg.status === 'idle' })
+        } else {
+          // Escolha da pessoa: vale pra todos os aparelhos.
+          const text = cleanLine(msg.text, 1, 128)
           this.setMeta('status', msg.status)
           this.setMeta('text', text)
+          this.save(ws, { ...state, idle: false })
           this.broadcast({ t: 'presence.self', status: msg.status, text }, { except: state.connId })
         }
         return this.announce(before)
       }
 
       case 'attention': {
-        if (state.mobile || !this.allow(`attention:${state.connId}`, 30, 60_000)) return
+        // Estado (não ação): perder o "parei de olhar" deixava o push do celular segurado.
+        if (state.mobile || !this.allow(`attention:${state.connId}`, 120, 60_000)) return
         this.save(ws, { ...state, attention: msg.on === true })
         return
       }
@@ -547,7 +655,7 @@ export class Home extends DurableObject<Env> {
       }
 
       case 'push.token': {
-        if (!this.allow(`push:${state.connId}`, 5, 60_000)) return
+        if (!this.allow(`push:${state.connId}`, 10, 60_000)) return
         // O aparelho troca de token de vez em quando: o desta sessão sai e o novo entra.
         this.sql.exec('DELETE FROM push_tokens WHERE session = ?', state.session)
         if (typeof msg.token !== 'string' || !PUSH_TOKEN.test(msg.token)) return
@@ -575,12 +683,12 @@ export class Home extends DurableObject<Env> {
         const channelId = dmChannelId(me, peerId)
         const existing = this.sql.exec<DmRow>('SELECT * FROM dms WHERE channel_id = ?', channelId).toArray()[0]
         const peer = await directory(this.env).getUser(peerId)
-        if (!peer || peer.deleted) return error('Pessoa não encontrada.')
+        if (!peer || peer.deleted) return error('Pessoa não encontrada.', msg.reqId)
         if (!existing && !(await directory(this.env).canDm(me, peerId))) {
-          return error('Essa pessoa só recebe mensagem de amigos.')
+          return error('Essa pessoa só recebe mensagem de amigos.', msg.reqId)
         }
         const opened = await conversation(this.env, channelId).open(channelId, me)
-        if (!opened.ok) return error(opened.error)
+        if (!opened.ok) return error(opened.error, msg.reqId)
         this.sql.exec(
           `INSERT INTO dms (channel_id, peer_id, last_message_id, last_message_at, open) VALUES (?, ?, ?, ?, 1)
            ON CONFLICT (channel_id) DO UPDATE SET open = 1`,
@@ -597,7 +705,7 @@ export class Home extends DurableObject<Env> {
       case 'dm.send': {
         if (!this.known(msg.channelId)) return
         const nonce = typeof msg.nonce === 'string' ? msg.nonce.slice(0, 64) : undefined
-        const sent = await conversation(this.env, msg.channelId).send(msg.channelId, me, msg)
+        const sent = await conversation(this.env, msg.channelId).send(msg.channelId, me, msg, this.meta('host') ?? '')
         // Erro de envio volta com o nonce: o app devolve o texto pro campo.
         if (!sent.ok) this.send(ws, { t: 'error', message: sent.error, ...(nonce ? { nonce } : {}) })
         return
@@ -605,17 +713,25 @@ export class Home extends DurableObject<Env> {
 
       case 'dm.edit':
         if (!this.known(msg.channelId)) return
-        return result(await conversation(this.env, msg.channelId).edit(msg.channelId, me, msg.id, msg.content))
+        return result(await conversation(this.env, msg.channelId).edit(msg.channelId, me, msg.id, msg.content, this.meta('host') ?? ''))
 
       case 'dm.delete':
         if (!this.known(msg.channelId)) return
         return result(await conversation(this.env, msg.channelId).remove(msg.channelId, me, msg.id))
 
       case 'dm.history': {
-        if (!this.known(msg.channelId)) return
-        const page = await conversation(this.env, msg.channelId).history(msg.channelId, me, { before: msg.before })
-        if (!page.ok) return error(page.error)
-        return this.send(ws, { t: 'dm.history', reqId: String(msg.reqId), channelId: msg.channelId, messages: page.value.messages, hasMore: page.value.hasMore })
+        if (!this.known(msg.channelId)) return error('Conversa não encontrada.', msg.reqId)
+        // `around`: pular pra uma mensagem antiga (a resposta citada, uma fixada).
+        const page = await conversation(this.env, msg.channelId).history(msg.channelId, me, { before: msg.before, around: msg.around })
+        if (!page.ok) return error(page.error, msg.reqId)
+        return this.send(ws, {
+          t: 'dm.history',
+          reqId: String(msg.reqId),
+          channelId: msg.channelId,
+          messages: page.value.messages,
+          hasMore: page.value.hasMore,
+          hasNewer: page.value.hasNewer,
+        })
       }
 
       case 'dm.react':
@@ -658,7 +774,7 @@ export class Home extends DurableObject<Env> {
         const room = conversation(this.env, msg.channelId)
         const r =
           msg.t === 'call.ring'
-            ? await room.callRing(msg.channelId, me, state.connId, !!msg.video)
+            ? await room.callRing(msg.channelId, me, state.connId, !!msg.video, msg.state)
             : await room.callAnswer(msg.channelId, me, state.connId, !!msg.accept, msg.state)
         if (!r.ok) {
           if (joining && ws.readyState === WebSocket.OPEN) this.save(ws, { ...this.state(ws), call: null })
@@ -701,13 +817,27 @@ export class Home extends DurableObject<Env> {
 
   /** Evento de uma conversa privada (vem do Conversation). */
   async dmEvent(channelId: string, peerId: string, event: HomeServerMessage) {
-    // Ligação chegando numa conversa que a pessoa nunca abriu: a conversa aparece na lista.
-    if (event.t === 'call.ringing' && !this.dmRow(channelId)) {
-      this.sql.exec('INSERT INTO dms (channel_id, peer_id, open) VALUES (?, ?, 1) ON CONFLICT DO NOTHING', channelId, peerId)
-      const peer = await directory(this.env).getUser(peerId)
-      const row = this.dmRow(channelId)
-      if (peer && row) this.broadcast({ t: 'dm.channel', channel: this.toDm(row, peer) })
+    // Ligação chegando numa conversa que a pessoa nunca abriu (ou escondeu): a conversa aparece na lista.
+    if (event.t === 'call.ringing') {
+      const existing = this.dmRow(channelId)
+      if (!existing || existing.open === 0) {
+        this.sql.exec(
+          'INSERT INTO dms (channel_id, peer_id, open) VALUES (?, ?, 1) ON CONFLICT (channel_id) DO UPDATE SET open = 1',
+          channelId,
+          peerId,
+        )
+        const peer = await directory(this.env).getUser(peerId)
+        const row = this.dmRow(channelId)
+        if (peer && row) this.broadcast({ t: 'dm.channel', channel: this.toDm(row, peer) })
+      }
     }
+    // Chamadas em andamento (o `ready` de quem conecta depois traz como estão).
+    if (event.t === 'call.state') {
+      this.sql.exec('INSERT INTO calls (channel_id, at) VALUES (?, ?) ON CONFLICT (channel_id) DO UPDATE SET at = excluded.at', channelId, Date.now())
+    }
+    if (event.t === 'call.ended') this.sql.exec('DELETE FROM calls WHERE channel_id = ?', channelId)
+    // Apagaram uma mensagem: a última da conversa e a contagem de não lidas acompanham.
+    if (event.t === 'dm.deleted') await this.messageDeleted(channelId, event)
     if (event.t === 'dm.message') {
       const mine = event.message.authorId === this.userId
       const existing = this.sql.exec<DmRow>('SELECT * FROM dms WHERE channel_id = ?', channelId).toArray()[0]
@@ -744,6 +874,19 @@ export class Home extends DurableObject<Env> {
     this.broadcast(event)
   }
 
+  private async messageDeleted(channelId: string, event: Extract<HomeServerMessage, { t: 'dm.deleted' }>) {
+    const row = this.dmRow(channelId)
+    if (!row) return
+    if (event.last !== undefined && row.last_message_id === event.id) {
+      this.sql.exec('UPDATE dms SET last_message_id = ?, last_message_at = ? WHERE channel_id = ?', event.last.id, event.last.at, channelId)
+    }
+    if (row.unread === 0 || (row.last_read_id && event.id <= row.last_read_id)) return
+    const unread = await conversation(this.env, channelId).unreadAfter(channelId, this.userId, row.last_read_id)
+    if (unread === row.unread) return
+    this.sql.exec('UPDATE dms SET unread = ? WHERE channel_id = ?', unread, channelId)
+    this.broadcast({ t: 'dm.read', channelId, lastReadId: row.last_read_id, unread })
+  }
+
   /** Mensagem num servidor que pede aviso (menção, ou canal em "todas as mensagens"): vem do Guild. */
   async guildPush(input: {
     guildId: string
@@ -755,14 +898,25 @@ export class Home extends DurableObject<Env> {
     attachments: { name: string }[]
     /** Nome de quem foi mencionado (pro texto: <@id> vira @nome). */
     names: Record<string, string>
-  }) {
+    /** Nomes dos cargos e canais citados (<@&id>, <#id>). */
+    roles?: Record<string, string>
+    channels?: Record<string, string>
+  }): Promise<boolean> {
+    // Sem aparelho com push, o servidor pode parar de perguntar por um tempo (devolve false).
+    if (!this.pusher.enabled || this.sql.exec('SELECT 1 FROM push_tokens LIMIT 1').toArray().length === 0) return false
+    const lookup = {
+      user: (id: string) => input.names[id] ?? null,
+      role: (id: string) => input.roles?.[id] ?? null,
+      channel: (id: string) => input.channels?.[id] ?? null,
+    }
     await this.push(this.pushDevices(), (text, preview) => ({
       title: text.inChannel(input.author, input.channel, input.server),
-      body: preview ? pushBody(input.content, input.attachments, (id) => input.names[id] ?? null, text) || text.hidden : text.hidden,
+      body: preview ? pushBody(input.content, input.attachments, lookup, text) || text.hidden : text.hidden,
       data: { kind: 'channel', guildId: input.guildId, channelId: input.channelId },
       tag: `channel:${input.channelId}`,
       kind: 'message',
     }))
+    return true
   }
 
   // ---------- Push (celular) ----------
@@ -825,7 +979,7 @@ export class Home extends DurableObject<Env> {
     const name = peer?.name ?? '…'
     await this.push(devices, (text, preview) => ({
       title: name,
-      body: preview ? pushBody(message.content, message.attachments, (id) => (id === peerId ? name : null), text) || text.hidden : text.hidden,
+      body: preview ? pushBody(message.content, message.attachments, { user: (id) => (id === peerId ? name : null) }, text) || text.hidden : text.hidden,
       data: { kind: 'dm', channelId },
       tag: `dm:${channelId}`,
       kind: 'message',
@@ -854,10 +1008,24 @@ export class Home extends DurableObject<Env> {
     // Pra uma conexão que caiu e ainda pode voltar: entrega quando voltar.
     const ghost = connId ? this.ghosts.get(connId) : undefined
     if (ghost) {
-      if (ghost.queue.length < GHOST_QUEUE) ghost.queue.push(JSON.stringify(event))
+      const text = JSON.stringify(event)
+      if (ghost.queue.length < GHOST_QUEUE && ghost.bytes + text.length <= GHOST_QUEUE_BYTES) {
+        ghost.queue.push(text)
+        ghost.bytes += text.length
+      }
       return
     }
     this.broadcast(event, connId ? { connId } : {})
+  }
+
+  /** Ainda tem quem responda por essa conexão (a chamada não ficou com alguém que sumiu num reinício)? */
+  connAlive(connId: string): boolean {
+    return this.reachable(connId)
+  }
+
+  /** A conversa existe pra esta pessoa (o Worker confere antes de acordar o DO dela). */
+  knowsDm(channelId: string): boolean {
+    return this.known(channelId)
   }
 
   async closeSessions(tokenHashes: string[]) {

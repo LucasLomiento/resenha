@@ -185,19 +185,36 @@ describe('revisão de segurança', () => {
     for (let i = 0; i < 6; i++) a.send({ t: 'chat.edit', id: 'x', content: 'y' })
   })
 
-  it('conexões sem login têm limite por servidor', async () => {
+  it('conexões sem login têm limite por IP, e no total a mais antiga cede o lugar', async () => {
     const { guild } = await world()
-    const sockets: WebSocket[] = []
+    const open = async (ip: string) => {
+      const res = await SELF.fetch(`${BASE}/api/g/${guild.id}/ws`, { headers: { Upgrade: 'websocket', 'CF-Connecting-IP': ip } })
+      if (!res.webSocket) return null
+      res.webSocket.accept()
+      return res.webSocket
+    }
+    // Do mesmo IP, passou do limite: recusa.
+    const same: WebSocket[] = []
     let refused = 0
-    for (let i = 0; i < 52; i++) {
-      const res = await SELF.fetch(`${BASE}/api/g/${guild.id}/ws`, { headers: { Upgrade: 'websocket' } })
-      if (res.webSocket) {
-        res.webSocket.accept()
-        sockets.push(res.webSocket)
-      } else refused++
+    for (let i = 0; i < 10; i++) {
+      const ws = await open('203.0.113.7')
+      if (ws) same.push(ws)
+      else refused++
     }
     expect(refused).toBeGreaterThan(0)
-    for (const ws of sockets) ws.close()
+    // IPv6 conta pelo /64: trocar o fim do endereço não abre vaga nova.
+    expect(await open('2001:db8:1:2::99')).not.toBeNull()
+    const v6: (WebSocket | null)[] = []
+    for (let i = 0; i < 10; i++) v6.push(await open(`2001:db8:1:2::${i + 1}`))
+    expect(v6.filter((ws) => ws === null).length).toBeGreaterThan(0)
+    // De muitos IPs: o total lota, e quem chega derruba a pendente mais antiga (em vez de ser recusado).
+    const first = await open('198.51.100.1')
+    const kicked = new Promise<number>((r) => first!.addEventListener('close', (e) => r(e.code)))
+    const many: (WebSocket | null)[] = []
+    for (let i = 2; i < 60; i++) many.push(await open(`198.51.100.${i}`))
+    expect(many.every((ws) => ws !== null)).toBe(true)
+    expect(await kicked).toBe(4006)
+    for (const ws of [...same, ...v6, ...many]) ws?.close()
   })
 
   it('erro ao mandar mensagem volta com o nonce (o app devolve o texto pro campo)', async () => {

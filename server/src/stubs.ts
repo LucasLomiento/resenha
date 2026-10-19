@@ -1,4 +1,5 @@
-// Endereço de cada Durable Object. Todos nascem na América do Sul (perto de quem usa).
+// Endereço de cada Durable Object. O pedido é pra nascerem na América do Sul (perto de quem
+// usa), mas o Cloudflare ainda não tem Durable Object lá: eles ficam nos EUA (MIA, ORD, EWR, ATL).
 
 const near = { locationHint: 'sam' } as const
 

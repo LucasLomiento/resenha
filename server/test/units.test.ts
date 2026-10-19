@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { ALL_PERMISSIONS, DEFAULT_PERMISSIONS, P, type Channel, type Role } from '../../shared/protocol'
-import { signFileUrl, signProxyUrl, verifyFileSignature, verifyProxyUrl } from '../src/auth'
+import { ipPrefix, resignProxyUrl, signFileUrl, signProxyUrl, verifyFileSignature, verifyProxyUrl } from '../src/auth'
 import { validEmoji } from '../src/messages'
 import { channelPermissions, outranks, sameOverwrites, sanitizeOverwrites } from '../../shared/permissions'
 import { extractUrls, safeUrl } from '../src/unfurl'
-import { cleanLine, passwordProblem, slugUsername, username } from '../src/validate'
+import { cleanFileName, cleanLine, passwordProblem, slugUsername, username } from '../src/validate'
 
 const BASE = 'https://resenha.test'
 
@@ -99,6 +99,28 @@ describe('validação', () => {
     expect(cleanLine('   ', 1, 32)).toBeNull()
   })
 
+  it('nome feito só de preenchimento invisível (hangul, braille, hífen suave) não passa', () => {
+    expect(cleanLine('\u3164\u3164', 1, 32)).toBeNull()
+    expect(cleanLine('\u2800 \u00ad', 1, 32)).toBeNull()
+    expect(cleanLine('Ana\u3164', 1, 32)).toBe('Ana')
+    // Emoji sozinho continua valendo.
+    expect(cleanLine('🎮', 1, 32)).toBe('🎮')
+  })
+
+  it('nome de arquivo sem troca de direção (que disfarça a extensão) nem barra', () => {
+    expect(cleanFileName('foto\u202egnp.exe')).toBe('fotognp.exe')
+    expect(cleanFileName('a/b\\c.txt')).toBe('a_b_c.txt')
+    expect(cleanFileName('\u200b')).toBe('arquivo')
+  })
+
+  it('IP: IPv4 inteiro, IPv6 pelo /64', () => {
+    expect(ipPrefix('203.0.113.7')).toBe('203.0.113.7')
+    expect(ipPrefix('2804:d57:1a2b:3c4d:1111:2222:3333:4444')).toBe('2804:d57:1a2b:3c4d::/64')
+    expect(ipPrefix('2804:d57:1a2b:3c4d::1')).toBe(ipPrefix('2804:d57:1a2b:3c4d:ffff::9'))
+    expect(ipPrefix('2001:db8::1')).toBe('2001:db8:0:0::/64')
+    expect(ipPrefix('::ffff:198.51.100.2')).toBe('198.51.100.2')
+  })
+
   it('senha', () => {
     expect(passwordProblem('curta', 'x')).toMatch(/8/)
     expect(passwordProblem('password', 'x')).toMatch(/fácil/)
@@ -160,5 +182,13 @@ describe('URLs assinadas', () => {
     const [u, exp, sig] = ['u', 'exp', 'sig'].map((k) => url.searchParams.get(k))
     expect(await verifyProxyUrl('k', u, exp, sig)).toBe('https://img.com/a.png')
     expect(await verifyProxyUrl('k', u!.slice(1), exp, sig)).toBeNull()
+  })
+  it('a imagem da prévia é assinada de novo a cada leitura (a guardada vence em 2 a 3 dias)', async () => {
+    const old = await signProxyUrl('k', 'https://img.com/a.png', Date.parse('2026-01-01T00:00:00Z'))
+    const now = Date.parse('2026-02-01T00:00:00Z')
+    const url = new URL(await resignProxyUrl('k', old, now), 'https://x')
+    const [u, exp, sig] = ['u', 'exp', 'sig'].map((k) => url.searchParams.get(k))
+    expect(await verifyProxyUrl('k', u, exp, sig, now)).toBe('https://img.com/a.png')
+    expect(await resignProxyUrl('k', '/outra/coisa')).toBe('/outra/coisa')
   })
 })

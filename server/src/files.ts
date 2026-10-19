@@ -10,6 +10,9 @@ export const CHUNK_BYTES = 1024 * 1024
 export class FileTooLarge extends Error {}
 
 export class SqlFileStore {
+  /** Arquivos sendo gravados agora (a limpeza dos pedaços soltos não mexe neles). */
+  readonly writing = new Set<string>()
+
   constructor(private sql: SqlStorage) {
     sql.exec(`CREATE TABLE IF NOT EXISTS file_chunks (
       file_id TEXT NOT NULL,
@@ -21,6 +24,15 @@ export class SqlFileStore {
 
   /** Lê o corpo da requisição em pedaços e grava; devolve o tamanho final. */
   async put(id: string, body: ReadableStream<Uint8Array>, maxBytes: number): Promise<number> {
+    this.writing.add(id)
+    try {
+      return await this.write(id, body, maxBytes)
+    } finally {
+      this.writing.delete(id)
+    }
+  }
+
+  private async write(id: string, body: ReadableStream<Uint8Array>, maxBytes: number): Promise<number> {
     const reader = body.getReader()
     const buffer = new Uint8Array(CHUNK_BYTES)
     let filled = 0

@@ -145,6 +145,27 @@ describe('perfil', () => {
     expect(ready.members?.some((m) => m.userId === friend.user.id)).toBe(false)
   })
 
+  it('a conta dona da plataforma não se exclui (a plataforma não fica sem dono)', async () => {
+    const me = await signup('lucas')
+    const res = await post('/api/me/delete', { password: PASSWORD }, me.token)
+    expect(res.status).toBe(409)
+    expect(res.body.error).toMatch(/dona da plataforma/)
+  })
+
+  it('excluir a conta não apaga o ícone que ela pôs num servidor', async () => {
+    const { owner, friend, a, b } = await world()
+    a.send({ t: 'guild.transfer', userId: friend.user.id })
+    await b.next('guild.updated', (m) => m.guild.ownerId === friend.user.id)
+    const icon = await api('/api/guilds/icon', { method: 'POST', headers: { Authorization: `Bearer ${friend.token}` }, body: PNG })
+    expect(icon.status).toBe(200)
+    b.send({ t: 'guild.update', icon: icon.body.id })
+    await a.next('guild.updated', (m) => m.guild.icon === icon.body.id)
+    b.send({ t: 'guild.transfer', userId: owner.user.id })
+    await a.next('guild.updated', (m) => m.guild.ownerId === owner.user.id)
+    expect((await post('/api/me/delete', { password: PASSWORD }, friend.token)).status).toBe(200)
+    expect((await SELF.fetch(`${BASE}/media/${icon.body.id}`)).status).toBe(200)
+  })
+
   it('exporta os próprios dados', async () => {
     const me = await signup('lucas')
     const res = await call('GET', '/api/me/export', undefined, me.token)

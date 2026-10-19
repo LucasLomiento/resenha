@@ -1,7 +1,7 @@
 import { env, runInDurableObject } from 'cloudflare:test'
 import { describe, expect, it } from 'vitest'
 import { MAX_USAGE_REPORT, MEDIA_BUDGET, Sfu, SfuError, cleanLocalTracks, cleanRemoteTracks, cleanSdp, measuredUsage, monthChunks, sessionToken, usageMonth, validToken } from '../src/media'
-import { call, signup } from './helpers'
+import { call, signup, world } from './helpers'
 
 const CONFIG = { appId: 'app123', secret: 'segredo-do-app' }
 const OFFER = 'v=0\r\no=- 1 2 IN IP4 127.0.0.1\r\n'
@@ -88,11 +88,16 @@ describe('Cota de mídia do mês', () => {
   })
 
   it('os apps somam o que passou pelo Cloudflare; relatório gigante é cortado', async () => {
-    const me = await signup('lucas')
-    await call('POST', '/api/media/usage', { bytes: 2e9 }, me.token)
+    const { owner: me, friend } = await world()
+    await call('POST', '/api/media/usage', { bytes: 5e8 }, me.token)
     await call('POST', '/api/media/usage', { bytes: 1e12 }, me.token)
-    await call('POST', '/api/media/usage', { bytes: -5 }, me.token)
-    expect((await call('GET', '/api/media', undefined, me.token)).body.used).toBe(2e9 + MAX_USAGE_REPORT)
+    expect((await call('GET', '/api/media', undefined, me.token)).body.used).toBe(5e8 + MAX_USAGE_REPORT)
+    // Mais de 2 relatórios por minuto da mesma pessoa não somam (ninguém esgota a cota de todo mundo).
+    await call('POST', '/api/media/usage', { bytes: 5e8 }, me.token)
+    expect((await call('GET', '/api/media', undefined, me.token)).body.used).toBe(5e8 + MAX_USAGE_REPORT)
+    // Outra pessoa conta à parte.
+    await call('POST', '/api/media/usage', { bytes: 1e8 }, friend.token)
+    expect((await call('GET', '/api/media', undefined, me.token)).body.used).toBe(6e8 + MAX_USAGE_REPORT)
   })
 
   it('passou da cota: o servidor para de oferecer o TURN e o SFU', async () => {

@@ -38,7 +38,7 @@ import type { LegacyExport } from './directory'
 import { cleanStructure } from './discord-import'
 import { newId } from './ids'
 import { cleanPoint, cleanStreet, cleanView, parseView } from './map'
-import { CONN_KEY, GHOST_QUEUE, connIdFor, graceFor, unexpectedClose } from './resume'
+import { CLOSE_RETRY, CONN_KEY, GHOST_QUEUE, GHOST_QUEUE_BYTES, IP_HEADER, admitPending, connIdFor, graceFor, unexpectedClose } from './resume'
 import {
   IN_LIST,
   MessageStore,
@@ -89,6 +89,8 @@ interface ConnState {
   voice: VoiceState | null
   /** Conectou mas ainda não mandou o `auth`: não recebe nada nem conta como online. */
   pending?: boolean
+  /** IP embaralhado de quem abriu (só pra vaga das conexões sem login). */
+  ip?: string
   /** App 0.5 (rota /ws): só recebe o que ele entende. */
   legacy?: boolean
   status?: Status
@@ -111,6 +113,8 @@ interface Ghost {
   timer: ReturnType<typeof setTimeout>
   /** O que chegou pra ela enquanto isso (sinalização da call, avisos), entregue na volta. */
   queue: string[]
+  /** Tamanho do que está na fila. */
+  bytes: number
 }
 
 interface ChannelRow {
@@ -172,8 +176,16 @@ const SWEEP_EVERY = 60_000
 const ORPHAN_TTL = DAY
 /** Teto de anexos por servidor (a plataforma inteira tem outro teto, no Directory). */
 const FILES_LIMIT = 2 * 1024 ** 3
-/** Conexões abertas que ainda não se autenticaram (o resto espera). */
+/** Conexões abertas que ainda não se autenticaram. */
 const MAX_PENDING = 50
+/** Conexões autenticadas de uma pessoa no mesmo servidor (aparelhos e janelas, de sobra). */
+const MAX_CONNECTIONS = 10
+/** Limpezas pesadas (auditoria, modo lento, anexos soltos) rodam no máximo nesse intervalo. */
+const CLEANUP_EVERY = 60 * MINUTE
+/** Por quanto tempo um nonce de mensagem enviada é lembrado (o reenvio do app vem em segundos). */
+const NONCE_TTL = 10 * MINUTE
+/** Quem não tem celular com push: o Guild para de perguntar pro Home dela por esse tempo. */
+const NO_PUSH_TTL = 10 * MINUTE
 const MAX_CHANNELS = 500
 const MAX_ROLES = 250
 const MAX_FRAME = 64 * 1024
@@ -267,6 +279,14 @@ export class Guild extends DurableObject<Env> {
   private ghosts = new Map<string, Ghost>()
   /** Sockets que já saíram (o fechamento e o erro podem chegar os dois). */
   private retired = new WeakSet<WebSocket>()
+  /** Mandaram o `auth` e o Directory ainda está conferindo o token. */
+  private authenticating = new WeakSet<WebSocket>()
+  /** Quando rodou a limpeza pesada (na memória: depois de reiniciar, roda de novo, e tudo bem). */
+  private cleanedAt = 0
+  /** Quem não tem celular com push (até quando não precisa perguntar de novo pro Home dela). */
+  private noPush = new Map<string, number>()
+  /** Mensagens que já entraram, por pessoa e nonce: o reenvio de uma que ficou sem resposta não duplica. */
+  private sentNonces = new Map<string, { id: string; at: number }>()
   /** Última vista do mapa (undefined: ainda não leu do banco). */
   private mapView: MapView | null | undefined
   private mapDirty = false
@@ -352,6 +372,9 @@ export class Guild extends DurableObject<Env> {
     )`)
     this.sql.exec('CREATE INDEX IF NOT EXISTS mention_index_by_message ON mention_index (message_id)')
     this.sql.exec('CREATE TABLE IF NOT EXISTS notify (user_id TEXT PRIMARY KEY, settings TEXT NOT NULL)')
+    // 1.15: a limpeza da auditoria e o fim dos castigos não leem a tabela inteira.
+    this.sql.exec('CREATE INDEX IF NOT EXISTS audit_by_created ON audit (created_at)')
+    this.sql.exec('CREATE INDEX IF NOT EXISTS members_timeout ON members (timeout_until) WHERE timeout_until IS NOT NULL')
     this.sql.exec(`CREATE TABLE IF NOT EXISTS slowmode (
       channel_id TEXT NOT NULL,
       user_id TEXT NOT NULL,
@@ -727,11 +750,18 @@ export class Guild extends DurableObject<Env> {
         ...voice,
         camera: !!voice.camera,
         music: voice.music ?? null,
-        serverMuted: row?.server_muted === 1,
+        // Sem a permissão de falar no canal, conta como mutado pela moderação: quem recebe já cala
+        // (antes só marcava `muted`, que é do próprio app, e todo mundo ouvia a pessoa).
+        serverMuted: row?.server_muted === 1 || !this.can(userId, voice.channelId, P.SPEAK),
         serverDeafened: row?.server_deafened === 1,
       })
     }
     return out
+  }
+
+  /** A entrada na call foi recusada: se esta conexão não está em call nenhuma, o app sai da dele. */
+  private refuseVoice(ws: WebSocket) {
+    if (!this.state(ws).voice) this.send(ws, { t: 'voice.forced', channelId: null })
   }
 
   /** Pode pôr o Spotify na call: quem pode falar e não está mutado pela moderação. */
@@ -778,7 +808,10 @@ export class Guild extends DurableObject<Env> {
   // ---------- Reconexão (ver resume.ts) ----------
 
   private enqueue(ghost: Ghost, msg: ServerMessage | string) {
-    if (ghost.queue.length < GHOST_QUEUE) ghost.queue.push(typeof msg === 'string' ? msg : JSON.stringify(msg))
+    const text = typeof msg === 'string' ? msg : JSON.stringify(msg)
+    if (ghost.queue.length >= GHOST_QUEUE || ghost.bytes + text.length > GHOST_QUEUE_BYTES) return
+    ghost.queue.push(text)
+    ghost.bytes += text.length
   }
 
   /** Caiu sem avisar: continua na call e online por um tempo, esperando o app voltar. */
@@ -788,6 +821,7 @@ export class Guild extends DurableObject<Env> {
     this.ghosts.set(state.connId, {
       state,
       queue: existing?.queue ?? [],
+      bytes: existing?.bytes ?? 0,
       timer: setTimeout(() => this.releaseGhost(state.connId), graceFor(this.env)),
     })
   }
@@ -915,6 +949,16 @@ export class Guild extends DurableObject<Env> {
           this.save(ws, { ...state, voice: null })
           this.send(ws, { t: 'voice.forced', channelId: null })
           voiceChanged = true
+        } else if (state.voice) {
+          const was = old.get(state.voice.channelId) ?? 0
+          const is = now.get(state.voice.channelId) ?? 0
+          // Perdeu (ou ganhou) o falar: o "mutado pela moderação" de quem está na call muda junto.
+          if (has(was, P.SPEAK) !== has(is, P.SPEAK)) voiceChanged = true
+          // Perdeu o vídeo: a tela e a câmera saem da lista da call.
+          if (!has(is, P.VIDEO) && (state.voice.sharing || state.voice.camera)) {
+            this.save(ws, { ...state, voice: { ...state.voice, sharing: false, camera: false } })
+            voiceChanged = true
+          }
         }
       }
     }
@@ -990,16 +1034,18 @@ export class Guild extends DurableObject<Env> {
   }
 
   private mentionsIn(content: string, authorId: string, perms: number, replyAuthor: string | null) {
+    // Dentro de código, `<@id>` e `@everyone` são texto (é assim que aparecem na tela): não avisam ninguém.
+    const text = content.replace(/```[\s\S]*?```/g, ' ').replace(/`[^`\n]*`/g, ' ')
     const users = new Set<string>()
-    for (const m of content.matchAll(/<@!?([\w-]{1,64})>/g)) if (this.member(m[1])) users.add(m[1])
+    for (const m of text.matchAll(/<@!?([\w-]{1,64})>/g)) if (this.member(m[1])) users.add(m[1])
     if (replyAuthor && replyAuthor !== authorId && this.member(replyAuthor)) users.add(replyAuthor)
     const roles = new Set<string>()
     const roleMap = this.roles()
-    for (const m of content.matchAll(/<@&([\w-]{1,64})>/g)) {
+    for (const m of text.matchAll(/<@&([\w-]{1,64})>/g)) {
       const role = roleMap.get(m[1])
       if (role && role.id !== this.id && (role.mentionable || has(perms, P.MENTION_EVERYONE))) roles.add(role.id)
     }
-    const mentionEveryone = has(perms, P.MENTION_EVERYONE) && /(^|[^\w`])@(everyone|here)\b/.test(content)
+    const mentionEveryone = has(perms, P.MENTION_EVERYONE) && /(^|[^\w`])@(everyone|here)\b/.test(text)
     return { mentions: [...users].slice(0, 50), mentionRoles: [...roles].slice(0, 20), mentionEveryone }
   }
 
@@ -1144,23 +1190,33 @@ export class Guild extends DurableObject<Env> {
     if (file && request.method === 'GET') return this.store.serve(request, file[1])
 
     if (request.headers.get('Upgrade') !== 'websocket') return new Response('Esperava WebSocket', { status: 426 })
-    if (this.ctx.getWebSockets().filter((ws) => this.state(ws).pending).length >= MAX_PENDING) {
-      return new Response('Ocupado, tente de novo', { status: 503 })
-    }
+    // O endereço do nosso servidor (a prévia de link nunca busca ele mesmo).
+    if (this.meta('host') !== url.hostname) this.setMeta('host', url.hostname)
+    const ip = request.headers.get(IP_HEADER)
+    const waiting = this.ctx
+      .getWebSockets()
+      .filter((ws) => ws.readyState === WebSocket.OPEN && this.state(ws).pending)
+      .map((ws) => ({ ws, ...this.state(ws) }))
+    if (!admitPending(waiting, ip, MAX_PENDING)) return new Response('Ocupado, tente de novo', { status: 503 })
 
     const [client, server] = Object.values(new WebSocketPair())
     this.ctx.acceptWebSocket(server)
+    const now = Date.now()
     const pending: ConnState = {
       userId: '',
       connId: crypto.randomUUID().replace(/-/g, '').slice(0, 12),
       session: '',
-      connectedAt: Date.now(),
+      connectedAt: now,
       voice: null,
       pending: true,
       legacy: request.headers.get(LEGACY_HEADER) === '1',
+      ...(ip ? { ip } : {}),
     }
     server.serializeAttachment(pending)
-    if ((await this.ctx.storage.getAlarm()) === null) await this.ctx.storage.setAlarm(Date.now() + SWEEP_EVERY)
+    // A varredura vem logo depois do prazo do `auth`. Sem isso, o alarme de um anexo solto
+    // (6 h ou 1 dia) adiava a varredura: conexão morta não saía e pendente não fechava.
+    const at = await this.ctx.storage.getAlarm()
+    if (at === null || at > now + AUTH_TIMEOUT + 1000) await this.ctx.storage.setAlarm(now + AUTH_TIMEOUT + 1000)
     return new Response(null, { status: 101, webSocket: client })
   }
 
@@ -1177,6 +1233,10 @@ export class Guild extends DurableObject<Env> {
     const key = !pending.legacy && typeof msg.key === 'string' && CONN_KEY.test(msg.key) ? msg.key : null
     const connId = key ? await connIdFor(auth.me.id, key) : pending.connId
     if (ws.readyState !== WebSocket.OPEN) return
+    // Conexões demais da mesma pessoa (um script abrindo sockets): a nova espera e tenta depois.
+    if (this.socketsOf(auth.me.id).filter((s) => this.state(s).connId !== connId).length >= MAX_CONNECTIONS) {
+      return ws.close(1013, 'Conexões demais')
+    }
 
     if (this.saveProfile({ ...auth.me, admin: false })) this.broadcastMember(auth.me.id)
     const before = this.presenceOf(auth.me.id)
@@ -1239,8 +1299,26 @@ export class Guild extends DurableObject<Env> {
     if (!msg || typeof msg !== 'object') return
     const state = this.state(ws)
     if (state.pending) {
-      if (msg.t !== 'auth') return ws.close(4001, 'Faltou autenticar')
-      return this.completeAuth(ws, state, msg)
+      // O app até a 1.14 manda coisas logo depois do `auth`, sem esperar o `ready`. Enquanto o
+      // Directory confere o token, o que chega fica de fora: antes fechava com 4001, e o app
+      // tratava como sessão vencida (deslogava e saía da call).
+      if (this.authenticating.has(ws)) return
+      if (msg.t !== 'auth') return ws.close(CLOSE_RETRY, 'Faltou autenticar')
+      this.authenticating.add(ws)
+      try {
+        return await this.completeAuth(ws, state, msg)
+      } catch (err) {
+        // Directory reiniciando (deploy) ou sobrecarregado: o app tenta de novo, sem deslogar.
+        console.error('não deu pra autenticar a conexão', err)
+        try {
+          ws.close(1011, 'Erro no servidor')
+        } catch {
+          // já estava fechando
+        }
+        return
+      } finally {
+        this.authenticating.delete(ws)
+      }
     }
     const member = this.member(state.userId)
     if (!member) return ws.close(4003, 'Você não está nesse servidor')
@@ -1249,9 +1327,13 @@ export class Guild extends DurableObject<Env> {
       if (this.allow(`map:${state.connId}`, 300, 10_000)) this.mapMotion(state, msg, member)
       return
     }
-    // Limite por conexão: sinalização da call tem folga maior (muitos candidatos ICE de uma vez).
+    // Limite por conexão (sinalização da call tem folga maior: muitos candidatos ICE de uma vez),
+    // e um da pessoa, somando as conexões: abrir mais sockets não multiplica o que dá pra mandar.
     const signal = msg.t === 'rtc.signal'
-    if (!this.allow(`${signal ? 'sig' : 'ws'}:${state.connId}`, signal ? 400 : 120, 10_000)) {
+    if (
+      !this.allow(`${signal ? 'sig' : 'ws'}:${state.connId}`, signal ? 400 : 120, 10_000) ||
+      !this.allow(`${signal ? 'sig' : 'ws'}:user:${state.userId}`, signal ? 800 : 240, 10_000)
+    ) {
       if (this.allow(`warn:${state.connId}`, 1, 10_000)) this.error(ws, 'Calma! Muitas ações de uma vez.')
       return
     }
@@ -1294,9 +1376,12 @@ export class Guild extends DurableObject<Env> {
   /** Varre conexões mortas, castigos que acabaram e anexos que nunca foram usados. */
   async alarm() {
     const now = Date.now()
+    let next = now + SWEEP_EVERY
     for (const ws of this.ctx.getWebSockets()) {
       const state = this.state(ws)
-      if (state.pending && state.connectedAt < now - AUTH_TIMEOUT) ws.close(4001, 'Faltou autenticar')
+      if (!state.pending) continue
+      if (state.connectedAt < now - AUTH_TIMEOUT) ws.close(CLOSE_RETRY, 'Faltou autenticar')
+      else next = Math.min(next, state.connectedAt + AUTH_TIMEOUT + 1000)
     }
     for (const ws of this.sockets()) {
       const state = this.state(ws)
@@ -1307,6 +1392,7 @@ export class Guild extends DurableObject<Env> {
       }
     }
 
+    // Castigo que acabou (pelo índice: só olha quem está de castigo).
     const expired = this.sql
       .exec<{ user_id: string }>('SELECT user_id FROM members WHERE timeout_until IS NOT NULL AND timeout_until <= ?', now)
       .toArray()
@@ -1319,12 +1405,18 @@ export class Guild extends DurableObject<Env> {
       }
     }
 
-    if (this.store.removeOrphans(now - ORPHAN_TTL) > 0) await this.reportStorage()
-    this.sql.exec('DELETE FROM slowmode WHERE last_at < ?', now - 6 * 60 * MINUTE)
-    this.sql.exec('DELETE FROM audit WHERE created_at < ?', now - AUDIT_KEEP)
+    // O resto não precisa de minuto em minuto (o alarme roda o dia todo com alguém conectado).
+    if (now - this.cleanedAt >= CLEANUP_EVERY) {
+      this.cleanedAt = now
+      if (this.store.removeOrphans(now - ORPHAN_TTL) > 0) await this.reportStorage()
+      this.sql.exec('DELETE FROM slowmode WHERE last_at < ?', now - 6 * 60 * MINUTE)
+      this.sql.exec('DELETE FROM audit WHERE created_at < ?', now - AUDIT_KEEP)
+      for (const [key, until] of this.noPush) if (until <= now) this.noPush.delete(key)
+      for (const [key, sent] of this.sentNonces) if (now - sent.at > NONCE_TTL) this.sentNonces.delete(key)
+    }
 
     // Com alguém conectado (mesmo sem login), volta logo; sem ninguém, só se sobrou anexo solto.
-    if (this.ctx.getWebSockets().length > 0) await this.ctx.storage.setAlarm(now + SWEEP_EVERY)
+    if (this.ctx.getWebSockets().length > 0) await this.ctx.storage.setAlarm(next)
     else if (this.sql.exec('SELECT 1 FROM attachments WHERE message_id IS NULL LIMIT 1').toArray().length > 0) {
       await this.ctx.storage.setAlarm(now + ORPHAN_TTL / 4)
     }
@@ -1443,8 +1535,11 @@ export class Guild extends DurableObject<Env> {
       case 'chat.ack': {
         if (!this.allow(`ack:${userId}`, 30, 10_000)) return
         const channel = this.channel(msg.channelId, 'text')
-        if (!channel || typeof msg.messageId !== 'string' || !this.can(userId, channel.id, P.VIEW_CHANNEL)) return
-        const read = this.markRead(userId, channel.id, msg.messageId.slice(0, 64))
+        if (!channel || typeof msg.messageId !== 'string' || !/^[0-9a-z]{10}[\w-]{4,16}$/.test(msg.messageId)) return
+        if (!this.can(userId, channel.id, P.VIEW_CHANNEL)) return
+        // Nunca depois da última mensagem do canal (um id "do futuro" marcava tudo como lido pra sempre).
+        const last = this.store.lastIds([channel.id])[channel.id]
+        const read = this.markRead(userId, channel.id, last && msg.messageId > last ? last : msg.messageId)
         return this.broadcast({ t: 'read.state', state: read }, { userId })
       }
 
@@ -1568,13 +1663,28 @@ export class Guild extends DurableObject<Env> {
       }
 
       case 'voice.join': {
+        // Recusado: o app já entrou do lado dele (som de entrada, microfone aberto), então além do
+        // erro ele fica sabendo que não está na call (`voice.forced` vazio). Sem isso, ficava numa
+        // call fantasma em que ninguém ouvia ninguém.
         const channel = this.channel(msg.channelId, 'voice')
-        if (!channel) return
-        if (this.timedOut(this.member(userId))) return this.error(ws, 'Você está de castigo e não pode entrar em call agora.')
-        if (!this.can(userId, channel.id, P.CONNECT)) return this.error(ws, 'Você não pode entrar nesse canal.')
+        if (!channel) {
+          this.error(ws, 'Esse canal não existe mais.')
+          return this.refuseVoice(ws)
+        }
+        if (this.timedOut(this.member(userId))) {
+          this.error(ws, 'Você está de castigo e não pode entrar em call agora.')
+          return this.refuseVoice(ws)
+        }
+        if (!this.can(userId, channel.id, P.CONNECT)) {
+          this.error(ws, 'Você não pode entrar nesse canal.')
+          return this.refuseVoice(ws)
+        }
         if (channel.userLimit > 0 && !this.can(userId, channel.id, P.MOVE_MEMBERS)) {
           const inside = new Set(this.voiceMembers().filter((v) => v.channelId === channel.id && v.userId !== userId).map((v) => v.userId))
-          if (inside.size >= channel.userLimit) return this.error(ws, 'Esse canal está cheio.')
+          if (inside.size >= channel.userLimit) {
+            this.error(ws, 'Esse canal está cheio.')
+            return this.refuseVoice(ws)
+          }
         }
         // Uma call por pessoa: o outro aparelho dela sai (como no Discord).
         this.forceVoice(userId, null, state.connId)
@@ -1664,7 +1774,17 @@ export class Guild extends DurableObject<Env> {
     const requested = Array.isArray(msg.attachmentIds) ? msg.attachmentIds.filter((id) => typeof id === 'string').slice(0, 10) : []
     if (requested.length > 0 && !has(perms, P.ATTACH_FILES)) return this.error(ws, 'Você não pode enviar arquivos nesse canal.', nonce)
     const attachments = this.store.pendingAttachments(userId, requested)
-    if (!content && attachments.length === 0) return
+    if (!content && attachments.length === 0) {
+      // Só com anexo que venceu (ou de outra pessoa): avisa, e o app devolve pro campo.
+      return requested.length > 0 ? this.error(ws, 'O anexo não está mais disponível. Envie de novo.', nonce) : undefined
+    }
+    // O app reenviou uma mensagem que já entrou (a resposta se perdeu numa queda): não duplica.
+    const sent = nonce ? this.store.byNonce(userId, nonce) : null
+    if (sent) {
+      const [message] = await this.store.load([sent])
+      if (message) this.send(ws, { t: 'chat.message', message, nonce })
+      return
+    }
 
     if (!this.allow(`send:${userId}`, 5, 5000)) return this.error(ws, 'Calma! Você está mandando mensagens rápido demais.', nonce)
     if (channel.slowmode > 0 && !has(perms, P.MANAGE_MESSAGES) && !has(perms, P.MANAGE_CHANNELS)) {
@@ -1685,7 +1805,7 @@ export class Guild extends DurableObject<Env> {
     const replyTo = reply && reply.channel_id === channel.id ? reply : null
     const mentions = this.mentionsIn(content, userId, perms, replyTo?.author_id ?? null)
     const row = this.store.insert(
-      { id: newId(), channelId: channel.id, authorId: userId, content, replyTo: replyTo?.id ?? null, ...mentions },
+      { id: newId(), channelId: channel.id, authorId: userId, content, replyTo: replyTo?.id ?? null, nonce, ...mentions },
       attachments,
     )
     this.recordMentions(row.id, channel.id, userId, mentions)
@@ -1715,14 +1835,28 @@ export class Guild extends DurableObject<Env> {
     return message.mentions.includes(row.user_id) || message.mentionEveryone || message.mentionRoles.some((r) => roles.includes(r))
   }
 
-  /** Push pros celulares (o Home de cada um decide se manda: computador ativo, "Não perturbe"). */
+  /**
+   * Push pros celulares (o Home de cada um decide se manda: computador ativo, "Não perturbe").
+   * Quem não tem celular com push fica um tempo sem ser perguntado: era uma chamada pro Home de
+   * quase todo membro a cada mensagem.
+   */
   private async pushMessage(message: Message, channel: Channel) {
+    const now = Date.now()
     const targets = this.members().filter(
-      (row) => row.user_id !== message.authorId && this.wantsPush(row, message) && this.can(row.user_id, channel.id, P.VIEW_CHANNEL),
+      (row) =>
+        row.user_id !== message.authorId &&
+        (this.noPush.get(row.user_id) ?? 0) <= now &&
+        this.can(row.user_id, channel.id, P.VIEW_CHANNEL) &&
+        this.wantsPush(row, message),
     )
     if (targets.length === 0) return
     const names: Record<string, string> = {}
     for (const id of message.mentions) names[id] = this.displayName(id) ?? '…'
+    const roles: Record<string, string> = {}
+    for (const m of message.content.matchAll(/<@&([\w-]{1,64})>/g)) {
+      const role = this.roles().get(m[1])
+      if (role) roles[role.id] = role.name
+    }
     const input = {
       guildId: this.id,
       channelId: channel.id,
@@ -1732,15 +1866,20 @@ export class Guild extends DurableObject<Env> {
       content: message.content,
       attachments: message.attachments.map((a) => ({ name: a.name })),
       names,
+      roles,
     }
-    await Promise.allSettled(targets.map((row) => home(this.env, row.user_id).guildPush(input)))
+    const results = await Promise.allSettled(targets.map((row) => home(this.env, row.user_id).guildPush(input)))
+    results.forEach((r, i) => {
+      if (r.status === 'fulfilled' && r.value === false) this.noPush.set(targets[i].user_id, now + NO_PUSH_TTL)
+    })
   }
 
   /** Busca as prévias dos links (depois que a mensagem já chegou pra todo mundo). */
   private async refreshEmbeds(messageId: string, channelId: string, content: string) {
-    const embeds = await unfurlAll(content, this.env.FILE_SECRET, '')
+    const embeds = await unfurlAll(content, this.env.FILE_SECRET, this.meta('host') ?? '')
     const row = this.store.get(messageId)
-    if (!row || row.embeds === JSON.stringify(embeds)) return // apagada enquanto buscava, ou nada mudou
+    // Apagada ou editada enquanto buscava (a prévia da versão antiga não sobrescreve a da nova), ou nada mudou.
+    if (!row || row.content !== content || row.embeds === JSON.stringify(embeds)) return
     this.store.setEmbeds(messageId, embeds)
     const message = await this.store.loadOne(messageId)
     if (message) this.broadcast({ t: 'chat.edited', message }, { channelId })
@@ -1860,6 +1999,8 @@ export class Guild extends DurableObject<Env> {
       if (!this.state(ws).staff && !(await directory(this.env).canRelay(userId))) {
         return this.error(ws, 'Só o dono do Resenha (ou quem ele liberar) pode passar uma sala pelo Cloudflare.')
       }
+      // E só numa sala que a pessoa vê e em que pode entrar (o id de uma sala privada não basta).
+      if (!this.can(userId, channel.id, P.CONNECT)) return this.error(ws, 'Você não pode editar esse canal.')
       if (channel.kind !== 'voice' || typeof msg.relay !== 'boolean') return
       if (msg.relay !== !!channel.relay) {
         sets.push('relay = ?')
@@ -1981,18 +2122,21 @@ export class Guild extends DurableObject<Env> {
     this.sql.exec('DELETE FROM slowmode WHERE channel_id = ?', channel.id)
     this.sql.exec('DELETE FROM channels WHERE id = ?', channel.id)
     this.audit(userId, 'channel.delete', channel.id, `${channel.name} (${count} mensagens)`)
-    // Quem estava na call desse canal cai fora.
+    // Quem estava na call desse canal cai fora, e o app fica sabendo (antes só sumia da lista,
+    // e o app continuava na call sozinho).
     let voiceChanged = false
     for (const socket of this.sockets()) {
       const s = this.state(socket)
       if (s.voice?.channelId === channel.id) {
         this.save(socket, { ...s, voice: null })
+        this.send(socket, { t: 'voice.forced', channelId: null })
         voiceChanged = true
       }
     }
     for (const ghost of this.ghosts.values()) {
       if (ghost.state.voice?.channelId !== channel.id) continue
       ghost.state = { ...ghost.state, voice: null }
+      this.enqueue(ghost, { t: 'voice.forced', channelId: null })
       voiceChanged = true
     }
     this.pushAccess(before, channel.kind === 'category' ? { reordered: true } : {})
@@ -2219,9 +2363,16 @@ export class Guild extends DurableObject<Env> {
         if (!target || !has(perms, P.KICK_MEMBERS)) return this.error(ws, 'Você não pode expulsar ninguém.')
         if (self || !this.outranks(userId, targetId)) return this.error(ws, 'Essa pessoa está acima de você.')
         const reason = cleanText(msg.reason ?? '', 512) ?? ''
+        // O Directory primeiro: se ele não responder, nada muda (antes a pessoa saía daqui e
+        // continuava na lista de servidores dela, caindo em 4003 toda vez que abria o app).
+        try {
+          await directory(this.env).memberKicked(this.id, targetId, 'kicked')
+        } catch (err) {
+          console.error('expulsar: o Directory não respondeu', err)
+          return this.error(ws, 'Não deu pra fazer isso agora. Tente de novo.')
+        }
         this.audit(userId, 'member.kick', targetId, `${name}${reason ? `: ${reason}` : ''}`)
         this.removeMember(targetId, 'Você foi expulso do servidor')
-        await directory(this.env).memberKicked(this.id, targetId, 'kicked')
         return
       }
 
@@ -2242,8 +2393,14 @@ export class Guild extends DurableObject<Env> {
         this.audit(userId, 'member.ban', targetId, `${name}${reason ? `: ${reason}` : ''}`)
         if (msg.deleteMessages) await this.deleteRecentMessages(targetId, 7 * DAY)
         if (target) {
+          try {
+            await directory(this.env).memberKicked(this.id, targetId, 'banned')
+          } catch (err) {
+            // O banimento ficou gravado: banir de novo termina de tirar a pessoa.
+            console.error('banir: o Directory não respondeu', err)
+            return this.error(ws, 'Não deu pra fazer isso agora. Tente de novo.')
+          }
           this.removeMember(targetId, 'Você foi banido do servidor')
-          await directory(this.env).memberKicked(this.id, targetId, 'banned')
         }
         return
       }
@@ -2272,30 +2429,33 @@ export class Guild extends DurableObject<Env> {
       case 'member.voice': {
         if (!target) return
         if (!self && !this.outranks(userId, targetId)) return this.error(ws, 'Essa pessoa está acima de você.')
+        // Confere tudo antes de mudar qualquer coisa (antes, mutava e depois recusava o resto,
+        // sem registro na auditoria nem aviso pros outros).
+        if (msg.serverMuted !== undefined && !has(perms, P.MUTE_MEMBERS)) return this.error(ws, 'Você não pode mutar ninguém.')
+        if (msg.serverDeafened !== undefined && !has(perms, P.DEAFEN_MEMBERS)) return this.error(ws, 'Você não pode ensurdecer ninguém.')
+        const moving = !!msg.disconnect || msg.moveTo !== undefined
+        if (moving && !has(perms, P.MOVE_MEMBERS)) return this.error(ws, 'Você não pode mover ninguém.')
+        const dest = !msg.disconnect && msg.moveTo !== undefined ? this.channel(msg.moveTo, 'voice') : null
+        // Só pra sala em que a pessoa pode entrar: senão o app dela recebia "você não pode entrar"
+        // depois de movida, e saía de novo na próxima mudança de permissão.
+        if (moving && !msg.disconnect && (!dest || !this.can(userId, dest.id, P.CONNECT) || !this.can(targetId, dest.id, P.CONNECT))) {
+          return this.error(ws, 'Não dá pra mover pra esse canal.')
+        }
         const details: string[] = []
         if (msg.serverMuted !== undefined) {
-          if (!has(perms, P.MUTE_MEMBERS)) return this.error(ws, 'Você não pode mutar ninguém.')
           this.sql.exec('UPDATE members SET server_muted = ? WHERE user_id = ?', msg.serverMuted ? 1 : 0, targetId)
           details.push(msg.serverMuted ? 'mutou' : 'desmutou')
         }
         if (msg.serverDeafened !== undefined) {
-          if (!has(perms, P.DEAFEN_MEMBERS)) return this.error(ws, 'Você não pode ensurdecer ninguém.')
           this.sql.exec('UPDATE members SET server_deafened = ? WHERE user_id = ?', msg.serverDeafened ? 1 : 0, targetId)
           details.push(msg.serverDeafened ? 'ensurdeceu' : 'tirou o ensurdecer')
         }
-        if (msg.disconnect || msg.moveTo !== undefined) {
-          if (!has(perms, P.MOVE_MEMBERS)) return this.error(ws, 'Você não pode mover ninguém.')
-          if (msg.disconnect) {
-            this.forceVoice(targetId, null)
-            details.push('desconectou da call')
-          } else {
-            const dest = this.channel(msg.moveTo, 'voice')
-            if (!dest || !this.can(userId, dest.id, P.CONNECT) || !this.can(targetId, dest.id, P.VIEW_CHANNEL)) {
-              return this.error(ws, 'Não dá pra mover pra esse canal.')
-            }
-            this.forceVoice(targetId, dest.id)
-            details.push(`moveu pra ${dest.name}`)
-          }
+        if (msg.disconnect) {
+          this.forceVoice(targetId, null)
+          details.push('desconectou da call')
+        } else if (dest) {
+          this.forceVoice(targetId, dest.id)
+          details.push(`moveu pra ${dest.name}`)
         }
         if (details.length === 0) return
         if (!self) this.audit(userId, 'member.voice', targetId, `${name}: ${details.join(', ')}`)
@@ -2608,6 +2768,18 @@ export class Guild extends DurableObject<Env> {
     if (!this.saveProfile(user)) return
     if (this.member(user.id)) this.broadcastMember(user.id)
     else this.broadcast({ t: 'user.upsert', user: this.user(user.id)! })
+  }
+
+  /** Conta excluída de quem já tinha saído daqui: o perfil das mensagens antigas fica anônimo (sem criar perfil novo). */
+  forgetProfile(user: User) {
+    if (!this.profile(user.id)) return
+    if (this.saveProfile(user)) this.broadcast({ t: 'user.upsert', user: this.user(user.id)! })
+  }
+
+  /** A pessoa pode entrar nessa sala, e ela passa pelo Cloudflare? (o Worker só dá o TURN pra isso) */
+  relayAccess(userId: string, channelId: string): boolean {
+    const channel = this.channel(channelId, 'voice')
+    return !!channel?.relay && this.can(userId, channel.id, P.CONNECT) && !this.timedOut(this.member(userId))
   }
 
   /** Sessões encerradas (sair, trocar senha, derrubar aparelho): fecha as conexões delas. */

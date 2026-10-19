@@ -539,6 +539,60 @@ describe('voz', () => {
     await b.next('voice.state', (m) => m.members.length === 2)
   })
 
+  it('entrada recusada (canal cheio, sem poder entrar, canal que sumiu) avisa o app que ele não está na call', async () => {
+    const { a, b, voice } = await world()
+    a.send({ t: 'channel.update', id: voice.id, userLimit: 1 })
+    await b.next('channel.upsert')
+    a.send({ t: 'voice.join', channelId: voice.id, muted: false, deafened: false })
+    await b.next('voice.state', (m) => m.members.length === 1)
+    b.send({ t: 'voice.join', channelId: voice.id, muted: false, deafened: false })
+    expect((await b.next('error')).message).toMatch(/cheio/)
+    expect((await b.next('voice.forced')).channelId).toBeNull()
+    b.send({ t: 'voice.join', channelId: 'nao-existe', muted: false, deafened: false })
+    expect((await b.next('error')).message).toMatch(/não existe mais/)
+    expect((await b.next('voice.forced')).channelId).toBeNull()
+  })
+
+  it('canal de voz apagado com gente dentro: o app de quem estava sai da call', async () => {
+    const { a, b } = await world()
+    a.send({ t: 'channel.create', name: 'Sala 2', kind: 'voice' })
+    const extra = (await b.next('channel.upsert', (m) => m.channel.name === 'Sala 2')).channel
+    b.send({ t: 'voice.join', channelId: extra.id, muted: false, deafened: false })
+    await a.next('voice.state', (m) => m.members.length === 1)
+    a.send({ t: 'channel.delete', id: extra.id })
+    expect((await b.next('voice.forced')).channelId).toBeNull()
+  })
+
+  it('sem a permissão de falar, quem está na call conta como mutado pela moderação (e volta ao liberar)', async () => {
+    const { guild, a, b, voice, readyB } = await world()
+    a.send({ t: 'role.update', id: guild.id, permissions: DEFAULT_PERMISSIONS & ~P.SPEAK })
+    await b.next('roles')
+    b.send({ t: 'voice.join', channelId: voice.id, muted: false, deafened: false })
+    const muted = await a.next('voice.state', (m) => m.members.some((x) => x.connId === readyB.connId))
+    expect(muted.members.find((x) => x.connId === readyB.connId)).toMatchObject({ serverMuted: true })
+    a.send({ t: 'role.update', id: guild.id, permissions: DEFAULT_PERMISSIONS })
+    await a.next('voice.state', (m) => m.members.some((x) => x.connId === readyB.connId && !x.serverMuted))
+  })
+
+  it('menção dentro de código é texto (não avisa ninguém)', async () => {
+    const { a, b, friend, text } = await world()
+    a.send({ t: 'chat.send', channelId: text.id, content: `olha \`<@${friend.user.id}>\` e \`\`\`\n@everyone\n\`\`\``, attachmentIds: [], nonce: 'c' })
+    const message = (await b.next('chat.message')).message
+    expect(message.mentions).toEqual([])
+    expect(message.mentionEveryone).toBe(false)
+  })
+
+  it('reenvio com o mesmo nonce (a resposta se perdeu numa queda) não duplica a mensagem', async () => {
+    const { a, b, text } = await world()
+    a.send({ t: 'chat.send', channelId: text.id, content: 'uma vez só', attachmentIds: [], nonce: 'n-1' })
+    const first = await a.next('chat.message', (m) => m.nonce === 'n-1')
+    a.send({ t: 'chat.send', channelId: text.id, content: 'uma vez só', attachmentIds: [], nonce: 'n-1' })
+    const again = await a.next('chat.message', (m) => m.nonce === 'n-1')
+    expect(again.message.id).toBe(first.message.id)
+    await b.next('chat.message')
+    await b.nothing('chat.message')
+  })
+
   it('sala pelo Cloudflare: só o dono do Resenha liga, e todo mundo fica sabendo', async () => {
     const { a, b, friend, voice, text } = await world()
     a.send({ t: 'channel.update', id: voice.id, relay: true })
@@ -658,14 +712,32 @@ describe('notificações', () => {
 })
 
 describe('segurança do protocolo', () => {
-  it('quem não autentica é desconectado e mensagem antes do auth fecha', async () => {
+  it('mensagem antes do auth fecha com "tente de novo" (não com o 4001 de sessão inválida)', async () => {
     const { guild } = await world()
     const res = await SELF.fetch(`${BASE}/api/g/${guild.id}/ws`, { headers: { Upgrade: 'websocket' } })
     const ws = res.webSocket!
     ws.accept()
     const closed = new Promise<number>((r) => ws.addEventListener('close', (e) => r(e.code)))
     ws.send(JSON.stringify({ t: 'chat.send', channelId: 'x', content: 'oi', attachmentIds: [], nonce: '1' }))
-    expect(await closed).toBe(4001)
+    expect(await closed).toBe(4006)
+  })
+
+  it('o que chega enquanto o token é conferido fica de fora, sem derrubar a conexão (o app até a 1.14 manda logo)', async () => {
+    const { guild, friend } = await world()
+    const res = await SELF.fetch(`${BASE}/api/g/${guild.id}/ws`, { headers: { Upgrade: 'websocket' } })
+    const ws = res.webSocket!
+    ws.accept()
+    const messages: { t: string }[] = []
+    let closedWith: number | null = null
+    ws.addEventListener('message', (e) => messages.push(JSON.parse(e.data as string)))
+    ws.addEventListener('close', (e) => (closedWith = e.code))
+    ws.send(JSON.stringify({ t: 'auth', token: friend.token }))
+    ws.send(JSON.stringify({ t: 'presence', status: 'online', text: null, auto: true }))
+    ws.send(JSON.stringify({ t: 'typing', channelId: 'x' }))
+    for (let i = 0; i < 50 && !messages.some((m) => m.t === 'ready'); i++) await new Promise((r) => setTimeout(r, 20))
+    expect(messages.some((m) => m.t === 'ready')).toBe(true)
+    expect(closedWith).toBeNull()
+    ws.close()
   })
 
   it('token inválido fecha com 4001', async () => {

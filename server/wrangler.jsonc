@@ -33,9 +33,14 @@
     "TURNSTILE_SITE_KEY": "0x4AAAAAAFVsDyL4yB1S7LxH"
   },
   "observability": { "enabled": true }
-  // Secrets (wrangler secret put):
-  //   FILE_SECRET         chave HMAC das URLs assinadas e do embaralhamento de IP
-  //   TURNSTILE_SECRET    chave secreta do Turnstile (opcional)
-  //   TURN_KEY_ID         chave TURN do Cloudflare Realtime (opcional)
-  //   TURN_KEY_API_TOKEN  token dessa chave (opcional)
+  // Secrets (wrangler secret put; o script de cada um está em docs/OPERACAO.md):
+  //   FILE_SECRET           chave HMAC das URLs assinadas e do embaralhamento de IP
+  //   TURNSTILE_SECRET      chave secreta do Turnstile (opcional: cadastro aberto)
+  //   TURN_KEY_ID           chave TURN do Cloudflare Realtime (opcional)
+  //   TURN_KEY_API_TOKEN    token dessa chave (opcional)
+  //   REALTIME_APP_ID       app do SFU do Cloudflare Realtime (opcional)
+  //   REALTIME_APP_SECRET   segredo desse app (opcional)
+  //   CF_ACCOUNT_ID         conta do Cloudflare, pra conferir a cota nas análises (opcional)
+  //   CF_ANALYTICS_TOKEN    token só de leitura das análises (opcional)
+  //   FCM_SERVICE_ACCOUNT   conta de serviço do Firebase, JSON inteiro (opcional: push no celular)
 }

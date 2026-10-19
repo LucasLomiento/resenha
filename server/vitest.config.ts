@@ -20,6 +20,7 @@ export default defineConfig({
           CF_ACCOUNT_ID: '',
           CF_ANALYTICS_TOKEN: '',
           FCM_SERVICE_ACCOUNT: '',
+          TURNSTILE_SECRET: '',
         },
       },
     }),

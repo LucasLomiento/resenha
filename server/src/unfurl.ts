@@ -64,6 +64,29 @@ export function safeUrl(raw: string, selfHost?: string): URL | null {
   return url
 }
 
+/**
+ * Busca seguindo os redirecionamentos um a um e conferindo cada destino (com o `follow`, só
+ * dava pra conferir o último). Mais de 5 saltos, ou um destino que não pode, dá null.
+ */
+export async function safeFetch(url: URL, init: RequestInit, selfHost?: string): Promise<{ res: Response; final: URL } | null> {
+  let current = url
+  for (let hop = 0; hop < 5; hop++) {
+    const res = await fetch(current.href, { ...init, redirect: 'manual' })
+    const location = res.status >= 300 && res.status < 400 ? res.headers.get('Location') : null
+    if (!location) return { res, final: current }
+    res.body?.cancel().catch(() => {})
+    let next: URL | null = null
+    try {
+      next = safeUrl(new URL(location, current).href, selfHost)
+    } catch {
+      next = null
+    }
+    if (!next) return null
+    current = next
+  }
+  return null
+}
+
 function clip(text: string, max: number): string {
   const clean = text.replace(/\s+/g, ' ').trim()
   return clean.length > max ? `${clean.slice(0, max - 1).trimEnd()}…` : clean
@@ -129,17 +152,21 @@ async function readHead(body: ReadableStream<Uint8Array>): Promise<{ meta: Map<s
 }
 
 async function fetchEmbed(url: URL, secret: string, selfHost: string): Promise<Embed | null> {
-  const res = await fetch(url.href, {
-    headers: {
-      'User-Agent': 'Mozilla/5.0 (compatible; ResenhaBot/1.0; link preview)',
-      Accept: 'text/html,application/xhtml+xml,image/*;q=0.8',
-      'Accept-Language': 'pt-BR,pt;q=0.9,en;q=0.8',
+  const fetched = await safeFetch(
+    url,
+    {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; ResenhaBot/1.0; link preview)',
+        Accept: 'text/html,application/xhtml+xml,image/*;q=0.8',
+        'Accept-Language': 'pt-BR,pt;q=0.9,en;q=0.8',
+      },
+      signal: AbortSignal.timeout(5000),
     },
-    redirect: 'follow',
-    signal: AbortSignal.timeout(5000),
-  })
-  const final = safeUrl(res.url || url.href, selfHost)
-  if (!res.ok || !res.body || !final) {
+    selfHost,
+  )
+  if (!fetched) return null
+  const { res, final } = fetched
+  if (!res.ok || !res.body) {
     res.body?.cancel().catch(() => {})
     return null
   }
@@ -160,7 +187,8 @@ async function fetchEmbed(url: URL, secret: string, selfHost: string): Promise<E
   const siteName = clip(decode(pick('og:site_name', 'application-name')) || final.hostname.replace(/^www\./, ''), 100)
   let image: string | null = null
   const rawImage = decode(pick('og:image:secure_url', 'og:image', 'og:image:url', 'twitter:image', 'twitter:image:src'))
-  if (rawImage) {
+  // Endereço de imagem gigante (500 KB num `og:image`) incharia cada mensagem com o link.
+  if (rawImage && rawImage.length <= 2048) {
     try {
       const absolute = safeUrl(new URL(rawImage, final).href, selfHost)
       if (absolute) image = await signProxyUrl(secret, absolute.href)

@@ -59,7 +59,9 @@ export function cleanStructure(raw: unknown): ImportedStructure | null {
   const channels = take(value.uncategorized ?? value.channels)
   const categories: ImportedStructure['categories'] = []
   for (const item of Array.isArray(value.categories) ? value.categories : []) {
-    if (categories.length >= MAX_IMPORT_CATEGORIES || !item || typeof item !== 'object') break
+    if (categories.length >= MAX_IMPORT_CATEGORIES) break
+    // Um item estranho no meio não joga fora as categorias que vêm depois dele.
+    if (!item || typeof item !== 'object') continue
     const name = cleanLine((item as Record<string, unknown>).name, 1, 100)
     if (!name) continue
     categories.push({ name, channels: take((item as Record<string, unknown>).channels) })
@@ -87,7 +89,7 @@ function base64(bytes: Uint8Array): string {
 }
 
 /** Tipo da imagem pelos primeiros bytes (o modelo quer saber). */
-function mimeOf(bytes: Uint8Array): string | null {
+export function mimeOf(bytes: Uint8Array): string | null {
   if (bytes[0] === 0x89 && bytes[1] === 0x50) return 'image/png'
   if (bytes[0] === 0xff && bytes[1] === 0xd8) return 'image/jpeg'
   if (bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[8] === 0x57 && bytes[9] === 0x45) return 'image/webp'

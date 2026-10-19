@@ -1,26 +1,27 @@
 // Mídia pelo Cloudflare Realtime: o SFU pra tela com várias pessoas assistindo
 // e a conta dos GB do mês.
 //
-// Voz e tela continuam P2P por padrão (de graça e com menos atraso). O app usa o
-// SFU só pra tela quando 2 ou mais pessoas assistem (quem compartilha manda e
-// codifica uma cópia só, e o Cloudflare distribui), e o TURN só quando a conexão
-// direta falha. Os dois dividem 1.000 GB grátis por mês, contados no que sai do
-// Cloudflare pros apps. Passando de MEDIA_BUDGET, o servidor para de oferecer os
-// dois e tudo volta a ser P2P até o mês virar.
+// Voz e tela são P2P (de graça e com menos atraso). Só na sala marcada "pelo
+// Cloudflare" o app usa o TURN (voz, câmera e a cópia direta da tela) e o SFU pra
+// tela quando 2 ou mais pessoas assistem (quem compartilha manda e codifica uma
+// cópia só, e o Cloudflare distribui). Os dois dividem 1.000 GB grátis por mês,
+// contados no que sai do Cloudflare pros apps. Passando de MEDIA_BUDGET, o servidor
+// para de oferecer os dois, revoga as credenciais do TURN que ainda valem e tudo
+// volta a ser P2P até o mês virar.
 //
 // A chave do app do SFU fica só aqui: o app pede pelo nosso servidor, que confere
 // que a sessão é de quem está pedindo (token assinado com o FILE_SECRET).
 //
 // A conta dos apps é aproximada (e um app com defeito poderia nem contar). Com o
 // token de leitura das análises, o servidor confere de hora em hora o que o próprio
-// Cloudflare mediu e vale o maior dos dois.
+// Cloudflare mediu, e vale essa medida mais o que os apps contaram depois dela.
 
 const API = 'https://rtc.live.cloudflare.com/v1'
 
 /** Teto do mês, com folga antes dos 1.000 GB grátis (a conta dos apps é aproximada). */
 export const MEDIA_BUDGET = 850 * 1e9
-/** O que um app pode somar de uma vez (relatório de 1 minuto): mais que isso é erro ou abuso. */
-export const MAX_USAGE_REPORT = 3 * 1e9
+/** O que um app pode somar de uma vez (relatório de 1 minuto, ~130 Mbps): mais que isso é erro ou abuso. */
+export const MAX_USAGE_REPORT = 1e9
 const MAX_SDP = 64 * 1024
 const NAME = /^[\w-]{1,64}$/
 const SESSION = /^[\w-]{1,128}$/

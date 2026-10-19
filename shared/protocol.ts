@@ -705,8 +705,11 @@ export type ServerMessage =
   | { t: 'map.cursor'; connId: string; userId: string; lng: number | null; lat: number | null }
   | { t: 'map.pin'; pin: MapPin }
   | { t: 'map.pin.removed'; id: string }
-  /** `nonce`: o erro é de uma mensagem enviada (o app devolve o texto pro campo). */
-  | { t: 'error'; message: string; nonce?: string }
+  /**
+   * `nonce`: o erro é de uma mensagem enviada (o app devolve o texto pro campo). `reqId`: de um
+   * pedido que espera resposta (o app desiste na hora, sem esperar o tempo-limite).
+   */
+  | { t: 'error'; message: string; nonce?: string; reqId?: string }
 
 // ---------- WebSocket pessoal (Home): DMs, amigos, status ----------
 
@@ -766,12 +769,14 @@ export type HomeClientMessage =
     }
   | { t: 'dm.edit'; channelId: string; id: string; content: string }
   | { t: 'dm.delete'; channelId: string; id: string }
-  | { t: 'dm.history'; reqId: string; channelId: string; before?: string }
+  /** `around`: pular pra uma mensagem antiga (resposta citada, fixada), como no servidor. */
+  | { t: 'dm.history'; reqId: string; channelId: string; before?: string; around?: string }
   | { t: 'dm.react'; channelId: string; id: string; emoji: string; on: boolean }
   | { t: 'dm.ack'; channelId: string; messageId: string }
   | { t: 'dm.typing'; channelId: string }
   | { t: 'dm.close'; channelId: string }
-  | { t: 'call.ring'; channelId: string; video: boolean }
+  /** `state`: como entra (mutado, com câmera), pra quem atende já ver certo. */
+  | { t: 'call.ring'; channelId: string; video: boolean; state?: { muted: boolean; deafened: boolean; camera?: boolean } }
   /** `state`: voltando depois de a conexão cair (mutado, tela e câmera como estavam). */
   | {
       t: 'call.answer'
@@ -809,6 +814,11 @@ export type HomeServerMessage =
       resumed?: boolean
       /** Como está a chamada do `auth.call` (null: acabou). */
       call?: { channelId: string; members: VoiceMember[]; ringing: string[] } | null
+      /**
+       * As chamadas privadas em andamento nas conversas da pessoa, como estão agora (1.15): quem
+       * volta depois de uma queda (ou do push do celular) vê a ligação tocando, ou que ela acabou.
+       */
+      calls?: { channelId: string; members: VoiceMember[]; ringing: string[] }[]
     }
   | { t: 'me.updated'; me: Me }
   | { t: 'user.updated'; user: User }
@@ -824,9 +834,10 @@ export type HomeServerMessage =
   | { t: 'dm.closed'; channelId: string }
   | { t: 'dm.message'; channelId: string; message: Message; nonce?: string }
   | { t: 'dm.edited'; channelId: string; message: Message }
-  | { t: 'dm.deleted'; channelId: string; id: string }
+  /** `last`: a mensagem mais nova que sobrou na conversa. */
+  | { t: 'dm.deleted'; channelId: string; id: string; last?: { id: string | null; at: number | null } }
   | { t: 'dm.reactions'; channelId: string; id: string; reactions: Reaction[] }
-  | { t: 'dm.history'; reqId: string; channelId: string; messages: Message[]; hasMore: boolean }
+  | { t: 'dm.history'; reqId: string; channelId: string; messages: Message[]; hasMore: boolean; hasNewer?: boolean }
   | { t: 'dm.typing'; channelId: string; userId: string }
   | { t: 'dm.read'; channelId: string; lastReadId: string | null; unread: number }
   | { t: 'call.ringing'; channelId: string; from: string; video: boolean }
@@ -840,7 +851,8 @@ export type HomeServerMessage =
    */
   | { t: 'push.test'; result: PushTestResult }
   | { t: 'session.revoked' }
-  | { t: 'error'; message: string; nonce?: string }
+  /** `reqId`: o erro é de um pedido que espera resposta (o app desiste na hora). */
+  | { t: 'error'; message: string; nonce?: string; reqId?: string }
 
 // ---------- Ids de conversa privada ----------
 
