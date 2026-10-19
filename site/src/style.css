@@ -656,6 +656,27 @@ svg {
   }
 }
 
+/* Sem JS (desligado, ou o main.js nem carregou): os canais ficam um embaixo do outro e o painel rola. */
+html:not(.js) .views {
+  overflow-y: auto;
+}
+
+html:not(.js) .view {
+  position: static;
+  display: flex;
+}
+
+html:not(.js) .view .scroll {
+  flex: none;
+  overflow: visible;
+}
+
+html:not(.js) .next-card,
+html:not(.js) [data-prev],
+html:not(.js) [data-next] {
+  display: none;
+}
+
 .scroll {
   flex: 1;
   min-height: 0;

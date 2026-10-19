@@ -38,7 +38,12 @@ function router() {
 
   /** O canal (e o elemento, se for um link pra dentro dele) de um #endereço. */
   const resolve = (hash) => {
-    const id = decodeURIComponent(hash.replace(/^#/, ''))
+    let id = ''
+    try {
+      id = decodeURIComponent(hash.replace(/^#/, ''))
+    } catch {
+      // "#%" e parecidos: endereço quebrado vale como sem endereço
+    }
     if (!id || id === 'conteudo') return { view: current ?? 'boas-vindas' }
     if (views.has(id)) return { view: id }
     if (OLD[id]) return { view: OLD[id] }
@@ -758,18 +763,18 @@ function mySystem() {
   if (cta) cta.textContent = { windows: 'Baixar pro Windows', android: 'Baixar pro Android' }[os] ?? 'Baixar pro Linux'
 }
 
-drawer()
-dock()
-call()
-quality()
-ink()
-map()
-profile()
-spotify()
-drop()
-chat()
-copyButtons()
-mySystem()
-meChanged()
-router()
-mascot()
+/** Um brinquedo quebrado (navegador velho, erro nosso) não leva o resto junto. */
+function safely(fn) {
+  try {
+    fn()
+  } catch (err) {
+    console.error(`site: ${fn.name || 'parte'} não funcionou`, err)
+  }
+}
+
+// O roteador vem primeiro: com ele de pé, sempre tem um canal aberto na tela.
+safely(router)
+for (const toy of [drawer, dock, call, quality, ink, map, profile, spotify, drop, chat, copyButtons, mySystem, mascot]) safely(toy)
+safely(meChanged)
+// Os brinquedos se inscreveram depois que o primeiro canal abriu: o dele fica sabendo agora.
+safely(() => watchers.get(current)?.(true))

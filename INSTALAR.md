@@ -2,12 +2,12 @@
 
 Você vai precisar de duas coisas:
 
-1. **O app**, na página de [Releases](https://github.com/LucasLomiento/resenha/releases/latest).
+1. **O app**, no [site](https://lucaslomiento.github.io/resenha/#baixar) ou na página de [Releases](https://github.com/LucasLomiento/resenha/releases/latest): pra Windows, Linux e Android.
 2. **Um convite**: o link que alguém de um servidor te manda, tipo `https://resenha.lucaslomiento.workers.dev/i/aB3x9Kq`. Com o app instalado, o link abre direto nele.
 
 O servidor é automático: não precisa configurar nada.
 
-Depois de instalado, o app **se atualiza sozinho**. Quando sai versão nova, aparece um botão de download no pé da coluna de servidores, à esquerda (ou em Configurações → Aplicativo).
+Depois de instalado, o app do computador **se atualiza sozinho**. Quando sai versão nova, aparece um botão de download no pé da coluna de servidores, à esquerda (ou em Configurações → Aplicativo). No celular, o app avisa e abre o download no navegador (veja "Android", abaixo).
 
 ---
 
@@ -49,6 +49,19 @@ Pra atualizar pelo app no pacote `.pacman`, ele pede a sua senha: numa janelinha
 
 ---
 
+## Android
+
+1. No celular, abra o [site](https://lucaslomiento.github.io/resenha/#baixar) ou a página de [Releases](https://github.com/LucasLomiento/resenha/releases/latest) e baixe o **`Resenha-….apk`** (Android 7 ou mais novo).
+2. Abra o arquivo baixado. O app não está na Play Store, então na primeira vez o Android pede pra liberar a instalação de apps de fora da loja (pelo navegador ou pelo gerenciador de arquivos): libere e volte.
+3. Instale, abra e entre com a sua conta (ou crie a conta com o convite).
+4. Quando ele pedir, deixe mandar **notificações**: é por elas que chegam as mensagens privadas, as ligações e as menções com o app fechado. Em Configurações → Notificações tem um **aviso de teste**.
+
+O app do celular **não se atualiza sozinho**: quando sai versão nova, ele avisa e abre o download no navegador. É só instalar por cima: você continua logado.
+
+Na call, com a tela apagada, fica uma notificação "Na call" com os botões **Mutar** e **Sair**. No celular não dá pra compartilhar a tela, rabiscar, pôr o Spotify na call (ouvir e controlar o de outra pessoa dá) nem escolher a saída do som.
+
+---
+
 ## Primeiro acesso
 
 1. Abra o link do convite (ele abre o app) ou abra o app e clique em **Criar conta**.
@@ -65,7 +78,7 @@ Pra atualizar pelo app no pacote `.pacman`, ele pede a sua senha: numa janelinha
 - **Entrar na call:** clique no canal de voz (o com alto-falante). A call aparece no painel de baixo, à esquerda, e o telefone vermelho sai dela.
 - **Mutar e ensurdecer:** botões de microfone e de fone, no painel de baixo.
 - **Câmera e tela:** com a call aberta, use os botões de câmera e de tela no painel de baixo. Na tela, escolha a qualidade (até 1440p a 60 fps) e se quer mandar o áudio. Do outro lado aparece **AO VIVO**, e é só clicar pra assistir. Clicando de novo no botão da tela dá pra trocar a qualidade e o codec sem parar e ver quantas pessoas estão assistindo.
-- **Spotify na call:** o botão de nota musical, no painel de baixo, põe o seu Spotify na call (precisa de Premium; só no Linux por enquanto). Na primeira vez o painel instala o `librespot` (pede a senha), mostra como criar o seu app do Spotify (uns 2 minutos, uma vez só: o Spotify só libera busca e controles pra apps cadastrados) e conecta a sua conta pelo navegador. Ele aparece como mais um na sala e toca pra todo mundo: qualquer um pula, pausa, busca música ou playlist e põe na fila, e cada um acerta o volume do bot clicando nele, dentro do canal de voz.
+- **Spotify na call:** o botão de nota musical, no painel de baixo, põe o seu Spotify na call (precisa de Premium; no Linux e no Windows). No Linux, na primeira vez o painel instala o `librespot` (pede a senha); no Windows ele já vem junto. O painel mostra como criar o seu app do Spotify (uns 2 minutos, uma vez só: o Spotify só libera busca e controles pra apps cadastrados) e conecta a sua conta pelo navegador. Ele aparece como mais um na sala e toca pra todo mundo: qualquer um pula, pausa, busca música ou playlist e põe na fila, e cada um acerta o volume do bot clicando nele, dentro do canal de voz.
 - **Ver todo mundo da call:** clique em **Na call**, no painel de baixo, ou no canal de voz: abre a tela da call, com um bloco por pessoa.
 - **Volume de cada pessoa:** clique no nome dela dentro do canal de voz. Vai até 200% (o som é amplificado no Resenha, sem mexer no volume do sistema).
 - **Mudar de sala sem querer:** em Configurações → Voz e vídeo → Call, ligue **Mudar de sala com clique duplo**: estando numa call, trocar de canal de voz pede dois cliques.
@@ -77,6 +90,7 @@ Pra atualizar pelo app no pacote `.pacman`, ele pede a sua senha: numa janelinha
 - **Configurações** (engrenagem no painel de baixo):
   - **Perfil:** foto, nome, "sobre mim" e cor.
   - **Aparelhos:** onde a sua conta está aberta; dá pra sair de um ou de todos.
+  - **Senha:** trocar a senha (isso já desconecta os outros aparelhos).
   - **Voz e vídeo:** microfone, saída, redução de ruído, "só transmitir quando eu falar", câmera e codec da transmissão. A **redução de ruído** (RNNoise) tira teclado, ventilador e barulho de fundo.
   - **Notificações:** sons e avisos do sistema (dá pra esconder o texto da mensagem, bom quando a tela está sendo compartilhada).
   - **Atalhos:** teclas pra mutar, ensurdecer, compartilhar a tela, sair da call e mostrar o Resenha. O padrão é `Ctrl+Shift+M` pra mutar e `Ctrl+Shift+D` pra ensurdecer.
@@ -86,5 +100,5 @@ Pra atualizar pelo app no pacote `.pacman`, ele pede a sua senha: numa janelinha
 
 ## Problemas comuns
 
-- **A call conecta, mas ninguém se ouve, ou o ping não aparece:** a rede de algum dos dois está bloqueando a conexão direta. Confira se o app foi liberado no Firewall do Windows (passo 4) e avise quem administra o servidor.
+- **A call conecta, mas ninguém se ouve, ou o ping não aparece:** a rede de algum dos dois está bloqueando a conexão direta (o app avisa: "Não deu pra conectar direto com…"). Confira se o app foi liberado no Firewall do Windows (passo 4). Se continuar, peça pro dono do Resenha marcar a sala como "pelo Cloudflare" (a nuvem ao lado do nome): aí a call passa pelo Cloudflare e conecta mesmo com a rede bloqueando.
 - **Transmissão travando:** clique no botão da tela, no painel de baixo, e baixe a qualidade pra 1080p ou 720p, ou troque o codec pra **H264**. Cada pessoa assistindo consome upload de quem transmite.

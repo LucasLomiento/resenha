@@ -4,23 +4,23 @@
 
 O site fica em `site/` (`node site/build.mjs` gera em `site/dist`) e é publicado pelo `.github/workflows/site.yml` a cada mudança e depois de cada release.
 
-Um app no estilo do Discord: vários servidores com canais, cargos e moderação, mensagens privadas, amigos, chat com imagens, arquivos e mensagens de voz (MP3), call de voz, câmera e compartilhamento de tela até 1440p a 60 fps com áudio, e um mapa compartilhado em cada servidor. O áudio da tela **não leva junto a voz da call**. Voz e tela vão direto entre os PCs (P2P), e o Cloudflare só cuida das contas, do chat e de apresentar as pessoas umas às outras.
+Um app no estilo do Discord: vários servidores com canais, cargos e moderação, mensagens privadas, amigos, chat com imagens, arquivos e mensagens de voz (MP3), call de voz, câmera e compartilhamento de tela até 1440p a 60 fps com áudio, e um mapa compartilhado em cada servidor. O áudio da tela **não leva junto a voz da call**. Voz e tela vão direto entre os aparelhos (P2P), e o Cloudflare só cuida das contas, do chat e de apresentar as pessoas umas às outras (a não ser na sala que o dono marca "pelo Cloudflare", onde a mídia passa pelo TURN e pelo SFU dele). Tem app pra Linux, Windows e Android.
 
 ## Como funciona
 
 ```
- app (Electron, Linux/Windows)                 Cloudflare (Worker + Durable Objects com SQLite)
+ app (Linux, Windows, Android)                 Cloudflare (Worker + Durable Objects com SQLite)
  ├─ HTTP (login, perfil, anexos) ─── HTTPS ─▶  Worker ─▶ Directory: contas, sessões, servidores, convites, amigos
  ├─ 1 WebSocket por servidor ──────── WSS ──▶  Guild (um por servidor): canais, cargos, mensagens, voz
  ├─ 1 WebSocket pessoal ───────────── WSS ──▶  Home (um por pessoa): DMs, amigos, status
  │                                              └─▶ Conversation (uma por DM): mensagens e chamada
- └─ voz, câmera e tela ── WebRTC P2P direto ──▶ outros PCs
+ └─ voz, câmera e tela ── WebRTC P2P direto ──▶ outros aparelhos
                           (sala marcada "pelo Cloudflare": TURN e SFU do Cloudflare)
 ```
 
 Os detalhes (e as regras de segurança do servidor) estão em [docs/ARQUITETURA.md](docs/ARQUITETURA.md).
 
-- **server/**: Worker e quatro Durable Objects, todos criados na América do Sul. Os WebSockets usam hibernação: parado, não gasta nada.
+- **server/**: Worker e quatro Durable Objects. Eles são pedidos com a dica de região da América do Sul (`server/src/stubs.ts`), mas eles rodam nos EUA (nas análises do Cloudflare aparecem Miami, Chicago, Nova York e Atlanta). Os WebSockets usam hibernação: parado, não gasta nada.
 - **Permissões** no modelo do Discord: cargos com hierarquia, exceções por canal e por categoria, castigo, expulsão, banimento e registro de auditoria. Tudo é conferido no servidor (o cálculo fica em `shared/permissions.ts`).
 - **Mensagens**: resposta, menções (pessoa, cargo, @everyone), reações, fixadas, busca sem acento (FTS5), contagem de não lidas e menções, e prévia de link buscada pelo servidor (quem lê nunca acessa o site do link).
 - **Perfil personalizado** (o "Nitro" de graça): banner e foto que podem ser animados, tema do cartão em duas cores, pronomes, moldura do avatar, efeito no cartão e nome com fonte e efeito. Molduras, efeitos e fontes vêm embutidos no app; o servidor guarda só os ids (`server/src/style.ts`).
@@ -30,16 +30,17 @@ Os detalhes (e as regras de segurança do servidor) estão em [docs/ARQUITETURA.
 - **Mapa** (`app/src/renderer/ui/map`): um por servidor, com a mesma vista pra todo mundo, cursores e marcadores ao vivo. Desenhado com o [MapLibre GL](https://maplibre.org) e os mapas grátis do [OpenFreeMap](https://openfreemap.org) (© OpenMapTiles, dados do © OpenStreetMap); a busca de endereço é do Nominatim (OpenStreetMap). Sem chave de API. Pra satélite e Street View, "Abrir no Google Maps".
 - **Bot do Spotify** (`app/src/main/spotify.ts`, `app/src/renderer/lib/music.svelte.ts`): quem põe o bot roda o [librespot](https://github.com/librespot-org/librespot) como o aparelho "Resenha" do Spotify Connect; o som cru vem por um FIFO, no ritmo em que toca, e vai pra call como uma faixa à parte (cada um no seu volume). Os controles vão pela Web API do Spotify, e os pedidos de quem está na call chegam ao dono do bot por um canal de dados P2P. Precisa de Premium de quem põe o bot e de um app dele no Spotify (o painel mostra como criar): a Web API vai por esse app, e o librespot entra com o login do app de computador do Spotify.
 - **app/**: Electron + Svelte 5. Cada pessoa da call tem uma `RTCPeerConnection` própria (`src/renderer/lib/peer.ts`, com "perfect negotiation"); a mesma call serve pro canal de voz e pra chamada privada. A tela só é enviada pra quem clica em **Assistir**.
+- **mobile/**: o app de Android (Capacitor 8), com a mesma interface do computador, uma tela de cada vez (`npm -w app run build:mobile` e depois `npx cap sync android` em `mobile/`). O APK sai no site e nas Releases, assinado com a chave do Resenha. Os avisos chegam pelo Firebase Cloud Messaging (o servidor precisa do secret `FCM_SERVICE_ACCOUNT`, ver `docs/OPERACAO.md`), e na call um serviço em primeiro plano segura o microfone com a tela apagada. O que o celular não faz não aparece: compartilhar a tela, rabiscar, pôr o Spotify e escolher a saída do som. Detalhes em "Celular" no `docs/ARQUITETURA.md`.
 - **shared/**: os tipos das mensagens trocadas entre o app e o servidor, e o cálculo de permissões.
 
 ### Áudio da tela sem a voz da call
 
 - **Linux**: o [venmic](https://github.com/Vencord/venmic) (o mesmo do Vesktop) cria no PipeWire um microfone virtual, `vencord-screen-share`, com o som de todos os apps. Fica de fora o processo "Audio Service" do Chromium, que é por onde sai **todo** o som do Resenha. O código está em `app/src/main/screen-audio-linux.ts`.
-- **Windows 10 22H2+ e 11**: o processo principal entrega `loopbackWithoutChrome`, que é o som do sistema menos o processo do app (WASAPI process loopback). Em Windows mais antigo cai pro loopback comum, e o app avisa que a voz da call vai junto.
+- **Windows 10 22H2+ e 11**: o processo principal entrega `loopbackWithoutChrome`, que é o som do sistema menos o processo do app (WASAPI process loopback). Em Windows mais antigo cai pro loopback comum, e o app avisa que a voz da call vai junto. Esse caminho ainda não foi testado num Windows de verdade.
 
 ### Atraso
 
-- P2P direto. A sinalização fica num Durable Object na América do Sul.
+- P2P direto. A sinalização passa por um Durable Object nos EUA (só pra apresentar as pessoas; a mídia não passa por ele).
 - Captura a 60 fps com `contentHint = motion` e `degradationPreference = maintain-framerate`: com a rede apertada, cai a resolução e os 60 fps se mantêm.
 - Presets de bitrate: 720p a 4 Mbps, 1080p a 8 Mbps, 1440p a 12 Mbps.
 - O áudio da tela vai em Opus estéreo a 128 kbps.
@@ -98,14 +99,14 @@ Quem gera os pacotes é o GitHub Actions (`.github/workflows/release.yml`), e os
 
 1. Suba a versão em `app/package.json` e escreva o `RELEASE_NOTES.md`.
 2. Faça o commit e rode `git tag vX.Y.Z && git push origin main vX.Y.Z`.
-3. O Actions gera o `.pacman`, o AppImage, o instalador do Windows e o `.zip`, junta tudo numa release e publica.
+3. O Actions gera o `.pacman`, o AppImage, o instalador do Windows, o `.zip` e o APK do Android (assinado com a chave do Resenha), junta tudo numa release e publica.
 
 Formatos que se atualizam pelo app:
 - **Instalador do Windows (NSIS):** o electron-updater instala sozinho.
 - **AppImage:** o electron-updater instala sozinho.
 - **`.pacman`:** a gente instala (`app/src/main/updater.ts`). Primeiro tenta o `pkexec`, que funciona quando há agente do polkit (KDE, Omarchy). Sem agente, abre um terminal com `sudo`. O `pkexec`, o terminal e a reabertura do app saem pelo `systemd-run --user`: o `app.relaunch()` do Electron abre o app com a trava "no new privileges" do Linux, e com ela o `pkexec` e o `sudo` não funcionam (a atualização seguinte fechava o app sem instalar).
 
-O `.zip` do Windows não se atualiza.
+O `.zip` do Windows não se atualiza. O app de Android procura APK novo nas Releases (ao abrir e a cada 6 horas), avisa e abre o download no navegador: a pessoa instala por cima.
 
 O app procura versão nova ao abrir e a cada 30 minutos, baixa sozinho quando não está em call e mostra um aviso no canto (e um aviso do sistema, se a janela estiver fora de foco) quando dá pra reiniciar e atualizar. Quem reinicia pra atualizar no meio de uma call vê, ao abrir, uma pílula oferecendo voltar pra mesma sala ("Reconectar"), com o mesmo mudo/ensurdecido (`client.installUpdate` manda a sala pro processo principal, que grava `rejoin.json` na pasta do app na hora, antes de fechar pra instalar; vale 10 minutos e uma vez só; ligação privada só volta se a outra pessoa continua nela). Tela e câmera não voltam: o seletor de tela precisa de clique.
 
@@ -140,7 +141,10 @@ npm -w app run typecheck
 npm -w app run test:ui         # formatação das mensagens, busca nas configurações, tradução dos erros do servidor
 npm -w app run test:mic        # processador do microfone (RNNoise + limiar), no Node, sem áudio
 npm -w app run e2e             # duas instâncias escondidas do app contra o servidor local
+npm -w app run test:android    # o app de Android num emulador (ou celular no adb) contra o servidor local
 ```
+
+O `test:android` precisa do JDK e do SDK do Android (o cabeçalho de `app/test/android.mjs` diz onde procura) e de um aparelho no `adb devices`.
 
 O e2e faz o fluxo inteiro: cadastro, convite, chat, anexo, call P2P, indicador de fala, transmissão de tela e medição do atraso. O microfone e a tela são falsos: um oscilador e um canvas com o horário codificado em pixels. Por padrão ele roda em 720p e **sem** o áudio da tela. Duas variáveis ligam o resto:
 
@@ -153,5 +157,5 @@ O e2e abre o app em português (`LANGUAGE=pt_BR`), troca pra inglês e espanhol,
 ## Limites conhecidos
 
 - **P2P**: cada pessoa assistindo a sua tela custa mais ~12 Mbps de upload (em 1440p) e mais uma codificação na CPU. Pra 1–3 pessoas assistindo está ótimo. Pra muito mais, marque a sala "pelo Cloudflare": com 2+ assistindo, a tela vai uma vez só pro SFU do Cloudflare Realtime.
-- **Linux**: o WebRTC do Chromium não usa o NVENC da NVIDIA, então a codificação é por CPU. Se pesar, troque o codec pra VP8 ou H264 em Configurações → Tela.
+- **Linux**: o WebRTC do Chromium não usa o NVENC da NVIDIA, então a codificação é por CPU. Se pesar, troque o codec pra VP8 ou H264 em Configurações → Voz e vídeo.
 - **Windows**: o áudio da tela sem a voz da call precisa do Windows 10 22H2 ou mais novo.
