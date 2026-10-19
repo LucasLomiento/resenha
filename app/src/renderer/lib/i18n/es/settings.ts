@@ -247,10 +247,6 @@ export default {
     preview: 'Vista previa',
     previewLabel: 'Vista previa del perfil',
     since: 'En Resenha desde',
-    unsaved: {
-      label: 'Cambios sin guardar',
-      text: 'Tienes cambios sin guardar.',
-    },
   },
 
   devices: {
@@ -413,6 +409,7 @@ export default {
       denied: 'Android bloqueó los avisos de Resenha. Actívalos en Ajustes de Android → Apps → Resenha → Notificaciones.',
       unavailable: 'Este celular no pudo activar los avisos (necesitan Google Play).',
       test: 'Enviar un aviso de prueba',
+      noAnswer: 'El servidor no respondió. Revisa la conexión e inténtalo de nuevo.',
       results: {
         waiting: 'Sal de la app: el aviso llega en 5 segundos.',
         sent: 'El aviso salió. Si no apareció, revisa que el ahorro de batería de Android no esté frenando a Resenha.',

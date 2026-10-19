@@ -1,3 +1,8 @@
+<script lang="ts" module>
+  /** Versão que já ganhou aviso do sistema (fora do componente: ele é recriado a cada ligação). */
+  let notified: string | null = null
+</script>
+
 <script lang="ts">
   import { client } from '../lib/client.svelte'
   import { m } from '../lib/i18n.svelte'
@@ -21,7 +26,6 @@
   )
 
   // Fora do app: um aviso do sistema por versão, quando ela fica pronta.
-  let notified: string | null = null
   $effect(() => {
     if (update.status !== 'ready' || notified === update.version || settings.updateDismissed === update.version) return
     notified = update.version
@@ -37,7 +41,8 @@
       <strong>{t.arrived(version)}</strong>
       <p>
         {#if update.status === 'available'}
-          {t.afterCall}
+          <!-- No Android nada baixa sozinho: o APK novo abre no navegador. -->
+          {client.platform?.mobile ? t.apk : t.afterCall}
         {:else if update.status === 'downloading'}
           {t.downloading(update.percent)}
         {:else if update.status === 'installing'}

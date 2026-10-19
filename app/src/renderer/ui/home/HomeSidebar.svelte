@@ -20,9 +20,10 @@
     return ''
   }
 
-  function dmMenu(dm: DmChannel): MenuItem[] {
+  /** `anchor`: onde o menu abriu (o perfil abre ali; quando o item roda, o menu já fechou). */
+  function dmMenu(dm: DmChannel, anchor: { x: number; y: number }): MenuItem[] {
     return [
-      { label: t.profile, icon: 'user', onselect: () => (ui.profile = { userId: dm.user.id, guildId: null, anchor: menu!.anchor }) },
+      { label: t.profile, icon: 'user', onselect: () => (ui.profile = { userId: dm.user.id, guildId: null, anchor }) },
       { label: t.call, icon: 'phone', onselect: () => client.startDmCall(dm.id) },
       { kind: 'separator' },
       { label: t.closeDm, icon: 'x', onselect: () => home?.closeDm(dm.id) },
@@ -82,7 +83,7 @@
 </nav>
 
 {#if menu}
-  <Menu items={dmMenu(menu.dm)} anchor={menu.anchor} width={208} onclose={() => (menu = null)} />
+  <Menu items={dmMenu(menu.dm, menu.anchor)} anchor={menu.anchor} width={208} onclose={() => (menu = null)} />
 {/if}
 
 <style>

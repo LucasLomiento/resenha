@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { P } from '../../../../../shared/protocol'
   import { client } from '../../lib/client.svelte'
   import type { GuildState } from '../../lib/guild.svelte'
   import { m } from '../../lib/i18n.svelte'
@@ -23,9 +24,10 @@
         icon: guild.muted ? 'bell' : 'bell-off',
         onselect: () => guild.setNotify({ ...guild.notify, mutedUntil: guild.muted ? null : 8.64e15 }),
       },
-      { kind: 'separator' },
-      { label: t.invite, icon: 'user-plus', onselect: () => (ui.invite = { guildId: guild.id }) },
     ]
+    if (guild.canGuild(P.CREATE_INVITE)) {
+      items.push({ kind: 'separator' }, { label: t.invite, icon: 'user-plus', onselect: () => (ui.invite = { guildId: guild.id }) })
+    }
     if (guild.canManage) {
       items.push({ label: t.settings, icon: 'settings', onselect: () => (ui.guildSettings = { guildId: guild.id, page: 'overview' }) })
     }

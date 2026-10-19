@@ -38,6 +38,8 @@
   const t = $derived(m.chat.view)
 
   let scroller = $state<HTMLDivElement>()
+  /** O que rola dentro do chat (mensagens, prévias, imagens): cresce sem a caixa mudar de tamanho. */
+  let feed = $state<HTMLDivElement>()
   let composer = $state<{ addFiles(files: File[]): void; focus(): void }>()
   let dragging = $state(false)
   let replyTo = $state<Message | null>(null)
@@ -131,17 +133,29 @@
   })
 
   // Quem está no fim continua no fim quando a área da conversa muda de tamanho (a caixa de
-  // texto crescendo com várias linhas, ou voltando ao normal depois de enviar).
+  // texto crescendo com várias linhas, ou voltando ao normal depois de enviar) e quando o
+  // conteúdo cresce embaixo (prévia de link que chega depois, imagem carregando, reação nova).
   let stuck = true
   $effect(() => {
     const el = scroller
+    const content = feed
     if (!el) return
     const observer = new ResizeObserver(() => {
       if (stuck && !target?.hasNewer) el.scrollTop = el.scrollHeight
     })
     observer.observe(el)
+    if (content) observer.observe(content)
     return () => observer.disconnect()
   })
+
+  /** Mandei mensagem: desce até ela (olhando mensagens antigas, volta pro presente antes). */
+  function toPresent() {
+    if (!target || !scroller) return
+    if (target.hasNewer) target.jumpToPresent()
+    stuck = true
+    atBottom = true
+    scroller.scrollTop = scroller.scrollHeight
+  }
 
   function onScroll() {
     if (!scroller || !target) return
@@ -201,12 +215,38 @@
 
   // ---------- Arrastar arquivo ----------
 
+  /**
+   * O véu some quando o arrasto sai do chat. O dragleave chega também ao passar de um filho pra
+   * outro, e às vezes não chega (Esc, saiu da janela por cima de outra coisa): enquanto arrasta
+   * por cima, o dragover se repete (no máximo a cada ~550 ms); sem ele, o véu sai sozinho.
+   */
+  let dragTimer: ReturnType<typeof setTimeout> | undefined
+
+  function onDragOver(event: DragEvent) {
+    if (!event.dataTransfer?.types.includes('Files') || !target?.canAttach || !target.canSend) return
+    event.preventDefault()
+    dragging = true
+    clearTimeout(dragTimer)
+    dragTimer = setTimeout(() => (dragging = false), 800)
+  }
+
+  function onDragLeave(event: DragEvent) {
+    const into = event.relatedTarget as Node | null
+    if (!into || !(event.currentTarget as HTMLElement).contains(into)) {
+      clearTimeout(dragTimer)
+      dragging = false
+    }
+  }
+
   function onDrop(event: DragEvent) {
     event.preventDefault()
+    clearTimeout(dragTimer)
     dragging = false
     const files = [...(event.dataTransfer?.files ?? [])]
     if (files.length && target?.canAttach && target.canSend) composer?.addFiles(files)
   }
+
+  $effect(() => () => clearTimeout(dragTimer))
 
   function submitSearch(event: KeyboardEvent) {
     if (event.key === 'Enter') searchQuery = searchText.trim()
@@ -224,15 +264,8 @@
     <section
       class="chat"
       aria-label={t.label}
-      ondragover={(e) => {
-        if (e.dataTransfer?.types.includes('Files') && target.canAttach && target.canSend) {
-          e.preventDefault()
-          dragging = true
-        }
-      }}
-      ondragleave={(e) => {
-        if (e.currentTarget === e.target) dragging = false
-      }}
+      ondragover={onDragOver}
+      ondragleave={onDragLeave}
       ondrop={onDrop}
     >
       <header>
@@ -283,6 +316,7 @@
       {/if}
 
       <div class="scroller" bind:this={scroller} onscroll={onScroll}>
+        <div bind:this={feed}>
         {#if target.hasMore === false}
           <div class="start">
             {#if peer}
@@ -317,6 +351,7 @@
             onjump={jumpTo}
           />
         {/each}
+        </div>
       </div>
 
       {#if target.hasNewer}
@@ -326,7 +361,7 @@
         </button>
       {/if}
 
-      <Composer bind:this={composer} {target} bind:replyTo oneditlast={editLast} />
+      <Composer bind:this={composer} {target} bind:replyTo oneditlast={editLast} onsent={toPresent} />
       <div class="typing" aria-live="polite">
         {#if typing.length}
           <span class="dots" aria-hidden="true"><i></i><i></i><i></i></span>

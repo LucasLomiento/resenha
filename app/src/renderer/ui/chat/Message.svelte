@@ -3,11 +3,11 @@
   import { client } from '../../lib/client.svelte'
   import { formatFull, formatSize, formatStamp, formatTime } from '../../lib/format'
   import { m } from '../../lib/i18n.svelte'
-  import { plainText } from '../../lib/markdown'
+  import { copyText, plainText } from '../../lib/markdown'
   import { badgeOf, nameStyle } from '../../lib/profile'
   import { confirmAction, openProfile, ui } from '../../lib/ui.svelte'
   import { memberMenu } from '../guild/memberMenu'
-  import { Avatar, UserBadge, Icon, IconButton, Kbd, Menu, tooltip, type MenuItem } from '../kit'
+  import { Avatar, Button, UserBadge, Icon, IconButton, Kbd, Menu, tooltip, type MenuItem } from '../kit'
   import EmojiPicker from './EmojiPicker.svelte'
   import Markdown from './Markdown.svelte'
   import VoicePlayer from './VoicePlayer.svelte'
@@ -42,6 +42,8 @@
   const mentioned = $derived(!mine && target.mentionsMe(message))
   const canDelete = $derived(mine || target.canManage)
   const t = $derived(m.chat.message)
+  /** Celular: o Enter do teclado pula linha também ao editar, e salvar/cancelar viram botões. */
+  const mobile = $derived(!!client.platform?.mobile)
 
   const IMAGE = /^image\/(png|jpe?g|gif|webp|avif|bmp)$/
   const VIDEO = /^video\/(mp4|webm|ogg)$/
@@ -70,7 +72,7 @@
   }
 
   function editKey(event: KeyboardEvent) {
-    if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
+    if (event.key === 'Enter' && !event.shiftKey && !event.isComposing && !mobile) {
       event.preventDefault()
       saveEdit()
     } else if (event.key === 'Escape') {
@@ -102,9 +104,10 @@
   let pickerAnchor = $state<HTMLElement | { x: number; y: number } | null>(null)
   let menu = $state<{ items: MenuItem[]; anchor: HTMLElement | { x: number; y: number } } | null>(null)
 
-  function moreItems(): MenuItem[] {
+  /** `anchor`: onde o menu abriu (o "Reagir" abre o seletor ali; o menu já fechou quando o item roda). */
+  function moreItems(anchor: HTMLElement | { x: number; y: number }): MenuItem[] {
     const items: MenuItem[] = []
-    if (target.canReact) items.push({ label: t.react, icon: 'emoji-plus', onselect: () => (pickerAnchor = menu?.anchor ?? null) })
+    if (target.canReact) items.push({ label: t.react, icon: 'emoji-plus', onselect: () => (pickerAnchor = anchor) })
     if (target.canSend) items.push({ label: t.reply, icon: 'reply', onselect: () => onreply(message) })
     if (mine && message.content) items.push({ label: m.common.edit, icon: 'pencil', onselect: startEdit })
     if (target.canPin) {
@@ -114,7 +117,7 @@
       items.push({
         label: t.copyText,
         icon: 'copy',
-        onselect: () => navigator.clipboard.writeText(plain(message.content)),
+        onselect: () => navigator.clipboard.writeText(copyText(message.content, mentionNames())),
       })
     }
     if (canDelete) {
@@ -131,6 +134,8 @@
   function authorMenu(event: MouseEvent) {
     if (!target.guild) return
     event.preventDefault()
+    // O menu da mensagem (no <article>) não pode abrir por cima do da pessoa.
+    event.stopPropagation()
     menu = { items: memberMenu(target.guild, message.authorId, { x: event.clientX, y: event.clientY }), anchor: { x: event.clientX, y: event.clientY } }
   }
 
@@ -139,18 +144,23 @@
     if (window.getSelection()?.toString() || (event.target as HTMLElement).closest('a, textarea')) return
     event.preventDefault()
     const anchor = { x: event.clientX, y: event.clientY }
-    menu = { items: moreItems(), anchor }
+    menu = { items: moreItems(anchor), anchor }
   }
 
   const url = (path: string) => client.api?.url(path) ?? path
 
-  /** Texto puro (copiar, resumo da resposta): menção sem nome vira "cargo" ou "canal". */
-  function plain(content: string): string {
-    return plainText(content, {
+  /** Nomes das menções: a que não tem nome vira "cargo" ou "canal". */
+  function mentionNames() {
+    return {
       user: target.names.user,
-      role: (id) => target.names.role(id)?.name ?? m.chat.mention.role,
-      channel: (id) => target.names.channel(id)?.name ?? m.chat.mention.channel,
-    })
+      role: (id: string) => target.names.role(id)?.name ?? m.chat.mention.role,
+      channel: (id: string) => target.names.channel(id)?.name ?? m.chat.mention.channel,
+    }
+  }
+
+  /** Texto puro (resumo da resposta). */
+  function plain(content: string): string {
+    return plainText(content, mentionNames())
   }
 
   /** Com o tamanho conhecido, o espaço fica reservado antes de a imagem chegar. */
@@ -242,10 +252,17 @@
             e.currentTarget.style.height = `${Math.min(e.currentTarget.scrollHeight, 320)}px`
           }}
         ></textarea>
-        <div class="edit-hint">
-          <span><Kbd keys="Enter" /> {t.editSave}</span>
-          <span><Kbd keys="Esc" /> {t.editCancel}</span>
-        </div>
+        {#if mobile}
+          <div class="edit-actions">
+            <Button size="sm" variant="ghost" onclick={() => (editing = false)}>{m.common.cancel}</Button>
+            <Button size="sm" variant="primary" onclick={saveEdit}>{m.common.save}</Button>
+          </div>
+        {:else}
+          <div class="edit-hint">
+            <span><Kbd keys="Enter" /> {t.editSave}</span>
+            <span><Kbd keys="Esc" /> {t.editCancel}</span>
+          </div>
+        {/if}
       {:else if message.content}
         <div class="content">
           <Markdown content={message.content} names={{ ...target.names, openUser: (id, anchor) => openProfile(id, target.guild?.id ?? null, anchor) }} />
@@ -338,7 +355,15 @@
       {:else if target.canPin}
         <IconButton icon={message.pinned ? 'pin-off' : 'pin'} label={message.pinned ? t.unpin : t.pin} size="sm" onclick={() => target.pin(message.id, !message.pinned)} />
       {/if}
-      <IconButton icon="ellipsis" label={m.common.more} size="sm" onclick={(e) => (menu = { items: moreItems(), anchor: e.currentTarget })} />
+      <IconButton
+        icon="ellipsis"
+        label={m.common.more}
+        size="sm"
+        onclick={(e) => {
+          const anchor = e.currentTarget as HTMLElement
+          menu = { items: moreItems(anchor), anchor }
+        }}
+      />
     </div>
   {/if}
 </article>
@@ -579,6 +604,13 @@
     margin-top: 6px;
     color: var(--fg-3);
     font-size: var(--text-xs);
+  }
+
+  .edit-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 8px;
   }
 
   .edit-hint span {

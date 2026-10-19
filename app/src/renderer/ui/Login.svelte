@@ -36,12 +36,17 @@
   let preview = $state<InvitePreview | null>(null)
 
   const t = $derived(m.app.login)
+  /**
+   * Cadastro aberto sem convite passa pela verificação anti-robô (Turnstile), que só existe
+   * no computador: no celular, o convite continua obrigatório.
+   */
+  const robotCheck = $derived(open && !client.platform?.mobile)
   const subtitle = $derived(
     mode === 'login'
       ? t.loginSub
       : empty
         ? t.firstAccount
-        : open
+        : robotCheck
           ? t.openSignup
           : t.inviteSignup,
   )
@@ -93,8 +98,8 @@
       } else {
         const code = inviteCode(invite)
         // Cadastro aberto sem convite: a verificação anti-robô abre numa janelinha.
-        const turnstileToken = !code && open ? await window.resenha.turnstile(server) : null
-        if (!code && open && !turnstileToken) {
+        const turnstileToken = !code && robotCheck ? await window.resenha.turnstile(server) : null
+        if (!code && robotCheck && !turnstileToken) {
           error = t.robot
           return
         }
@@ -203,11 +208,11 @@
       />
       {#if mode === 'register' && (needsInvite || open)}
         <TextField
-          label={open ? t.inviteOptional : t.invite}
+          label={robotCheck ? t.inviteOptional : t.invite}
           size="lg"
           mono
           bind:value={invite}
-          required={!open}
+          required={!robotCheck}
           spellcheck={false}
           autocomplete="off"
           placeholder={t.invitePlaceholder}

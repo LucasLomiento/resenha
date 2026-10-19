@@ -38,6 +38,25 @@
     ;(first ?? dialog)?.focus({ preventScroll: true })
     return () => previous?.focus?.({ preventScroll: true })
   })
+
+  const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]):not([type=hidden]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+
+  /** O Tab dá a volta dentro do diálogo (sem ir pro que está atrás dele). */
+  function trapTab(event: KeyboardEvent) {
+    if (event.key !== 'Tab' || !dialog) return
+    const items = [...dialog.querySelectorAll<HTMLElement>(FOCUSABLE)].filter((el) => el.getClientRects().length > 0)
+    if (!items.length) return event.preventDefault()
+    const first = items[0]
+    const last = items[items.length - 1]
+    const active = document.activeElement
+    if (event.shiftKey && (active === first || active === dialog || !dialog.contains(active))) {
+      event.preventDefault()
+      last.focus()
+    } else if (!event.shiftKey && (active === last || !dialog.contains(active))) {
+      event.preventDefault()
+      first.focus()
+    }
+  }
 </script>
 
 <div
@@ -54,6 +73,7 @@
     aria-modal="true"
     aria-labelledby="{uid}-title"
     tabindex="-1"
+    onkeydown={trapTab}
   >
     <header>
       <div class="titles">

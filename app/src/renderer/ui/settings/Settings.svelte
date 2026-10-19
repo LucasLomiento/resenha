@@ -6,6 +6,7 @@
   import { searchSettings, type SettingEntry } from '../../lib/settings-search'
   import { confirmAction, openSetting, ui, type SettingsPage } from '../../lib/ui.svelte'
   import { Icon, SettingsLayout, type SettingsNavEntry } from '../kit'
+  import { Unsaved } from '../server/unsaved.svelte'
   import AppPage from './AppPage.svelte'
   import DevicesPage from './DevicesPage.svelte'
   import NotificationsPage from './NotificationsPage.svelte'
@@ -17,6 +18,8 @@
   import VoicePage from './VoicePage.svelte'
 
   const t = $derived(m.settings)
+  /** Perfil com alteração pendente: não fecha nem troca de página sem salvar ou desfazer. */
+  const unsaved = new Unsaved()
   const admin = $derived<SettingsNavEntry[]>([{ heading: t.nav.admin }, { id: 'platform', label: t.pages.platform, icon: 'shield' }])
 
   // Conta em cima, app embaixo; o painel da plataforma só pro dono dela (e, só pra ver, pro melhor amigo dele).
@@ -119,12 +122,18 @@
   function close() {
     // Gravando um atalho, o Esc cancela a gravação (e não fecha a tela).
     if (ui.recordingShortcut) ui.recordingShortcut = false
-    else ui.settings = null
+    else if (!unsaved.blocked()) ui.settings = null
   }
 
-  function select(id: string) {
-    if (id !== 'logout') return (ui.settings = id as SettingsPage)
-    confirmAction({ title: t.logout.title, confirm: t.logout.confirm, onconfirm: () => client.logout() })
+  /** false: continua onde está (no celular, a lista de páginas não some). */
+  function select(id: string): boolean | void {
+    if (id === 'logout') {
+      confirmAction({ title: t.logout.title, confirm: t.logout.confirm, onconfirm: () => client.logout() })
+      return false
+    }
+    // Com o Perfil por salvar, a barra chacoalha (no celular, a página aparece pra mostrar por quê).
+    if (id !== page && unsaved.blocked()) return
+    ui.settings = id as SettingsPage
   }
 </script>
 
@@ -181,7 +190,7 @@
 
 <SettingsLayout title={t.title} {nav} active={page} onselect={select} onclose={close} {search} results={results ? found : undefined}>
   {#if page === 'profile'}
-    <ProfilePage />
+    <ProfilePage {unsaved} />
   {:else if page === 'devices'}
     <DevicesPage />
   {:else if page === 'password'}

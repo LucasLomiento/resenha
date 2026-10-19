@@ -20,6 +20,8 @@
 
   const BARS = 44
   const SPEEDS = [1, 1.5, 2]
+  /** Arquivo de áudio maior que isso fica com a barra lisa: a onda decodificaria o arquivo inteiro na memória. */
+  const WAVE_MAX_BYTES = 4 * 1024 * 1024
 
   let audio = $state<HTMLAudioElement>()
   let wave = $state<HTMLElement>()
@@ -33,10 +35,11 @@
   const progress = $derived(duration ? Math.min(1, current / duration) : 0)
   const t = $derived(m.chat.voicePlayer)
 
-  // A onda só quando o áudio aparece na tela (uma conversa cheia de áudios não baixa tudo de uma vez).
+  // A onda só quando o áudio aparece na tela (uma conversa cheia de áudios não baixa tudo de uma vez),
+  // e só pra mensagem de voz ou arquivo pequeno.
   $effect(() => {
     const node = wave
-    if (!node) return
+    if (!node || (!voice && size > WAVE_MAX_BYTES)) return
     const observer = new IntersectionObserver(([entry]) => {
       if (!entry.isIntersecting) return
       observer.disconnect()

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { untrack } from 'svelte'
+  import { onDestroy, untrack } from 'svelte'
   import {
     DECORATIONS,
     EXCLUSIVE_DECORATIONS,
@@ -21,7 +21,12 @@
   import { DECORATION_LABEL, EFFECT_LABEL, NAME_EFFECT_LABEL, NAME_FONT_LABEL, THEME_PRESETS, bannerFill, hex, profileColors } from '../../lib/profile'
   import { Avatar, Button, ColorPicker, Icon, PageHeader, Popover, Row, Section, Segmented, TextField, tooltip } from '../kit'
   import ProfileEffectView from '../profile/ProfileEffect.svelte'
+  import SaveBar from '../server/SaveBar.svelte'
+  import type { Unsaved } from '../server/unsaved.svelte'
   import ProfilePreview from './ProfilePreview.svelte'
+
+  /** Alteração pendente: as configurações não fecham nem trocam de página sem salvar ou desfazer. */
+  let { unsaved }: { unsaved?: Unsaved } = $props()
 
   interface Draft {
     name: string
@@ -83,6 +88,12 @@
   let saving = $state(false)
 
   const dirty = $derived(!same(draft, base))
+  $effect(() => {
+    if (unsaved) unsaved.dirty = dirty
+  })
+  onDestroy(() => {
+    if (unsaved) unsaved.dirty = false
+  })
   const nameError = $derived(draft.name.trim() ? null : t.nameEmpty)
   // Cor que veio de outro lugar e não está nas amostras: aparece como a primeira.
   const swatches = $derived(
@@ -455,11 +466,7 @@
   {/if}
 
   {#if dirty}
-    <div class="savebar" role="region" aria-label={t.unsaved.label}>
-      <span>{t.unsaved.text}</span>
-      <Button variant="ghost" size="sm" disabled={saving} onclick={() => (draft = { ...base })}>{m.common.undo}</Button>
-      <Button variant="primary" size="sm" loading={saving} disabled={!!nameError} onclick={() => save()}>{m.common.save}</Button>
-    </div>
+    <SaveBar {saving} nudge={unsaved?.nudge ?? 0} disabled={!!nameError} onreset={() => (draft = { ...base })} onsave={() => save()} />
   {/if}
 {/if}
 
@@ -764,29 +771,5 @@
     color: var(--fg-3);
     font-size: var(--text-xs);
     font-weight: 500;
-  }
-
-  .savebar {
-    position: sticky;
-    bottom: 0;
-    z-index: 1;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-top: 24px;
-    padding: 10px 10px 10px 16px;
-    border-radius: var(--r-xl);
-    background: var(--bg-overlay);
-    box-shadow:
-      0 0 0 1px var(--line-strong),
-      var(--highlight),
-      var(--shadow-lg);
-    font-size: var(--text-sm);
-    animation: rs-pop-in var(--t) var(--ease);
-  }
-
-  .savebar span {
-    flex: 1;
-    min-width: 0;
   }
 </style>

@@ -243,10 +243,6 @@ export default {
     preview: 'Preview',
     previewLabel: 'Profile preview',
     since: 'Member since',
-    unsaved: {
-      label: 'Unsaved changes',
-      text: 'You have unsaved changes.',
-    },
   },
 
   devices: {
@@ -409,6 +405,7 @@ export default {
       denied: 'Android blocked Resenha notifications. Allow them in Android Settings → Apps → Resenha → Notifications.',
       unavailable: 'This phone could not turn notifications on (they need Google Play).',
       test: 'Send a test notification',
+      noAnswer: "The server didn't answer. Check your connection and try again.",
       results: {
         waiting: 'Leave the app: the notification arrives in 5 seconds.',
         sent: 'The notification was sent. If it did not show up, check that Android battery saving is not holding Resenha back.',
