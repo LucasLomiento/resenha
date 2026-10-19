@@ -162,7 +162,7 @@ function startWindow(connector: string): Promise<{ ok: true } | { ok: false; err
     resizable: false,
     movable: false,
     show: false,
-    webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false },
+    webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false, devTools: !app.isPackaged },
   })
   overlay = win
   win.setIgnoreMouseEvents(true)

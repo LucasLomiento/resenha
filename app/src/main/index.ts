@@ -71,6 +71,14 @@ const devUrl = app.isPackaged ? undefined : process.env.ELECTRON_RENDERER_URL
  */
 let windowsScreenAudio = isWindows
 
+// O inspecionar (DevTools) só abre em desenvolvimento: no app instalado as janelas têm
+// `devTools: false`, o F12 não faz nada e o `--remote-debugging-port` não abre porta. O
+// `--inspect` e o `NODE_OPTIONS` do processo principal saem pelos fuses (`electronFuses`).
+if (app.isPackaged) {
+  app.commandLine.removeSwitch('remote-debugging-port')
+  app.commandLine.removeSwitch('remote-debugging-pipe')
+}
+
 app.commandLine.appendSwitch(
   'disable-features',
   [
@@ -168,6 +176,7 @@ function createWindow() {
       spellcheck: true,
       // Testes automáticos: renderiza fora da tela, sem abrir janela no desktop.
       offscreen: hidden,
+      devTools: !app.isPackaged,
     },
   })
 
@@ -205,13 +214,15 @@ function createWindow() {
     win = null
   })
   win.webContents.on('did-finish-load', () => win?.webContents.setZoomFactor(prefs.zoom))
-  // Sem menu de aplicativo (evita Ctrl+W/Ctrl+R por engano); DevTools no F12.
-  win.webContents.on('before-input-event', (event, input) => {
-    if (input.type === 'keyDown' && (input.key === 'F12' || (input.control && input.shift && input.key.toLowerCase() === 'i'))) {
-      win?.webContents.toggleDevTools()
-      event.preventDefault()
-    }
-  })
+  // Sem menu de aplicativo (evita Ctrl+W/Ctrl+R por engano); DevTools no F12 só em desenvolvimento.
+  if (!app.isPackaged) {
+    win.webContents.on('before-input-event', (event, input) => {
+      if (input.type === 'keyDown' && (input.key === 'F12' || (input.control && input.shift && input.key.toLowerCase() === 'i'))) {
+        win?.webContents.toggleDevTools()
+        event.preventDefault()
+      }
+    })
+  }
   setSpotifyTarget(win.webContents)
   const page = win
   win.webContents.on('render-process-gone', (_event, details) => {
@@ -418,7 +429,7 @@ handle('turnstile:verify', (_event, server: string): Promise<string | null> => {
       title: tm().verifyTitle,
       backgroundColor: '#0c0c0e',
       autoHideMenuBar: true,
-      webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false, partition: 'turnstile' },
+      webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false, partition: 'turnstile', devTools: !app.isPackaged },
     })
     popup.webContents.session.setPermissionRequestHandler((_wc, _permission, callback) => callback(false))
     popup.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))

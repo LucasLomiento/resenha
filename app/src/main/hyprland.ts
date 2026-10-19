@@ -187,6 +187,8 @@ export function clearHyprShortcuts() {
   stopped = true
   events?.destroy()
   events = null
+  // Perfil de teste (e2e, capturas) não cria binds: os que estão lá são do app de verdade aberto.
+  if (!hasHyprland()) return
   try {
     // Síncrono: o app está saindo.
     const binds = (JSON.parse(execFileSync('hyprctl', ['binds', '-j'], { timeout: 2000, encoding: 'utf8' })) as HyprBind[]).filter((b) => !b.submap)
