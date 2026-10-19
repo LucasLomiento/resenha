@@ -53,6 +53,11 @@ const PUSH = import.meta.env.VITE_PUSH === '1'
 let pushOpen: ((data: Record<string, string>) => void) | null = null
 let pendingOpen: Record<string, string> | null = null
 let pushToken: Promise<string | null> | null = null
+/** O token de agora: o Firebase troca de vez em quando, e o app manda o mais novo a cada conexão. */
+let latestToken: string | null = null
+/** O pedido de token esperando o Firebase responder. */
+let waitingToken: ((token: string | null) => void) | null = null
+let tokenListener: ((token: string) => void) | null = null
 
 if (PUSH) {
   // Registrado já ao carregar: o toque que abriu o app chega antes do app estar pronto.
@@ -61,6 +66,18 @@ if (PUSH) {
     if (pushOpen) pushOpen(data)
     else pendingOpen = data
   })
+  // Um só, pra vida toda do app: chega o primeiro token e também os que o Firebase trocar depois.
+  void PushNotifications.addListener('registration', ({ value }) => {
+    const changed = latestToken !== null && latestToken !== value
+    latestToken = value
+    waitingToken?.(value)
+    waitingToken = null
+    if (changed) tokenListener?.(value)
+  })
+  void PushNotifications.addListener('registrationError', () => {
+    waitingToken?.(null)
+    waitingToken = null
+  })
 }
 
 async function registerPush(): Promise<string | null> {
@@ -68,21 +85,44 @@ async function registerPush(): Promise<string | null> {
   if (permission.receive !== 'granted' && permission.receive !== 'denied') permission = await PushNotifications.requestPermissions()
   if (permission.receive !== 'granted') return null
   // Os canais do Android (o servidor escolhe um deles em cada aviso): mensagem aparece por cima; ligação também e toca.
+  // No Android 7 não existem canais (o plugin recusa): o aviso usa o jeito padrão.
   const names = m.app.pushChannels
-  await PushNotifications.createChannel({ id: 'messages', name: names.messages, importance: 4, visibility: 0 })
-  await PushNotifications.createChannel({ id: 'calls', name: names.calls, importance: 5, visibility: 1 })
+  try {
+    await PushNotifications.createChannel({ id: 'messages', name: names.messages, importance: 4, visibility: 0 })
+    await PushNotifications.createChannel({ id: 'calls', name: names.calls, importance: 5, visibility: 1 })
+  } catch {
+    // sem canais: segue
+  }
   return new Promise((resolve) => {
-    const timer = setTimeout(() => resolve(null), 20_000)
-    void PushNotifications.addListener('registration', ({ value }) => {
-      clearTimeout(timer)
-      resolve(value)
-    })
-    void PushNotifications.addListener('registrationError', () => {
-      clearTimeout(timer)
+    const timer = setTimeout(() => {
+      waitingToken = null
       resolve(null)
-    })
-    void PushNotifications.register()
+    }, 20_000)
+    waitingToken = (token) => {
+      clearTimeout(timer)
+      resolve(token)
+    }
+    PushNotifications.register().catch(() => waitingToken?.(null))
   })
+}
+
+/** O token deste aparelho: o de agora, ou pede ao Firebase (e uma falha deixa tentar de novo depois). */
+function currentToken(): Promise<string | null> {
+  if (latestToken) return Promise.resolve(latestToken)
+  return (pushToken ??= registerPush()
+    .catch(() => null)
+    .then((token) => {
+      if (!token) pushToken = null
+      return token
+    }))
+}
+
+/** Saiu da conta (ou a sessão acabou): o token morre junto, e o aparelho para de receber os avisos dela. */
+function dropPush() {
+  if (!PUSH || (!latestToken && !pushToken)) return
+  latestToken = null
+  pushToken = null
+  PushNotifications.unregister().catch(() => {})
 }
 
 // ---------- Botão voltar: fecha o que está por cima; sem nada, o app vai pro fundo ----------
@@ -119,7 +159,8 @@ function callState(state: CallState) {
 // ---------- Avisos (notificação do sistema; clicar abre o que avisou) ----------
 
 const clicks = new Map<number, () => void>()
-let nextNotification = 1
+// Começa longe do 1, que é o da notificação fixa da call (CallService): o mesmo id trocaria uma pela outra.
+let nextNotification = 1000
 void LocalNotifications.addListener('localNotificationActionPerformed', ({ notification }) => {
   clicks.get(notification.id)?.()
   clicks.delete(notification.id)
@@ -180,6 +221,24 @@ const platform: PlatformInfo = {
 
 const nothing = () => {}
 
+/** O push do Firebase (só no build com o google-services.json). */
+const push = {
+  token: currentToken,
+  permission: async (): Promise<'granted' | 'denied' | 'prompt'> => {
+    const { receive } = await PushNotifications.checkPermissions()
+    return receive === 'granted' ? 'granted' : receive === 'denied' ? 'denied' : 'prompt'
+  },
+  onOpen: (callback: (data: Record<string, string>) => void) => {
+    pushOpen = callback
+    if (pendingOpen) callback(pendingOpen)
+    pendingOpen = null
+  },
+  /** O Firebase trocou o token deste aparelho (raro): o app manda o novo na hora, sem esperar a próxima conexão. */
+  onToken: (callback: (token: string) => void) => {
+    tokenListener = callback
+  },
+}
+
 const api: ResenhaApi = {
   platform: async () => platform,
   session: {
@@ -192,8 +251,11 @@ const api: ResenhaApi = {
       }
     },
     set: async (session) => {
-      if (session) await Preferences.set({ key: SESSION_KEY, value: JSON.stringify(session) })
-      else await Preferences.remove({ key: SESSION_KEY })
+      if (session) return Preferences.set({ key: SESSION_KEY, value: JSON.stringify(session) })
+      // Sem sessão (saiu, a sessão acabou ou a conta foi excluída): a notificação da call e o push vão junto.
+      callState({ inCall: false, muted: false, deafened: false, sharing: false, speaking: false })
+      dropPush()
+      await Preferences.remove({ key: SESSION_KEY })
     },
   },
   // Compartilhar a tela, rabiscar por cima dela e o som dela: só no computador.
@@ -218,20 +280,7 @@ const api: ResenhaApi = {
   onBack: (callback) => {
     backHandler = callback
   },
-  push: PUSH
-    ? {
-        token: () => (pushToken ??= registerPush().then((token) => token ?? ((pushToken = null), null))),
-        permission: async () => {
-          const { receive } = await PushNotifications.checkPermissions()
-          return receive === 'granted' ? 'granted' : receive === 'denied' ? 'denied' : 'prompt'
-        },
-        onOpen: (callback) => {
-          pushOpen = callback
-          if (pendingOpen) callback(pendingOpen)
-          pendingOpen = null
-        },
-      }
-    : undefined,
+  push: PUSH ? push : undefined,
   desktop: { get: async () => null, set: async () => ({ prefs: DESKTOP, failed: [] }), failed: async () => [] },
   spotify: {
     status: async () => ({ librespot: false, installable: false, account: null, ownRedirect: '', running: false }),

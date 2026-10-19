@@ -86,6 +86,14 @@ public class CallService extends Service {
         return value != null ? value : fallback;
     }
 
+    /** Tirou o app dos recentes: a página (e a call que roda nela) acabou, então a notificação sai junto. */
+    @Override
+    public void onTaskRemoved(Intent rootIntent) {
+        ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE);
+        stopSelf();
+        super.onTaskRemoved(rootIntent);
+    }
+
     @Override
     public void onDestroy() {
         if (running == this) running = null;

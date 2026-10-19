@@ -23,7 +23,8 @@ const config: CapacitorConfig = {
     // A interface fica entre a barra de status e a de navegação (sem desenhar por trás delas).
     SystemBars: { insetsHandling: 'native', style: 'DARK' },
     LocalNotifications: { smallIcon: 'ic_stat_resenha', iconColor: '#2b6cf5' },
-    PushNotifications: { presentationOptions: ['badge', 'sound', 'alert'] },
+    // Com o app aberto, o push não vira aviso do sistema: o próprio app já avisa (e toca) pelo WebSocket.
+    PushNotifications: { presentationOptions: [] },
     Keyboard: { resize: 'native' },
   },
 }

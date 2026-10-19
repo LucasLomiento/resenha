@@ -19,6 +19,14 @@ public class CallServicePlugin extends Plugin {
         instance = this;
     }
 
+    /** A tela do app foi destruída: a página e a call nela acabaram, então a notificação "Na call" sai. */
+    @Override
+    protected void handleOnDestroy() {
+        getContext().stopService(new Intent(getContext(), CallService.class));
+        if (instance == this) instance = null;
+        super.handleOnDestroy();
+    }
+
     /** Na call: liga (ou atualiza) a notificação; fora: desliga. */
     @PluginMethod
     public void update(PluginCall call) {
