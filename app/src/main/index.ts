@@ -2,6 +2,7 @@ import {
   app,
   BrowserWindow,
   desktopCapturer,
+  dialog,
   ipcMain,
   type IpcMainEvent,
   type IpcMainInvokeEvent,
@@ -11,11 +12,11 @@ import {
   shell,
   type Streams,
 } from 'electron'
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { release } from 'node:os'
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import type { CallState, CaptureSource, DesktopPrefs, PlatformInfo, SavedSession, ShortcutAction } from '../preload/api'
-import { appIcon, hasTray, registerShortcuts, setAutostart, setTray, showCallState } from './desktop'
+import { attachContextMenu } from './context-menu'
+import { appIcon, hasTray, onTrayUnavailable, registerShortcuts, setAutostart, setTray, showCallState } from './desktop'
 import { isLocale, localeFrom, mainLocale, setMainLocale, tm, type Locale } from './i18n'
 import { clearHyprShortcuts } from './hyprland'
 import { inkEvent, inkMonitors, inkStart, inkStop, onInkClosed } from './ink'
@@ -49,13 +50,25 @@ import { checkForUpdates, downloadUpdate, installUpdate, setUpdaterCall, setUpda
 const profile = process.env.RESENHA_PROFILE
 if (profile) app.setPath('userData', join(app.getPath('appData'), `resenha-${profile}`))
 
+// Já tem um Resenha aberto: ele recebe os argumentos (`second-instance`) e este sai na hora, sem
+// montar nada. Antes do laço de eventos o `app.exit` sai direto, sem `will-quit`: a limpeza da
+// saída tiraria os atalhos do Hyprland do outro (são achados pela descrição, não por processo).
+const primary = app.requestSingleInstanceLock()
+if (!primary) app.exit(0)
+
 const isLinux = process.platform === 'linux'
 const isWindows = process.platform === 'win32'
 const portalPicker = isLinux && (process.env.XDG_SESSION_TYPE === 'wayland' || !!process.env.WAYLAND_DISPLAY)
-// Captura do sistema sem o próprio processo (WASAPI process loopback). Na
-// prática funciona a partir do Windows 10 22H2 (build 19045), igual o Vesktop.
-const windowsBuild = isWindows ? Number(release().split('.')[2] ?? 0) : 0
-const windowsExcludesSelf = windowsBuild >= 19045
+/** Servidor do Vite no desenvolvimento. No app empacotado, a variável não vale (ninguém troca a página por outra). */
+const devUrl = app.isPackaged ? undefined : process.env.ELECTRON_RENDERER_URL
+/**
+ * Windows: o Electron 44 só aceita 'loopback' e 'loopbackWithMute' no áudio da tela (os tipos e
+ * a mensagem "audio must be a WebFrameMain, "loopback" or "loopbackWithMute"" no binário). O
+ * 'loopbackWithoutChrome', que tiraria o som do próprio app, era recusado e a tela com som nem
+ * abria. Com 'loopback' vai o som do computador inteiro, com a voz da call (`loopback-all`).
+ * Se mesmo assim o Electron recusar, o áudio da tela some daqui pra frente (só o vídeo).
+ */
+let windowsScreenAudio = isWindows
 
 app.commandLine.appendSwitch(
   'disable-features',
@@ -90,8 +103,6 @@ function actionFromArgs(argv: string[]): ShortcutAction | null {
   return ACTIONS.includes(arg as ShortcutAction) ? (arg as ShortcutAction) : null
 }
 
-if (!app.requestSingleInstanceLock()) app.quit()
-
 // ---------- Links resenha:// (convites) ----------
 
 /** `resenha://invite/<código>`: o único link que o app aceita de fora. */
@@ -111,7 +122,7 @@ function deliverInvite(code: string) {
 }
 
 // Em teste (perfil separado) não registra, pra não tomar o lugar do app instalado.
-if (!profile) {
+if (!profile && primary) {
   if (process.defaultApp && process.argv[1]) app.setAsDefaultProtocolClient('resenha', process.execPath, [join(process.cwd(), process.argv[1])])
   else app.setAsDefaultProtocolClient('resenha')
 }
@@ -160,8 +171,12 @@ function createWindow() {
   })
 
   win.webContents.on('will-attach-webview', (event) => event.preventDefault())
-  // Recarregou: a camada dos rabiscos era da transmissão de antes.
-  win.webContents.on('did-start-loading', () => inkStop())
+  // Recarregou: a camada dos rabiscos era da transmissão de antes. Só a página do app: o
+  // `did-start-loading` também dispara com iframe carregando (o Street View no meio da transmissão).
+  win.webContents.on('did-start-navigation', (details) => {
+    if (details.isMainFrame && !details.isSameDocument) inkStop()
+  })
+  attachContextMenu(win)
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https?:\/\//.test(url)) shell.openExternal(url)
     return { action: 'deny' }
@@ -185,6 +200,9 @@ function createWindow() {
     event.preventDefault()
     win?.hide()
   })
+  win.on('closed', () => {
+    win = null
+  })
   win.webContents.on('did-finish-load', () => win?.webContents.setZoomFactor(prefs.zoom))
   // Sem menu de aplicativo (evita Ctrl+W/Ctrl+R por engano); DevTools no F12.
   win.webContents.on('before-input-event', (event, input) => {
@@ -194,23 +212,58 @@ function createWindow() {
     }
   })
   setSpotifyTarget(win.webContents)
+  const page = win
   win.webContents.on('render-process-gone', (_event, details) => {
-    // Quem cuidava do bot do Spotify caiu junto (recarregar a página também para: o app pede ao abrir).
+    // O que a página cuidava caiu junto: o bot do Spotify (recarregar também para; o app pede ao
+    // abrir), o áudio da tela (o venmic deixaria os apps desviados) e a camada dos rabiscos.
     void spotifyStop()
+    stopScreenAudio()
+    inkStop()
     console.error('renderer caiu:', details.reason, details.exitCode)
-    if (details.reason !== 'clean-exit') win?.webContents.reload()
+    if (details.reason !== 'clean-exit' && !page.isDestroyed()) recoverPage(page)
   })
 
-  if (process.env.ELECTRON_RENDERER_URL) win.loadURL(process.env.ELECTRON_RENDERER_URL)
+  if (devUrl) win.loadURL(devUrl)
   else win.loadFile(join(__dirname, '../renderer/index.html'))
+}
+
+/** Quando a página caiu no último minuto (pra não recarregar em laço se ela cai de novo logo). */
+const crashes: number[] = []
+
+function recoverPage(page: BrowserWindow) {
+  const now = Date.now()
+  while (crashes.length > 0 && now - crashes[0] > 60_000) crashes.shift()
+  crashes.push(now)
+  if (crashes.length <= 3) return page.webContents.reload()
+  // Caiu de novo e de novo (falta de memória, placa de vídeo...): pergunta em vez de insistir.
+  const t = tm().crashed
+  void dialog
+    .showMessageBox(page, { type: 'error', message: t.message, detail: t.detail, buttons: [t.reload, t.quit], defaultId: 0, cancelId: 1 })
+    .then(({ response }) => {
+      if (page.isDestroyed()) return
+      if (response !== 0) return app.quit()
+      crashes.length = 0
+      page.webContents.reload()
+    })
 }
 
 // ---------- IPC: só a janela do próprio app fala com o processo principal ----------
 
+const devOrigin = devUrl ? new URL(devUrl).origin : null
+
+/** Endereço (ou origem) da página do app: o arquivo do pacote, ou o servidor do Vite no desenvolvimento. */
+function fromApp(url: string | undefined): boolean {
+  if (!url) return false
+  if (url.startsWith('file:')) return true
+  try {
+    return !!devOrigin && new URL(url).origin === devOrigin
+  } catch {
+    return false
+  }
+}
+
 function trusted(event: IpcMainEvent | IpcMainInvokeEvent): boolean {
-  const url = event.senderFrame?.url ?? ''
-  const dev = process.env.ELECTRON_RENDERER_URL
-  return !!win && event.sender === win.webContents && (url.startsWith('file://') || (!!dev && url.startsWith(dev)))
+  return !!win && event.sender === win.webContents && fromApp(event.senderFrame?.url)
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -243,11 +296,16 @@ function setupDisplayMedia() {
       if (!video) return callback({})
 
       const streams: Streams = { video }
-      if (isWindows && request.audioRequested && choice?.audio) {
-        // 'loopbackWithoutChrome' ainda não está nos tipos do Electron.
-        streams.audio = (windowsExcludesSelf ? 'loopbackWithoutChrome' : 'loopback') as Streams['audio']
+      if (windowsScreenAudio && request.audioRequested && choice?.audio) streams.audio = 'loopback'
+      try {
+        callback(streams)
+      } catch (err) {
+        // O Electron recusou o pedido (e já respondeu com erro pra página): o áudio da tela sai daqui pra frente.
+        if (!streams.audio) throw err
+        windowsScreenAudio = false
+        console.error('getDisplayMedia: o Electron recusou o áudio da tela; daqui pra frente vai só o vídeo', err)
+        win?.webContents.send('screen-audio:unavailable')
       }
-      callback(streams)
     } catch (err) {
       console.error('getDisplayMedia: falhou ao listar fontes', err)
       callback({})
@@ -298,8 +356,21 @@ listen('spotify:flush', () => spotifyFlush())
 handle('platform:info', (): PlatformInfo => {
   let screenAudio: PlatformInfo['screenAudio'] = 'none'
   if (isLinux && screenAudioAvailable()) screenAudio = 'venmic'
-  else if (isWindows) screenAudio = windowsExcludesSelf ? 'exclude-self' : 'loopback-all'
+  else if (windowsScreenAudio) screenAudio = 'loopback-all'
   return { platform: process.platform, portalPicker, screenAudio, version: app.getVersion(), hyprland: isHyprland, music: spotifySupported(), mobile: false }
+})
+
+/**
+ * Os avisos de licença do que vai no app (gerados no build, ao lado do index.html). No pacote
+ * ficam soltos em resources/ (o electron-builder tira do app.asar o que vai como extraResources).
+ */
+handle('licenses:get', (): string | null => {
+  const file = app.isPackaged ? join(process.resourcesPath, 'THIRD_PARTY_LICENSES.txt') : join(__dirname, '../renderer/THIRD_PARTY_LICENSES.txt')
+  try {
+    return readFileSync(file, 'utf8')
+  } catch {
+    return null
+  }
 })
 
 listen('attention', () => {
@@ -431,22 +502,69 @@ handle('update:take-rejoin', () => takeRejoin())
 // ---------- Sessão salva (criptografada com o chaveiro do sistema quando dá) ----------
 
 const sessionFile = () => join(app.getPath('userData'), 'session.json')
+/** O login que não deu pra decifrar fica guardado aqui (não some com o login novo por cima). */
+const unreadableFile = () => join(app.getPath('userData'), 'session.unreadable.json')
+/** Tinha login salvo mas o chaveiro não abriu (trancado, ainda subindo no início automático). */
+let unreadable = false
 
-handle('session:get', (): SavedSession | null => {
+const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+
+handle('session:get', async (): Promise<SavedSession | null> => {
+  let saved: { encrypted: boolean; data: string }
   try {
-    const saved = JSON.parse(readFileSync(sessionFile(), 'utf8')) as { encrypted: boolean; data: string }
-    const raw = Buffer.from(saved.data, 'base64')
-    const session = JSON.parse(saved.encrypted ? safeStorage.decryptString(raw) : raw.toString('utf8')) as SavedSession
-    // Salvo em texto puro numa versão antiga e agora tem chaveiro: regrava criptografado.
-    if (!saved.encrypted && safeStorage.isEncryptionAvailable()) writeSession(session)
-    return session
+    saved = JSON.parse(readFileSync(sessionFile(), 'utf8')) as { encrypted: boolean; data: string }
   } catch {
-    return null
+    return null // sem login salvo (ou o arquivo estragou)
   }
+  const raw = Buffer.from(saved.data, 'base64')
+  /** Abriu: o login antigo que não tinha aberto (se sobrou) já não serve pra nada. */
+  const opened = (session: SavedSession) => {
+    rmSync(unreadableFile(), { force: true })
+    return session
+  }
+  if (!saved.encrypted) {
+    try {
+      const session = JSON.parse(raw.toString('utf8')) as SavedSession
+      // Salvo em texto puro numa versão antiga e agora tem chaveiro: regrava criptografado.
+      if (safeStorage.isEncryptionAvailable()) writeSession(session)
+      return opened(session)
+    } catch {
+      return null
+    }
+  }
+  // O chaveiro pode estar trancado ou ainda subindo (início automático com o KeePassXC): tenta
+  // umas vezes, pelo caminho assíncrono também, antes de desistir. O arquivo não é apagado.
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      return opened(JSON.parse(safeStorage.decryptString(raw)) as SavedSession)
+    } catch {
+      // tenta pelo outro caminho
+    }
+    try {
+      if (await safeStorage.isAsyncEncryptionAvailable()) {
+        const { result, shouldReEncrypt } = await safeStorage.decryptStringAsync(raw)
+        const session = JSON.parse(result) as SavedSession
+        if (shouldReEncrypt) writeSession(session)
+        return opened(session)
+      }
+    } catch {
+      // ainda não
+    }
+    await wait(2000)
+  }
+  unreadable = true
+  console.warn('sessão: não deu pra decifrar o login salvo (o chaveiro está trancado?); o arquivo fica guardado')
+  return null
 })
 
 handle('session:set', (_event, value: SavedSession | null) => {
-  if (!value) return rmSync(sessionFile(), { force: true })
+  if (!value) {
+    rmSync(unreadableFile(), { force: true })
+    return rmSync(sessionFile(), { force: true })
+  }
+  // Entrou de novo porque o salvo não abriu: o antigo vai pro lado em vez de sumir.
+  if (unreadable && existsSync(sessionFile())) renameSync(sessionFile(), unreadableFile())
+  unreadable = false
   writeSession(value)
 })
 
@@ -461,14 +579,20 @@ function writeSession(value: SavedSession) {
 // ---------- App ----------
 
 app.whenReady().then(() => {
+  if (!primary) return
   Menu.setApplicationMenu(null)
   prefs = loadPrefs()
   const allowed = new Set(['media', 'display-capture', 'notifications', 'clipboard-sanitized-write', 'fullscreen'])
-  // Permissões (microfone, câmera, tela, notificação) só pra janela do app.
-  session.defaultSession.setPermissionRequestHandler((wc, permission, callback) =>
-    callback(wc === win?.webContents && allowed.has(permission)),
-  )
-  session.defaultSession.setPermissionCheckHandler((wc, permission) => wc === win?.webContents && allowed.has(permission))
+  // Microfone, câmera, tela, notificação e área de transferência: só pra página do próprio app
+  // (não pro iframe do Street View). Tela cheia vale pra janela inteira (o botão do Street View).
+  const may = (wc: Electron.WebContents | null, permission: string, url: string | undefined) =>
+    wc === win?.webContents && allowed.has(permission) && (permission === 'fullscreen' || fromApp(url))
+  session.defaultSession.setPermissionRequestHandler((wc, permission, callback, details) => callback(may(wc, permission, details.requestingUrl)))
+  session.defaultSession.setPermissionCheckHandler((wc, permission, origin, details) => may(wc, permission, details.requestingUrl ?? origin))
+  onTrayUnavailable(() => {
+    // Wayland sem barra (GNOME sem a extensão de AppIndicator): sem ícone, a janela escondida não teria como voltar.
+    if (win && !win.isVisible()) win.showInactive()
+  })
   setMainLocale(prefs.locale ?? localeFrom(app.getLocale()))
   setSpellCheck(mainLocale())
   setupDisplayMedia()
@@ -498,7 +622,9 @@ function cleanup() {
   spotifyKill()
 }
 
-app.on('will-quit', cleanup)
+app.on('will-quit', () => {
+  if (primary) cleanup()
+})
 setUpdaterCleanup(cleanup)
 
 app.on('window-all-closed', () => {

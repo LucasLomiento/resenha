@@ -61,6 +61,7 @@
       "package.json"
     ],
     "npmRebuild": false,
+    "beforePack": "scripts/before-pack.cjs",
     "protocols": [
       {
         "name": "Resenha",
@@ -157,7 +158,8 @@
         "pipewire",
         "gtk4",
         "gtk4-layer-shell",
-        "python-gobject"
+        "python-gobject",
+        "python-cairo"
       ]
     },
     "extraResources": [
@@ -167,6 +169,10 @@
         "filter": [
           "*.png"
         ]
+      },
+      {
+        "from": "out/renderer/THIRD_PARTY_LICENSES.txt",
+        "to": "THIRD_PARTY_LICENSES.txt"
       }
     ],
     "publish": [

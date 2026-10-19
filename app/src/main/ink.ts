@@ -18,6 +18,11 @@ import type { InkMonitor } from '../preload/api'
 const dry = process.env.RESENHA_INK_DRY === '1'
 const wayland = process.platform === 'linux' && !!process.env.WAYLAND_DISPLAY
 const LAYER_SHELL = ['/usr/lib/libgtk4-layer-shell.so', '/usr/lib64/libgtk4-layer-shell.so', '/usr/lib/x86_64-linux-gnu/libgtk4-layer-shell.so.0']
+/**
+ * O Python do sistema, que tem o GTK (python-gobject e python-cairo do pacote). O do PATH pode
+ * ser outro (mise, pyenv, conda) sem o `gi`, e aí os rabiscos param sem dizer por quê.
+ */
+const PYTHON = ['/usr/bin/python3', '/bin/python3'].find((path) => existsSync(path)) ?? 'python3'
 
 /** Só no e2e: o que chegou pra camada (o teste confere por aqui). */
 const dryLog: { started: string | null; events: unknown[] } = { started: null, events: [] }
@@ -55,7 +60,7 @@ export async function inkMonitors(): Promise<InkMonitor[] | null> {
   if (wayland) {
     if (!existsSync(helperPath())) return null
     return new Promise((resolve) => {
-      execFile('python3', [helperPath(), '--list'], { env: helperEnv(), timeout: 8000 }, (err, stdout) => {
+      execFile(PYTHON, [helperPath(), '--list'], { env: helperEnv(), timeout: 8000 }, (err, stdout) => {
         if (err) {
           console.error('rabiscos: não deu pra listar os monitores', err.message)
           return resolve(null)
@@ -94,7 +99,7 @@ function startHelper(connector: string): Promise<{ ok: true } | { ok: false; err
   return new Promise((resolve) => {
     let child: ChildProcessWithoutNullStreams
     try {
-      child = spawn('python3', [helperPath(), connector], { env: helperEnv(), stdio: 'pipe' })
+      child = spawn(PYTHON, [helperPath(), connector], { env: helperEnv(), stdio: 'pipe' })
     } catch (err) {
       return resolve({ ok: false, error: (err as Error).message })
     }

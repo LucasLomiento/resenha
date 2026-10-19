@@ -25,7 +25,11 @@ const api: ResenhaApi = {
     start: (options) => ipcRenderer.invoke('screen-audio:start', options),
     unmute: () => ipcRenderer.invoke('screen-audio:unmute'),
     stop: () => ipcRenderer.invoke('screen-audio:stop'),
+    onUnavailable: (callback) => {
+      ipcRenderer.on('screen-audio:unavailable', () => callback())
+    },
   },
+  licenses: () => ipcRenderer.invoke('licenses:get'),
   spotify: {
     status: () => ipcRenderer.invoke('spotify:status'),
     connect: (clientId) => ipcRenderer.invoke('spotify:connect', clientId),

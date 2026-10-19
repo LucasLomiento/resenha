@@ -18,10 +18,10 @@
 // seguinte fechava o app sem instalar. O que o systemd abre vem sem a trava,
 // mesmo que este processo tenha (os que foram reabertos pela 1.2.1 ou antes).
 
-import { spawn, spawnSync } from 'node:child_process'
+import { spawn } from 'node:child_process'
 import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
-import { app } from 'electron'
+import { delimiter, dirname, join } from 'node:path'
+import { app, session } from 'electron'
 import { autoUpdater } from 'electron-updater'
 import type { UpdateState } from '../preload/api'
 import { tm } from './i18n'
@@ -82,8 +82,16 @@ function packageType(): string | null {
   }
 }
 
+/**
+ * Windows: só o instalado pelo NSIS se atualiza. O .zip tem o mesmo app-update.yml, mas rodar o
+ * instalador por cima instalaria outra cópia em %LOCALAPPDATA% e a pasta do zip ficaria velha.
+ */
+const nsisInstall = () => existsSync(join(dirname(process.execPath), `Uninstall ${app.getName()}.exe`))
+
 export function supported(): boolean {
-  return app.isPackaged && (process.platform === 'win32' || !!process.env.APPIMAGE || packageType() === 'pacman')
+  if (!app.isPackaged) return false
+  if (process.platform === 'win32') return nsisInstall()
+  return !!process.env.APPIMAGE || packageType() === 'pacman'
 }
 
 export function setupUpdater(onState: (state: UpdateState) => void) {
@@ -122,8 +130,11 @@ export function setUpdaterCleanup(fn: () => void) {
 }
 
 /** Fecha pra a versão nova entrar. */
-function exitForUpdate() {
+async function exitForUpdate() {
   cleanup()
+  // O que a página guardou por último (configurações) vai pro disco antes: o `app.exit` não espera.
+  session.defaultSession.flushStorageData()
+  await new Promise((resolve) => setTimeout(resolve, 300))
   app.exit(0)
 }
 
@@ -165,7 +176,9 @@ export async function installUpdate(rejoin?: unknown) {
   if (packageType() === 'pacman' && downloadedFile) return installPacman(downloadedFile, version)
   // O instalador do Windows troca os arquivos com o app fechado: o librespot (resources/librespot.exe) não pode estar rodando.
   cleanup()
-  autoUpdater.quitAndInstall(false, true)
+  session.defaultSession.flushStorageData()
+  // Silencioso (sem o assistente do NSIS, que pediria a pasta de novo) e reabre no fim.
+  autoUpdater.quitAndInstall(true, true)
 }
 
 /** Este processo está com a trava "no new privileges" (aí o pkexec e o sudo daqui não funcionam). */
@@ -221,17 +234,31 @@ function relaunchWhenGone() {
   spawn(command, args, { detached: true, stdio: 'ignore' }).unref()
 }
 
+/**
+ * Roda com o pkexec. Devolve o código do pacman, 126 (a pessoa cancelou a senha) ou null quando
+ * o pkexec não serve aqui (não instalado, sem agente do polkit, não autorizado: o 127 dele) e o
+ * jeito é o terminal com sudo. Sem pkexec, o systemd-run devolveria 1, o mesmo erro do pacman:
+ * por isso confere antes.
+ */
+export async function runPkexec(command: string[]): Promise<number | null> {
+  if (!findOnPath('pkexec')) return null
+  const code = await run(...outside(['pkexec', ...command], { wait: true }))
+  return code === 127 ? null : code
+}
+
 async function installPacman(file: string, version: string) {
   if (noNewPrivs()) console.warn('atualização: este processo tem a trava "no new privileges"; o pkexec vai pelo systemd')
-  const code = await run(...outside(['pkexec', 'pacman', '-U', '--noconfirm', file], { wait: true }))
+  const code = await runPkexec(['pacman', '-U', '--noconfirm', file])
   if (code === 0) {
     relaunchWhenGone()
     return exitForUpdate()
   }
   // 126 = a pessoa cancelou a senha; aí não insiste.
   if (code === 126) return set({ status: 'ready', version })
+  // O pacman mesmo falhou (outro pacman rodando, disco cheio...): pedir a senha de novo no terminal daria no mesmo.
+  if (code !== null) return set({ status: 'error', message: tm().update.pacmanFailed(code) })
 
-  // Sem agente do polkit: terminal com sudo, que no fim reabre o app.
+  // Sem pkexec ou sem agente do polkit: terminal com sudo, que no fim reabre o app.
   const t = tm().update
   const terminal = findTerminal()
   if (!terminal) return set({ status: 'error', message: t.noTerminal(file) })
@@ -245,9 +272,18 @@ async function installPacman(file: string, version: string) {
   ].join('; ')
   const [command, args] = outside([terminal.command, ...terminal.args, 'bash', '-c', script], { wait: false })
   spawn(command, args, { detached: true, stdio: 'ignore' }).unref()
-  exitForUpdate()
+  void exitForUpdate()
 }
 
+/** Onde o programa está no PATH (o `which` nem sempre vem instalado: no Arch não está no `base`). */
+export function findOnPath(name: string): string | null {
+  for (const folder of (process.env.PATH ?? '').split(delimiter)) {
+    if (folder && existsSync(join(folder, name))) return join(folder, name)
+  }
+  return null
+}
+
+/** Um terminal pra pedir a senha, com o comando (`bash -c ...`) vindo depois dos `args`. */
 export function findTerminal(title = tm().update.terminalTitle): { command: string; args: string[] } | null {
   const candidates: { command: string; args: string[] }[] = [
     { command: 'foot', args: ['-T', title] },
@@ -255,8 +291,13 @@ export function findTerminal(title = tm().update.terminalTitle): { command: stri
     { command: 'kitty', args: ['--title', title] },
     { command: 'alacritty', args: ['-T', title, '-e'] },
     { command: 'ghostty', args: ['-e'] },
+    // GNOME: o gnome-terminal volta na hora sem o --wait (o instalar do librespot espera o fim).
+    { command: 'gnome-terminal', args: ['--wait', `--title=${title}`, '--'] },
+    { command: 'kgx', args: ['--title', title, '--'] },
+    { command: 'ptyxis', args: ['--new-window', '--'] },
     { command: 'xfce4-terminal', args: ['-x'] },
+    { command: 'x-terminal-emulator', args: ['-e'] },
     { command: 'xterm', args: ['-e'] },
   ]
-  return candidates.find((t) => spawnSync('which', [t.command]).status === 0) ?? null
+  return candidates.find((t) => findOnPath(t.command)) ?? null
 }

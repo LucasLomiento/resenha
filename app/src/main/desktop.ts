@@ -36,6 +36,9 @@ export function appIcon(): NativeImage {
 let tray: Tray | null = null
 /** Cancela a espera pela barra antes de criar o ícone; null quando não está esperando. */
 let cancelTrayWait: (() => void) | null = null
+/** Wayland sem barra passado o limite: ainda espera (devagar), mas já não conta como bandeja. */
+let trayGaveUp = false
+let trayGone: () => void = () => {}
 let lastState: CallState = { inCall: false, muted: false, deafened: false, sharing: false, speaking: false }
 /** O que o menu e os botões chamam, e a janela: guardados pra refazer tudo quando o idioma muda. */
 let actions: { show: () => void; dispatch: Dispatch } | null = null
@@ -80,24 +83,42 @@ export function setTray(enabled: boolean, show: () => void, dispatch: Dispatch) 
   if (!enabled) {
     cancelTrayWait?.()
     cancelTrayWait = null
+    trayGaveUp = false
     tray?.destroy()
     tray = null
     return
   }
   if (tray || cancelTrayWait) return
+  trayGaveUp = false
   // Criado antes da barra, o ícone não aparece nunca (tray-host.ts).
-  cancelTrayWait = whenTrayHostReady(() => {
-    cancelTrayWait = null
-    tray = new Tray(stateIcon(lastState))
-    tray.setToolTip(trayTooltip(lastState))
-    tray.on('click', show)
-    tray.setContextMenu(trayMenu(lastState, show, dispatch))
-  })
+  const cancel = whenTrayHostReady(
+    () => {
+      cancelTrayWait = null
+      trayGaveUp = false
+      tray = new Tray(stateIcon(lastState))
+      tray.setToolTip(trayTooltip(lastState))
+      tray.on('click', show)
+      tray.setContextMenu(trayMenu(lastState, show, dispatch))
+    },
+    {
+      onGiveUp: () => {
+        trayGaveUp = true
+        trayGone()
+      },
+    },
+  )
+  // Fora do Linux o ícone já nasceu aqui dentro: não sobra espera nenhuma.
+  if (!tray) cancelTrayWait = cancel
 }
 
-/** Esperando a barra conta como bandeja: a janela fica escondida e o ícone chega logo. */
+/** Esperando a barra conta como bandeja (a janela fica escondida e o ícone chega logo), até desistir dela. */
 export function hasTray() {
-  return tray !== null || cancelTrayWait !== null
+  return tray !== null || (cancelTrayWait !== null && !trayGaveUp)
+}
+
+/** A bandeja deixou de contar (Wayland sem barra): a janela escondida não teria como voltar. */
+export function onTrayUnavailable(callback: () => void) {
+  trayGone = callback
 }
 
 /** Atualiza bandeja e barra de tarefas quando muta, ensurdece, fala, entra ou sai da call. */
