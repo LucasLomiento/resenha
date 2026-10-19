@@ -5,7 +5,7 @@ Ao criar uma conta num servidor do Resenha, você concorda com estes termos. Que
 ## Sua conta
 
 - Você precisa ter pelo menos 13 anos (ou a idade mínima exigida no seu país).
-- A conta é sua: não compartilhe a senha. Se desconfiar de algo, troque a senha e derrube os outros aparelhos em Configurações → Conta.
+- A conta é sua: não compartilhe a senha. Se desconfiar de algo, troque a senha em Configurações → Senha: isso já derruba os outros aparelhos (dá pra derrubar um por um em Configurações → Aparelhos).
 - Uma pessoa, uma conta principal. Contas automáticas (robôs) só com permissão do dono da instância.
 
 ## O que não pode

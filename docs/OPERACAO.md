@@ -13,15 +13,20 @@ npx wrangler deploy
 
 Segredos (uma vez por conta):
 
-| Segredo | Pra quê | Obrigatório |
-|---|---|---|
-| `FILE_SECRET` | Assina os links de arquivo e embaralha IPs | Sim |
-| `TURNSTILE_SECRET` | Anti-robô do cadastro aberto (junto com `TURNSTILE_SITE_KEY` no `wrangler.jsonc`) | Não |
-| `TURN_KEY_ID`, `TURN_KEY_API_TOKEN` | Relay pra quando a conexão direta falha | Não |
+| Segredo | Pra quê | Como guardar | Obrigatório |
+|---|---|---|---|
+| `FILE_SECRET` | Assina os links de arquivo e embaralha IPs | O comando abaixo | Sim |
+| `TURNSTILE_SECRET` | Anti-robô do cadastro aberto (junto com `TURNSTILE_SITE_KEY` no `wrangler.jsonc`) | `npx wrangler secret put TURNSTILE_SECRET` | Não |
+| `TURN_KEY_ID`, `TURN_KEY_API_TOKEN` | TURN do Cloudflare, só nas salas marcadas "pelo Cloudflare" | `bash server/scripts/realtime-keys.sh` | Não |
+| `REALTIME_APP_ID`, `REALTIME_APP_SECRET` | SFU do Cloudflare: a tela com 2+ assistindo, só nas salas pelo Cloudflare | `bash server/scripts/realtime-keys.sh` | Não |
+| `CF_ACCOUNT_ID`, `CF_ANALYTICS_TOKEN` | Conferir de hora em hora o que o Cloudflare mediu de SFU e TURN (a trava dos 850 GB). Sem eles, a trava conta só o que os apps dizem | `bash server/scripts/realtime-keys.sh` | Não |
+| `FCM_SERVICE_ACCOUNT` | Push do celular: a conta de serviço do Firebase (projeto `resenha-5e289`). Sem ela, o servidor não manda push | `bash server/scripts/firebase-key.sh <arquivo .json>` | Não |
 
 ```bash
 openssl rand -base64 32 | tr -d '\n' | npx wrangler secret put FILE_SECRET
 ```
+
+Os scripts leem os valores sem mostrar na tela e passam direto pro `wrangler` (detalhes em "Mídia pelo Cloudflare" e "Push do celular", abaixo). Os testes do servidor apagam as chaves do Realtime, das análises e do Firebase (`server/vitest.config.ts`), então eles nunca falam com o Cloudflare ou com o Google de verdade.
 
 **Cuidado:** trocar o `FILE_SECRET` invalida todos os links de arquivo já enviados (o app pega links novos ao recarregar o chat) e zera os limites de tentativa por IP.
 
@@ -43,7 +48,7 @@ npx wrangler tail resenha              # logs ao vivo (erros aparecem como "erro
 
 No painel do Cloudflare: Workers → resenha → Observability, com os pedidos, erros e uso de CPU.
 
-O painel da dona da plataforma (no app: Configurações → Plataforma) mostra contas, servidores e o espaço de anexos usado.
+O painel da dona da plataforma (no app: Configurações → Plataforma) mostra contas, servidores, convites ativos, o espaço de anexos usado e a mídia pelo Cloudflare do mês.
 
 ## Limites do plano grátis (e o que o Resenha faz)
 
@@ -53,11 +58,13 @@ O painel da dona da plataforma (no app: Configurações → Plataforma) mostra c
 | Armazenamento dos Durable Objects | 5 GB na conta | Anexos param em 4 GB (2 GB por servidor, 1 GB por conversa, 500 MB por pessoa por dia) |
 | Pedidos aos Durable Objects | 100 mil por dia | WebSocket com hibernação: conexão parada não conta |
 | Linhas escritas no SQLite | 100 mil por dia | Limites de mensagens (5 a cada 5 s), reações, edições e leitura agrupada |
-| Mídia pelo Cloudflare Realtime (SFU + TURN) | 1.000 GB por mês | Só tela com 2+ assistindo (SFU) e conexão direta que falhou (TURN). Os apps contam o que passa, o servidor confere com o que o Cloudflare mediu (de hora em hora) e para de oferecer os dois em 850 GB; aí tudo volta a ser P2P até o mês virar. O dono vê o total em Configurações → Plataforma |
+| Mídia pelo Cloudflare Realtime (SFU + TURN) | 1.000 GB por mês | Só nas salas marcadas "pelo Cloudflare": voz, câmera e tela pelo TURN, e a tela com 2+ assistindo pelo SFU. Sala direta e chamada privada são P2P e não gastam nada. Os apps contam o que passa, o servidor confere com o que o Cloudflare mediu (de hora em hora) e para de oferecer os dois em 850 GB; aí essas salas vão direto (P2P), avisando, até o mês virar. O dono vê o total em Configurações → Plataforma |
 
 Se o grupo crescer muito, o plano pago (US$ 5/mês) multiplica tudo isso; nada no código precisa mudar.
 
 ## Mídia pelo Cloudflare (SFU e TURN)
+
+Só a sala de voz que o dono marcou "pelo Cloudflare" usa o Realtime: voz, câmera e a cópia direta da tela passam pelo TURN (ninguém da sala vê o IP de ninguém), e a tela com 2+ assistindo vai uma vez só pro SFU. Sala direta e chamada privada são P2P em tudo (desde a 1.12.1).
 
 As chaves saem do painel do Cloudflare (o login do wrangler não tem permissão pro Realtime):
 1. **Realtime → Serverless SFU → Create**: dá o App ID e o App Token.
@@ -67,7 +74,17 @@ As chaves saem do painel do Cloudflare (o login do wrangler não tem permissão 
 
 A conta tem cartão (o Realtime pede pra ativar): o que passar de 1.000 GB no mês seria cobrado (US$ 0,05/GB). Por isso a trava em 850 GB olha as duas contagens. Vale também um alerta de gasto em *Manage Account → Billing → Billable Usage → Create budget alert* (US$ 1, por e-mail; ele só avisa, não corta).
 
-Sem as chaves, tudo funciona como antes, só P2P.
+Sem as chaves, tudo funciona, só que P2P: a sala pelo Cloudflare vai direto, e o app avisa.
+
+## Push do celular (Firebase)
+
+O app de Android recebe os avisos pelo Firebase Cloud Messaging, projeto `resenha-5e289` (o `mobile/android/app/google-services.json` está no repositório; não é segredo). O servidor manda com a conta de serviço desse projeto:
+
+1. No console do Firebase: **Configurações do projeto → Contas de serviço → Gerar nova chave privada**. Baixa um `.json`.
+2. `bash server/scripts/firebase-key.sh <arquivo .json>`: confere o arquivo e guarda como o secret `FCM_SERVICE_ACCOUNT`, sem mostrar o conteúdo.
+3. Apague o `.json` (ou guarde fora do repositório): com ele, dá pra mandar push pra todos os celulares do Resenha. O Cloudflare não devolve o secret; se precisar de novo, gere outra chave no console e revogue a antiga.
+
+Sem o secret, o servidor não manda push (o resto funciona igual). Com a chave também no `server/.dev.vars`, o `npm -w app run test:android` manda um push de verdade pro emulador.
 
 ## Voltar no tempo (backup)
 

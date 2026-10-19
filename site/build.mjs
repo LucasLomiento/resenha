@@ -163,9 +163,16 @@ function downloads(latest) {
 async function fetchReleases() {
   const headers = { Accept: 'application/vnd.github+json', 'User-Agent': 'resenha-site' }
   if (process.env.GITHUB_TOKEN) headers.Authorization = `Bearer ${process.env.GITHUB_TOKEN}`
-  const res = await fetch(`https://api.github.com/repos/${REPO}/releases?per_page=100`, { headers })
-  if (!res.ok) throw new Error(`GitHub respondeu ${res.status} pras releases`)
-  const list = (await res.json()).filter((r) => !r.draft && !r.prerelease)
+  // De 100 em 100 (o máximo por página), até vir uma página incompleta.
+  const all = []
+  for (let page = 1; page <= 50; page++) {
+    const res = await fetch(`https://api.github.com/repos/${REPO}/releases?per_page=100&page=${page}`, { headers })
+    if (!res.ok) throw new Error(`GitHub respondeu ${res.status} pras releases (página ${page})`)
+    const batch = await res.json()
+    all.push(...batch)
+    if (batch.length < 100) break
+  }
+  const list = all.filter((r) => !r.draft && !r.prerelease)
   return list.sort((a, b) => b.published_at.localeCompare(a.published_at))
 }
 

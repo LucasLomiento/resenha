@@ -13,6 +13,8 @@
   <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
   <link rel="preload" href="assets/fonts/geist-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="assets/fonts/bricolage-grotesque-latin-opsz-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <!-- Com JS, só o canal aberto aparece; sem ele, todos, um embaixo do outro (style.css). -->
+  <script>document.documentElement.classList.add('js')</script>
   <link rel="stylesheet" href="style.css">
   <script src="main.js" defer></script>
 </head>
@@ -148,7 +150,7 @@
 
       <div class="views">
         <!-- ===================== boas-vindas ===================== -->
-        <section class="view chat-view" data-view="boas-vindas" data-icon="hash" data-topic="Comece por aqui: o que é o Resenha e como passear por este site.">
+        <section class="view chat-view active" data-view="boas-vindas" data-icon="hash" data-topic="Comece por aqui: o que é o Resenha e como passear por este site.">
           <div class="scroll">
             <div class="welcome">
               <svg class="mascot big" viewBox="0 0 336 336" aria-hidden="true"><use href="#mascot"/></svg>
