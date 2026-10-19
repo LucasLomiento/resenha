@@ -236,6 +236,8 @@ export interface ResenhaApi {
     permission(): Promise<'granted' | 'denied' | 'prompt'>
     /** Tocou num aviso: o `data` que o servidor pôs nele. Chega também o toque que abriu o app. */
     onOpen(callback: (data: Record<string, string>) => void): void
+    /** O Firebase trocou o token deste aparelho (o app manda o novo pro servidor). */
+    onToken?(callback: (token: string) => void): void
   }
   /** Botão voltar do celular: a função devolve false quando não tinha o que fechar (aí o app vai pro fundo). */
   onBack?(callback: () => boolean): void
@@ -281,6 +283,8 @@ export interface ResenhaApi {
   unread(count: number): void
   /** Ações vindas da bandeja, de atalho global ou da linha de comando. */
   onAction(callback: (action: ShortcutAction) => void): void
+  /** O PC acordou (só no computador): a página confere as conexões. */
+  onResume?(callback: () => void): void
   update: {
     state(): Promise<UpdateState>
     check(): Promise<void>

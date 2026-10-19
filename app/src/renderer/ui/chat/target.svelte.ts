@@ -65,7 +65,9 @@ export interface ChatTarget {
 export function channelTarget(guild: GuildState, channel: Channel): ChatTarget {
   const id = channel.id
   const perms = () => guild.permissions[id] ?? 0
-  const lastReadId = guild.readStates[id]?.lastReadId ?? null
+  // Até onde estava lido quando abriu (abrir já marca como lido: sem isso, a linha "Novas" sumia na hora).
+  const mark = client.readMark(id)
+  const lastReadId = mark !== undefined ? mark : (guild.readStates[id]?.lastReadId ?? null)
   return {
     kind: 'channel',
     id,
@@ -176,7 +178,9 @@ export function dmTarget(home: HomeState, dm: DmChannel): ChatTarget {
     get hasMore() {
       return home.hasMore[id]
     },
-    hasNewer: false,
+    get hasNewer() {
+      return !!home.hasNewer[id]
+    },
     get loading() {
       return !!home.loadingHistory[id]
     },
@@ -190,7 +194,7 @@ export function dmTarget(home: HomeState, dm: DmChannel): ChatTarget {
     canSearch: false,
     canMentionEveryone: false,
     slowmode: 0,
-    lastReadId: dm.lastReadId,
+    lastReadId: client.readMark(id) !== undefined ? client.readMark(id)! : dm.lastReadId,
     uploadPath: `/api/c/${encodeURIComponent(id)}/files`,
     names: {
       user: (userId) => client.displayName(userId),
@@ -213,9 +217,9 @@ export function dmTarget(home: HomeState, dm: DmChannel): ChatTarget {
       const first = home.messages[id]?.[0]
       if (first && home.hasMore[id]) home.loadHistory(id, first.id)
     },
-    loadNewer: () => {},
-    jumpTo: async () => {},
-    jumpToPresent: () => {},
+    loadNewer: () => home.loadNewer(id),
+    jumpTo: (messageId) => home.jumpTo(id, messageId),
+    jumpToPresent: () => void home.jumpToPresent(id),
     typingStart: () => home.typingStart(id),
     ack: () => home.ack(id),
   }

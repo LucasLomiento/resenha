@@ -162,7 +162,7 @@ export default {
     audioNotes: {
       venmic: 'Sem o som da call.',
       'exclude-self': 'Som do computador, sem o som da call.',
-      'loopback-all': 'Neste Windows, o som da call vai junto.',
+      'loopback-all': 'No Windows, o som da call vai junto.',
       none: 'Indisponível neste sistema.',
     },
     whichApps: 'De quais apps',

@@ -157,7 +157,7 @@ export default {
     audioNotes: {
       venmic: 'Sin el sonido de la llamada.',
       'exclude-self': 'Sonido de la computadora, sin el de la llamada.',
-      'loopback-all': 'En este Windows, el sonido de la llamada también va.',
+      'loopback-all': 'En Windows, el sonido de la llamada también va.',
       none: 'No disponible en este sistema.',
     },
     whichApps: 'De qué apps',

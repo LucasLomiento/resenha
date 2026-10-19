@@ -156,6 +156,14 @@ export class Conversation extends DurableObject<Env> {
       : []
     const attachments = this.store.pendingAttachments(userId, requested)
     if (!content && attachments.length === 0) return ok(null)
+    const nonce = typeof input.nonce === 'string' ? input.nonce.slice(0, 64) : undefined
+    // O app reenviou uma mensagem que já entrou (a resposta se perdeu numa queda): só confirma pra quem mandou.
+    const sent = nonce ? this.store.byNonce(userId, nonce) : null
+    if (sent) {
+      const [message] = await this.store.load([sent])
+      if (message) await home(this.env, userId).dmEvent(channelId, m.peer, { t: 'dm.message', channelId, message, nonce })
+      return ok(null)
+    }
     if (!this.allow(`send:${userId}`, 5, 5000)) return fail(429, 'Calma! Você está mandando mensagens rápido demais.')
 
     const reply = typeof input.replyTo === 'string' ? this.store.get(input.replyTo) : null
@@ -169,14 +177,12 @@ export class Conversation extends DurableObject<Env> {
         mentions: reply && reply.author_id !== userId ? [reply.author_id] : [],
         mentionRoles: [],
         mentionEveryone: false,
+        nonce,
       },
       attachments,
     )
     const [message] = await this.store.load([row])
-    await this.deliver(
-      { t: 'dm.message', channelId, message, nonce: typeof input.nonce === 'string' ? input.nonce.slice(0, 64) : undefined },
-      m.pair,
-    )
+    await this.deliver({ t: 'dm.message', channelId, message, nonce }, m.pair)
     await this.refreshEmbeds(row.id, content, m.pair, selfHost)
     return ok(null)
   }

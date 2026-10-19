@@ -534,5 +534,11 @@ export default {
       install: 'Restart and update',
       check: 'Check for updates',
     },
+    licenses: {
+      label: 'Third-party licenses',
+      description: 'What ships with the app and the license of each one.',
+      open: 'View',
+      missing: "The licenses didn't come with this package.",
+    },
   },
 } satisfies typeof pt

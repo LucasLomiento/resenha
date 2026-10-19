@@ -555,5 +555,11 @@ export default {
       install: 'Reiniciar e atualizar',
       check: 'Procurar atualização',
     },
+    licenses: {
+      label: 'Licenças de terceiros',
+      description: 'O que vai junto no app e a licença de cada um.',
+      open: 'Ver',
+      missing: 'As licenças não vieram neste pacote.',
+    },
   },
 }

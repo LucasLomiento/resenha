@@ -157,7 +157,7 @@ export default {
     audioNotes: {
       venmic: 'Without the call audio.',
       'exclude-self': 'Computer audio, without the call audio.',
-      'loopback-all': 'On this Windows, the call audio goes along.',
+      'loopback-all': 'On Windows, the call audio goes along.',
       none: 'Not available on this system.',
     },
     whichApps: 'From which apps',

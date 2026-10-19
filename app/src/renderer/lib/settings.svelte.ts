@@ -111,16 +111,38 @@ function load(): Settings {
 
 export const settings = $state<Settings>(load())
 
+/**
+ * Grava na hora, mas no máximo uma vez a cada 300 ms: arrastar a borda da lista ou a miniatura
+ * da transmissão mexe nas configurações a cada movimento do mouse (eram dezenas de gravações por
+ * segundo). O que muda dentro da janela vai numa gravação só no fim dela, ou ao fechar a página.
+ */
+let pending: string | null = null
+let saveTimer: ReturnType<typeof setTimeout> | null = null
+let lastWrite = 0
+
+function flush() {
+  if (saveTimer) clearTimeout(saveTimer)
+  saveTimer = null
+  if (pending === null) return
+  try {
+    localStorage.setItem(KEY, pending)
+  } catch {
+    // sem armazenamento, segue com o que está na memória
+  }
+  pending = null
+  lastWrite = Date.now()
+}
+
 $effect.root(() => {
   $effect(() => {
-    const snapshot = JSON.stringify(settings)
-    try {
-      localStorage.setItem(KEY, snapshot)
-    } catch {
-      // sem armazenamento, segue com o que está na memória
-    }
+    pending = JSON.stringify(settings)
+    if (saveTimer) return // já tem uma gravação marcada: ela leva o mais novo
+    const wait = lastWrite + 300 - Date.now()
+    if (wait <= 0) flush()
+    else saveTimer = setTimeout(flush, wait)
   })
 })
+addEventListener('pagehide', flush)
 
 export const PRESETS: Record<ScreenPreset, { width: number; height: number; bitrate: number; label: string }> = {
   '720p': { width: 1280, height: 720, bitrate: 4_000_000, label: '720p' },

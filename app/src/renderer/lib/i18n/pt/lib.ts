@@ -4,6 +4,8 @@
 export default {
   /** Nome de quem não dá pra saber (conta sumida, perfil ainda não carregado). */
   someone: 'Alguém',
+  /** Conta excluída (o servidor guarda o nome em português). */
+  deletedUser: 'Usuário excluído',
   format: {
     today: 'Hoje',
     yesterday: 'Ontem',
@@ -83,7 +85,7 @@ export default {
   },
   media: {
     screenAudioFailed: 'Não deu pra capturar o áudio da tela; compartilhando só o vídeo.',
-    screenAudioOldWindows: 'Neste Windows o áudio da tela inclui a voz da call. Atualize pro Windows 10 22H2 ou 11.',
+    screenAudioOldWindows: 'No Windows, o som da tela leva o som do computador inteiro, inclusive a voz da call.',
   },
   image: {
     unreadable: 'Não deu pra abrir essa imagem. Use PNG, JPEG, WebP ou GIF.',

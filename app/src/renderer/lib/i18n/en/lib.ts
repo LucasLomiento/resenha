@@ -2,6 +2,8 @@ import type pt from '../pt/lib'
 
 export default {
   someone: 'Someone',
+  /** Conta excluída (o servidor guarda o nome em português). */
+  deletedUser: 'Deleted user',
   format: {
     today: 'Today',
     yesterday: 'Yesterday',
@@ -71,7 +73,7 @@ export default {
   },
   media: {
     screenAudioFailed: "Couldn't capture the screen audio; sharing video only.",
-    screenAudioOldWindows: "On this version of Windows, the screen audio includes the call's voices. Update to Windows 10 22H2 or 11.",
+    screenAudioOldWindows: "On Windows, the screen audio takes the whole computer's sound, including the call's voices.",
   },
   image: {
     unreadable: "Couldn't open this image. Use PNG, JPEG, WebP or GIF.",

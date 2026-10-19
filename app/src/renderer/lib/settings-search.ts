@@ -65,7 +65,7 @@ export const SETTINGS: SettingEntry[] = [
   // Privacidade
   { id: 'privacy.dms', page: 'privacy' },
   { id: 'privacy.blocked', page: 'privacy' },
-  { id: 'privacy.export', page: 'privacy' },
+  { id: 'privacy.export', page: 'privacy', desktop: true },
   { id: 'privacy.delete', page: 'privacy' },
   { id: 'privacy.docs', page: 'privacy' },
 

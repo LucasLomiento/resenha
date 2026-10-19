@@ -663,7 +663,8 @@ export type ServerMessage =
     }
   | { t: 'chat.message'; message: Message; nonce?: string }
   | { t: 'chat.edited'; message: Message }
-  | { t: 'chat.deleted'; id: string; channelId: string }
+  /** `last`: a mensagem mais nova que sobrou no canal (null: nenhuma). */
+  | { t: 'chat.deleted'; id: string; channelId: string; last?: string | null }
   | {
       t: 'chat.history'
       reqId: string

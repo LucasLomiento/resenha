@@ -538,5 +538,11 @@ export default {
       install: 'Reiniciar y actualizar',
       check: 'Buscar actualizaciones',
     },
+    licenses: {
+      label: 'Licencias de terceros',
+      description: 'Lo que viene con la app y la licencia de cada uno.',
+      open: 'Ver',
+      missing: 'Las licencias no vinieron en este paquete.',
+    },
   },
 } satisfies typeof pt

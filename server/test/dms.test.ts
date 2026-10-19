@@ -84,12 +84,12 @@ describe('amigos', () => {
     // O computador abre (o app manda "online" no auth, antes de saber o escolhido): continua invisível.
     const desktop = await homeSocket(third.user.id, third.token, { status: 'online' })
     expect((await desktop.next('ready')).presence.status).toBe('invisible')
-    await homeA.nothing('presence', (m) => m.userId === third.user.id && m.presence.status !== 'offline')
+    await homeA.nothing('presence', (m) => m.t === 'presence' && m.userId === third.user.id && m.presence.status !== 'offline')
     // Voltando pro online num aparelho, vale pros dois; o ausente automático de um só não conta.
     desktop.send({ t: 'presence', status: 'online', text: null })
     await homeA.next('presence', (m) => m.userId === third.user.id && m.presence.status === 'online')
     phone.send({ t: 'presence', status: 'idle', text: null, auto: true })
-    await homeA.nothing('presence', (m) => m.userId === third.user.id && m.presence.status === 'idle')
+    await homeA.nothing('presence', (m) => m.t === 'presence' && m.userId === third.user.id && m.presence.status === 'idle')
   })
 
   it('pedido dos dois lados vira amizade direto', async () => {

@@ -2,7 +2,7 @@
   import { client } from '../../lib/client.svelte'
   import { i18n, LOCALES, m } from '../../lib/i18n.svelte'
   import { settings } from '../../lib/settings.svelte'
-  import { Button, IconButton, PageHeader, Row, Section, Select, Switch } from '../kit'
+  import { Button, IconButton, Modal, PageHeader, Row, Section, Select, Switch } from '../kit'
 
   const desktop = $derived(client.desktop)
   const update = $derived(client.update)
@@ -36,6 +36,14 @@
         return undefined
     }
   })
+
+  /** O texto das licenças do que vai junto no app (só no computador: vem do pacote). */
+  let licenses = $state<string | null>(null)
+
+  async function showLicenses() {
+    licenses = (await window.resenha.licenses?.()) ?? null
+    if (!licenses) client.toast(t.licenses.missing)
+  }
 
   function zoom(delta: number) {
     if (!desktop) return
@@ -110,9 +118,29 @@
       >
     {/if}
   </Row>
+  {#if window.resenha.licenses}
+    <Row label={t.licenses.label} description={t.licenses.description}>
+      <Button onclick={showLicenses}>{t.licenses.open}</Button>
+    </Row>
+  {/if}
 </Section>
 
+{#if licenses}
+  <Modal title={t.licenses.label} size="lg" onclose={() => (licenses = null)}>
+    <pre class="licenses">{licenses}</pre>
+  </Modal>
+{/if}
+
 <style>
+  .licenses {
+    margin: 0;
+    max-height: 60vh;
+    overflow: auto;
+    white-space: pre-wrap;
+    font: var(--text-xs) / 1.5 var(--font-mono);
+    color: var(--text-2);
+  }
+
   .zoom {
     display: flex;
     align-items: center;

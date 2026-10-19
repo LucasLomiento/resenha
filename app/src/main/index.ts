@@ -7,6 +7,7 @@ import {
   type IpcMainEvent,
   type IpcMainInvokeEvent,
   Menu,
+  powerMonitor,
   safeStorage,
   session,
   shell,
@@ -597,6 +598,8 @@ app.whenReady().then(() => {
   setSpellCheck(mainLocale())
   setupDisplayMedia()
   createWindow()
+  // O PC acordou: a página confere as conexões na hora (as que morreram durante o sono pareciam abertas).
+  powerMonitor.on('resume', () => win?.webContents.send('resume'))
   void applyPrefs(null)
   if (!hidden) setupUpdater((state) => win?.webContents.send('update:state', state))
 })

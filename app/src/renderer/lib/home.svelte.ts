@@ -56,6 +56,8 @@ type Of<T extends HomeServerMessage['t']> = Extract<HomeServerMessage, { t: T }>
 
 let seq = 0
 const nextId = () => `h${Date.now().toString(36)}${(++seq).toString(36)}`
+/** Mensagem sem confirmação desiste depois disso, mesmo com a conexão caindo e voltando. */
+const SEND_GIVE_UP = 60_000
 
 /** A conexão pessoal: lista de servidores, amigos, conversas privadas e chamadas privadas. */
 export class HomeState {
@@ -72,17 +74,27 @@ export class HomeState {
 
   messages = $state<Record<string, Message[]>>({})
   hasMore = $state<Record<string, boolean>>({})
+  /** Olhando mensagens antigas (pulou pra uma resposta): tem mais pra frente. */
+  hasNewer = $state<Record<string, boolean>>({})
   loadingHistory = $state<Record<string, boolean>>({})
   typing = $state<Record<string, Record<string, number>>>({})
   calls = $state<Record<string, DmCall>>({})
 
   private conn: Connection<HomeServerMessage, HomeClientMessage>
-  private sends = new Map<string, { resolve: () => void; reject: (err: Error) => void; timer: ReturnType<typeof setTimeout> }>()
+  /** Mensagens esperando a confirmação do servidor (com o pedido, pra reenviar depois de uma queda). */
+  private sends = new Map<
+    string,
+    { msg: HomeClientMessage; resolve: () => void; reject: (err: Error) => void; timer: ReturnType<typeof setTimeout>; until: number }
+  >()
   private requests = new Map<string, (msg: HomeServerMessage) => void>()
   private typingSent: Record<string, number> = {}
   private everConnected = false
-  /** Conversas com mensagens de antes da última queda: o trecho recente é conferido quando abrirem. */
-  private stale = new Set<string>()
+  /**
+   * Conversas com mensagens de antes da última queda, e a mais nova que a tela tinha na hora: o
+   * trecho recente é conferido quando abrirem. A marca é da hora da queda (não do pedido): uma
+   * mensagem que chegou ao vivo depois não pode contar como "conhecida" (deixava buraco no meio).
+   */
+  private stale = new Map<string, string>()
   /** Igual em toda reconexão desta instância: o servidor devolve o mesmo connId e a chamada continua. */
   private key = connectionKey()
 
@@ -115,6 +127,11 @@ export class HomeState {
     this.conn.nudge()
   }
 
+  /** Confere já se a conexão está viva (o app voltou pra frente, o PC acordou). */
+  probe() {
+    this.conn.probe()
+  }
+
   close() {
     this.conn.close()
   }
@@ -123,6 +140,11 @@ export class HomeState {
     const ok = this.conn.send(msg)
     if (!ok) this.host.toast(m.lib.connection.offlineNow)
     return ok
+  }
+
+  /** Estado que o `auth` já leva de novo (atenção, token do push): sem aviso se a conexão está fora. */
+  sendQuiet(msg: HomeClientMessage): boolean {
+    return this.conn.send(msg)
   }
 
   // ---------- Leitura derivada ----------
@@ -182,23 +204,33 @@ export class HomeState {
         this.dms = msg.dms
         this.presences = msg.presences
         // Reconectou: as conversas carregadas continuam na tela (sem piscar) e o trecho mais
-        // recente é conferido quando abrirem. A que sumiu da lista recomeça do zero.
+        // recente é conferido quando abrirem. A que sumiu da lista, ou estava em mensagens
+        // antigas, recomeça do zero.
         for (const channelId of Object.keys(this.messages)) {
-          if (msg.dms.some((dm) => dm.id === channelId)) this.stale.add(channelId)
-          else {
+          if (msg.dms.some((dm) => dm.id === channelId) && !this.hasNewer[channelId]) {
+            if (!this.stale.has(channelId)) this.stale.set(channelId, this.messages[channelId].at(-1)?.id ?? '')
+          } else {
             delete this.messages[channelId]
             delete this.hasMore[channelId]
+            delete this.hasNewer[channelId]
+            this.stale.delete(channelId)
           }
         }
         this.loadingHistory = {}
         this.typing = {}
         this.loaded = true
-        // A chamada privada em que o app estava: como ficou enquanto a conexão caiu.
-        if (msg.call) this.calls[msg.call.channelId] = { members: msg.call.members, ringing: msg.call.ringing }
-        else if (msg.call === null) {
+        if (msg.calls) {
+          // Servidor 1.15+: todas as chamadas das conversas, como estão agora (a que acabou some).
+          this.calls = Object.fromEntries(msg.calls.map((c) => [c.channelId, { members: c.members, ringing: c.ringing }]))
+        } else if (msg.call) {
+          // A chamada privada em que o app estava: como ficou enquanto a conexão caiu.
+          this.calls[msg.call.channelId] = { members: msg.call.members, ringing: msg.call.ringing }
+        } else if (msg.call === null) {
           const asked = this.host.dmCallId()
           if (asked) delete this.calls[asked]
         }
+        // O que estava esperando confirmação vai de novo, com o mesmo nonce (o servidor não duplica).
+        for (const pending of this.sends.values()) this.conn.send(pending.msg)
         this.host.presenceSelf(msg.presence.status, msg.presence.text)
         this.host.ready(this, reconnected, !!msg.resumed)
         return
@@ -293,9 +325,16 @@ export class HomeState {
         return
       }
 
-      case 'dm.deleted':
+      case 'dm.deleted': {
         if (this.messages[msg.channelId]) this.messages[msg.channelId] = this.messages[msg.channelId].filter((m) => m.id !== msg.id)
+        // A mais nova da conversa foi apagada: a lista volta pra que sobrou (a contagem vem num dm.read).
+        const dm = this.dm(msg.channelId)
+        if (dm && msg.last && dm.lastMessageId === msg.id) {
+          dm.lastMessageId = msg.last.id
+          dm.lastMessageAt = msg.last.at
+        }
         return
+      }
 
       case 'dm.reactions': {
         const found = this.messages[msg.channelId]?.find((m) => m.id === msg.id)
@@ -358,8 +397,9 @@ export class HomeState {
 
   // ---------- Ações ----------
 
-  setPresence(status: Status, text: string | null, auto = false) {
-    this.conn.send({ t: 'presence', status, text, auto })
+  /** Devolve se saiu (fora da conexão, quem chamou guarda pra mandar quando ela voltar). */
+  setPresence(status: Status, text: string | null, auto = false): boolean {
+    return this.conn.send({ t: 'presence', status, text, auto })
   }
 
   /** Abre (ou cria) a conversa com alguém e devolve o id dela. */
@@ -377,6 +417,8 @@ export class HomeState {
       }, 8000)
       this.requests.set(reqId, (msg) => {
         clearTimeout(timer)
+        // Recusado: o erro volta com o reqId (antes, esperava 8 s e mostrava outro aviso).
+        if (msg.t === 'error') return reject(new Error(serverText(msg.message)))
         resolve((msg as Of<'dm.channel'>).channel.id)
       })
     })
@@ -386,16 +428,17 @@ export class HomeState {
     this.send({ t: 'dm.close', channelId })
   }
 
-  private history(channelId: string, before?: string): Promise<Of<'dm.history'>> {
+  private history(channelId: string, opts: { before?: string; around?: string } = {}): Promise<Of<'dm.history'>> {
     const reqId = nextId()
     return new Promise((resolve, reject) => {
-      if (!this.send({ t: 'dm.history', reqId, channelId, before })) return reject(new Error(m.lib.connection.disconnected))
+      if (!this.send({ t: 'dm.history', reqId, channelId, ...opts })) return reject(new Error(m.lib.connection.disconnected))
       const timer = setTimeout(() => {
         this.requests.delete(reqId)
         reject(new Error(m.lib.connection.noReply))
       }, 10_000)
       this.requests.set(reqId, (msg) => {
         clearTimeout(timer)
+        if (msg.t === 'error') return reject(new Error(serverText(msg.message)))
         resolve(msg as Of<'dm.history'>)
       })
     })
@@ -405,7 +448,7 @@ export class HomeState {
     if (this.loadingHistory[channelId]) return
     this.loadingHistory[channelId] = true
     try {
-      const page = await this.history(channelId, before)
+      const page = await this.history(channelId, { before })
       this.messages[channelId] = mergeMessages(this.messages[channelId] ?? [], page.messages)
       this.hasMore[channelId] = page.hasMore
     } catch {
@@ -419,7 +462,7 @@ export class HomeState {
   async refresh(channelId: string) {
     if (!this.stale.has(channelId) || this.loadingHistory[channelId]) return
     this.loadingHistory[channelId] = true
-    const mark = this.messages[channelId]?.at(-1)?.id ?? ''
+    const mark = this.stale.get(channelId) ?? ''
     try {
       const page = await this.history(channelId)
       this.stale.delete(channelId)
@@ -433,16 +476,69 @@ export class HomeState {
     }
   }
 
+  /** Pula pra uma mensagem (a resposta citada): carrega em volta dela. */
+  async jumpTo(channelId: string, messageId: string) {
+    if (this.messages[channelId]?.some((m) => m.id === messageId)) return
+    this.loadingHistory[channelId] = true
+    try {
+      const page = await this.history(channelId, { around: messageId })
+      this.stale.delete(channelId)
+      this.messages[channelId] = page.messages
+      this.hasMore[channelId] = page.hasMore
+      this.hasNewer[channelId] = !!page.hasNewer
+    } finally {
+      this.loadingHistory[channelId] = false
+    }
+  }
+
+  /** Olhando mensagens antigas e chegou no fim: busca as seguintes. */
+  async loadNewer(channelId: string) {
+    const list = this.messages[channelId]
+    if (!list?.length || !this.hasNewer[channelId] || this.loadingHistory[channelId]) return
+    this.loadingHistory[channelId] = true
+    try {
+      const page = await this.history(channelId, { around: list[list.length - 1].id })
+      this.messages[channelId] = mergeMessages(list, page.messages)
+      this.hasNewer[channelId] = !!page.hasNewer
+    } finally {
+      this.loadingHistory[channelId] = false
+    }
+  }
+
+  /** Volta pras mensagens mais recentes. */
+  async jumpToPresent(channelId: string) {
+    this.stale.delete(channelId)
+    this.hasNewer[channelId] = false
+    this.messages[channelId] = []
+    this.hasMore[channelId] = true
+    await this.loadHistory(channelId)
+  }
+
   sendMessage(channelId: string, content: string, attachmentIds: string[], replyTo: string | null = null): Promise<void> {
     const nonce = nextId()
+    const msg: HomeClientMessage = { t: 'dm.send', channelId, content, attachmentIds, nonce, replyTo }
     return new Promise((resolve, reject) => {
-      if (!this.send({ t: 'dm.send', channelId, content, attachmentIds, nonce, replyTo })) return reject(new Error(m.lib.connection.offline))
-      const timer = setTimeout(() => {
-        if (this.sends.delete(nonce)) reject(new Error(m.lib.connection.noAnswer))
-      }, 15_000)
-      this.sends.set(nonce, { resolve, reject, timer })
+      if (!this.send(msg)) return reject(new Error(m.lib.connection.offline))
+      this.sends.set(nonce, { msg, resolve, reject, timer: this.sendTimer(nonce), until: Date.now() + SEND_GIVE_UP })
       this.typingSent[channelId] = 0
     })
+  }
+
+  /**
+   * Sem confirmação em 15 s: com a conexão aberta, desiste (o texto volta pro campo). Com ela
+   * caída, espera voltar (e reenvia com o mesmo nonce), até um minuto.
+   */
+  private sendTimer(nonce: string): ReturnType<typeof setTimeout> {
+    return setTimeout(() => {
+      const pending = this.sends.get(nonce)
+      if (!pending) return
+      if (!this.conn.isOpen && Date.now() < pending.until) {
+        pending.timer = this.sendTimer(nonce)
+        return
+      }
+      this.sends.delete(nonce)
+      pending.reject(new Error(m.lib.connection.noAnswer))
+    }, 15_000)
   }
 
   editMessage(channelId: string, id: string, content: string) {

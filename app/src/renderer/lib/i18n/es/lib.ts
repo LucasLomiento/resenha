@@ -2,6 +2,8 @@ import type pt from '../pt/lib'
 
 export default {
   someone: 'Alguien',
+  /** Conta excluída (o servidor guarda o nome em português). */
+  deletedUser: 'Usuario eliminado',
   format: {
     today: 'Hoy',
     yesterday: 'Ayer',
@@ -71,7 +73,7 @@ export default {
   },
   media: {
     screenAudioFailed: 'No se pudo capturar el audio de la pantalla; se comparte solo el video.',
-    screenAudioOldWindows: 'En este Windows el audio de la pantalla incluye las voces de la llamada. Actualiza a Windows 10 22H2 u 11.',
+    screenAudioOldWindows: 'En Windows, el audio de la pantalla lleva el sonido de toda la computadora, incluidas las voces de la llamada.',
   },
   image: {
     unreadable: 'No se pudo abrir esta imagen. Usa PNG, JPEG, WebP o GIF.',

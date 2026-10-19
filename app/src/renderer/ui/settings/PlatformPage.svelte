@@ -135,7 +135,8 @@
     try {
       await api.adminSetRelay(user.id, allowed)
       user.relay = allowed
-      client.toast(allowed ? t.accounts.relayAllowed(user.name) : t.accounts.relayRevoked(user.name), 'info')
+      // Liberar e tirar a mesma pessoa: o aviso novo toma o lugar do outro (não aparecem os dois).
+      client.toast(allowed ? t.accounts.relayAllowed(user.name) : t.accounts.relayRevoked(user.name), 'info', `relay:${user.id}`)
     } catch (err) {
       client.toast((err as Error).message)
     } finally {

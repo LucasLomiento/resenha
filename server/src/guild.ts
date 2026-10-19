@@ -1465,7 +1465,9 @@ export class Guild extends DurableObject<Env> {
         if (!own && !this.can(userId, channel.id, P.MANAGE_MESSAGES)) return
         const freed = this.store.removeRows([row])
         this.dropMentions([row.id])
-        this.broadcast({ t: 'chat.deleted', id: row.id, channelId: channel.id }, { channelId: channel.id })
+        // Com a mais nova que sobrou: a bolinha de não lida de quem não abriu o canal acompanha.
+        const last = this.store.lastIds([channel.id])[channel.id] ?? null
+        this.broadcast({ t: 'chat.deleted', id: row.id, channelId: channel.id, last }, { channelId: channel.id })
         if (!own) this.audit(userId, 'message.delete', row.author_id, `#${channel.name}`)
         if (freed > 0) await this.reportStorage()
         return

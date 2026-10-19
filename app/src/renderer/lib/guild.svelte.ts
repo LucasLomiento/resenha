@@ -60,6 +60,8 @@ type WithReq = Extract<ServerMessage, { reqId: string }>
 
 let seq = 0
 const nextId = () => `${Date.now().toString(36)}${(++seq).toString(36)}`
+/** Mensagem sem confirmação desiste depois disso, mesmo com a conexão caindo e voltando. */
+const SEND_GIVE_UP = 60_000
 
 const kindOrder: Record<ChannelKind, number> = { text: 0, voice: 1, category: 2 }
 const byPosition = (a: Channel, b: Channel) =>
@@ -97,13 +99,21 @@ export class GuildState {
   readonly map = new GuildMap((msg, quiet) => (quiet ? this.conn.send(msg) : this.send(msg)))
 
   private conn: Connection<ServerMessage, ClientMessage>
-  private sends = new Map<string, { resolve: () => void; reject: (err: Error) => void; timer: ReturnType<typeof setTimeout> }>()
-  private requests = new Map<string, (msg: WithReq) => void>()
+  /** Mensagens esperando a confirmação do servidor (com o pedido, pra reenviar depois de uma queda). */
+  private sends = new Map<
+    string,
+    { msg: ClientMessage; resolve: () => void; reject: (err: Error) => void; timer: ReturnType<typeof setTimeout>; until: number }
+  >()
+  private requests = new Map<string, (msg: WithReq | Of<'error'>) => void>()
   private inviteWaiters = new Map<string, { resolve: (invite: Invite | null) => void; reject: (err: Error) => void; timer: ReturnType<typeof setTimeout> }>()
   private typingSent: Record<string, number> = {}
   private everConnected = false
-  /** Canais com mensagens de antes da última queda: o trecho recente é conferido quando abrirem. */
-  private stale = new Set<string>()
+  /**
+   * Canais com mensagens de antes da última queda, e a mais nova que a tela tinha na hora: o
+   * trecho recente é conferido quando abrirem. A marca é da hora da queda (não do pedido): uma
+   * mensagem que chegou ao vivo depois não pode contar como "conhecida" (deixava buraco no meio).
+   */
+  private stale = new Map<string, string>()
   /** Igual em toda reconexão desta instância: o servidor devolve o mesmo connId e a call continua. */
   private key = connectionKey()
 
@@ -132,6 +142,11 @@ export class GuildState {
     this.conn.nudge()
   }
 
+  /** Confere já se a conexão está viva (o app voltou pra frente, o PC acordou). */
+  probe() {
+    this.conn.probe()
+  }
+
   close() {
     this.conn.close()
     for (const { reject, timer } of this.sends.values()) {
@@ -157,6 +172,7 @@ export class GuildState {
       }, timeout)
       this.requests.set(msg.reqId, (reply) => {
         clearTimeout(timer)
+        if (reply.t === 'error') return reject(new Error(serverText(reply.message)))
         resolve(reply as Of<T>)
       })
     })
@@ -373,7 +389,7 @@ export class GuildState {
       const waiter = this.requests.get(msg.reqId)
       if (waiter) {
         this.requests.delete(msg.reqId)
-        return waiter(msg as WithReq)
+        return waiter(msg as WithReq | Of<'error'>)
       }
     }
     switch (msg.t) {
@@ -400,12 +416,15 @@ export class GuildState {
             delete this.messages[channelId]
             delete this.hasMore[channelId]
             delete this.hasNewer[channelId]
-          } else this.stale.add(channelId)
+            this.stale.delete(channelId)
+          } else if (!this.stale.has(channelId)) this.stale.set(channelId, this.messages[channelId].at(-1)?.id ?? '')
         }
         this.loadingHistory = {}
         this.typing = {}
         this.loaded = true
         this.map.ready(msg.mapViewers ?? [], msg.connId)
+        // O que estava esperando confirmação vai de novo, com o mesmo nonce (o servidor não duplica).
+        for (const pending of this.sends.values()) this.conn.send(pending.msg)
         this.host.ready(this, reconnected, !!msg.resumed)
         return
       }
@@ -447,6 +466,11 @@ export class GuildState {
 
       case 'chat.deleted':
         if (this.messages[msg.channelId]) this.messages[msg.channelId] = this.messages[msg.channelId].filter((m) => m.id !== msg.id)
+        // A mais nova do canal foi apagada (mandou e apagou): a bolinha de não lida não fica sozinha.
+        if (msg.last !== undefined && this.lastMessageIds[msg.channelId] === msg.id) {
+          if (msg.last) this.lastMessageIds[msg.channelId] = msg.last
+          else delete this.lastMessageIds[msg.channelId]
+        }
         return
 
       case 'chat.reactions': {
@@ -589,8 +613,10 @@ export class GuildState {
   /** Canal aberto depois de uma queda: acerta o trecho mais recente sem esvaziar a tela. */
   async refresh(channelId: string) {
     if (!this.stale.has(channelId) || this.loadingHistory[channelId]) return
+    // Sem ler o histórico, o servidor nem responde (eram 10 s esperando a cada abertura).
+    if (!this.can(channelId, P.READ_HISTORY)) return void this.stale.delete(channelId)
     this.loadingHistory[channelId] = true
-    const mark = this.messages[channelId]?.at(-1)?.id ?? ''
+    const mark = this.stale.get(channelId) ?? ''
     try {
       const page = await this.request<'chat.history'>({ t: 'chat.history', reqId: nextId(), channelId })
       this.stale.delete(channelId)
@@ -645,14 +671,29 @@ export class GuildState {
 
   sendMessage(channelId: string, content: string, attachmentIds: string[], replyTo: string | null = null): Promise<void> {
     const nonce = nextId()
+    const msg: ClientMessage = { t: 'chat.send', channelId, content, attachmentIds, nonce, replyTo }
     return new Promise((resolve, reject) => {
-      if (!this.send({ t: 'chat.send', channelId, content, attachmentIds, nonce, replyTo })) return reject(new Error(m.lib.connection.offline))
-      const timer = setTimeout(() => {
-        if (this.sends.delete(nonce)) reject(new Error(m.lib.connection.noAnswer))
-      }, 15_000)
-      this.sends.set(nonce, { resolve, reject, timer })
+      if (!this.send(msg)) return reject(new Error(m.lib.connection.offline))
+      this.sends.set(nonce, { msg, resolve, reject, timer: this.sendTimer(nonce), until: Date.now() + SEND_GIVE_UP })
       this.typingSent[channelId] = 0
     })
+  }
+
+  /**
+   * Sem confirmação em 15 s: com a conexão aberta, desiste (o texto volta pro campo). Com ela
+   * caída, espera voltar (e reenvia com o mesmo nonce), até um minuto.
+   */
+  private sendTimer(nonce: string): ReturnType<typeof setTimeout> {
+    return setTimeout(() => {
+      const pending = this.sends.get(nonce)
+      if (!pending) return
+      if (!this.conn.isOpen && Date.now() < pending.until) {
+        pending.timer = this.sendTimer(nonce)
+        return
+      }
+      this.sends.delete(nonce)
+      pending.reject(new Error(m.lib.connection.noAnswer))
+    }, 15_000)
   }
 
   editMessage(id: string, content: string) {

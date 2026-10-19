@@ -69,6 +69,9 @@ const api: ResenhaApi = {
   onAction: (callback) => {
     ipcRenderer.on('action', (_event, action: ShortcutAction) => callback(action))
   },
+  onResume: (callback) => {
+    ipcRenderer.on('resume', () => callback())
+  },
   update: {
     state: () => ipcRenderer.invoke('update:state'),
     check: () => ipcRenderer.invoke('update:check'),

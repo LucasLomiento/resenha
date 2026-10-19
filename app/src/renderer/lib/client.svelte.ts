@@ -19,6 +19,7 @@ import { listDevices, namedDevices } from './devices'
 import { GuildState, type GuildHost } from './guild.svelte'
 import { HomeState, type HomeHost } from './home.svelte'
 import { i18n, m } from './i18n.svelte'
+import { plainText } from './markdown'
 import { notify } from './notify'
 import { badgeOf } from './profile'
 import { attachmentLabel } from './voice-note'
@@ -34,6 +35,8 @@ export interface Toast {
   id: number
   text: string
   kind: 'error' | 'info'
+  /** Avisos do mesmo assunto (o mesmo `key`): o novo toma o lugar do velho, em vez de empilhar. */
+  key?: string
 }
 
 /** Onde a pessoa está no app. */
@@ -136,6 +139,12 @@ class Client implements GuildHost, HomeHost {
   private lastInput = Date.now()
   private ringTimer: ReturnType<typeof setInterval> | null = null
   private ringbackTimer: ReturnType<typeof setInterval> | null = null
+  /** De qual ligação é o "chamando…" que está tocando (o fim de outra não para ele). */
+  private ringbackFor: string | null = null
+  /** Status escolhido com a conexão fora: vai quando ela voltar (senão o `ready` desfazia a escolha). */
+  private pendingStatus: { status: Status; text: string | null } | null = null
+  /** Até onde a pessoa tinha lido quando abriu cada conversa: a linha "Novas" fica ali, mesmo depois de marcar como lido. */
+  private readMarks = new Map<string, string | null>()
   /** Servidor que acabei de criar/entrar: abre quando a conexão pessoal confirmar. */
   private openWhenJoined: string | null = null
   /** Call pra voltar assim que o servidor (ou a conexão pessoal) abrir: o app reiniciou pra atualizar no meio dela. */
@@ -170,6 +179,13 @@ class Client implements GuildHost, HomeHost {
         void (guildId && channelId && this.guilds[guildId]?.channel(channelId)?.relay)
         untrack(() => this.call.updateRelay())
       })
+      // Saiu da ligação privada (por qualquer caminho): o "chamando…" para junto.
+      $effect(() => {
+        const dm = this.call.dmId
+        untrack(() => {
+          if (!dm) this.stopRingback()
+        })
+      })
     })
     setInterval(() => {
       this.now = Date.now()
@@ -181,6 +197,12 @@ class Client implements GuildHost, HomeHost {
     }
     window.addEventListener('focus', () => this.activity())
     window.addEventListener('online', () => this.nudge())
+    // Voltou pra frente (celular) ou o PC acordou: confere já se as conexões estão vivas (uma conexão
+    // morta que parece aberta só seria percebida no próximo ping, uns 30 s depois).
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') this.probe()
+    })
+    window.resenha.onResume?.(() => this.probe())
     // Fechando (ou recarregando) o app: fecha as conexões de propósito, pro servidor tirar da
     // call na hora em vez de esperar o app voltar (como faria numa queda de rede).
     window.addEventListener('pagehide', () => {
@@ -202,6 +224,12 @@ class Client implements GuildHost, HomeHost {
     window.resenha.onAction((action) => this.runAction(action))
     window.resenha.onInvite((code) => (this.pendingInvite = code))
     window.resenha.push?.onOpen((data) => this.openFromPush(data))
+    // O Firebase trocou o token do aparelho: o servidor fica sabendo na hora.
+    window.resenha.push?.onToken?.(() => void this.syncPush(true))
+    // Windows: o Electron recusou o áudio da tela; a opção some (o que não funciona não aparece).
+    window.resenha.screenAudio.onUnavailable?.(() => {
+      if (this.platform) this.platform = { ...this.platform, screenAudio: 'none' }
+    })
     this.pendingInvite = await window.resenha.pendingInvite()
     const saved = await window.resenha.session.get()
     if (saved) await this.start(saved)
@@ -274,9 +302,14 @@ class Client implements GuildHost, HomeHost {
     return { name: dm?.user.name ?? m.lib.client.dmCall, where: m.lib.client.dmPlace }
   }
 
-  /** Perfil de alguém, de onde a gente tiver (servidor, amigos, conversas). */
+  /** Perfil de alguém, de onde a gente tiver (servidor, amigos, conversas). Conta excluída vem com o nome no idioma do app. */
   user(userId: string, guildId?: string | null): User | undefined {
     if (userId === this.me?.id) return this.me ?? undefined
+    const found = this.findUser(userId, guildId)
+    return found?.deleted ? { ...found, name: m.lib.deletedUser } : found
+  }
+
+  private findUser(userId: string, guildId?: string | null): User | undefined {
     const found = guildId ? this.guilds[guildId]?.users[userId] : undefined
     if (found) return found
     for (const g of Object.values(this.guilds)) if (g.users[userId]) return g.users[userId]
@@ -336,12 +369,15 @@ class Client implements GuildHost, HomeHost {
   }
 
   async logout() {
+    // O servidor fecha as conexões desta sessão (4001) antes de responder: não é "sessão expirou".
+    this.leaving = true
     try {
       await this.api?.logout()
     } catch {
       // sai mesmo sem falar com o servidor
     }
     this.reset()
+    this.leaving = false
   }
 
   /** Saindo de propósito (excluindo a conta): a conexão fechada não vira aviso de "sessão expirou". */
@@ -373,6 +409,9 @@ class Client implements GuildHost, HomeHost {
     this.view = 'chat'
     this.incomingCall = null
     this.stopRinging()
+    this.stopRingback()
+    this.pendingStatus = null
+    this.readMarks.clear()
     window.resenha.session.set(null)
     this.phase = 'login'
   }
@@ -383,13 +422,24 @@ class Client implements GuildHost, HomeHost {
     for (const g of Object.values(this.guilds)) g.nudge()
   }
 
+  /** O app voltou pra frente ou o PC acordou: confere cada conexão (ping com resposta curta). */
+  private probe() {
+    this.home?.probe()
+    for (const g of Object.values(this.guilds)) g.probe()
+  }
+
   // ---------- Avisos ----------
 
-  toast(text: string, kind: Toast['kind'] = 'error') {
+  /**
+   * `key`: aviso do mesmo assunto (liberar e tirar a mesma pessoa, por exemplo) toma o lugar do
+   * anterior, em vez de aparecerem os dois, um dizendo o contrário do outro.
+   */
+  toast(text: string, kind: Toast['kind'] = 'error', key?: string) {
     // O mesmo aviso já está na tela: não repete. E no máximo três de uma vez (sai o mais velho).
     if (this.toasts.some((t) => t.text === text)) return
     const id = ++toastId
-    this.toasts = [...this.toasts.slice(-2), { id, text, kind }]
+    const others = key ? this.toasts.filter((t) => t.key !== key) : this.toasts
+    this.toasts = [...others.slice(-2), { id, text, kind, ...(key ? { key } : {}) }]
     setTimeout(() => (this.toasts = this.toasts.filter((t) => t.id !== id)), kind === 'error' ? 6000 : 4500)
   }
 
@@ -407,7 +457,8 @@ class Client implements GuildHost, HomeHost {
   setStatus(status: Status, text: string | null = this.statusText) {
     this.status = status
     this.statusText = text
-    this.home?.setPresence(status, text)
+    // Sem conexão agora: vai quando ela voltar (e o status que o `ready` trouxer não desfaz a escolha).
+    this.pendingStatus = this.home?.setPresence(status, text) ? null : { status, text }
     this.pushPresence()
   }
 
@@ -444,7 +495,8 @@ class Client implements GuildHost, HomeHost {
     const looking = document.hasFocus() && Date.now() - this.lastInput < LOOKING_FOR
     if (looking === this.looking) return
     this.looking = looking
-    this.home?.send({ t: 'attention', on: looking })
+    // Sem aviso se a conexão estiver fora: o `auth` da volta já leva isso.
+    this.home?.sendQuiet({ t: 'attention', on: looking })
   }
 
   private pushAuto() {
@@ -472,6 +524,13 @@ class Client implements GuildHost, HomeHost {
   }
 
   presenceSelf(status: Status, text: string | null) {
+    // Escolheu um status com a conexão fora: vale o escolhido, que vai agora pro servidor.
+    const pending = this.pendingStatus
+    if (pending && this.home?.setPresence(pending.status, pending.text)) {
+      this.pendingStatus = null
+      status = pending.status
+      text = pending.text
+    }
     this.status = status
     this.statusText = text
     this.pushPresence()
@@ -551,6 +610,7 @@ class Client implements GuildHost, HomeHost {
     for (const info of home.guilds) this.addGuild(info)
     if (this.route.kind === 'guild' && !wanted.has(this.route.guildId)) this.route = { kind: 'home' }
     if (this.route.kind === 'dm') this.openDmChannel(this.route.channelId)
+    this.reconcileRinging(home)
     const dm = this.call.dmId
     if (!dm || !reconnected) return
     // A chamada acabou (ou a outra pessoa saiu) enquanto a conexão estava caída: sai sem ligar de novo.
@@ -560,6 +620,20 @@ class Client implements GuildHost, HomeHost {
       return
     }
     this.call.reconnected(resumed)
+  }
+
+  /**
+   * Depois do `ready`: a ligação que está tocando pra mim aparece (o celular depois do push, uma
+   * queda no meio do toque), e o cartão de uma que acabou nesse meio-tempo some.
+   */
+  private reconcileRinging(home: HomeState) {
+    const me = this.meId()
+    const incoming = this.incomingCall
+    if (incoming && !home.calls[incoming.channelId]?.ringing.includes(me)) this.stopRinging()
+    if (this.incomingCall || this.call.dmId) return
+    const [channelId, call] = Object.entries(home.calls).find(([, c]) => c.ringing.includes(me) && !c.members.some((x) => x.userId === me)) ?? []
+    const from = call?.members.find((x) => x.userId !== me)?.userId
+    if (channelId && from) this.ringing(channelId, from, false)
   }
 
   private addGuild(info: GuildInfo) {
@@ -613,15 +687,25 @@ class Client implements GuildHost, HomeHost {
   }
 
   closed(target: GuildState | CloseReason, reason?: CloseReason) {
-    const expired = () => (this.leaving ? undefined : m.lib.client.sessionExpired)
-    // Conexão pessoal: sessão inválida.
-    if (!(target instanceof GuildState)) {
-      if (target === 'unauthorized' && this.phase === 'app') this.reset(expired())
-      return
-    }
-    if (reason === 'unauthorized') return this.phase === 'app' ? this.reset(expired()) : undefined
+    const guild = target instanceof GuildState ? target : null
+    if ((guild ? reason : target) === 'unauthorized') return void this.sessionClosed(guild)
     // Saiu do servidor (ou ele foi excluído): a conexão pessoal confirma e tira da lista.
-    this.dropGuild(target.id)
+    if (guild) this.dropGuild(guild.id)
+  }
+
+  /**
+   * Uma conexão fechou dizendo "sessão inválida". Antes de apagar a sessão, confere com o
+   * servidor: um erro passageiro lá não pode deslogar ninguém (a conexão tenta de novo).
+   */
+  private async sessionClosed(guild: GuildState | null) {
+    if (this.phase !== 'app' || this.leaving) return
+    try {
+      await this.api?.me()
+    } catch (err) {
+      if (err instanceof HttpError && err.status === 401) return this.reset(m.lib.client.sessionExpired)
+    }
+    if (this.phase !== 'app') return
+    setTimeout(() => (guild ? this.guilds[guild.id] === guild && guild.connect() : this.home?.connect()), 2000)
   }
 
   incoming(target: GuildState | string, message: Message) {
@@ -641,12 +725,14 @@ class Client implements GuildHost, HomeHost {
 
   voiceForced(guild: GuildState, channelId: string | null) {
     if (this.call.guildId !== guild.id) return
+    // O servidor ainda não tinha me posto na call (a entrada foi recusada, com o erro já na tela).
+    const confirmed = !!this.call.channelId && guild.voiceIn(this.call.channelId).some((v) => v.connId === guild.connId)
     this.call.leave(false)
     if (channelId) {
       const name = guild.channel(channelId)?.name
       this.toast(name ? m.lib.client.movedTo(name) : m.lib.client.movedElsewhere, 'info')
       this.call.join(this.guildTransport(guild, channelId))
-    } else {
+    } else if (confirmed) {
       this.toast(m.lib.client.disconnected, 'info')
     }
   }
@@ -668,10 +754,12 @@ class Client implements GuildHost, HomeHost {
   callEnded(channelId: string) {
     if (this.call.dmId === channelId) this.call.leave(false)
     if (this.incomingCall?.channelId === channelId) this.stopRinging()
-    this.stopRingback()
+    this.stopRingback(channelId)
   }
 
   ringing(channelId: string, from: string, video: boolean) {
+    // Uma ligação de cada vez na tela: a nova toma o lugar (e o toque da anterior para).
+    this.stopRinging()
     this.incomingCall = { channelId, from, video }
     // Não perturbe: a ligação aparece, mas sem tocar nem notificar.
     if (this.status === 'dnd' || this.pushCovers()) return
@@ -700,9 +788,12 @@ class Client implements GuildHost, HomeHost {
     this.ringTimer = null
   }
 
-  private stopRingback() {
+  /** `channelId`: só se o "chamando…" for dessa ligação. */
+  private stopRingback(channelId?: string) {
+    if (channelId && this.ringbackFor !== channelId) return
     if (this.ringbackTimer) clearInterval(this.ringbackTimer)
     this.ringbackTimer = null
+    this.ringbackFor = null
   }
 
   // ---------- Notificações ----------
@@ -719,7 +810,8 @@ class Client implements GuildHost, HomeHost {
     if (!push || !this.home) return
     if (ask) this.pushToken = await push.token()
     if (!this.pushToken) return
-    this.home.send({ t: 'push.token', token: this.pushToken, locale: i18n.locale, preview: settings.notifyContent })
+    // Sem aviso se a conexão estiver fora: a próxima conexão manda de novo.
+    this.home.sendQuiet({ t: 'push.token', token: this.pushToken, locale: i18n.locale, preview: settings.notifyContent })
   }
 
   /** Celular: o que aconteceu com o último aviso de teste (Configurações → Notificações). */
@@ -757,8 +849,17 @@ class Client implements GuildHost, HomeHost {
     playSound(guild.mentionsMe(message) ? 'mention' : 'message')
     if (focused) return
     const channel = guild.channel(message.channelId)?.name ?? ''
-    this.notify(m.lib.notify.channelMessage(guild.displayName(message.authorId), channel, guild.info.name), message, () =>
-      this.openChannel(guild.id, message.channelId),
+    const names = {
+      user: (id: string) => guild.displayName(id),
+      role: (id: string) => guild.roles.find((r) => r.id === id)?.name ?? '…',
+      channel: (id: string) => guild.channel(id)?.name ?? '…',
+    }
+    this.notify(
+      m.lib.notify.channelMessage(guild.displayName(message.authorId), channel, guild.info.name),
+      message,
+      names,
+      `channel:${message.channelId}`,
+      () => this.openChannel(guild.id, message.channelId),
     )
   }
 
@@ -769,14 +870,20 @@ class Client implements GuildHost, HomeHost {
     playSound('message')
     if (focused) return
     const name = this.home?.dm(channelId)?.user.name ?? m.lib.someone
-    this.notify(name, message, () => this.navigate({ kind: 'dm', channelId }))
+    const names = { user: (id: string) => this.displayName(id), role: () => '…', channel: () => '…' }
+    this.notify(name, message, names, `dm:${channelId}`, () => this.navigate({ kind: 'dm', channelId }))
   }
 
-  private notify(title: string, message: Message, open: () => void) {
-    const body = message.content || (message.attachments.length ? attachmentLabel(message.attachments[0]) : '')
+  /**
+   * Aviso do sistema. O texto vai sem a marcação: menções viram nomes e spoiler fica escondido
+   * (antes saía `<@id>` e o spoiler aberto). `tag`: um aviso por conversa (o novo troca o velho).
+   */
+  private notify(title: string, message: Message, names: Parameters<typeof plainText>[1], tag: string, open: () => void) {
+    const body = message.content ? plainText(message.content, names) : message.attachments.length ? attachmentLabel(message.attachments[0]) : ''
     // Com "esconder o texto", a notificação só diz que chegou mensagem (bom com a tela compartilhada).
     notify(title, {
       body: settings.notifyContent ? body.slice(0, 200) : m.lib.notify.hiddenMessage,
+      tag,
       onclick: () => {
         window.resenha.showWindow()
         open()
@@ -807,6 +914,7 @@ class Client implements GuildHost, HomeHost {
 
   /** Abre uma conversa (canal, mensagem privada ou amigos); no celular, mostra o conteúdo. */
   navigate(route: Route) {
+    this.markRead(route)
     this.route = route
     this.view = 'chat'
     ui.pane = 'main'
@@ -816,6 +924,28 @@ class Client implements GuildHost, HomeHost {
     } else if (route.kind === 'dm') {
       this.openDmChannel(route.channelId)
     }
+  }
+
+  /**
+   * Abrindo outra conversa: guarda até onde ela tinha sido lida, antes de marcar como lido (a
+   * linha "Novas" e o pulo até a primeira não lida ficam ali; antes sumiam na hora).
+   */
+  private markRead(route: Route) {
+    const current = this.route
+    const same =
+      route.kind === current.kind &&
+      (route.kind === 'dm' ? current.kind === 'dm' && current.channelId === route.channelId : route.kind === 'guild' && current.kind === 'guild' && current.channelId === route.channelId)
+    if (same) return
+    if (route.kind === 'guild' && route.channelId) {
+      this.readMarks.set(route.channelId, this.guilds[route.guildId]?.readStates[route.channelId]?.lastReadId ?? null)
+    } else if (route.kind === 'dm') {
+      this.readMarks.set(route.channelId, this.home?.dm(route.channelId)?.lastReadId ?? null)
+    }
+  }
+
+  /** Até onde a conversa tinha sido lida quando foi aberta (undefined: não sei, vale o de agora). */
+  readMark(channelId: string): string | null | undefined {
+    return this.readMarks.get(channelId)
   }
 
   openHome() {
@@ -937,7 +1067,10 @@ class Client implements GuildHost, HomeHost {
         // Voltando (a conexão caiu e a chamada continuou): entra como estava, nunca liga de novo.
         if (back) return home.send({ t: 'call.answer', channelId, accept: true, state: { muted, deafened, ...back } })
         const live = home.calls[channelId]?.members.length
-        const ok = live ? home.send({ t: 'call.answer', channelId, accept: true }) : home.send({ t: 'call.ring', channelId, video })
+        if (live) return home.send({ t: 'call.answer', channelId, accept: true, state: { muted, deafened, sharing: false, camera: false } })
+        // Já entra mutado, se for o caso (antes ia num `call.update` que às vezes chegava antes da ligação).
+        const ok = home.send({ t: 'call.ring', channelId, video, state: { muted, deafened } })
+        // Servidor antigo (sem o `state` do call.ring): manda o mudo logo depois, como antes.
         if (ok && (muted || deafened)) home.send({ t: 'call.update', channelId, muted, deafened, sharing: false, camera: false })
         return ok
       },
@@ -963,8 +1096,11 @@ class Client implements GuildHost, HomeHost {
     const ringing = !home.calls[channelId]?.members.length
     await this.call.join(this.dmTransport(home, channelId, video))
     if (ringing && this.call.dmId === channelId) {
+      // Um "chamando…" só (ligar pra outra pessoa no meio troca, em vez de somar).
+      this.stopRingback()
       playSound('ringback')
       this.ringbackTimer = setInterval(() => playSound('ringback'), 3000)
+      this.ringbackFor = channelId
     }
     if (video && this.call.dmId === channelId && !this.call.camera) await this.call.toggleCamera()
   }
