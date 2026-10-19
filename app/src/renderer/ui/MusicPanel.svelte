@@ -238,7 +238,7 @@
           <strong class="title" title={track.title}>{track.title}</strong>
           <span class="artist-line">
             <span class="artists">{track.artists}</span>
-            {#each track.genres as genre (genre)}{@render genreTag(genre)}{/each}
+            {#each track.genres as genre}{@render genreTag(genre)}{/each}
           </span>
           <span class="album">{track.album}</span>
         {:else}
@@ -481,7 +481,7 @@
       <span class="name">{item.title}</span>
       <span class="sub">
         <span class="by">{item.artists}</span>
-        {#each item.genres.slice(0, 2) as genre (genre)}{@render genreTag(genre)}{/each}
+        {#each item.genres.slice(0, 2) as genre}{@render genreTag(genre)}{/each}
       </span>
     </div>
     <span class="tabular time">{clock(item.durationMs / 1000)}</span>

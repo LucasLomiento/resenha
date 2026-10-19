@@ -309,8 +309,14 @@ export class Api {
 
   // ---------- Call e anexos ----------
 
-  async iceServers(): Promise<RTCIceServer[]> {
-    return (await this.request<{ iceServers: RTCIceServer[] }>('/api/ice')).iceServers
+  /**
+   * Servidores ICE de uma call. O TURN do Cloudflare só vem pra sala pelo Cloudflare (o servidor
+   * confere a sala, se a pessoa pode entrar e a cota do mês); a sala direta e a chamada privada
+   * (`direct`) só usam o STUN. Sem resposta em 8 s, desiste (a call segue com o STUN).
+   */
+  async iceServers(scope: { guildId: string; channelId: string } | 'direct'): Promise<RTCIceServer[]> {
+    const query = scope === 'direct' ? 'scope=direct' : `guild=${encodeURIComponent(scope.guildId)}&channel=${encodeURIComponent(scope.channelId)}`
+    return (await this.request<{ iceServers: RTCIceServer[] }>(`/api/ice?${query}`, { signal: AbortSignal.timeout(8000) })).iceServers
   }
 
   /**

@@ -148,7 +148,7 @@
         <button
           class="action"
           class:on={!!call.camera}
-          disabled={!call.channelId}
+          disabled={!call.channelId || call.cameraOpening}
           aria-label={call.camera ? t.cameraOff : t.cameraOn}
           aria-pressed={!!call.camera}
           use:tooltip={call.camera ? t.cameraOff : t.cameraOn}

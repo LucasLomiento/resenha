@@ -88,8 +88,9 @@
 
   $effect(() => {
     if (!video) return
-    // A prévia da própria tela fica muda, senão o som volta pro alto-falante em dobro.
-    video.muted = self || call.deafened || settings.streamMuted
+    // A prévia da própria tela fica muda, senão o som volta pro alto-falante em dobro. Ensurdecido
+    // (por mim ou pela moderação) não ouve a transmissão também.
+    video.muted = self || call.deafened || call.serverDeafened || settings.streamMuted
     video.volume = settings.streamVolume
   })
 
@@ -102,8 +103,16 @@
       stats = null
       return
     }
-    const timer = setInterval(async () => (stats = await call.videoStats()), 1000)
-    return () => clearInterval(timer)
+    // A leitura que termina depois de desligar não pode trazer de volta números parados.
+    let cancelled = false
+    const timer = setInterval(async () => {
+      const next = await call.videoStats()
+      if (!cancelled) stats = next
+    }, 1000)
+    return () => {
+      cancelled = true
+      clearInterval(timer)
+    }
   })
 
   // Os eventos da janela flutuante saem do próprio <video>.
@@ -351,7 +360,7 @@
         </div>
         {#if call.viaSfu}<div>{t.viaSfu}</div>{:else if link?.rtt != null}<div>{t.ping(link.rtt, link.route ? t.routes[link.route] : '')}</div>{/if}
       {/if}
-      {#each stats.outbound as out (out.userId)}
+      {#each stats.outbound as out}
         <div>
           → {out.label ?? client.displayName(out.userId, call.guildId)}: {describe(out.stats)}{out.stats.implementation !== '?' ? ` · ${out.stats.implementation}` : ''}
           {#if out.stats.limitation && out.stats.limitation !== 'none'}{t.limited(out.stats.limitation)}{/if}

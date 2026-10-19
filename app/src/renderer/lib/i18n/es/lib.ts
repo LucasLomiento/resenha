@@ -64,6 +64,10 @@ export default {
     relayOn: 'La sala ahora pasa por Cloudflare.',
     relayOff: 'La sala volvió a ir directa (P2P).',
     directFailed: (name: string) => `No se pudo conectar directo con ${name}. Si siguen sin oírse, la sala puede pasar por Cloudflare.`,
+    listenOnly: 'Sin micrófono: entraste solo para escuchar. Activa el micrófono cuando esté conectado.',
+    notJoined: 'El servidor no confirmó tu entrada a la llamada. Inténtalo de nuevo.',
+    otherDevice: 'La llamada siguió en otro dispositivo.',
+    micLost: 'El micrófono se desconectó; volviendo al predeterminado del sistema.',
   },
   media: {
     screenAudioFailed: 'No se pudo capturar el audio de la pantalla; se comparte solo el video.',

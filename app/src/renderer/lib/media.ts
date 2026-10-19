@@ -1,3 +1,4 @@
+import { isAnimated } from '../../../../shared/media'
 import type { PlatformInfo } from '../../preload/api'
 import { m } from './i18n.svelte'
 import { PRESETS, settings, type ScreenMode, type ScreenPreset } from './settings.svelte'
@@ -39,12 +40,15 @@ export async function getCameraStream(facing?: 'user' | 'environment'): Promise<
 }
 
 let audioContext: AudioContext | null = null
+/** Medidores abertos: sem nenhum, o contexto dorme (não segura a saída de som acordada). */
+let meters = 0
 
 /** Nível (RMS 0..1) de uma faixa local, pro indicador de quem está falando. */
 export class LevelMeter {
   private source: MediaStreamAudioSourceNode
   private analyser: AnalyserNode
   private buffer: Float32Array<ArrayBuffer>
+  private closed = false
 
   constructor(track: MediaStreamTrack) {
     audioContext ??= new AudioContext({ latencyHint: 'interactive' })
@@ -55,6 +59,7 @@ export class LevelMeter {
     this.analyser.fftSize = 512
     this.buffer = new Float32Array(this.analyser.fftSize)
     this.source.connect(this.analyser)
+    meters++
   }
 
   level(): number {
@@ -65,7 +70,11 @@ export class LevelMeter {
   }
 
   close() {
+    if (this.closed) return
+    this.closed = true
     this.source.disconnect()
+    meters = Math.max(0, meters - 1)
+    if (meters === 0 && audioContext?.state === 'running') void audioContext.suspend().catch(() => {})
   }
 }
 
@@ -81,11 +90,15 @@ async function findDevice(label: string, timeout = 3000): Promise<string | null>
 }
 
 /**
- * Imagem grande -> no máximo 2560 px no lado maior, em WebP. GIF fica como
- * está (pode ser animado). Se não compensar, manda o original.
+ * Imagem grande -> no máximo 2560 px no lado maior, em WebP. GIF e imagem animada ficam como
+ * estão (o canvas pegaria só o primeiro quadro). Foto em JPEG sempre passa pelo canvas, mesmo
+ * pequena: sai sem o EXIF, que pode ter até o GPS de onde ela foi tirada. Fora isso, se não
+ * compensar, manda o original.
  */
 export async function compressImage(file: File): Promise<File> {
-  if (!/^image\/(png|jpeg|webp|bmp)$/.test(file.type) || file.size < 150 * 1024) return file
+  if (!/^image\/(png|jpeg|webp|bmp)$/.test(file.type)) return file
+  const jpeg = file.type === 'image/jpeg'
+  if (!jpeg && (file.size < 150 * 1024 || (await animated(file)))) return file
   try {
     const bitmap = await createImageBitmap(file)
     const scale = Math.min(1, 2560 / Math.max(bitmap.width, bitmap.height))
@@ -95,11 +108,27 @@ export async function compressImage(file: File): Promise<File> {
     canvas.getContext('2d')!.drawImage(bitmap, 0, 0, width, height)
     bitmap.close()
     const blob = await canvas.convertToBlob({ type: 'image/webp', quality: 0.88 })
-    if (blob.size >= file.size * 0.9) return file
+    if (!jpeg && blob.size >= file.size * 0.9) return file
     return new File([blob], file.name.replace(/\.[^.]+$/, '') + '.webp', { type: 'image/webp' })
   } catch {
     return file
   }
+}
+
+/** WebP ou PNG animado (APNG)? Olha só o começo do arquivo. */
+async function animated(file: File): Promise<boolean> {
+  const bytes = new Uint8Array(await file.slice(0, 64 * 1024).arrayBuffer())
+  if (file.type === 'image/webp') return isAnimated(bytes)
+  if (file.type !== 'image/png') return false
+  // APNG: o pedaço `acTL` vem antes do primeiro `IDAT`.
+  for (let at = 8; at + 8 <= bytes.length; ) {
+    const size = ((bytes[at] << 24) | (bytes[at + 1] << 16) | (bytes[at + 2] << 8) | bytes[at + 3]) >>> 0
+    const type = String.fromCharCode(bytes[at + 4], bytes[at + 5], bytes[at + 6], bytes[at + 7])
+    if (type === 'acTL') return true
+    if (type === 'IDAT') return false
+    at += 12 + size
+  }
+  return false
 }
 
 export interface ScreenCapture {

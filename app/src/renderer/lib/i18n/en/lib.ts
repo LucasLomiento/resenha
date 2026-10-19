@@ -64,6 +64,10 @@ export default {
     relayOn: 'The room now goes through Cloudflare.',
     relayOff: 'The room is back to going direct (P2P).',
     directFailed: (name: string) => `Couldn’t connect directly to ${name}. If you still can’t hear each other, the room can go through Cloudflare.`,
+    listenOnly: 'No microphone: you joined to listen only. Unmute once it’s connected.',
+    notJoined: 'The server didn’t confirm you joined the call. Try again.',
+    otherDevice: 'The call continued on another device.',
+    micLost: 'The microphone disconnected; switching to the system default.',
   },
   media: {
     screenAudioFailed: "Couldn't capture the screen audio; sharing video only.",

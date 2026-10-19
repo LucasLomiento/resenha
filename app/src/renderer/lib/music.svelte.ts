@@ -64,10 +64,14 @@ export function cleanTrack(value: unknown): MusicTrack | null {
     cover: coverOf(value.cover),
     durationMs: num(value.durationMs, 24 * 3600_000),
     artistId: typeof value.artistId === 'string' && /^[A-Za-z0-9]{1,40}$/.test(value.artistId) ? value.artistId : null,
-    genres: (Array.isArray(value.genres) ? value.genres : [])
-      .filter((g): g is string => typeof g === 'string' && g.trim().length > 0)
-      .slice(0, 3)
-      .map((g) => g.trim().slice(0, 40)),
+    // Sem repetidos: o estilo é a chave da lista no painel (repetido derruba o bloco).
+    genres: [
+      ...new Set(
+        (Array.isArray(value.genres) ? value.genres : [])
+          .filter((g): g is string => typeof g === 'string' && g.trim().length > 0)
+          .map((g) => g.trim().slice(0, 40)),
+      ),
+    ].slice(0, 3),
   }
 }
 

@@ -42,10 +42,11 @@
 
   <div class="stage">
     <div class="grid" style:--cols={cols} style:--rows={rows}>
+      <!-- A câmera de alguém só aparece com a marca dela ligada (sem "Vídeo" no canal, o servidor não liga). -->
       {#each members as member (member.connId)}
         {@const self = member.connId === client.callConnId}
         {@const user = client.user(member.userId, call.guildId)}
-        {@const stream = self ? call.camera : call.cameras[member.connId]}
+        {@const stream = self ? call.camera : member.camera ? call.cameras[member.connId] : null}
         <div class="tile" class:speaking={call.speaking[member.connId]} style:--tint={userColor(member.userId)}>
           {#if stream}
             <VideoTile {stream} mirror={self && call.cameraFacing === 'user'} />
@@ -138,10 +139,11 @@
         tip={false}
         active={!!call.camera}
         aria-pressed={!!call.camera}
+        disabled={call.cameraOpening}
         onclick={() => client.toggleCamera()}
       />
       {#if call.camera && client.platform?.mobile}
-        <IconButton icon="repeat" label={t.flipCamera} size="xl" variant="subtle" tip={false} onclick={() => call.flipCamera()} />
+        <IconButton icon="repeat" label={t.flipCamera} size="xl" variant="subtle" tip={false} disabled={call.cameraOpening} onclick={() => call.flipCamera()} />
       {/if}
       <IconButton icon="phone-off" label={dock.leave} size="xl" variant="subtle" tone="danger" tip={false} active onclick={() => client.leaveCall()} />
     </div>
