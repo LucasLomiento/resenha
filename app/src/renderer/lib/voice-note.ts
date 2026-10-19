@@ -11,6 +11,13 @@ import Mp3Worker from './mp3-worker.ts?worker'
 export const VOICE_MAX_SECONDS = 15 * 60
 /** Voz em mono a 64 kbps: clara e pequena (uns 480 KB por minuto). */
 const KBPS = 64
+/**
+ * Taxa do MP3: 24 kHz guarda a voz inteira (até 12 kHz) com metade da memória de 48 kHz na
+ * conversão (15 min a 48 kHz passavam de 300 MB, perigoso no celular).
+ */
+const MP3_RATE = 24_000
+/** A onda do player só precisa do contorno do som: decodifica bem mais leve. */
+const WAVE_RATE = 8000
 /** Começo do nome do arquivo: o chat reconhece e mostra como mensagem de voz. */
 export const VOICE_PREFIX = 'mensagem-de-voz'
 
@@ -37,10 +44,16 @@ export class VoiceRecording {
   }
 
   static async start(): Promise<VoiceRecording> {
-    const device = settings.inputDevice === 'default' ? undefined : { exact: settings.inputDevice }
-    const stream = await navigator.mediaDevices.getUserMedia({
-      audio: { deviceId: device, channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-    })
+    const base: MediaTrackConstraints = { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true }
+    const device = settings.inputDevice === 'default' ? null : { exact: settings.inputDevice }
+    let stream: MediaStream
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: device ? { ...base, deviceId: device } : base })
+    } catch (err) {
+      // Microfone salvo sumiu (USB desplugado): grava pelo padrão, como a call.
+      if (!device || (err as Error).name !== 'OverconstrainedError') throw err
+      stream = await navigator.mediaDevices.getUserMedia({ audio: base })
+    }
     try {
       const recorder = new MediaRecorder(stream, { mimeType: 'audio/webm;codecs=opus', audioBitsPerSecond: 96_000 })
       const context = new AudioContext()
@@ -71,7 +84,7 @@ export class VoiceRecording {
   async finish(): Promise<{ file: File; seconds: number }> {
     const seconds = this.seconds
     const recorded = await this.stop()
-    const pcm = await decodeMono(await recorded.arrayBuffer())
+    const pcm = await decodeMono(await recorded.arrayBuffer(), MP3_RATE)
     const mp3 = await encodeMp3(pcm.data, pcm.sampleRate)
     const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')
     return { file: new File([mp3], `${VOICE_PREFIX}-${stamp}.mp3`, { type: 'audio/mpeg' }), seconds: pcm.seconds || seconds }
@@ -97,10 +110,10 @@ export class VoiceRecording {
   }
 }
 
-/** Decodifica qualquer áudio (a gravação em WebM, ou o MP3 do chat) e mistura em mono. */
-async function decodeMono(data: ArrayBuffer): Promise<{ data: Float32Array; sampleRate: number; seconds: number }> {
-  // Contexto offline: decodifica sem abrir a saída de som.
-  const context = new OfflineAudioContext(1, 1, 48_000)
+/** Decodifica qualquer áudio (a gravação em WebM, ou o MP3 do chat) já na taxa pedida e mistura em mono. */
+async function decodeMono(data: ArrayBuffer, sampleRate: number): Promise<{ data: Float32Array; sampleRate: number; seconds: number }> {
+  // Contexto offline: decodifica sem abrir a saída de som (e reamostra pra taxa dele).
+  const context = new OfflineAudioContext(1, 1, sampleRate)
   const audio = await context.decodeAudioData(data)
   const mono = new Float32Array(audio.length)
   for (let channel = 0; channel < audio.numberOfChannels; channel++) {
@@ -139,7 +152,7 @@ export function voiceWave(id: string, url: string, count: number): Promise<{ bar
     wave = queue.then(async () => {
       const response = await fetch(url)
       if (!response.ok) throw new Error(`HTTP ${response.status}`)
-      const { data, seconds } = await decodeMono(await response.arrayBuffer())
+      const { data, seconds } = await decodeMono(await response.arrayBuffer(), WAVE_RATE)
       return { bars: barsOf(data, count), seconds }
     })
     queue = wave.catch(() => {})

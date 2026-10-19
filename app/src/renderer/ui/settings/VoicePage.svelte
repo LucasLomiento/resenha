@@ -60,24 +60,44 @@
     return () => clearInterval(timer)
   })
 
+  /**
+   * Muda a cada começar e parar o teste (e ao fechar a página): o microfone que termina de abrir
+   * depois disso fecha na hora, em vez de ficar tocando a sua voz no fone sem botão pra parar.
+   */
+  let testRun = 0
+
   async function startTest() {
     stopTest()
+    const run = testRun
+    let mic: MicPipeline | null = null
+    let audio: HTMLAudioElement | null = null
     try {
       // O teste passa pelo mesmo processamento da call: você ouve o filtro e o limiar funcionando.
-      testMic = await MicPipeline.create(await getMicTrack())
-      testAudio = new Audio()
-      testAudio.srcObject = new MediaStream([testMic.track])
-      await setSink(testAudio, settings.outputDevice)
-      await testAudio.play()
+      mic = await MicPipeline.create(await getMicTrack())
+      if (run !== testRun) return mic.close()
+      audio = new Audio()
+      audio.srcObject = new MediaStream([mic.track])
+      await setSink(audio, settings.outputDevice)
+      if (run !== testRun) throw new Error('cancelado')
+      await audio.play()
+      if (run !== testRun) throw new Error('cancelado')
+      testMic = mic
+      testAudio = audio
       testing = true
       loadDevices()
     } catch (err) {
-      stopTest()
-      client.toast(t.noMic((err as Error).message))
+      audio?.pause()
+      if (audio) audio.srcObject = null
+      mic?.close()
+      if (run === testRun) {
+        stopTest()
+        client.toast(t.noMic((err as Error).message))
+      }
     }
   }
 
   function stopTest() {
+    testRun++
     testAudio?.pause()
     if (testAudio) testAudio.srcObject = null
     testAudio = null
@@ -90,18 +110,24 @@
 
   // --- prévia da câmera ---
   let preview = $state.raw<MediaStream | null>(null)
+  /** Igual ao do teste: a câmera que termina de abrir depois de parar (ou de fechar a página) não fica acesa. */
+  let previewRun = 0
 
   async function togglePreview() {
     if (preview) return stopPreview()
+    const run = ++previewRun
     try {
-      preview = await getCameraStream()
+      const stream = await getCameraStream()
+      if (run !== previewRun) return stream.getTracks().forEach((track) => track.stop())
+      preview = stream
       loadDevices()
     } catch (err) {
-      client.toast(t.noCamera((err as Error).message))
+      if (run === previewRun) client.toast(t.noCamera((err as Error).message))
     }
   }
 
   function stopPreview() {
+    previewRun++
     for (const track of preview?.getTracks() ?? []) track.stop()
     preview = null
   }

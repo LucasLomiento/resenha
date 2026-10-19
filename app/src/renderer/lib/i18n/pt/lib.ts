@@ -73,6 +73,13 @@ export default {
     relayOn: 'A sala agora passa pelo Cloudflare.',
     relayOff: 'A sala voltou a ir direto (P2P).',
     directFailed: (name: string) => `Não deu pra conectar direto com ${name}. Se continuar sem som, a sala pode passar pelo Cloudflare.`,
+    /** Entrou sem microfone (ou sem permissão): dá pra ouvir, e desmutar tenta abrir ele. */
+    listenOnly: 'Sem microfone: você entrou só pra ouvir. Desmute quando ele estiver ligado.',
+    /** O servidor não pôs a conexão na call (recusou sem avisar). */
+    notJoined: 'O servidor não confirmou a entrada na call. Tente de novo.',
+    /** Chamada privada: entrou pelo outro aparelho e esta conexão saiu. */
+    otherDevice: 'A chamada continuou em outro aparelho.',
+    micLost: 'O microfone desconectou; voltando pro padrão do sistema.',
   },
   media: {
     screenAudioFailed: 'Não deu pra capturar o áudio da tela; compartilhando só o vídeo.',

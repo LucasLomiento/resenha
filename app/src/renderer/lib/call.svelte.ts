@@ -65,6 +65,10 @@ export interface CallTransport {
 
 const SPEAKING_REMOTE = 0.03
 const ICE_TTL = 6 * 60 * 60 * 1000
+/** STUN aberto do Cloudflare: o que vale se o servidor não responder (a call entra mesmo assim). */
+const STUN_FALLBACK: RTCIceServer[] = [{ urls: ['stun:stun.cloudflare.com:3478'] }]
+/** Entrei e o servidor não me pôs na call nesse tempo (recusou sem avisar): sai em vez de falar sozinho. */
+const JOIN_CONFIRM_WAIT = 10_000
 /** De quanto em quanto tempo pergunta de novo se o SFU está disponível (a cota pode acabar). */
 const MEDIA_TTL = 5 * 60 * 1000
 /** Quem assiste não respondeu ao "a tela está no SFU" (app antigo?): manda a cópia direta. */
@@ -88,6 +92,13 @@ const SPEAKING_MUSIC = 0.01
 function forPeers(share: MusicShare): MusicShare {
   return share.player?.elsewhere ? { ...share, player: { ...share.player, elsewhere: '' } } : share
 }
+
+function stopTracks(stream: MediaStream) {
+  for (const track of stream.getTracks()) track.stop()
+}
+
+/** Pra qual sala os servidores ICE vêm: o TURN só pra sala pelo Cloudflare. */
+type IceScope = Parameters<Api['iceServers']>[0]
 
 /** A call em que esta instância está: microfone, conexões P2P e telas. */
 export class Call {
@@ -118,9 +129,18 @@ export class Call {
   /** Celular: a câmera da frente (espelhada na prévia) ou a de trás. */
   cameraFacing = $state<'user' | 'environment'>('user')
   joining = $state(false)
+  /** A câmera está abrindo (o botão não abre outra por cima). */
+  cameraOpening = $state(false)
   /** Estou falando (com uma folga pra não piscar), pro ícone da bandeja. */
   selfSpeaking = $state(false)
   private lastSpoke = 0
+  /** Muda a cada entrar e sair: o que termina de abrir (tela, câmera, microfone) depois disso não fica ligado. */
+  private session = 0
+  private shareStarting = false
+  /** Já apareci na lista desta call (o servidor confirmou a entrada) e com que conta. */
+  private seenSelf = false
+  private selfUserId: string | null = null
+  private joinTimer: ReturnType<typeof setTimeout> | null = null
 
   private peers = new Map<string, Peer>()
   /** connId -> sumiu da call: a conexão P2P fecha se não voltar a tempo. */
@@ -132,7 +152,8 @@ export class Call {
   private micTrack: MediaStreamTrack | null = null
   /** Microfone já processado (RNNoise + limiar); `micTrack` é a saída dele. */
   mic: MicPipeline | null = null
-  private ice: { servers: RTCIceServer[]; at: number } | null = null
+  /** Servidores ICE de agora e de qual sala vieram (`direct`, ou o canal da sala pelo Cloudflare). */
+  private ice: { servers: RTCIceServer[]; at: number; scope: string } | null = null
   /** A mídia desta call vai só pelo TURN do Cloudflare (sala marcada pelo dono, com o TURN disponível). */
   relay = $state(false)
   /** Se a sala estava marcada da última vez que olhou (o aviso só sai quando isso muda). */
@@ -162,7 +183,6 @@ export class Call {
   /** Bytes que passaram pelo Cloudflare (TURN e SFU) e ainda não foram contados no servidor. */
   private mediaBytes = 0
   private mediaReportAt = 0
-  private relaySeen = new Map<string, number>()
   /** connId -> escolha de rota (IPv4 ou IPv6) da conexão direta com essa pessoa (só do lado que escolhe). */
   private routes = new Map<string, RoutePicker>()
   /** connId -> família de IP presa (vale também pra conexão refeita depois de uma queda). */
@@ -231,36 +251,71 @@ export class Call {
   async join(transport: CallTransport) {
     if (this.isIn(transport) || this.joining) return
     if (this.transport) this.leave()
+    const session = ++this.session
     this.joining = true
     try {
       const api = this.deps.api()
       if (!api) return
-      if (!this.ice || Date.now() - this.ice.at > ICE_TTL) {
-        this.ice = { servers: await api.iceServers(), at: Date.now() }
+      await this.loadIce(transport)
+      if (session !== this.session) return
+      if (!this.micTrack) await this.openMic(session, false)
+      // Saiu (ou foi pra outra call) enquanto o microfone abria.
+      if (session !== this.session) return
+      // Sem microfone (ou sem permissão): entra só pra ouvir, mutado.
+      if (this.mic?.silent && !this.muted) {
+        this.muted = true
+        this.deps.toast(m.lib.call.listenOnly, 'info')
       }
-      if (!this.micTrack) await this.openMic()
       this.relayAsked = this.deps.relayWanted(transport)
       this.relay = this.relayFor(transport, true)
       this.transport = transport
       this.channelId = transport.channelId
       this.guildId = transport.kind === 'guild' ? transport.scopeId : null
       this.dmId = transport.kind === 'dm' ? transport.scopeId : null
+      this.seenSelf = false
+      this.selfUserId = null
       if (!transport.join(this.muted, this.deafened)) {
         this.leave(false)
         return
       }
+      if (this.joinTimer) clearTimeout(this.joinTimer)
+      this.joinTimer = setTimeout(() => this.confirmJoin(transport), JOIN_CONFIRM_WAIT)
       this.startTickers()
       playSound(joinSound(this.deps.badge()) ?? 'self-join')
     } catch (err) {
       console.error(err)
-      this.deps.toast(
-        (err as Error).name === 'NotAllowedError' || (err as Error).name === 'NotFoundError'
-          ? m.lib.call.noMic
-          : m.lib.call.joinFailed((err as Error).message),
-      )
+      this.deps.toast(m.lib.call.joinFailed((err as Error).message))
     } finally {
       this.joining = false
     }
+  }
+
+  /**
+   * Servidores ICE da sala: a sala pelo Cloudflare pede o TURN dela (o servidor só dá pra quem
+   * pode entrar e com a cota do mês sobrando); a direta e a chamada privada só usam o STUN.
+   * Sem resposta, fica no STUN (e pede de novo na próxima vez).
+   */
+  private async loadIce(transport: CallTransport) {
+    const scope: IceScope =
+      transport.kind === 'guild' && this.deps.relayWanted(transport) ? { guildId: transport.scopeId, channelId: transport.channelId } : 'direct'
+    const key = scope === 'direct' ? scope : `${scope.guildId}:${scope.channelId}`
+    if (this.ice?.scope === key && Date.now() - this.ice.at < ICE_TTL) return
+    try {
+      const servers = await this.deps.api()!.iceServers(scope)
+      this.ice = { servers, at: Date.now(), scope: key }
+    } catch (err) {
+      console.warn('[ice] o servidor não respondeu; segue só com o STUN', err)
+      this.ice = { servers: STUN_FALLBACK, at: 0, scope: key }
+    }
+  }
+
+  /** O servidor não pôs a conexão na call (recusou e o aviso se perdeu): sai em vez de falar sozinho. */
+  private confirmJoin(transport: CallTransport) {
+    this.joinTimer = null
+    if (this.transport !== transport || this.seenSelf) return
+    console.warn('[call] o servidor não confirmou a entrada', transport.channelId)
+    this.leave(false)
+    this.deps.toast(m.lib.call.notJoined)
   }
 
   /**
@@ -283,6 +338,15 @@ export class Call {
 
   private sendSignal(to: string, data: SignalData) {
     if (this.outbox.length === 0 && this.transport?.signal(to, data)) return
+    // Descrição nova pra essa pessoa: a anterior do mesmo tipo e os candidatos de antes não servem
+    // mais (a descrição atual já leva os candidatos que o ICE achou até aqui). A fila não cresce
+    // com a oferta reenviada a cada poucos segundos enquanto o WebSocket está caído.
+    if (data.kind === 'description') {
+      const type = data.description.type
+      this.outbox = this.outbox.filter(
+        (s) => s.to !== to || (s.data.kind !== 'candidate' && !(s.data.kind === 'description' && s.data.description.type === type)),
+      )
+    }
     this.outbox.push({ to, data })
     if (this.outbox.length > OUTBOX_MAX) this.outbox.shift()
   }
@@ -297,9 +361,19 @@ export class Call {
 
   /** Sai da call. `notify = false`: o servidor já tirou (moderador, canal apagado). */
   leave(notify = true) {
+    this.session++
     this.relay = false
     this.relayAsked = false
-    if (!this.transport) return
+    if (this.joinTimer) clearTimeout(this.joinTimer)
+    this.joinTimer = null
+    this.seenSelf = false
+    this.selfUserId = null
+    if (!this.transport) {
+      // Fora de call nada fica ligado (uma captura que acabou de abrir, por exemplo).
+      this.stopShare(false)
+      this.stopCamera(false)
+      return
+    }
     playSound('self-leave')
     if (notify) this.transport.leave()
     this.transport = null
@@ -314,7 +388,6 @@ export class Call {
     for (const pending of this.musicPending.values()) clearTimeout(pending.timer)
     this.musicPending.clear()
     this.musicRate.clear()
-    this.relaySeen.clear()
     this.routes.clear()
     this.pins.clear()
     this.directFailed.clear()
@@ -340,8 +413,21 @@ export class Call {
     this.ticker = this.statsTicker = null
   }
 
-  private async openMic() {
-    const mic = await MicPipeline.create(await getMicTrack())
+  /**
+   * Abre (ou reabre) o microfone. `strict = false`: sem microfone ou sem permissão, fica uma faixa
+   * muda no lugar (dá pra entrar na call só pra ouvir) em vez do erro. Se a call mudou enquanto
+   * abria (`session`), solta o que abriu.
+   */
+  private async openMic(session = this.session, strict = true) {
+    let mic: MicPipeline
+    try {
+      mic = await MicPipeline.create(await getMicTrack())
+    } catch (err) {
+      const name = (err as Error).name
+      if (strict || (name !== 'NotAllowedError' && name !== 'NotFoundError')) throw err
+      mic = await MicPipeline.silent()
+    }
+    if (session !== this.session) return mic.close()
     const track = mic.track
     track.enabled = !this.muted && !this.serverMuted
     if (this.micTrack) this.micStream.removeTrack(this.micTrack)
@@ -349,8 +435,26 @@ export class Call {
     this.micStream.addTrack(track)
     this.micTrack = track
     this.mic = mic
+    // Microfone desconectado no meio da call (fone sem bateria, USB): avisa e volta pro padrão.
+    if (!mic.silent) mic.raw.addEventListener('ended', () => void this.micEnded(mic))
     await Promise.all(this.peerList.map((p) => p.replaceMic(track)))
     previous?.close()
+  }
+
+  private async micEnded(mic: MicPipeline) {
+    if (this.mic !== mic || !this.channelId) return
+    this.deps.toast(m.lib.call.micLost, 'info')
+    const session = this.session
+    try {
+      await this.openMic(session, false)
+    } catch (err) {
+      return this.deps.toast(m.lib.call.micFailed((err as Error).message))
+    }
+    // Não sobrou microfone nenhum: fica só ouvindo (mutado).
+    if (session === this.session && this.mic?.silent && !this.muted) {
+      this.muted = true
+      this.applyMuteState()
+    }
   }
 
   /** Redução de ruído ou limiar mudou: aplica na hora, sem reabrir o microfone. */
@@ -362,10 +466,27 @@ export class Call {
   async reloadMic() {
     if (!this.channelId) return
     try {
-      await this.openMic()
+      await this.openMic(this.session)
     } catch (err) {
       this.deps.toast(m.lib.call.micFailed((err as Error).message))
     }
+  }
+
+  /** Entrou só pra ouvir: desmutar tenta abrir o microfone de verdade antes. */
+  private async unmuteListenOnly() {
+    const session = this.session
+    try {
+      await this.openMic(session)
+    } catch {
+      // Continua sem microfone; o ensurdecer (que esse botão também tira) sai mesmo assim.
+      if (session === this.session && this.deafened) {
+        this.deafened = false
+        playSound('undeafen')
+        this.applyMuteState()
+      }
+      return this.deps.toast(m.lib.call.noMic)
+    }
+    if (session === this.session && !this.mic?.silent) this.toggleMute()
   }
 
   applyOutput() {
@@ -385,6 +506,7 @@ export class Call {
   // ---------- Mutar / ensurdecer ----------
 
   toggleMute() {
+    if (this.mic?.silent && this.muted) return void this.unmuteListenOnly()
     if (this.deafened) {
       // Igual no Discord: desmutar também tira o ensurdecer.
       this.deafened = false
@@ -435,6 +557,15 @@ export class Call {
     const me = this.connId()
     if (!this.channelId || !me) return
     const mine = members.find((m) => m.connId === me && m.channelId === this.channelId)
+    if (mine) {
+      this.seenSelf = true
+      this.selfUserId = mine.userId
+    } else if (this.dmId && this.seenSelf && members.some((m) => m.userId === this.selfUserId && m.channelId === this.channelId)) {
+      // Chamada privada fica com uma conexão por pessoa: entrei pelo outro aparelho e esta saiu.
+      this.leave(false)
+      this.deps.toast(m.lib.call.otherDevice, 'info')
+      return
+    }
     if (mine && (!!mine.serverMuted !== this.serverMuted || !!mine.serverDeafened !== this.serverDeafened)) {
       this.serverMuted = !!mine.serverMuted
       this.serverDeafened = !!mine.serverDeafened
@@ -530,7 +661,32 @@ export class Call {
     const me = this.connId()
     if (!me || !this.ice || !this.micTrack) return
     const ice = { servers: this.peerServers(), relay: this.relay, family: this.pins.get(member.connId) ?? null }
-    const peer = new Peer(member.connId, member.userId, me > member.connId, ice, this.micStream, settings.codec, {
+    let peer: Peer
+    try {
+      peer = this.newPeer(member, me, ice)
+    } catch (err) {
+      console.error('[rtc] não deu pra criar a conexão', member.connId, err)
+      return
+    }
+    // Registra antes de configurar: um erro daqui pra baixo não pode virar uma conexão nova a cada
+    // mensagem de sinalização (foi o caso do som que não saía no celular, na 1.14.0).
+    this.peers.set(member.connId, peer)
+    try {
+      peer.setVolume(this.volumeOf(member.connId, member.userId))
+      peer.setMusicVolume(settings.musicVolume)
+      peer.setDeafened(this.deafened || this.serverDeafened)
+      peer.setOutput(settings.outputDevice)
+      if (this.camera) void peer.sendCamera(this.camera)
+      // Eu assistia a tela dele (a conexão foi refeita): pede de novo, sem precisar clicar.
+      if (this.watching === member.connId) peer.requestScreen(true)
+    } catch (err) {
+      console.error('[rtc] configurar a conexão falhou', member.connId, err)
+    }
+    return peer
+  }
+
+  private newPeer(member: VoiceMember, me: string, ice: ConstructorParameters<typeof Peer>[3]): Peer {
+    const peer: Peer = new Peer(member.connId, member.userId, me > member.connId, ice, this.micStream, settings.codec, {
       signal: (data) => this.sendSignal(member.connId, data),
       screen: (stream) => {
         // Puxando a tela dele pelo SFU: a cópia direta (que para logo) não substitui.
@@ -577,14 +733,6 @@ export class Call {
         peer.sendMusicData({ t: 'state', share: forPeers(this.bot.share) })
       },
     })
-    peer.setVolume(this.volumeOf(member.connId, member.userId))
-    peer.setMusicVolume(settings.musicVolume)
-    peer.setDeafened(this.deafened || this.serverDeafened)
-    peer.setOutput(settings.outputDevice)
-    this.peers.set(member.connId, peer)
-    if (this.camera) peer.sendCamera(this.camera)
-    // Eu assistia a tela dele (a conexão foi refeita): pede de novo, sem precisar clicar.
-    if (this.watching === member.connId) peer.requestScreen(true)
     return peer
   }
 
@@ -600,7 +748,6 @@ export class Call {
     this.forgetSfuViewer(connId)
     this.sfuIdle()
     if (this.sfuWatch?.connId === connId) this.stopSfuWatch()
-    this.relaySeen.delete(connId)
     this.dropScreen(connId)
     this.dropCamera(connId)
     this.dropMusic(connId)
@@ -634,9 +781,12 @@ export class Call {
 
   async startShare(sourceId: string | null) {
     const platform = this.deps.platform()
-    if (!this.channelId || !platform) return
+    // Um seletor por vez (clique duplo abriria dois).
+    if (!this.channelId || !platform || this.shareStarting) return
     if (this.sharing) this.stopShare(false)
     this.sfuGaveUp = false
+    const session = this.session
+    this.shareStarting = true
     let capture
     try {
       capture = await captureScreen({
@@ -649,7 +799,11 @@ export class Call {
     } catch (err) {
       if ((err as Error).name !== 'NotAllowedError') this.deps.toast(m.lib.call.shareFailed((err as Error).message))
       return
+    } finally {
+      this.shareStarting = false
     }
+    // A call acabou com o seletor aberto (o outro desligou, por exemplo): a captura não fica ligada.
+    if (session !== this.session || !this.channelId) return void stopCapture(capture.stream)
     if (capture.warning) this.deps.toast(capture.warning, 'info')
 
     const { stream } = capture
@@ -732,9 +886,19 @@ export class Call {
 
   // ---------- Câmera ----------
 
+  /** Câmera desconectada (USB) no meio da call: desliga sozinho. */
+  private watchCameraEnd(stream: MediaStream) {
+    stream.getVideoTracks()[0]?.addEventListener('ended', () => {
+      if (this.camera === stream) this.stopCamera()
+    })
+  }
+
   async toggleCamera() {
     if (this.camera) return this.stopCamera()
-    if (!this.channelId) return
+    // A câmera leva ~1 s pra abrir: o segundo clique não abre outra (que ficaria acesa sem dono).
+    if (!this.channelId || this.cameraOpening) return
+    const session = this.session
+    this.cameraOpening = true
     let stream: MediaStream
     try {
       stream = await getCameraStream(MOBILE ? this.cameraFacing : undefined)
@@ -742,11 +906,12 @@ export class Call {
       const name = (err as Error).name
       const t = m.lib.call
       return this.deps.toast(name === 'NotFoundError' ? t.noCamera : name === 'NotAllowedError' ? t.cameraDenied : t.cameraFailed((err as Error).message))
+    } finally {
+      this.cameraOpening = false
     }
-    // Câmera desconectada (USB) no meio da call: desliga sozinho.
-    stream.getVideoTracks()[0].addEventListener('ended', () => {
-      if (this.camera === stream) this.stopCamera()
-    })
+    // Saiu da call enquanto a câmera abria: ela não fica acesa.
+    if (session !== this.session || !this.channelId || this.camera) return stopTracks(stream)
+    this.watchCameraEnd(stream)
     this.camera = stream
     this.sendState()
     playSound('unmute')
@@ -767,36 +932,46 @@ export class Call {
 
   /** Trocou a câmera nas configurações: troca a imagem sem desligar. */
   async reloadCamera() {
-    if (!this.camera) return
+    if (!this.camera || this.cameraOpening) return
+    const session = this.session
+    this.cameraOpening = true
+    let stream: MediaStream
     try {
-      const stream = await getCameraStream(MOBILE ? this.cameraFacing : undefined)
-      const old = this.camera
-      this.camera = stream
-      await Promise.all(this.peerList.map((p) => p.sendCamera(stream)))
-      for (const track of old.getTracks()) track.stop()
+      stream = await getCameraStream(MOBILE ? this.cameraFacing : undefined)
     } catch (err) {
-      this.deps.toast(m.lib.call.cameraSwitchFailed((err as Error).message))
+      return this.deps.toast(m.lib.call.cameraSwitchFailed((err as Error).message))
+    } finally {
+      this.cameraOpening = false
     }
+    const old = this.camera
+    // Desligou a câmera (ou saiu da call) enquanto a outra abria.
+    if (session !== this.session || !old) return stopTracks(stream)
+    this.watchCameraEnd(stream)
+    this.camera = stream
+    await Promise.all(this.peerList.map((p) => p.sendCamera(stream)))
+    stopTracks(old)
   }
 
   /** Celular: troca entre a câmera da frente e a de trás. */
   async flipCamera() {
     const old = this.camera
-    if (!old) return
+    if (!old || this.cameraOpening) return
+    const session = this.session
+    this.cameraOpening = true
     this.cameraFacing = this.cameraFacing === 'user' ? 'environment' : 'user'
     // Muito celular não abre as duas câmeras juntas: solta a atual antes de abrir a outra.
-    for (const track of old.getTracks()) track.stop()
+    stopTracks(old)
     try {
       const stream = await getCameraStream(this.cameraFacing)
-      if (this.camera !== old) return void stream.getTracks().forEach((track) => track.stop())
-      stream.getVideoTracks()[0].addEventListener('ended', () => {
-        if (this.camera === stream) this.stopCamera()
-      })
+      if (session !== this.session || this.camera !== old) return stopTracks(stream)
+      this.watchCameraEnd(stream)
       this.camera = stream
       await Promise.all(this.peerList.map((p) => p.sendCamera(stream)))
     } catch (err) {
       this.deps.toast(m.lib.call.cameraSwitchFailed((err as Error).message))
       this.stopCamera()
+    } finally {
+      this.cameraOpening = false
     }
   }
 
@@ -910,6 +1085,17 @@ export class Call {
         this.peers.get(connId)?.replySfu(false)
       }
     }
+    void this.switchRelay(transport)
+  }
+
+  /** Virou sala pelo Cloudflare: pede o TURN dela antes (a sala direta só tinha o STUN). */
+  private async switchRelay(transport: CallTransport) {
+    if (this.relayAsked && !this.hasTurn()) await this.loadIce(transport)
+    if (this.transport === transport) this.applyRelay(transport, true)
+  }
+
+  /** Passa as conexões pelo TURN (ou tira delas), conforme a sala e o TURN de agora. */
+  private applyRelay(transport: CallTransport, announce: boolean) {
     const relay = this.relayFor(transport, true)
     if (relay === this.relay) return
     this.relay = relay
@@ -922,7 +1108,17 @@ export class Call {
       if (!peer.polite) this.rebuildPeer(peer.connId)
       else peer.setRelay(relay, this.peerServers())
     }
-    this.deps.toast(relay ? m.lib.call.relayOn : m.lib.call.relayOff, 'info')
+    if (announce) this.deps.toast(relay ? m.lib.call.relayOn : m.lib.call.relayOff, 'info')
+  }
+
+  /**
+   * A cota de mídia do mês acabou: larga o TURN (o servidor para de dar, e o que sobrou aqui não
+   * pode seguir gastando) e a sala pelo Cloudflare vai direta, com o aviso de sempre.
+   */
+  private dropTurn() {
+    if (!this.hasTurn() || !this.ice) return
+    this.ice = { servers: stunOnly(this.ice.servers), at: 0, scope: this.ice.scope }
+    if (this.transport) this.applyRelay(this.transport, false)
   }
 
   /**
@@ -986,6 +1182,8 @@ export class Call {
     if (!this.media || Date.now() - this.media.at > MEDIA_TTL) {
       const status = await api.mediaStatus().catch(() => null)
       this.media = { sfu: !!status?.sfu, at: Date.now() }
+      // A cota acabou (o TURN sumiu do servidor): o que estava guardado aqui também sai.
+      if (status && !status.turn) this.dropTurn()
     }
     return this.media.sfu
   }
@@ -1126,6 +1324,7 @@ export class Call {
       if (!allowed) {
         this.media = { sfu: false, at: Date.now() }
         this.leaveSfu('a cota de mídia do mês acabou')
+        this.dropTurn()
       }
     } catch {
       this.mediaBytes += bytes
@@ -1217,12 +1416,14 @@ export class Call {
         // Só quem está na call com o meu bot ligado pede, e sem exagero.
         const now = Date.now()
         const recent = (this.musicRate.get(connId) ?? []).filter((at) => now - at < 10_000)
-        recent.push(now)
+        // Recusado não entra na conta: uma enxurrada de pedidos não faz a lista crescer sem fim.
+        const limited = recent.length >= MUSIC_RATE
+        if (!limited) recent.push(now)
         this.musicRate.set(connId, recent)
         // Tirar a música do celular de quem pôs o bot é só com ele.
         const reply: MusicReply = !this.bot.on
           ? { ok: false, error: 'off' }
-          : recent.length > MUSIC_RATE
+          : limited
             ? { ok: false, error: 'rate' }
             : msg.op.op === 'transfer'
               ? { ok: false, error: 'failed' }
@@ -1290,9 +1491,7 @@ export class Call {
         if (!prev || prev.rtt !== stats.rtt || prev.route !== stats.route || prev.family !== stats.family || otherRtt(prev) !== otherRtt(stats)) {
           this.links[peer.connId] = stats
         }
-        const relay = stats.relayBytes ?? 0
-        this.mediaBytes += Math.max(0, relay - (this.relaySeen.get(peer.connId) ?? 0))
-        this.relaySeen.set(peer.connId, relay)
+        this.mediaBytes += stats.relayNew ?? 0
         // Por último: pode refazer a conexão.
         this.pickRoute(peer, stats)
       }

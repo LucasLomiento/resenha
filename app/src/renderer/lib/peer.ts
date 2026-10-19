@@ -1,5 +1,5 @@
 import type { SignalData, StreamKind } from '../../../../shared/protocol'
-import { boostContext, setBoostOutput } from './boost'
+import { boostContext, releaseBoost, setBoostOutput } from './boost'
 import { setSink } from './devices'
 import type { PathSample } from './route'
 import { audioMidsOf, candidateFamily, ipFamily, keepFamily, tuneScreenOpus, type IpFamily } from './sdp'
@@ -48,8 +48,8 @@ export interface VideoSendOptions {
 export interface LinkStats {
   rtt: number | null
   route: 'direto' | 'relay' | null
-  /** Bytes que passaram pelo TURN do Cloudflare (enviados + recebidos), pra cota do mês. */
-  relayBytes?: number
+  /** Bytes que passaram pelo TURN do Cloudflare desde a leitura anterior (enviados + recebidos), pra cota do mês. */
+  relayNew?: number
   /** Família de IP do caminho direto em uso. */
   family?: IpFamily | null
   /** Último ping medido de cada família com caminho direto (o ICE testa as duas), pra escolher a rota. */
@@ -204,6 +204,10 @@ export class Peer {
   /** Respostas e ping somado de cada par direto na leitura anterior (a diferença é o ping recente). */
   private pairMarks = new Map<string, { responses: number; total: number }>()
   private paths: Partial<Record<IpFamily, PathSample>> = {}
+  /** Bytes de cada par pelo TURN já contados: depois de refazer o ICE, o par novo começa do zero. */
+  private relayMarks = new Map<string, number>()
+  /** Uma troca de faixa por vez: duas que se cruzam deixariam o transceiver na direção errada. */
+  private sending: Promise<unknown> = Promise.resolve()
 
   constructor(
     readonly connId: string,
@@ -226,11 +230,17 @@ export class Peer {
     this.audio.autoplay = true
     this.musicAudio.autoplay = true
 
-    this.localStreams[micStream.id] = 'mic'
-    this.micSender = this.pc.addTrack(micStream.getAudioTracks()[0], micStream)
-
-    // Combinado dos dois lados (mesmo id): não depende de quem fez a oferta.
-    this.inkChannel = this.pc.createDataChannel('ink', { negotiated: true, id: 2, ordered: true })
+    try {
+      this.localStreams[micStream.id] = 'mic'
+      this.micSender = this.pc.addTrack(micStream.getAudioTracks()[0], micStream)
+      // Combinado dos dois lados (mesmo id): não depende de quem fez a oferta.
+      this.inkChannel = this.pc.createDataChannel('ink', { negotiated: true, id: 2, ordered: true })
+      this.musicChannel = this.pc.createDataChannel('music', { negotiated: true, id: 3, ordered: true })
+    } catch (err) {
+      // Sem isso, a conexão ficaria aberta sem dono (quem chamou não recebe o Peer).
+      this.pc.close()
+      throw err
+    }
     this.inkChannel.onopen = () => this.events.inkOpen()
     this.inkChannel.onmessage = (event) => {
       if (typeof event.data !== 'string' || event.data.length > 64_000) return
@@ -241,7 +251,6 @@ export class Peer {
       }
     }
 
-    this.musicChannel = this.pc.createDataChannel('music', { negotiated: true, id: 3, ordered: true })
     this.musicChannel.onopen = () => this.musicChannel.send(JSON.stringify({ t: 'hello' }))
     this.musicChannel.onmessage = (event) => {
       if (typeof event.data !== 'string' || event.data.length > 256_000) return
@@ -505,6 +514,7 @@ export class Peer {
     this.boost.source.disconnect()
     this.boost.gain.disconnect()
     this.boost = null
+    releaseBoost()
   }
 
   /** Nível de voz (0..1) do que está chegando, direto do WebRTC, sem WebAudio. */
@@ -531,55 +541,68 @@ export class Peer {
   }
 
   /** Começa (ou para, com null) de mandar o som do meu bot do Spotify: estéreo, como música. */
-  async sendMusic(stream: MediaStream | null) {
-    if (stream) this.localStreams[stream.id] = 'music'
-    this.musicTx = await this.setSending(
-      this.musicTx,
-      stream?.getAudioTracks()[0] ?? null,
-      stream,
-      // Abaixo da voz: se a rede apertar, a música cede primeiro.
-      { maxBitrate: 160_000, priority: 'medium', networkPriority: 'medium' },
-      null,
-    )
+  sendMusic(stream: MediaStream | null) {
+    return this.serial(async () => {
+      if (stream) this.localStreams[stream.id] = 'music'
+      this.musicTx = await this.setSending(
+        this.musicTx,
+        stream?.getAudioTracks()[0] ?? null,
+        stream,
+        // Abaixo da voz: se a rede apertar, a música cede primeiro.
+        { maxBitrate: 160_000, priority: 'medium', networkPriority: 'medium' },
+        null,
+      )
+    })
   }
 
   // ---------- Tela ----------
 
-  async sendScreen(stream: MediaStream | null, options: VideoSendOptions | null) {
-    this.videoOptions = options
-    if (stream) this.localStreams[stream.id] = 'screen'
-    const video = stream?.getVideoTracks()[0] ?? null
-    const audio = stream?.getAudioTracks()[0] ?? null
-    const live = options && stream
-    this.screenVideo = await this.setSending(
-      this.screenVideo,
-      live ? video : null,
-      stream,
-      options ? { maxBitrate: options.bitrate, maxFramerate: 60, priority: 'high', networkPriority: 'high' } : {},
-      options?.codec ?? null,
-    )
-    this.screenAudio = await this.setSending(
-      this.screenAudio,
-      live ? audio : null,
-      stream,
-      { maxBitrate: 160_000, priority: 'high', networkPriority: 'high' },
-      null,
-    )
-    await this.applyVideoParameters()
+  sendScreen(stream: MediaStream | null, options: VideoSendOptions | null) {
+    return this.serial(async () => {
+      this.videoOptions = options
+      if (stream) this.localStreams[stream.id] = 'screen'
+      const video = stream?.getVideoTracks()[0] ?? null
+      const audio = stream?.getAudioTracks()[0] ?? null
+      const live = options && stream
+      this.screenVideo = await this.setSending(
+        this.screenVideo,
+        live ? video : null,
+        stream,
+        options ? { maxBitrate: options.bitrate, maxFramerate: 60, priority: 'high', networkPriority: 'high' } : {},
+        options?.codec ?? null,
+      )
+      this.screenAudio = await this.setSending(
+        this.screenAudio,
+        live ? audio : null,
+        stream,
+        { maxBitrate: 160_000, priority: 'high', networkPriority: 'high' },
+        null,
+      )
+      await this.applyVideoParameters()
+    })
   }
 
   // ---------- Câmera ----------
 
   /** A câmera vai pra todo mundo da call (como no Discord), em 720p30 e até 1,5 Mbps. */
-  async sendCamera(stream: MediaStream | null) {
-    if (stream) this.localStreams[stream.id] = 'camera'
-    this.cameraVideo = await this.setSending(
-      this.cameraVideo,
-      stream?.getVideoTracks()[0] ?? null,
-      stream,
-      { maxBitrate: 1_500_000, maxFramerate: 30, priority: 'medium', networkPriority: 'medium' },
-      this.codec,
-    )
+  sendCamera(stream: MediaStream | null) {
+    return this.serial(async () => {
+      if (stream) this.localStreams[stream.id] = 'camera'
+      this.cameraVideo = await this.setSending(
+        this.cameraVideo,
+        stream?.getVideoTracks()[0] ?? null,
+        stream,
+        { maxBitrate: 1_500_000, maxFramerate: 30, priority: 'medium', networkPriority: 'medium' },
+        this.codec,
+      )
+    })
+  }
+
+  /** Roda depois da troca de faixa anterior (mesmo que ela tenha falhado). */
+  private serial(task: () => Promise<void>): Promise<void> {
+    const run = this.sending.then(task, task)
+    this.sending = run.catch(() => {})
+    return run
   }
 
   private async setSending(
@@ -643,18 +666,36 @@ export class Peer {
       })
     }
     this.measurePaths(report)
-    if (!pair) return { rtt: null, route: null, paths: { ...this.paths } }
+    const relayNew = this.relayDelta(report)
+    if (!pair) return { rtt: null, route: null, relayNew, paths: { ...this.paths } }
     const local = report.get(pair.localCandidateId)
     const remote = report.get(pair.remoteCandidateId)
     const relay = local?.candidateType === 'relay' || remote?.candidateType === 'relay'
     return {
       rtt: pair.currentRoundTripTime != null ? Math.round(pair.currentRoundTripTime * 1000) : null,
       route: relay ? 'relay' : 'direto',
-      // O TURN cobra o que sai dele: nos dois sentidos, quando o meu lado passa por ele.
-      relayBytes: local?.candidateType === 'relay' ? (pair.bytesSent ?? 0) + (pair.bytesReceived ?? 0) : 0,
+      relayNew,
       family: relay ? null : (ipFamily(local?.address ?? local?.ip) ?? ipFamily(remote?.address ?? remote?.ip)),
       paths: { ...this.paths },
     }
+  }
+
+  /**
+   * O que passou pelo TURN desde a leitura anterior. O TURN cobra o que sai dele: nos dois
+   * sentidos, nos pares em que o meu lado passa por ele. Conta por par, porque depois de refazer
+   * o ICE o par novo começa do zero (comparar com o total de antes escondia o uso novo).
+   */
+  private relayDelta(report: RTCStatsReport): number {
+    let added = 0
+    const marks = new Map<string, number>()
+    report.forEach((s) => {
+      if (s.type !== 'candidate-pair' || report.get(s.localCandidateId)?.candidateType !== 'relay') return
+      const bytes = (s.bytesSent ?? 0) + (s.bytesReceived ?? 0)
+      marks.set(s.id, bytes)
+      added += Math.max(0, bytes - (this.relayMarks.get(s.id) ?? 0))
+    })
+    this.relayMarks = marks
+    return added
   }
 
   /**

@@ -420,6 +420,9 @@ export function renderSound(ctx: BaseAudioContext, destination: AudioNode, name:
 
 let context: AudioContext | null = null
 let sink = ''
+/** Sem tocar nada por um tempo, o contexto dorme: não segura a saída de som (nem o fone Bluetooth) acordada. */
+const IDLE = 15_000
+let idleTimer: ReturnType<typeof setTimeout> | null = null
 
 function ctx(): AudioContext {
   context ??= new AudioContext({ latencyHint: 'interactive' })
@@ -439,6 +442,11 @@ export function playSound(name: SoundName, preview = false) {
   try {
     const audio = ctx()
     renderSound(audio, audio.destination, name, audio.currentTime + 0.01, settings.soundVolume * 0.75)
+    if (idleTimer) clearTimeout(idleTimer)
+    idleTimer = setTimeout(() => {
+      idleTimer = null
+      if (context?.state === 'running') void context.suspend().catch(() => {})
+    }, IDLE)
   } catch (err) {
     console.warn('som falhou', err)
   }

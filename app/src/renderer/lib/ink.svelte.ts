@@ -108,6 +108,11 @@ export class InkShare {
   monitor = $state.raw<InkMonitor | null>(null)
   private track: MediaStreamTrack | null = null
   private rate = new Map<string, number[]>()
+  /**
+   * Muda a cada começar, desligar e parar: uma abertura que ainda estava em andamento (a sondagem
+   * leva segundos) para no meio, em vez de ligar de novo o que a pessoa desligou.
+   */
+  private generation = 0
 
   /** `emit`: manda pra todo mundo que assiste (permissão mudou, apagou tudo). */
   constructor(private emit: (msg: InkMessage) => void) {
@@ -143,21 +148,23 @@ export class InkShare {
    */
   async begin(track: MediaStreamTrack) {
     this.track = track
+    const generation = ++this.generation
+    const stale = () => this.generation !== generation
     const surface = (track.getSettings() as MediaTrackSettings & { displaySurface?: string }).displaySurface
     if (surface === 'browser') return this.set('window')
     if (!settings.inkAllowed) return this.set('disabled')
     this.set('starting')
     const monitors = await window.resenha.ink.monitors()
-    if (this.track !== track) return
+    if (stale()) return
     if (!monitors) return this.set('unsupported')
     this.monitors = [...monitors].sort((a, b) => a.x - b.x || a.y - b.y)
     const reader = new FrameReader(track)
     try {
       const size = await reader.size()
-      if (this.track !== track) return
+      if (stale()) return
       const candidates = this.candidates(surface, size)
       if (candidates.length === 0) return this.set('window')
-      if (candidates.length === 1) return await this.open(candidates[0])
+      if (candidates.length === 1) return await this.open(candidates[0], stale)
       if (size) {
         // O último monitor achado primeiro: quase sempre é ele, e o quadradinho não pisca nos outros.
         const last = candidates.find((m) => m.connector === settings.inkMonitor)
@@ -165,9 +172,10 @@ export class InkShare {
         // Duas voltas: no começo da transmissão a captura às vezes ainda não manda quadro novo.
         for (let round = 0; round < 2; round++) {
           if (round) await new Promise((r) => setTimeout(r, 1000))
+          if (stale()) return
           for (const monitor of ordered) {
-            const result = await this.probe(reader, monitor, track)
-            if (this.track !== track || result === 'found' || result === 'stop') return
+            const result = await this.probe(reader, monitor, stale)
+            if (stale() || result === 'found' || result === 'stop') return
           }
         }
         window.resenha.ink.stop()
@@ -191,10 +199,10 @@ export class InkShare {
   }
 
   /** Abre a camada nesse monitor e procura o quadradinho dela na captura. */
-  private async probe(reader: FrameReader, monitor: InkMonitor, track: MediaStreamTrack): Promise<'found' | 'missing' | 'stop'> {
+  private async probe(reader: FrameReader, monitor: InkMonitor, stale: () => boolean): Promise<'found' | 'missing' | 'stop'> {
     this.monitor = monitor
     const result = await window.resenha.ink.start(monitor.connector)
-    if (this.track !== track) {
+    if (stale()) {
       if (result.ok) window.resenha.ink.stop()
       return 'stop'
     }
@@ -208,24 +216,24 @@ export class InkShare {
     window.resenha.ink.event({ t: 'probe', on: true })
     const until = performance.now() + PROBE_WAIT
     let found = false
-    while (!found && performance.now() < until && this.track === track) {
+    while (!found && performance.now() < until && !stale()) {
       await new Promise((r) => setTimeout(r, 40))
       found = reader.marked(monitor)
     }
     window.resenha.ink.event({ t: 'probe', on: false })
-    if (this.track !== track) return 'stop'
+    // Quem desligou (ou parou) já fechou a camada; uma abertura nova cuida da dela.
+    if (stale()) return 'stop'
     if (!found) return 'missing'
     settings.inkMonitor = monitor.connector
     this.set('on')
     return 'found'
   }
 
-  private async open(monitor: InkMonitor) {
-    const track = this.track
+  private async open(monitor: InkMonitor, stale: () => boolean) {
     this.monitor = monitor
     this.set('starting')
     const result = await window.resenha.ink.start(monitor.connector)
-    if (this.track !== track) {
+    if (stale()) {
       if (result.ok) window.resenha.ink.stop()
       return
     }
@@ -238,6 +246,8 @@ export class InkShare {
     settings.inkAllowed = enabled
     if (!this.track) return
     if (!enabled) {
+      // Pra também a abertura que ainda estava em andamento.
+      this.generation++
       window.resenha.ink.stop()
       return this.set('disabled')
     }
@@ -245,6 +255,7 @@ export class InkShare {
   }
 
   end() {
+    this.generation++
     this.track = null
     this.monitor = null
     this.rate.clear()

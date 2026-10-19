@@ -938,7 +938,8 @@ try {
   await a.page.evaluate(() => {
     const call = window.__call
     const servers = call.ice?.servers ?? [{ urls: ['stun:stun.cloudflare.com:3478'] }]
-    call.ice = { servers: [...servers, { urls: ['turn:127.0.0.1:9?transport=udp'], username: 'teste', credential: 'teste' }], at: Date.now() }
+    // `scope: 'direct'`: o que a sala direta pede (o servidor de verdade nem mandaria o TURN pra ela).
+    call.ice = { servers: [...servers, { urls: ['turn:127.0.0.1:9?transport=udp'], username: 'teste', credential: 'teste' }], at: Date.now(), scope: 'direct' }
   })
   const micBefore = await rectOf(a.page, 'Mutar')
   await a.page.getByRole('button', { name: 'Geral: entrar na call', exact: true }).click({ force: true })

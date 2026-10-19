@@ -18,6 +18,8 @@ export function micOptions(): MicOptions {
 
 let context: AudioContext | null = null
 let loading: Promise<void> | null = null
+/** Microfones abertos neste contexto: sem nenhum (fora da call), ele dorme e não segura a saída de som (nem o fone Bluetooth) acordada. */
+let users = 0
 
 async function audioContext(): Promise<AudioContext> {
   // 48 kHz: é a taxa que o RNNoise espera (blocos de 480 = 10 ms).
@@ -28,6 +30,11 @@ async function audioContext(): Promise<AudioContext> {
   return context
 }
 
+function release() {
+  users = Math.max(0, users - 1)
+  if (users === 0 && context?.state === 'running') void context.suspend().catch(() => {})
+}
+
 export class MicPipeline {
   /** Nível do que está saindo (dBFS, depois da redução de ruído). */
   levelDb = -100
@@ -35,13 +42,24 @@ export class MicPipeline {
   open = false
   /** Só no plano B (sem processamento): mede o nível direto do microfone. */
   private meter: LevelMeter | null = null
+  private closed = false
 
   private constructor(
     readonly raw: MediaStreamTrack,
     readonly track: MediaStreamTrack,
     private nodes: { source: MediaStreamAudioSourceNode; worklet: AudioWorkletNode } | null,
+    /** Sem microfone: uma faixa muda no lugar (entrou na call só pra ouvir). */
+    readonly silent = false,
   ) {
-    if (!nodes) this.meter = new LevelMeter(raw)
+    if (!nodes && !silent) this.meter = new LevelMeter(raw)
+  }
+
+  /** Sem microfone (ou sem permissão): faixa muda, pra entrar na call só pra ouvir. */
+  static async silent(): Promise<MicPipeline> {
+    const ctx = await audioContext()
+    users++
+    const track = ctx.createMediaStreamDestination().stream.getAudioTracks()[0]
+    return new MicPipeline(track, track, null, true)
   }
 
   /**
@@ -49,8 +67,11 @@ export class MicPipeline {
    * com o microfone cru, porque é melhor a call funcionar sem filtro do que não funcionar.
    */
   static async create(raw: MediaStreamTrack): Promise<MicPipeline> {
+    let counted = false
     try {
       const ctx = await audioContext()
+      users++
+      counted = true
       const source = ctx.createMediaStreamSource(new MediaStream([raw]))
       const worklet = new AudioWorkletNode(ctx, 'resenha-mic', {
         numberOfInputs: 1,
@@ -70,6 +91,7 @@ export class MicPipeline {
       return pipeline
     } catch (err) {
       console.error('processamento do microfone indisponível, seguindo sem filtro', err)
+      if (counted) release()
       return new MicPipeline(raw, raw, null)
     }
   }
@@ -96,12 +118,15 @@ export class MicPipeline {
   }
 
   close() {
+    if (this.closed) return
+    this.closed = true
     this.meter?.close()
     if (this.nodes) {
       this.nodes.worklet.port.postMessage('close')
       this.nodes.source.disconnect()
       this.nodes.worklet.disconnect()
     }
+    if (this.nodes || this.silent) release()
     this.track.stop()
     this.raw.stop()
   }
