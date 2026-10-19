@@ -7,8 +7,9 @@ export interface PlatformInfo {
   /**
    * Como o áudio da tela é capturado sem a voz da call:
    * - venmic: Linux/PipeWire, todos os apps menos o nosso
-   * - exclude-self: Windows 10 22H2+, sistema inteiro menos o nosso processo
-   * - loopback-all: Windows antigo, pega tudo (a voz da call vai junto)
+   * - exclude-self: sistema inteiro menos o nosso processo (o processo principal não manda mais:
+   *   o Electron 44 não aceita o 'loopbackWithoutChrome'; fica pra quando ele aceitar)
+   * - loopback-all: Windows, pega tudo (a voz da call vai junto)
    * - none: sem áudio da tela
    */
   screenAudio: 'venmic' | 'exclude-self' | 'loopback-all' | 'none'
@@ -210,7 +211,14 @@ export interface ResenhaApi {
     start(options: { mode: 'all' | 'apps'; apps: string[] }): Promise<{ ok: boolean; error?: string }>
     unmute(): Promise<void>
     stop(): Promise<void>
+    /**
+     * Windows: o Electron recusou o áudio da tela (a transmissão saiu só com o vídeo). Daqui pra
+     * frente o `platform()` diz `screenAudio: 'none'`; a interface tira a opção de compartilhar o som.
+     */
+    onUnavailable?(callback: () => void): void
   }
+  /** Os avisos de licença do que vai no app (THIRD_PARTY_LICENSES.txt); null se o arquivo não veio no build. */
+  licenses?(): Promise<string | null>
   attention(): void
   /** Traz a janela pra frente (clique num aviso do sistema). */
   showWindow(): void

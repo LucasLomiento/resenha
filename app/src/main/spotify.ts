@@ -43,7 +43,7 @@ import { tmpdir } from 'node:os'
 import { delimiter, join } from 'node:path'
 import type { MusicError, MusicList, MusicOp, MusicPlayer, MusicReply, MusicSearch, MusicTrack, SpotifyStatus } from '../preload/api'
 import { tm } from './i18n'
-import { findTerminal, outside, run } from './updater'
+import { findTerminal, outside, run, runPkexec } from './updater'
 
 const ACCOUNTS = process.env.RESENHA_SPOTIFY_ACCOUNTS || 'https://accounts.spotify.com'
 const API = process.env.RESENHA_SPOTIFY_API || 'https://api.spotify.com/v1'
@@ -172,18 +172,30 @@ function accessToken(): Promise<string> {
   return refreshing
 }
 
+/**
+ * A conta de agora, se ainda é a mesma de antes da espera. Enquanto o pedido ia e voltava, a
+ * pessoa pode ter desconectado (não ressuscita) ou o outro token pode ter sido trocado (relê
+ * antes de gravar, pra não voltar com um refresh token que o Spotify já invalidou).
+ */
+function stillConnected(before: Account): Account | null {
+  const now = loadAccount()
+  return now && now.id === before.id && now.clientId === before.clientId ? now : null
+}
+
 async function refresh(): Promise<string> {
   const saved = loadAccount()
   if (!saved) throw new SpotifyError('not-connected')
   try {
     const data = await tokenRequest({ grant_type: 'refresh_token', refresh_token: saved.refresh, client_id: saved.clientId })
+    const now = stillConnected(saved)
+    if (!now) throw new SpotifyError('not-connected')
     access = { token: data.access_token, until: Date.now() + (data.expires_in - 60) * 1000 }
     // O Spotify às vezes troca o refresh token: o antigo para de valer.
-    if (data.refresh_token && data.refresh_token !== saved.refresh) saveAccount({ ...saved, refresh: data.refresh_token })
+    if (data.refresh_token && data.refresh_token !== now.refresh) saveAccount({ ...now, refresh: data.refresh_token })
     return access.token
   } catch (err) {
-    // Acesso revogado (ou o app do Spotify mudou): precisa conectar de novo.
-    if (codeOf(err) === 'auth') saveAccount(null)
+    // Acesso revogado (ou o app do Spotify mudou): precisa conectar de novo. Só se ninguém trocou o token no meio.
+    if (codeOf(err) === 'auth' && stillConnected(saved)?.refresh === saved.refresh) saveAccount(null)
     throw err
   }
 }
@@ -194,10 +206,12 @@ async function desktopToken(): Promise<string | null> {
   if (!saved?.desktop) return null
   try {
     const data = await tokenRequest({ grant_type: 'refresh_token', refresh_token: saved.desktop, client_id: BUILTIN_CLIENT_ID })
-    if (data.refresh_token && data.refresh_token !== saved.desktop) saveAccount({ ...saved, desktop: data.refresh_token })
+    const now = stillConnected(saved)
+    if (now && data.refresh_token && data.refresh_token !== now.desktop) saveAccount({ ...now, desktop: data.refresh_token })
     return data.access_token
   } catch (err) {
-    if (codeOf(err) === 'auth') saveAccount({ ...saved, desktop: null })
+    const now = stillConnected(saved)
+    if (codeOf(err) === 'auth' && now?.desktop === saved.desktop) saveAccount({ ...now, desktop: null })
     return null
   }
 }
@@ -843,7 +857,7 @@ export function spotifyStart(): Promise<{ ok: true } | { ok: false; error: Music
   return next
 }
 
-export async function spotifyStop() {
+export function spotifyStop(): Promise<void> {
   generation++
   live = false
   const proc = child
@@ -854,12 +868,26 @@ export async function spotifyStop() {
   deviceId = null
   pcm = null
   wanted = 0
+  const done = shutDown(proc, device, fifo)
+  // Ligar de novo espera este terminar de sair: com dois librespot de pé ficariam dois "Resenha"
+  // no Spotify (e o `findDevice` podia pegar o que está saindo).
+  queue = queue.then(() => done).catch(() => {})
+  return done
+}
+
+async function shutDown(proc: ChildProcess | null, device: string | null, fifo: typeof pcm) {
   if (!proc) return closePcm(fifo)
   // Pausa antes de fechar: senão o celular de quem pôs o bot ainda mostra "tocando no Resenha" por um tempo.
   if (device) await api('PUT', '/me/player/pause', { device_id: device }).catch(() => {})
+  const exited = new Promise<void>((resolve) => {
+    if (proc.exitCode !== null || proc.signalCode !== null) return resolve()
+    proc.once('exit', () => resolve())
+    setTimeout(resolve, 4000).unref()
+  })
   proc.kill('SIGTERM')
-  setTimeout(() => proc.exitCode === null && proc.kill('SIGKILL'), 3000).unref()
+  setTimeout(() => proc.exitCode === null && proc.signalCode === null && proc.kill('SIGKILL'), 3000).unref()
   closePcm(fifo)
+  await exited
 }
 
 /** O app está fechando: mata o librespot na hora (sem esperar a pausa pela Web API). */
@@ -919,10 +947,11 @@ export function spotifyStatus(): SpotifyStatus {
 export async function installLibrespot(): Promise<boolean> {
   if (librespotPath()) return true
   if (!installable()) return false
-  const code = await run(...outside(['pkexec', 'pacman', '-S', '--needed', '--noconfirm', 'librespot'], { wait: true }))
+  const code = await runPkexec(['pacman', '-S', '--needed', '--noconfirm', 'librespot'])
   if (code === 0) return !!librespotPath()
-  // 126 = a pessoa cancelou a senha.
-  if (code === 126) return false
+  // 126 = a pessoa cancelou a senha; outro código = o pacman falhou (pedir a senha de novo daria no mesmo).
+  if (code !== null) return false
+  // Sem pkexec ou sem agente do polkit: num terminal com sudo.
   const t = tm().spotify
   const terminal = findTerminal(t.installTitle)
   if (!terminal) return false

@@ -47,8 +47,30 @@ const pt = {
     terminalPrompt: (version: string) => `Atualizando o Resenha pra versão ${version}. Digite sua senha:`,
     terminalFailed: 'Não deu pra atualizar. Aperte Enter pra abrir o Resenha.',
     noTerminal: (file: string) => `Não achei um terminal pra pedir a senha. Instale manualmente: sudo pacman -U "${file}"`,
+    /** Vem depois de "Não deu pra atualizar:" na tela. */
+    pacmanFailed: (code: number) =>
+      `o pacman parou com erro (código ${code}). Se outro programa estiver usando o pacman, espere ele terminar e tente de novo.`,
   },
   /** Janelinha do anti-robô do cadastro (Turnstile). */
+  /** Menu do clique direito (corretor, copiar e colar, links). */
+  contextMenu: {
+    cut: 'Recortar',
+    copy: 'Copiar',
+    paste: 'Colar',
+    selectAll: 'Selecionar tudo',
+    copyLink: 'Copiar link',
+    openLink: 'Abrir link no navegador',
+    copyImage: 'Copiar imagem',
+    addToDictionary: 'Adicionar ao dicionário',
+    noSuggestions: 'Sem sugestões',
+  },
+  /** A janela caiu várias vezes seguidas: o app pergunta em vez de recarregar de novo. */
+  crashed: {
+    message: 'A janela do Resenha fechou sozinha várias vezes seguidas.',
+    detail: 'Pode ser falta de memória ou um problema com a placa de vídeo. Recarregar tenta de novo.',
+    reload: 'Recarregar',
+    quit: 'Fechar o Resenha',
+  },
   verifyTitle: 'Verificação',
   /** Bot do Spotify: a página que o navegador mostra depois do login e o terminal que instala o librespot. */
   spotify: {
@@ -92,6 +114,25 @@ const en: typeof pt = {
     terminalPrompt: (version: string) => `Updating Resenha to version ${version}. Enter your password:`,
     terminalFailed: "Couldn't update. Press Enter to open Resenha.",
     noTerminal: (file: string) => `Couldn't find a terminal to ask for your password. Install it manually: sudo pacman -U "${file}"`,
+    pacmanFailed: (code: number) =>
+      `pacman stopped with an error (code ${code}). If another program is using pacman, wait for it to finish and try again.`,
+  },
+  contextMenu: {
+    cut: 'Cut',
+    copy: 'Copy',
+    paste: 'Paste',
+    selectAll: 'Select all',
+    copyLink: 'Copy link',
+    openLink: 'Open link in browser',
+    copyImage: 'Copy image',
+    addToDictionary: 'Add to dictionary',
+    noSuggestions: 'No suggestions',
+  },
+  crashed: {
+    message: 'The Resenha window closed on its own several times in a row.',
+    detail: 'It may be low memory or a graphics card problem. Reloading tries again.',
+    reload: 'Reload',
+    quit: 'Quit Resenha',
   },
   verifyTitle: 'Verification',
   spotify: {
@@ -135,6 +176,25 @@ const es: typeof pt = {
     terminalPrompt: (version: string) => `Actualizando Resenha a la versión ${version}. Escribe tu contraseña:`,
     terminalFailed: 'No se pudo actualizar. Presiona Enter para abrir Resenha.',
     noTerminal: (file: string) => `No encontré una terminal para pedir tu contraseña. Instálalo manualmente: sudo pacman -U "${file}"`,
+    pacmanFailed: (code: number) =>
+      `pacman terminó con un error (código ${code}). Si otro programa está usando pacman, espera a que termine e inténtalo de nuevo.`,
+  },
+  contextMenu: {
+    cut: 'Cortar',
+    copy: 'Copiar',
+    paste: 'Pegar',
+    selectAll: 'Seleccionar todo',
+    copyLink: 'Copiar enlace',
+    openLink: 'Abrir enlace en el navegador',
+    copyImage: 'Copiar imagen',
+    addToDictionary: 'Añadir al diccionario',
+    noSuggestions: 'Sin sugerencias',
+  },
+  crashed: {
+    message: 'La ventana de Resenha se cerró sola varias veces seguidas.',
+    detail: 'Puede ser falta de memoria o un problema con la tarjeta gráfica. Recargar lo intenta de nuevo.',
+    reload: 'Recargar',
+    quit: 'Cerrar Resenha',
   },
   verifyTitle: 'Verificación',
   spotify: {
