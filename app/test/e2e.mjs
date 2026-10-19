@@ -675,6 +675,41 @@ check(pioneerStyle.ok && notPioneer.status === 400, 'moldura e nome do Pioneiro:
 
 // Prefixo dos perfis: dá pra rodar dois e2e ao mesmo tempo (com RESENHA_E2E_PORT diferente também).
 const PROFILE = process.env.RESENHA_E2E_PROFILE ?? 'e2e'
+
+// Ganho automático: no Windows vem ligado e liga uma vez pra quem já usava lá, menos no Estúdio
+// (sem processamento de propósito). O renderer sabe que é Windows pelo user agent. No Linux, nada muda.
+{
+  const w = await launch(`${PROFILE}-w`)
+  /** Abre de novo com essas configurações gravadas (null: instalação nova) e devolve o ganho automático que ficou. */
+  const reopen = async (stored) => {
+    await w.page.evaluate((s) => (s ? localStorage.setItem('resenha.settings', JSON.stringify(s)) : localStorage.removeItem('resenha.settings')), stored)
+    await w.page.reload()
+    await w.page.waitForFunction(() => JSON.parse(localStorage.getItem('resenha.settings') ?? '{}').revision === 1, null, { timeout: 5000 })
+    return w.page.evaluate(() => JSON.parse(localStorage.getItem('resenha.settings')).autoGainControl)
+  }
+  try {
+    const old = { language: 'pt', noiseReduction: 'rnnoise', echoCancellation: true, autoGainControl: false, gate: { enabled: false, auto: true, thresholdDb: -50 } }
+    const linux = await reopen(old)
+    await w.page.addInitScript(() => {
+      const ua = navigator.userAgent.replace(/\([^)]*\)/, '(Windows NT 10.0; Win64; x64)')
+      Object.defineProperty(navigator, 'userAgent', { get: () => ua })
+    })
+    const fresh = await reopen(null)
+    const updated = await reopen(old)
+    const kept = await reopen({ ...old, revision: 1 })
+    const studio = await reopen({ ...old, noiseReduction: 'off', echoCancellation: false })
+    check(
+      !linux && fresh && updated && !kept && !studio,
+      'ganho automático: vem ligado no Windows e liga uma vez pra quem já usava lá (menos no Estúdio); no Linux continua desligado',
+      `Linux ${linux} · Windows: novo ${fresh}, antigo ${updated}, desligado depois ${kept}, Estúdio ${studio}`,
+    )
+  } catch (err) {
+    check(false, 'ganho automático no Windows', err.message)
+  } finally {
+    await w.app.close()
+  }
+}
+
 const a = await launch(`${PROFILE}-a`)
 const b = await launch(`${PROFILE}-b`)
 let closedA = false

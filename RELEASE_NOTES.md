@@ -1,6 +1,6 @@
-## 1.15.1: inspecionar fechado no app instalado
+## 1.15.2: voz mais alta no Windows
 
-- **O inspecionar (DevTools) não abre mais no app do computador**: nem pelo F12 ou Ctrl+Shift+I, nem por opções na linha de comando. No celular ele já não abria.
+- **No Windows, o ganho automático do microfone vem ligado**: lá o microfone chega no app sem o aumento de volume que o driver costuma dar, e a voz saía bem mais baixa que no Discord. Quem já usava o app no Windows ganha ele ligado nesta atualização, menos quem escolheu o perfil Estúdio. Dá pra desligar em Configurações → Voz e vídeo → Ganho automático. No Linux nada mudou.
 
 ## Como atualizar
 

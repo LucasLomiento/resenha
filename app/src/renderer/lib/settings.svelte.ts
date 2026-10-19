@@ -15,7 +15,10 @@ export interface Settings {
   noiseReduction: 'rnnoise' | 'browser' | 'off'
   /** Limiar do microfone: só transmite acima dele (ou, no automático, quando detecta voz). */
   gate: { enabled: boolean; auto: boolean; thresholdDb: number }
-  /** Desligado por padrão: o AGC do Chromium já baixou o volume do microfone do sistema. */
+  /**
+   * Ganho automático do Chromium, só digital: o processo principal não deixa ele mexer no volume do
+   * microfone no sistema (que ele chegou a baixar). Vem ligado só no Windows (`agcByDefault`).
+   */
   autoGainControl: boolean
   screenPreset: ScreenPreset
   screenMode: ScreenMode
@@ -58,9 +61,18 @@ export interface Settings {
   messageSound: boolean
   /** Miniatura da transmissão: posição (px a partir da esquerda/topo) e largura. */
   pip: { x: number; y: number; width: number } | null
+  /** Sobe quando um padrão novo precisa valer também pra quem já usava o app (o que muda fica no `load`). */
+  revision: number
 }
 
 const KEY = 'resenha.settings'
+
+/**
+ * No Windows o Chromium abre o microfone em modo "raw", sem o processamento do driver, que é onde
+ * muito notebook e headset aumenta o volume: sem o ganho automático, a voz chegava bem mais baixa
+ * que no Discord (1.15.2). No Linux o microfone vem no volume que a pessoa deixou no sistema.
+ */
+export const agcByDefault = navigator.userAgent.includes('Windows')
 
 const defaults: Settings = {
   language: 'auto',
@@ -70,7 +82,7 @@ const defaults: Settings = {
   echoCancellation: true,
   noiseReduction: 'rnnoise',
   gate: { enabled: false, auto: true, thresholdDb: -50 },
-  autoGainControl: false,
+  autoGainControl: agcByDefault,
   screenPreset: '1440p',
   screenMode: 'motion',
   screenAudio: true,
@@ -95,6 +107,7 @@ const defaults: Settings = {
   soundVolume: 0.6,
   messageSound: true,
   pip: null,
+  revision: 1,
 }
 
 function load(): Settings {
@@ -103,6 +116,10 @@ function load(): Settings {
     const saved = JSON.parse(stored ?? '{}') as Partial<Settings>
     // Quem já usava o app antes dos idiomas (1.9) continua em português; instalação nova segue o sistema.
     if (stored && !('language' in saved)) saved.language = 'pt'
+    // Revisão 1 (1.15.2): pra quem já usava no Windows, o ganho automático liga uma vez só. Menos no
+    // Estúdio, que é sem processamento nenhum de propósito.
+    const studio = saved.noiseReduction === 'off' && saved.echoCancellation === false && !saved.gate?.enabled
+    if (stored && (saved.revision ?? 0) < 1 && agcByDefault && !studio) saved.autoGainControl = true
     return { ...defaults, ...saved }
   } catch {
     return { ...defaults }
