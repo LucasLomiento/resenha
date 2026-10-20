@@ -631,6 +631,100 @@ svg {
   margin-left: 6px;
 }
 
+/* ---------- Idioma: <details> com os links pras outras páginas ---------- */
+
+.lang {
+  position: relative;
+}
+
+.lang-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 10px 0 8px;
+  border-radius: 999px;
+  color: var(--fg-2);
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  list-style: none;
+  cursor: pointer;
+  user-select: none;
+  transition:
+    background-color 100ms var(--ease),
+    color 100ms var(--ease);
+}
+
+.lang-btn::-webkit-details-marker {
+  display: none;
+}
+
+.lang-btn svg {
+  width: 17px;
+  height: 17px;
+}
+
+.lang-btn:hover,
+.lang[open] .lang-btn {
+  background: var(--hover);
+  color: var(--fg);
+}
+
+.lang-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  min-width: 168px;
+  padding: 6px;
+  border-radius: 12px;
+  background: var(--bg-overlay);
+  box-shadow:
+    0 0 0 1px var(--line-strong),
+    0 16px 40px -12px rgb(0 0 0 / 0.75);
+  animation: view-in 140ms var(--ease);
+}
+
+.lang-menu a {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 34px;
+  padding: 0 10px;
+  border-radius: 8px;
+  color: var(--fg-2);
+  font-size: 13px;
+  font-weight: 550;
+}
+
+.lang-menu a:hover {
+  background: var(--hover);
+  color: var(--fg);
+}
+
+.lang-menu a[aria-current] {
+  background: var(--selected);
+  color: var(--fg);
+}
+
+.lang-menu small {
+  min-width: 20px;
+  color: var(--fg-3);
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+}
+
+.lang-menu svg {
+  width: 16px;
+  height: 16px;
+  margin-left: auto;
+  color: var(--accent-fg);
+}
+
 .views {
   position: relative;
   flex: 1;
@@ -1254,7 +1348,7 @@ html:not(.js) [data-next] {
 }
 
 .call-tile.me.muted-me .tag-name::after {
-  content: 'mutado';
+  content: attr(data-muted);
   color: var(--red);
   font-weight: 500;
 }
@@ -2389,6 +2483,18 @@ html:not(.js) [data-next] {
   color: var(--accent-fg);
 }
 
+/* Nota que ainda não foi traduzida: vai no original, e a etiqueta avisa. */
+.msg-original {
+  white-space: nowrap;
+  margin-left: 6px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--selected);
+  color: var(--fg-2);
+  font: 600 11px var(--font);
+  vertical-align: middle;
+}
+
 .msg-new {
   white-space: nowrap;
   margin-left: 6px;
@@ -2574,7 +2680,8 @@ html:not(.js) [data-next] {
 
 .foot nav {
   display: flex;
-  gap: 16px;
+  flex-wrap: wrap;
+  gap: 4px 16px;
 }
 
 .foot a {
@@ -2744,6 +2851,12 @@ html:not(.js) [data-next] {
   [data-prev],
   [data-next] {
     display: none;
+  }
+
+  .head-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .scroll {

@@ -1,18 +1,28 @@
 // Site do Resenha: o app de mentirinha. Cada canal é uma parte do site (a rota é o
 // #canal), e cada parte tem o seu brinquedo: call, qualidade da tela, rabisco, mapa,
 // perfil, Spotify e queda de internet. Tudo local; nada sai do navegador.
+//
+// Uma página por idioma (raiz, en/, es/), todas com este arquivo: os textos que ele
+// escreve vêm no <script id="strings"> de cada uma (site/src/i18n, pelo build.mjs).
 
 const still = matchMedia('(prefers-reduced-motion: reduce)').matches
 const now = () => performance.now() / 1000
 const $ = (selector, root = document) => root.querySelector(selector)
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)]
 
-/** A ordem do tour (setas, "Próximo" no pé de cada canal). */
+/** Os textos desta página, no idioma dela. */
+const t = JSON.parse($('#strings').textContent)
+const here = t.langs.find((l) => l.code === t.lang)
+
+/** A ordem do tour (setas, "Próximo" no pé de cada canal), pela id de cada parte. */
 const TOUR = ['boas-vindas', 'call', 'tela-ao-vivo', 'rabiscos', 'mapa', 'perfil', 'spotify', 'conexao', 'novidades', 'baixar']
 /** Endereços do site antigo. */
 const OLD = { topo: 'boas-vindas', recursos: 'call' }
-const NAMES = { conexao: 'conexão' }
-const name = (id) => NAMES[id] ?? id
+/** Nome e endereço (#) de cada canal no idioma da página. */
+const name = (id) => t.channels[id] ?? id
+const slug = (id) => here.slugs[id] ?? id
+/** Endereço → canal, em qualquer idioma: o link de quem mandou em outra língua continua valendo. */
+const ALIASES = new Map(t.langs.flatMap((l) => Object.entries(l.slugs).map(([id, s]) => [s, id])))
 
 /** Troca o ícone de um <svg><use></svg>. */
 const setIcon = (svg, icon) => svg?.querySelector('use')?.setAttribute('href', `#i-${icon}`)
@@ -45,8 +55,12 @@ function router() {
       // "#%" e parecidos: endereço quebrado vale como sem endereço
     }
     if (!id || id === 'conteudo') return { view: current ?? 'boas-vindas' }
-    if (views.has(id)) return { view: id }
-    if (OLD[id]) return { view: OLD[id] }
+    // Endereço de outro idioma (ou antigo) vira o deste, sem entrar no histórico.
+    const view = ALIASES.get(id) ?? OLD[id] ?? (views.has(id) ? id : null)
+    if (view) {
+      if (id !== slug(view)) history.replaceState(null, '', `#${slug(view)}`)
+      return { view }
+    }
     const target = document.getElementById(id)
     const inside = target?.closest('[data-view]')
     if (inside) return { view: inside.dataset.view, target }
@@ -73,6 +87,7 @@ function router() {
     head.name.textContent = name(id)
     head.topic.textContent = view.dataset.topic ?? ''
     document.title = id === 'boas-vindas' ? 'Resenha' : `#${name(id)} · Resenha`
+    languages(id, target)
 
     // O "Próximo" vai pro pé do canal aberto.
     const i = TOUR.indexOf(id)
@@ -80,8 +95,8 @@ function router() {
     const scroll = $('.scroll', view)
     if (next && scroll) {
       nextCard.hidden = false
-      nextCard.href = `#${next}`
-      $('.next-label', nextCard).textContent = id === 'boas-vindas' ? 'Começar o tour' : 'Próximo'
+      nextCard.href = `#${slug(next)}`
+      $('.next-label', nextCard).textContent = id === 'boas-vindas' ? t.startTour : t.next
       $('.next-name b', nextCard).textContent = name(next)
       setIcon($('.next-name svg', nextCard), views.get(next).dataset.icon)
       scroll.append(nextCard)
@@ -105,7 +120,7 @@ function router() {
 
   const go = (id) => {
     if (id === current) return
-    location.hash = id
+    location.hash = slug(id)
   }
 
   addEventListener('hashchange', () => {
@@ -126,6 +141,42 @@ function router() {
 
   const { view, target } = resolve(location.hash)
   show(view, { target })
+}
+
+// ---------- Idioma ----------
+
+const LANG_KEY = 'resenha.site.lang'
+
+/** Os links pros outros idiomas levam pro mesmo canal (ou pra mesma versão, em #novidades). */
+function languages(id, target) {
+  for (const a of $$('[data-lang-link]')) {
+    const lang = t.langs.find((l) => l.code === a.dataset.langLink)
+    const hash = target?.id ?? (id === 'boas-vindas' ? '' : lang.slugs[id])
+    a.href = hash ? `${lang.href}#${hash}` : lang.href
+  }
+}
+
+function languageMenu() {
+  const box = $('[data-lang]')
+  const close = () => (box.open = false)
+  addEventListener('click', (e) => {
+    if (box.open && !box.contains(e.target)) close()
+  })
+  addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape' || !box.open) return
+    close()
+    $('summary', box).focus()
+  })
+  for (const a of $$('[data-lang-link]', box))
+    a.addEventListener('click', () => {
+      close()
+      // A raiz abre direto no idioma escolhido daqui pra frente (redirect.js).
+      try {
+        localStorage.setItem(LANG_KEY, a.dataset.langLink)
+      } catch {
+        // sem armazenamento: vale só pra esta visita
+      }
+    })
 }
 
 // ---------- Gaveta dos canais (celular) ----------
@@ -176,13 +227,13 @@ function dock() {
   })
   meListeners.push(() => {
     mute.setAttribute('aria-pressed', String(me.muted))
-    mute.setAttribute('aria-label', me.muted ? 'Desmutar' : 'Mutar')
+    mute.setAttribute('aria-label', me.muted ? t.unmute : t.mute)
     setIcon(mute.querySelector('svg'), me.muted ? 'mic-off' : 'mic')
     deafen.setAttribute('aria-pressed', String(me.deaf))
-    deafen.setAttribute('aria-label', me.deaf ? 'Voltar a ouvir' : 'Ensurdecer')
+    deafen.setAttribute('aria-label', me.deaf ? t.undeafen : t.deafen)
     setIcon(deafen.querySelector('svg'), me.deaf ? 'head-off' : 'head')
     call.hidden = !me.inCall
-    $('.me-text small').textContent = me.inCall ? 'na call' : 'visitante'
+    $('.me-text small').textContent = me.inCall ? t.inCall : t.visitor
   })
 }
 
@@ -221,14 +272,10 @@ function call() {
     mine.hidden = !me.inCall
     mine.classList.toggle('muted-me', me.muted)
     if (me.muted) mine.classList.remove('speaking')
-    join.textContent = me.inCall ? 'Sair da call' : 'Entrar na call'
+    join.textContent = me.inCall ? t.leave : t.join
     join.classList.toggle('primary', !me.inCall)
     join.classList.toggle('secondary', me.inCall)
-    note.textContent = me.inCall
-      ? me.muted
-        ? 'Você está mudo. Desmuta no microfone lá embaixo, ao lado do seu nome.'
-        : 'Você entrou. O microfone e o fone lá embaixo, ao lado do seu nome, funcionam aqui também.'
-      : 'Os outros já estão lá. O anel verde mostra quem está falando.'
+    note.textContent = me.inCall ? (me.muted ? t.noteMuted : t.noteIn) : t.noteOut
   })
 }
 
@@ -421,7 +468,7 @@ function ink() {
       if (s.tool === 'pen') pen(g, points, YOU, u)
       else busy = laser(g, points, t, YOU, u) || busy
       const fade = s.tool === 'pen' || s.ended === null ? 1 : Math.max(0, 1 - (t - s.ended) / LASER)
-      if (points.length) label(g, 'você', YOU, points[0][0], points[0][1], u, fade)
+      if (points.length) label(g, t.inkYou, YOU, points[0][0], points[0][1], u, fade)
       if (s.tool === 'laser') busy = true
     }
     if (busy) frame = requestAnimationFrame(draw)
@@ -474,7 +521,6 @@ function ink() {
 
 function map() {
   const box = $('[data-map]')
-  const LABELS = ['Aqui!', 'Bora?', 'Encontro', 'Lanche', 'Rolê']
   let count = 0
   box.addEventListener('click', (e) => {
     if (e.target.closest('.pin')) return
@@ -484,7 +530,7 @@ function map() {
     pin.style.left = `${((e.clientX - r.left) / r.width) * 100}%`
     pin.style.top = `${((e.clientY - r.top) / r.height) * 100}%`
     pin.innerHTML = '<svg aria-hidden="true"><use href="#i-pin"/></svg><b></b>'
-    $('b', pin).textContent = LABELS[count++ % LABELS.length]
+    $('b', pin).textContent = t.pins[count++ % t.pins.length]
     box.append(pin)
     const mine = $$('.pin.mine', box)
     if (mine.length > 4) mine[0].remove()
@@ -516,12 +562,13 @@ function profile() {
 
 function spotify() {
   const root = $('[data-spotify]')
+  // Os estilos vêm traduzidos, na mesma ordem (t.genres).
   const TRACKS = [
-    { title: 'Evidências', artist: 'Chitãozinho & Xororó', genres: ['sertanejo', 'romântico'], length: 279 },
-    { title: 'Lenda', artist: 'Sandy & Junior', genres: ['pop'], length: 240 },
-    { title: 'Tempo Perdido', artist: 'Legião Urbana', genres: ['rock nacional'], length: 301 },
-    { title: 'Garota de Ipanema', artist: 'Tom Jobim', genres: ['bossa nova', 'mpb'], length: 324 },
-  ]
+    { title: 'Evidências', artist: 'Chitãozinho & Xororó', length: 279 },
+    { title: 'Lenda', artist: 'Sandy & Junior', length: 240 },
+    { title: 'Tempo Perdido', artist: 'Legião Urbana', length: 301 },
+    { title: 'Garota de Ipanema', artist: 'Tom Jobim', length: 324 },
+  ].map((track, i) => ({ ...track, genres: t.genres[i] }))
   const clock = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`
   const ui = {
     title: $('[data-sp-title]', root),
@@ -553,7 +600,7 @@ function spotify() {
     ui.bar.classList.toggle('jump', jump)
     ui.bar.style.width = `${(at / track.length) * 100}%`
     root.classList.toggle('paused', !playing)
-    ui.play.setAttribute('aria-label', playing ? 'Pausar' : 'Tocar')
+    ui.play.setAttribute('aria-label', playing ? t.pause : t.play)
     setIcon($('svg', ui.play), playing ? 'pause' : 'play')
     for (const b of ui.list) b.setAttribute('aria-current', String(Number(b.dataset.track) === index))
   }
@@ -595,7 +642,7 @@ function drop() {
     if (!open) return
     if (last) count += Math.round(((t - last) / 1000) * 60)
     last = t
-    frames.textContent = count.toLocaleString('pt-BR')
+    frames.textContent = count.toLocaleString(document.documentElement.lang)
     requestAnimationFrame(tick)
   }
   onView('conexao', (on) => {
@@ -621,22 +668,9 @@ function drop() {
 
 // ---------- Chat das boas-vindas ----------
 
-/** O que o "Resenha" responde, pela primeira palavra-chave que aparecer. */
-const ANSWERS = [
-  [/\b(oi|ol[aá]|e[ai]+e?|salve|bom dia|boa tarde|boa noite|fala)\b/, 'Salve! 👋 Os canais aí do lado mostram o app. Começa por {call}.'],
-  [/gr[aá]tis|pag|pre[cç]o|nitro|custa/, 'É de graça e o código é aberto. O perfil caprichado (moldura, nome com brilho) é pra todo mundo: {perfil}.'],
-  [/rabisc|desenh|laser|caneta/, 'Quem assiste rabisca na tela de quem transmite, e aparece no monitor dele. Testa em {rabiscos}.'],
-  [/tela|transmi|stream|1440|jogo|fps|qualidade/, 'A tela vai até 1440p a 60 fps, com o som do jogo em estéreo e sem a voz da call. Dá uma olhada em {tela-ao-vivo}.'],
-  [/mapa|street|lugar/, 'Cada servidor tem um mapa, com o cursor de todo mundo ao vivo. Tá em {mapa}.'],
-  [/spotify|m[uú]sica|playlist|bot/, 'O bot do Spotify toca na call e cada um ouve no volume que quiser: {spotify}.'],
-  [/perfil|moldura|nome|tema|banner/, 'Tema, moldura, efeito e nome com fonte e brilho, pra todo mundo: {perfil}.'],
-  [/ca[iu]|queda|internet|conex|lag|ping|travou/, 'Caiu a internet? Voltou em até 30 s, ninguém sai da call. Simula em {conexao}.'],
-  [/baix|instal|windows|linux|arch|download|appimage|pacman/, 'Tem pra Arch (.pacman), outras distros (AppImage) e Windows: {baixar}.'],
-  [/novidade|vers[aã]o|atualiz|changelog|update/, 'Tudo que mudou fica em {novidades}, e o app se atualiza sozinho.'],
-  [/call|voz|microfone|fal|ru[ií]do/, 'A voz vai direto de um PC pro outro, com redução de ruído e volume de cada um até 200%: {call}.'],
-]
-
 function chat() {
+  /** O que o "Resenha" responde, pela primeira palavra-chave que aparecer (no idioma da página). */
+  const answers = t.answers.map(([source, flags, text]) => [new RegExp(source, flags), text])
   const form = $('[data-composer]')
   const input = $('input', form)
   const log = $('[data-log]')
@@ -653,9 +687,9 @@ function chat() {
         : '<svg class="msg-mascot" viewBox="0 0 336 336" aria-hidden="true"><use href="#mascot"/></svg>'
     const head =
       author === 'me'
-        ? '<span class="msg-author">Você</span>'
+        ? `<span class="msg-author">${t.you}</span>`
         : '<span class="msg-author">Resenha</span><span class="msg-bot">app</span>'
-    article.innerHTML = `${avatar}<div class="msg-main"><header class="msg-head">${head}<span class="msg-time">agora</span></header><p></p></div>`
+    article.innerHTML = `${avatar}<div class="msg-main"><header class="msg-head">${head}<span class="msg-time">${t.now}</span></header><p></p></div>`
     if (author === 'me') article.classList.add('mine')
     const p = $('p', article)
     for (const part of text.split(/(\{[a-z-]+\})/)) {
@@ -666,7 +700,7 @@ function chat() {
       }
       const a = document.createElement('a')
       a.className = 'mention'
-      a.href = `#${ch}`
+      a.href = `#${slug(ch)}`
       a.textContent = `#${name(ch)}`
       p.append(a)
     }
@@ -683,13 +717,11 @@ function chat() {
     input.value = ''
     message('me', text)
     const lower = text.toLowerCase()
-    const answer =
-      ANSWERS.find(([test]) => test.test(lower))?.[1] ??
-      'Ainda não sei responder isso 😅 Mas os canais aí do lado mostram tudo. Começa por {call}.'
+    const answer = answers.find(([test]) => test.test(lower))?.[1] ?? t.fallback
     typing?.remove()
     typing = document.createElement('div')
     typing.className = 'typing'
-    typing.innerHTML = '<i></i><i></i><i></i><span><b>Resenha</b> está digitando…</span>'
+    typing.innerHTML = `<i></i><i></i><i></i><span>${t.typing}</span>`
     log.append(typing)
     keepDown()
     const mine = typing
@@ -740,11 +772,11 @@ function copyButtons() {
         await navigator.clipboard.writeText(text)
         button.classList.add('done')
         setIcon($('svg', button), 'check')
-        button.setAttribute('aria-label', 'Copiado')
+        button.setAttribute('aria-label', t.copied)
         setTimeout(() => {
           button.classList.remove('done')
           setIcon($('svg', button), 'copy')
-          button.setAttribute('aria-label', 'Copiar o comando')
+          button.setAttribute('aria-label', t.copy)
         }, 1600)
       } catch {
         // sem permissão de área de transferência: o texto continua lá pra selecionar
@@ -760,7 +792,7 @@ function mySystem() {
   if (!os) return
   $(`.dl[data-os="${os}"]`)?.classList.add('mine')
   const cta = $('[data-cta]')
-  if (cta) cta.textContent = { windows: 'Baixar pro Windows', android: 'Baixar pro Android' }[os] ?? 'Baixar pro Linux'
+  if (cta) cta.textContent = t.cta[os] ?? t.cta.linux
 }
 
 /** Um brinquedo quebrado (navegador velho, erro nosso) não leva o resto junto. */
@@ -774,7 +806,7 @@ function safely(fn) {
 
 // O roteador vem primeiro: com ele de pé, sempre tem um canal aberto na tela.
 safely(router)
-for (const toy of [drawer, dock, call, quality, ink, map, profile, spotify, drop, chat, copyButtons, mySystem, mascot]) safely(toy)
+for (const toy of [drawer, languageMenu, dock, call, quality, ink, map, profile, spotify, drop, chat, copyButtons, mySystem, mascot]) safely(toy)
 safely(meChanged)
 // Os brinquedos se inscreveram depois que o primeiro canal abriu: o dele fica sabendo agora.
 safely(() => watchers.get(current)?.(true))

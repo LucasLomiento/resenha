@@ -1,22 +1,27 @@
 <!doctype html>
-<html lang="pt-BR">
+<html lang="{{LANG}}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Resenha</title>
-  <meta name="description" content="Voz, chat e tela até 1440p a 60 fps pro seu grupo, direto de um PC pro outro. Com rabisco na tela do amigo, mapa junto, Spotify na call e perfil do seu jeito.">
+  <meta name="description" content="{{meta.description}}">
   <meta name="theme-color" content="#09090b">
   <meta property="og:type" content="website">
   <meta property="og:title" content="Resenha">
-  <meta property="og:description" content="A call da sua turma: voz, chat e tela, direto de um PC pro outro.">
-  <meta property="og:image" content="https://lucaslomiento.github.io/resenha/assets/icon-512.png">
-  <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
-  <link rel="preload" href="assets/fonts/geist-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
-  <link rel="preload" href="assets/fonts/bricolage-grotesque-latin-opsz-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <meta property="og:description" content="{{meta.ogDescription}}">
+  <meta property="og:image" content="{{SITE}}assets/icon-512.png">
+  <meta property="og:url" content="{{URL}}">
+  <meta property="og:locale" content="{{OG_LOCALE}}">
+  <link rel="canonical" href="{{URL}}">
+{{ALTERNATES}}
+  <link rel="icon" href="{{ROOT}}assets/icon.svg" type="image/svg+xml">
+  <link rel="preload" href="{{ROOT}}assets/fonts/geist-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="{{ROOT}}assets/fonts/bricolage-grotesque-latin-opsz-normal.woff2" as="font" type="font/woff2" crossorigin>
+{{REDIRECT}}
   <!-- Com JS, só o canal aberto aparece; sem ele, todos, um embaixo do outro (style.css). -->
   <script>document.documentElement.classList.add('js')</script>
-  <link rel="stylesheet" href="style.css">
-  <script src="main.js" defer></script>
+  <link rel="stylesheet" href="{{ROOT}}style.css">
+  <script src="{{ROOT}}main.js" defer></script>
 </head>
 <body>
   <!-- O mascote (o balão do ícone, solto) e os ícones, desenhados uma vez e usados com <use>. -->
@@ -72,62 +77,63 @@
       <symbol id="i-cursor" viewBox="0 0 24 24"><path d="M4 3l16 7-7 2-2 7z"/></symbol>
       <symbol id="i-phone-off" viewBox="0 0 24 24"><path d="M10.1 13.9a14 14 0 0 0 3.7 2.7 1 1 0 0 0 1.2-.3l.4-.5A2 2 0 0 1 17 15h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2A18 18 0 0 1 7.3 16.7M22 2 2 22M4.8 13.6A18 18 0 0 1 2 4a2 2 0 0 1 2-2h3a2 2 0 0 1 2 2v3a2 2 0 0 1-.8 1.6l-.5.4a1 1 0 0 0-.3 1.2l.2.5"/></symbol>
       <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+      <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20M2 12h20"/></symbol>
     </defs>
   </svg>
 
-  <a class="skip" href="#conteudo">Pular pro conteúdo</a>
+  <a class="skip" href="#conteudo">{{common.skip}}</a>
 
   <div class="shell">
     <!-- ---------- Trilho ---------- -->
-    <nav class="rail" aria-label="Atalhos">
-      <a class="tile home" href="#boas-vindas" aria-label="Início" data-tip="Início">
+    <nav class="rail" aria-label="{{rail.label}}">
+      <a class="tile home" href="#{{slug.boas-vindas}}" aria-label="{{rail.home}}" data-tip="{{rail.home}}">
         <svg class="mascot" viewBox="0 0 336 336" aria-hidden="true"><use href="#mascot"/></svg>
       </a>
       <span class="rail-sep"></span>
-      <a class="tile server active" href="#boas-vindas" aria-label="Servidor do Resenha" data-tip="Resenha">R</a>
-      <a class="tile ghost" href="#baixar" aria-label="Baixar" data-tip="Baixar"><svg aria-hidden="true"><use href="#i-download"/></svg></a>
-      <a class="tile ghost rail-end" href="https://github.com/LucasLomiento/resenha" aria-label="Código no GitHub" data-tip="Código no GitHub"><svg aria-hidden="true"><use href="#i-github"/></svg></a>
+      <a class="tile server active" href="#{{slug.boas-vindas}}" aria-label="{{rail.server}}" data-tip="Resenha">R</a>
+      <a class="tile ghost" href="#{{slug.baixar}}" aria-label="{{rail.download}}" data-tip="{{rail.download}}"><svg aria-hidden="true"><use href="#i-download"/></svg></a>
+      <a class="tile ghost rail-end" href="https://github.com/LucasLomiento/resenha" aria-label="{{rail.code}}" data-tip="{{rail.code}}"><svg aria-hidden="true"><use href="#i-github"/></svg></a>
     </nav>
 
     <!-- ---------- Lista de canais ---------- -->
-    <aside class="sidebar" id="canais" aria-label="Canais">
+    <aside class="sidebar" id="canais" aria-label="{{side.label}}">
       <header class="side-head">
         <span class="server-icon">R</span>
         <strong>Resenha</strong>
         <span class="ver">v{{VERSION}}</span>
-        <button class="icon-btn only-mobile" type="button" data-close-drawer aria-label="Fechar os canais"><svg aria-hidden="true"><use href="#i-x"/></svg></button>
+        <button class="icon-btn only-mobile" type="button" data-close-drawer aria-label="{{side.close}}"><svg aria-hidden="true"><use href="#i-x"/></svg></button>
       </header>
       <nav class="channels">
-        <p class="cat">Comece aqui</p>
-        <a class="ch" href="#boas-vindas" data-ch="boas-vindas"><svg aria-hidden="true"><use href="#i-hash"/></svg>boas-vindas</a>
-        <a class="ch" href="#baixar" data-ch="baixar"><svg aria-hidden="true"><use href="#i-download"/></svg>baixar</a>
+        <p class="cat">{{side.start}}</p>
+        <a class="ch" href="#{{slug.boas-vindas}}" data-ch="boas-vindas"><svg aria-hidden="true"><use href="#i-hash"/></svg>{{channels.boas-vindas}}</a>
+        <a class="ch" href="#{{slug.baixar}}" data-ch="baixar"><svg aria-hidden="true"><use href="#i-download"/></svg>{{channels.baixar}}</a>
 
-        <p class="cat">Conheça o app</p>
-        <a class="ch" href="#call" data-ch="call"><svg aria-hidden="true"><use href="#i-volume"/></svg>call<span class="ch-faces" aria-hidden="true"><i class="c1"></i><i class="c2"></i><i class="c3"></i></span></a>
-        <a class="ch" href="#tela-ao-vivo" data-ch="tela-ao-vivo"><svg aria-hidden="true"><use href="#i-screen"/></svg>tela-ao-vivo<span class="ch-live">AO VIVO</span></a>
-        <a class="ch" href="#rabiscos" data-ch="rabiscos"><svg aria-hidden="true"><use href="#i-pen"/></svg>rabiscos</a>
-        <a class="ch" href="#mapa" data-ch="mapa"><svg aria-hidden="true"><use href="#i-map"/></svg>mapa</a>
-        <a class="ch" href="#perfil" data-ch="perfil"><svg aria-hidden="true"><use href="#i-user"/></svg>perfil</a>
-        <a class="ch" href="#spotify" data-ch="spotify"><svg aria-hidden="true"><use href="#i-music"/></svg>spotify</a>
-        <a class="ch" href="#conexao" data-ch="conexao"><svg aria-hidden="true"><use href="#i-wifi"/></svg>conexão</a>
+        <p class="cat">{{side.app}}</p>
+        <a class="ch" href="#{{slug.call}}" data-ch="call"><svg aria-hidden="true"><use href="#i-volume"/></svg>{{channels.call}}<span class="ch-faces" aria-hidden="true"><i class="c1"></i><i class="c2"></i><i class="c3"></i></span></a>
+        <a class="ch" href="#{{slug.tela-ao-vivo}}" data-ch="tela-ao-vivo"><svg aria-hidden="true"><use href="#i-screen"/></svg>{{channels.tela-ao-vivo}}<span class="ch-live">{{common.live}}</span></a>
+        <a class="ch" href="#{{slug.rabiscos}}" data-ch="rabiscos"><svg aria-hidden="true"><use href="#i-pen"/></svg>{{channels.rabiscos}}</a>
+        <a class="ch" href="#{{slug.mapa}}" data-ch="mapa"><svg aria-hidden="true"><use href="#i-map"/></svg>{{channels.mapa}}</a>
+        <a class="ch" href="#{{slug.perfil}}" data-ch="perfil"><svg aria-hidden="true"><use href="#i-user"/></svg>{{channels.perfil}}</a>
+        <a class="ch" href="#{{slug.spotify}}" data-ch="spotify"><svg aria-hidden="true"><use href="#i-music"/></svg>{{channels.spotify}}</a>
+        <a class="ch" href="#{{slug.conexao}}" data-ch="conexao"><svg aria-hidden="true"><use href="#i-wifi"/></svg>{{channels.conexao}}</a>
 
-        <p class="cat">Projeto</p>
-        <a class="ch" href="#novidades" data-ch="novidades"><svg aria-hidden="true"><use href="#i-sparkles"/></svg>novidades<span class="ch-count">{{COUNT}}</span></a>
-        <a class="ch out" href="https://github.com/LucasLomiento/resenha"><svg aria-hidden="true"><use href="#i-github"/></svg>código</a>
+        <p class="cat">{{side.project}}</p>
+        <a class="ch" href="#{{slug.novidades}}" data-ch="novidades"><svg aria-hidden="true"><use href="#i-sparkles"/></svg>{{channels.novidades}}<span class="ch-count">{{COUNT}}</span></a>
+        <a class="ch out" href="https://github.com/LucasLomiento/resenha"><svg aria-hidden="true"><use href="#i-github"/></svg>{{side.code}}</a>
       </nav>
 
       <!-- O "você" de mentirinha, como o dock do app. -->
       <div class="dock">
         <div class="dock-call" hidden>
-          <span class="dock-status"><i class="pulse"></i>Na call</span>
-          <span class="dock-where">call · Resenha</span>
-          <button class="icon-btn leave" type="button" data-leave aria-label="Sair da call"><svg aria-hidden="true"><use href="#i-phone-off"/></svg></button>
+          <span class="dock-status"><i class="pulse"></i>{{dock.inCall}}</span>
+          <span class="dock-where">{{channels.call}} · Resenha</span>
+          <button class="icon-btn leave" type="button" data-leave aria-label="{{dock.leave}}"><svg aria-hidden="true"><use href="#i-phone-off"/></svg></button>
         </div>
         <div class="dock-me">
           <span class="avatar me">V</span>
-          <span class="me-text"><b>Você</b><small>visitante</small></span>
-          <button class="icon-btn" type="button" data-mute aria-pressed="false" aria-label="Mutar"><svg aria-hidden="true"><use href="#i-mic"/></svg></button>
-          <button class="icon-btn" type="button" data-deafen aria-pressed="false" aria-label="Ensurdecer"><svg aria-hidden="true"><use href="#i-head"/></svg></button>
+          <span class="me-text"><b>{{common.you}}</b><small>{{dock.visitor}}</small></span>
+          <button class="icon-btn" type="button" data-mute aria-pressed="false" aria-label="{{dock.mute}}"><svg aria-hidden="true"><use href="#i-mic"/></svg></button>
+          <button class="icon-btn" type="button" data-deafen aria-pressed="false" aria-label="{{dock.deafen}}"><svg aria-hidden="true"><use href="#i-head"/></svg></button>
         </div>
       </div>
     </aside>
@@ -136,136 +142,143 @@
     <!-- ---------- Painel ---------- -->
     <main class="panel" id="conteudo">
       <header class="panel-head">
-        <button class="icon-btn only-mobile" type="button" data-open-drawer aria-label="Canais" aria-controls="canais"><svg aria-hidden="true"><use href="#i-menu"/></svg></button>
+        <button class="icon-btn only-mobile" type="button" data-open-drawer aria-label="{{head.channels}}" aria-controls="canais"><svg aria-hidden="true"><use href="#i-menu"/></svg></button>
         <svg class="head-icon" aria-hidden="true"><use href="#i-hash"/></svg>
-        <h1 class="head-name" tabindex="-1">boas-vindas</h1>
+        <h1 class="head-name" tabindex="-1">{{channels.boas-vindas}}</h1>
         <span class="head-divider"></span>
         <span class="head-topic"></span>
         <div class="head-tools">
-          <button class="icon-btn" type="button" data-prev aria-label="Canal anterior"><svg aria-hidden="true"><use href="#i-left"/></svg></button>
-          <button class="icon-btn" type="button" data-next aria-label="Próximo canal"><svg aria-hidden="true"><use href="#i-right"/></svg></button>
-          <a class="btn primary small" href="#baixar"><svg aria-hidden="true"><use href="#i-download"/></svg>Baixar</a>
+          <button class="icon-btn" type="button" data-prev aria-label="{{head.prev}}"><svg aria-hidden="true"><use href="#i-left"/></svg></button>
+          <button class="icon-btn" type="button" data-next aria-label="{{head.next}}"><svg aria-hidden="true"><use href="#i-right"/></svg></button>
+          <!-- Idioma: <details> abre e fecha sem JS; o main.js leva o canal aberto junto no link. -->
+          <details class="lang" data-lang>
+            <summary class="lang-btn" aria-label="{{head.language}}"><svg aria-hidden="true"><use href="#i-globe"/></svg><span>{{LANG_SHORT}}</span></summary>
+            <div class="lang-menu">
+{{LANG_LINKS}}
+            </div>
+          </details>
+          <a class="btn primary small" href="#{{slug.baixar}}"><svg aria-hidden="true"><use href="#i-download"/></svg>{{head.download}}</a>
         </div>
       </header>
 
       <div class="views">
         <!-- ===================== boas-vindas ===================== -->
-        <section class="view chat-view active" data-view="boas-vindas" data-icon="hash" data-topic="Comece por aqui: o que é o Resenha e como passear por este site.">
+        <section class="view chat-view active" data-view="boas-vindas" data-icon="hash" data-topic="{{welcome.topic}}">
           <div class="scroll">
             <div class="welcome">
               <svg class="mascot big" viewBox="0 0 336 336" aria-hidden="true"><use href="#mascot"/></svg>
               <div class="welcome-text">
-                <a class="live-pill" href="#novidades"><span class="live-dot"></span>Ao vivo<span class="live-sep"></span>versão {{VERSION}}</a>
-                <h2 class="display">A call da sua turma.</h2>
-                <p class="lede">Voz, chat e tela pro seu grupo, direto de um PC pro outro. Transmissão até 1440p a 60 fps com o som do jogo, rabisco na tela do amigo, mapa junto e o Spotify tocando na call.</p>
+                <a class="live-pill" href="#{{slug.novidades}}"><span class="live-dot"></span>{{welcome.live}}<span class="live-sep"></span>{{welcome.version}}</a>
+                <h2 class="display">{{welcome.title}}</h2>
+                <p class="lede">{{welcome.lede}}</p>
                 <div class="cta">
-                  <a class="btn primary big" href="#baixar"><svg aria-hidden="true"><use href="#i-download"/></svg><span data-cta>Baixar o Resenha</span></a>
-                  <a class="btn secondary big" href="#call">Fazer o tour<svg aria-hidden="true"><use href="#i-right"/></svg></a>
+                  <a class="btn primary big" href="#{{slug.baixar}}"><svg aria-hidden="true"><use href="#i-download"/></svg><span data-cta>{{welcome.download}}</span></a>
+                  <a class="btn secondary big" href="#{{slug.call}}">{{welcome.tour}}<svg aria-hidden="true"><use href="#i-right"/></svg></a>
                 </div>
               </div>
             </div>
 
-            <div class="day"><span>Hoje</span></div>
+            <div class="day"><span>{{welcome.today}}</span></div>
             <div class="log" data-log>
               <article class="msg">
                 <svg class="msg-mascot" viewBox="0 0 336 336" aria-hidden="true"><use href="#mascot"/></svg>
                 <div class="msg-main">
-                  <header class="msg-head"><span class="msg-author">Resenha</span><span class="msg-bot">app</span><span class="msg-time">agora</span></header>
-                  <p>Isso aqui é o Resenha de mentirinha. 👋 Os canais à esquerda são as partes do app: clica em qualquer um, ou usa as setas lá em cima pra ir de um em um.</p>
+                  <header class="msg-head"><span class="msg-author">Resenha</span><span class="msg-bot">{{common.bot}}</span><span class="msg-time">{{common.now}}</span></header>
+                  <p>{{welcome.hello}}</p>
                 </div>
               </article>
               <article class="msg">
                 <span class="avatar c1">B</span>
                 <div class="msg-main">
-                  <header class="msg-head"><span class="msg-author" style="color:#ff9cb8">Bia</span><span class="msg-time">agora</span></header>
-                  <p>bora uma call hoje? tô com saudade de <span class="mention">@galera</span></p>
+                  <header class="msg-head"><span class="msg-author" style="color:#ff9cb8">Bia</span><span class="msg-time">{{common.now}}</span></header>
+                  <p>{{welcome.bia}}</p>
                   <div class="reactions"><button type="button" class="reaction" aria-pressed="false">🔥 <b>3</b></button><button type="button" class="reaction" aria-pressed="false">😂 <b>2</b></button></div>
                 </div>
               </article>
               <article class="msg">
                 <svg class="msg-mascot" viewBox="0 0 336 336" aria-hidden="true"><use href="#mascot"/></svg>
                 <div class="msg-main">
-                  <header class="msg-head"><span class="msg-author">Resenha</span><span class="msg-bot">app</span><span class="msg-time">agora</span></header>
-                  <p>Pode me perguntar alguma coisa aqui embaixo (tela, rabisco, mapa, Spotify, baixar...).</p>
+                  <header class="msg-head"><span class="msg-author">Resenha</span><span class="msg-bot">{{common.bot}}</span><span class="msg-time">{{common.now}}</span></header>
+                  <p>{{welcome.ask}}</p>
                 </div>
               </article>
             </div>
           </div>
           <form class="composer" data-composer>
-            <input type="text" placeholder="Mensagem em #boas-vindas" aria-label="Mensagem" maxlength="200" autocomplete="off">
-            <button class="icon-btn" type="submit" aria-label="Enviar"><svg aria-hidden="true"><use href="#i-send"/></svg></button>
+            <input type="text" placeholder="{{welcome.placeholder}}" aria-label="{{welcome.message}}" maxlength="200" autocomplete="off">
+            <button class="icon-btn" type="submit" aria-label="{{welcome.send}}"><svg aria-hidden="true"><use href="#i-send"/></svg></button>
           </form>
         </section>
 
         <!-- ===================== call ===================== -->
-        <section class="view" data-view="call" data-icon="volume" data-topic="Voz direto de um PC pro outro, sem servidor no meio.">
+        <section class="view" data-view="call" data-icon="volume" data-topic="{{call.topic}}">
           <div class="scroll">
             <div class="intro">
-              <h2 class="display">Entrou, falou.</h2>
-              <p>A voz vai direto de um PC pro outro. Redução de ruído, detecção de voz, volume de cada um até 200% e o melhor caminho (IPv4 ou IPv6) escolhido sozinho.</p>
+              <h2 class="display">{{call.title}}</h2>
+              <p>{{call.text}}</p>
             </div>
             <div class="call-grid" data-call>
               <div class="call-tile" data-person="0"><span class="avatar c1 xl">B</span><span class="tag-name">Bia</span></div>
               <div class="call-tile" data-person="1"><span class="avatar c2 xl">T</span><span class="tag-name">Thiago</span></div>
               <div class="call-tile" data-person="2"><span class="avatar c3 xl">G</span><span class="tag-name">Gabi</span></div>
               <div class="call-tile muted" data-person="3"><span class="avatar c4 xl">R</span><span class="tag-name"><svg aria-hidden="true"><use href="#i-mic-off"/></svg>Rafa</span></div>
-              <div class="call-tile me" data-person="me" hidden><span class="avatar me xl">V</span><span class="tag-name">Você</span></div>
+              <div class="call-tile me" data-person="me" hidden><span class="avatar me xl">V</span><span class="tag-name" data-muted="{{call.muted}}">{{common.you}}</span></div>
             </div>
             <div class="call-actions">
-              <button class="btn primary" type="button" data-join>Entrar na call</button>
-              <p class="note" data-join-note>Os outros já estão lá. O anel verde mostra quem está falando.</p>
+              <button class="btn primary" type="button" data-join>{{js.join}}</button>
+              <p class="note" data-join-note>{{js.noteOut}}</p>
             </div>
           </div>
         </section>
 
         <!-- ===================== tela-ao-vivo ===================== -->
-        <section class="view" data-view="tela-ao-vivo" data-icon="screen" data-topic="Compartilhar a tela: até 1440p a 60 fps, com o som do jogo.">
+        <section class="view" data-view="tela-ao-vivo" data-icon="screen" data-topic="{{screen.topic}}">
           <div class="scroll">
             <div class="intro">
-              <h2 class="display">1440p, 60 quadros e o som do jogo.</h2>
-              <p>Compartilha o monitor ou uma janela. O som vai em estéreo e a voz da call fica de fora: ninguém se escuta em dobro. Escolhe a qualidade e veja o que muda:</p>
+              <h2 class="display">{{screen.title}}</h2>
+              <p>{{screen.text}}</p>
             </div>
             <div class="player" data-q="1440">
               <div class="game"><div class="sun"></div><div class="hills back"></div><div class="hills front"></div><div class="road"></div></div>
-              <div class="player-top"><span class="badge-live"><i></i>AO VIVO</span><span class="who"><span class="avatar c2 sm">T</span>Thiago</span></div>
+              <div class="player-top"><span class="badge-live"><i></i>{{common.live}}</span><span class="who"><span class="avatar c2 sm">T</span>Thiago</span></div>
               <span class="stats" data-stats>2560×1440 · 60 fps · 12 Mbps · VP9</span>
               <span class="meters" aria-hidden="true"><i class="l"></i><i class="r"></i><b>E</b><b>D</b></span>
             </div>
-            <div class="segmented" role="radiogroup" aria-label="Qualidade" data-quality>
-              <button type="button" role="radio" aria-checked="false" data-q="720">720p<small>Mais leve</small></button>
-              <button type="button" role="radio" aria-checked="false" data-q="1080">1080p<small>Full HD</small></button>
-              <button type="button" role="radio" aria-checked="true" data-q="1440">1440p<small>Máxima</small></button>
+            <div class="segmented" role="radiogroup" aria-label="{{screen.quality}}" data-quality>
+              <button type="button" role="radio" aria-checked="false" data-q="720">720p<small>{{screen.q720}}</small></button>
+              <button type="button" role="radio" aria-checked="false" data-q="1080">1080p<small>{{screen.q1080}}</small></button>
+              <button type="button" role="radio" aria-checked="true" data-q="1440">1440p<small>{{screen.q1440}}</small></button>
             </div>
           </div>
         </section>
 
         <!-- ===================== rabiscos ===================== -->
-        <section class="view" data-view="rabiscos" data-icon="pen" data-topic="Quem assiste desenha por cima, e aparece no monitor de quem compartilha.">
+        <section class="view" data-view="rabiscos" data-icon="pen" data-topic="{{ink.topic}}">
           <div class="scroll">
             <div class="intro">
-              <h2 class="display">Rabisca na tela do amigo.</h2>
-              <p>Arrasta o mouse (ou o dedo) em cima da tela. Laser pra apontar, caneta pra marcar: no app, isso aparece no monitor de quem está transmitindo.</p>
+              <h2 class="display">{{ink.title}}</h2>
+              <p>{{ink.text}}</p>
             </div>
             <div class="player ink-player">
               <div class="game dim"><div class="sun"></div><div class="hills back"></div><div class="hills front"></div></div>
-              <div class="player-top"><span class="badge-live"><i></i>AO VIVO</span><span class="who"><span class="avatar c2 sm">T</span>Thiago</span></div>
+              <div class="player-top"><span class="badge-live"><i></i>{{common.live}}</span><span class="who"><span class="avatar c2 sm">T</span>Thiago</span></div>
               <canvas class="ink" data-ink></canvas>
-              <div class="ink-bar" role="radiogroup" aria-label="Ferramenta">
-                <button type="button" role="radio" aria-checked="true" data-tool="laser">Laser</button>
-                <button type="button" role="radio" aria-checked="false" data-tool="pen">Caneta</button>
-                <button type="button" class="ink-clear" data-ink-clear>Limpar</button>
+              <div class="ink-bar" role="radiogroup" aria-label="{{ink.tool}}">
+                <button type="button" role="radio" aria-checked="true" data-tool="laser">{{ink.laser}}</button>
+                <button type="button" role="radio" aria-checked="false" data-tool="pen">{{ink.pen}}</button>
+                <button type="button" class="ink-clear" data-ink-clear>{{ink.clear}}</button>
               </div>
-              <span class="ink-hint" data-ink-hint><svg aria-hidden="true"><use href="#i-pen"/></svg>Desenha aqui</span>
+              <span class="ink-hint" data-ink-hint><svg aria-hidden="true"><use href="#i-pen"/></svg>{{ink.hint}}</span>
             </div>
           </div>
         </section>
 
         <!-- ===================== mapa ===================== -->
-        <section class="view" data-view="mapa" data-icon="map" data-topic="Um mapa por servidor: arrastou, a galera vai junto.">
+        <section class="view" data-view="mapa" data-icon="map" data-topic="{{map.topic}}">
           <div class="scroll">
             <div class="intro">
-              <h2 class="display">Todo mundo no mesmo mapa.</h2>
-              <p>Cursores ao vivo, marcadores que ficam salvos no servidor e Street View. Clica no mapa pra marcar um lugar.</p>
+              <h2 class="display">{{map.title}}</h2>
+              <p>{{map.text}}</p>
             </div>
             <div class="map" data-map>
               <svg class="streets" viewBox="0 0 400 300" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
@@ -274,20 +287,20 @@
                 <g class="roads"><path d="M-10 70 C 80 60, 160 90, 230 80 S 360 60, 420 75"/><path d="M-10 150 C 90 140, 170 160, 260 150 S 360 140, 420 145"/><path d="M80 -10 C 70 80, 100 160, 90 320"/><path d="M210 -10 C 220 90, 200 170, 215 320"/><path d="M330 -10 C 320 100, 345 190, 330 320"/></g>
                 <g class="alleys"><path d="M-10 110 H 420"/><path d="M-10 30 H 420"/><path d="M150 -10 V 320"/><path d="M270 -10 V 320"/><path d="M30 -10 V 320"/></g>
               </svg>
-              <span class="pin" style="left:62%;top:30%"><svg aria-hidden="true"><use href="#i-pin"/></svg><b>Pizzaria</b></span>
+              <span class="pin" style="left:62%;top:30%"><svg aria-hidden="true"><use href="#i-pin"/></svg><b>{{map.pin}}</b></span>
               <span class="cursor walk-1"><svg aria-hidden="true"><use href="#i-cursor"/></svg><b class="c3">Gabi</b></span>
               <span class="cursor walk-2"><svg aria-hidden="true"><use href="#i-cursor"/></svg><b class="c4">Rafa</b></span>
-              <span class="map-moving"><i class="c3"></i>Gabi está movendo o mapa</span>
+              <span class="map-moving"><i class="c3"></i>{{map.moving}}</span>
             </div>
           </div>
         </section>
 
         <!-- ===================== perfil ===================== -->
-        <section class="view" data-view="perfil" data-icon="user" data-topic="Banner, foto animada, moldura, efeito e nome com estilo. Pra todo mundo.">
+        <section class="view" data-view="perfil" data-icon="user" data-topic="{{profile.topic}}">
           <div class="scroll">
             <div class="intro">
-              <h2 class="display">O perfil é todo seu.</h2>
-              <p>Tema do cartão, moldura, efeito e nome com fonte e brilho. Pra todo mundo, sem pagar nada. Mexe aqui:</p>
+              <h2 class="display">{{profile.title}}</h2>
+              <p>{{profile.text}}</p>
             </div>
             <div class="profile-lab">
               <div class="profile-card" data-card data-theme="ocean" data-frame="neon" data-name="gradient">
@@ -295,32 +308,32 @@
                 <div class="card-avatar"><span class="frame"></span><span class="avatar c3 xl">G</span><span class="status"></span></div>
                 <div class="card-body">
                   <strong class="card-name">Gabi</strong>
-                  <span class="card-handle">@gabi · ela/dela</span>
-                  <p>Mestre do RPG de quinta. Não me chama antes das 10.</p>
+                  <span class="card-handle">@gabi · {{profile.pronouns}}</span>
+                  <p>{{profile.bio}}</p>
                 </div>
                 <span class="spark s1">✦</span><span class="spark s2">✦</span><span class="spark s3">✦</span><span class="spark s4">✦</span>
               </div>
               <div class="profile-controls">
-                <p class="label">Tema do cartão</p>
+                <p class="label">{{profile.theme}}</p>
                 <div class="swatches" data-themes>
-                  <button type="button" aria-label="Mar" data-set-theme="ocean" style="--a:#2e8bff;--b:#2ad4b0"></button>
-                  <button type="button" aria-label="Pôr do sol" data-set-theme="sunset" style="--a:#ff7a59;--b:#8f3fd1"></button>
-                  <button type="button" aria-label="Floresta" data-set-theme="forest" style="--a:#2f9e62;--b:#c8e05a"></button>
-                  <button type="button" aria-label="Algodão-doce" data-set-theme="candy" style="--a:#ff9ccf;--b:#8ec5ff"></button>
-                  <button type="button" aria-label="Brasa" data-set-theme="ember" style="--a:#e8452c;--b:#ffc34d"></button>
+                  <button type="button" aria-label="{{profile.themes.ocean}}" data-set-theme="ocean" style="--a:#2e8bff;--b:#2ad4b0"></button>
+                  <button type="button" aria-label="{{profile.themes.sunset}}" data-set-theme="sunset" style="--a:#ff7a59;--b:#8f3fd1"></button>
+                  <button type="button" aria-label="{{profile.themes.forest}}" data-set-theme="forest" style="--a:#2f9e62;--b:#c8e05a"></button>
+                  <button type="button" aria-label="{{profile.themes.candy}}" data-set-theme="candy" style="--a:#ff9ccf;--b:#8ec5ff"></button>
+                  <button type="button" aria-label="{{profile.themes.ember}}" data-set-theme="ember" style="--a:#e8452c;--b:#ffc34d"></button>
                 </div>
-                <p class="label">Moldura</p>
+                <p class="label">{{profile.frame}}</p>
                 <div class="chips" data-frames>
-                  <button type="button" data-set-frame="none">Nenhuma</button>
-                  <button type="button" data-set-frame="neon" aria-pressed="true">Neon</button>
-                  <button type="button" data-set-frame="aurora">Aurora</button>
-                  <button type="button" data-set-frame="gold">Coroa</button>
+                  <button type="button" data-set-frame="none">{{profile.frames.none}}</button>
+                  <button type="button" data-set-frame="neon" aria-pressed="true">{{profile.frames.neon}}</button>
+                  <button type="button" data-set-frame="aurora">{{profile.frames.aurora}}</button>
+                  <button type="button" data-set-frame="gold">{{profile.frames.gold}}</button>
                 </div>
-                <p class="label">Nome</p>
+                <p class="label">{{profile.name}}</p>
                 <div class="chips" data-names>
-                  <button type="button" data-set-name="plain">Clássico</button>
-                  <button type="button" data-set-name="gradient" aria-pressed="true">Degradê</button>
-                  <button type="button" data-set-name="neon">Neon</button>
+                  <button type="button" data-set-name="plain">{{profile.names.plain}}</button>
+                  <button type="button" data-set-name="gradient" aria-pressed="true">{{profile.names.gradient}}</button>
+                  <button type="button" data-set-name="neon">{{profile.names.neon}}</button>
                 </div>
               </div>
             </div>
@@ -328,21 +341,21 @@
         </section>
 
         <!-- ===================== spotify ===================== -->
-        <section class="view" data-view="spotify" data-icon="music" data-topic="O bot do Spotify toca na call, e cada um ouve no volume que quiser.">
+        <section class="view" data-view="spotify" data-icon="music" data-topic="{{spotify.topic}}">
           <div class="scroll">
             <div class="intro">
-              <h2 class="display">A música da call.</h2>
-              <p>Põe o seu Spotify na call: toca pra todo mundo da sala, e qualquer um pula, busca e põe na fila. Clica numa música:</p>
+              <h2 class="display">{{spotify.title}}</h2>
+              <p>{{spotify.text}}</p>
             </div>
             <div class="spotify" data-spotify>
               <div class="sp-now">
                 <div class="sp-cover"><svg aria-hidden="true"><use href="#i-music"/></svg><span class="eq" aria-hidden="true"><i></i><i></i><i></i><i></i></span></div>
-                <div class="sp-info"><strong data-sp-title>Evidências</strong><span data-sp-artist>Chitãozinho &amp; Xororó</span><span class="genres" data-sp-genres><i>sertanejo</i><i>romântico</i></span></div>
+                <div class="sp-info"><strong data-sp-title>Evidências</strong><span data-sp-artist>Chitãozinho &amp; Xororó</span><span class="genres" data-sp-genres><i>{{js.genres.0.0}}</i><i>{{js.genres.0.1}}</i></span></div>
                 <div class="sp-progress"><span data-sp-time>1:12</span><span class="bar"><i data-sp-bar></i></span><span data-sp-dur>4:39</span></div>
                 <div class="sp-controls">
-                  <button class="icon-btn" type="button" aria-label="Anterior" data-sp-prev><svg aria-hidden="true" style="transform:scaleX(-1)"><use href="#i-skip"/></svg></button>
-                  <button class="sp-play" type="button" aria-label="Pausar" data-sp-play><svg aria-hidden="true"><use href="#i-pause"/></svg></button>
-                  <button class="icon-btn" type="button" aria-label="Próxima" data-sp-next><svg aria-hidden="true"><use href="#i-skip"/></svg></button>
+                  <button class="icon-btn" type="button" aria-label="{{spotify.prev}}" data-sp-prev><svg aria-hidden="true" style="transform:scaleX(-1)"><use href="#i-skip"/></svg></button>
+                  <button class="sp-play" type="button" aria-label="{{js.pause}}" data-sp-play><svg aria-hidden="true"><use href="#i-pause"/></svg></button>
+                  <button class="icon-btn" type="button" aria-label="{{spotify.next}}" data-sp-next><svg aria-hidden="true"><use href="#i-skip"/></svg></button>
                 </div>
               </div>
               <ul class="sp-list" data-sp-list>
@@ -356,30 +369,30 @@
         </section>
 
         <!-- ===================== conexão ===================== -->
-        <section class="view" data-view="conexao" data-icon="wifi" data-topic="A call aguenta queda de internet, e o app se atualiza sozinho.">
+        <section class="view" data-view="conexao" data-icon="wifi" data-topic="{{drop.topic}}">
           <div class="scroll">
             <div class="intro">
-              <h2 class="display">Caiu a internet? A call segue.</h2>
-              <p>Voltou em até 30 segundos, ninguém sai da sala e a tela continua passando. Testa:</p>
+              <h2 class="display">{{drop.title}}</h2>
+              <p>{{drop.text}}</p>
             </div>
             <div class="drop" data-drop>
-              <span class="net" data-net><i class="spin"></i><span class="net-off">Sem conexão. Tentando de novo…</span><span class="net-on"><svg aria-hidden="true"><use href="#i-check"/></svg>De volta. Ninguém saiu da call.</span></span>
-              <div class="player mini"><div class="game"><div class="sun"></div><div class="hills back"></div><div class="hills front"></div><div class="road"></div></div><span class="frames">quadro <b data-frame-count>0</b></span></div>
+              <span class="net" data-net><i class="spin"></i><span class="net-off">{{drop.offline}}</span><span class="net-on"><svg aria-hidden="true"><use href="#i-check"/></svg>{{drop.back}}</span></span>
+              <div class="player mini"><div class="game"><div class="sun"></div><div class="hills back"></div><div class="hills front"></div><div class="road"></div></div><span class="frames">{{drop.frame}} <b data-frame-count>0</b></span></div>
               <div class="drop-people"><span class="avatar c1 lg">B</span><span class="avatar c2 lg">T</span><span class="avatar c3 lg">G</span></div>
             </div>
             <div class="call-actions">
-              <button class="btn secondary" type="button" data-drop-btn><svg aria-hidden="true"><use href="#i-wifi"/></svg>Derrubar a internet</button>
+              <button class="btn secondary" type="button" data-drop-btn><svg aria-hidden="true"><use href="#i-wifi"/></svg>{{drop.button}}</button>
             </div>
           </div>
         </section>
 
         <!-- ===================== novidades ===================== -->
-        <section class="view chat-view" data-view="novidades" data-icon="sparkles" data-topic="{{COUNT}} versões desde {{FIRST_DATE}}. O app avisa sozinho quando sai a próxima.">
+        <section class="view chat-view" data-view="novidades" data-icon="sparkles" data-topic="{{updates.topic}}">
           <div class="scroll">
             <div class="channel-start">
               <span class="start-icon"><svg aria-hidden="true"><use href="#i-sparkles"/></svg></span>
-              <h2 class="display">Boas-vindas a #novidades</h2>
-              <p>Tudo que mudou no Resenha, da versão mais nova pra mais antiga.</p>
+              <h2 class="display">{{updates.title}}</h2>
+              <p>{{updates.text}}</p>
             </div>
             <div class="changelog">
 {{CHANGELOG}}
@@ -388,49 +401,49 @@
         </section>
 
         <!-- ===================== baixar ===================== -->
-        <section class="view" data-view="baixar" data-icon="download" data-topic="Versão {{VERSION}}, de {{VERSION_DATE}}. Depois de instalado, ele se atualiza sozinho.">
+        <section class="view" data-view="baixar" data-icon="download" data-topic="{{download.topic}}">
           <div class="scroll">
             <div class="intro">
-              <h2 class="display">Baixar o Resenha</h2>
-              <p>Versão {{VERSION}}, de {{VERSION_DATE}}. Depois de instalado, ele se atualiza sozinho.</p>
+              <h2 class="display">{{download.title}}</h2>
+              <p>{{download.topic}}</p>
             </div>
             <div class="dl-grid">
               <div class="dl" data-os="arch">
-                <span class="dl-os">Arch, CachyOS, Omarchy</span>
-                <strong class="dl-kind">Pacote .pacman</strong>
+                <span class="dl-os">{{download.arch.os}}</span>
+                <strong class="dl-kind">{{download.arch.kind}}</strong>
                 <span class="dl-size">{{PACMAN_SIZE}}</span>
-                <a class="btn primary" href="{{PACMAN_URL}}"><svg aria-hidden="true"><use href="#i-download"/></svg>Baixar</a>
-                <div class="cmd"><code>sudo pacman -U {{PACMAN_NAME}}</code><button type="button" class="copy" aria-label="Copiar o comando"><svg aria-hidden="true"><use href="#i-copy"/></svg></button></div>
+                <a class="btn primary" href="{{PACMAN_URL}}"><svg aria-hidden="true"><use href="#i-download"/></svg>{{download.button}}</a>
+                <div class="cmd"><code>sudo pacman -U {{PACMAN_NAME}}</code><button type="button" class="copy" aria-label="{{download.copy}}"><svg aria-hidden="true"><use href="#i-copy"/></svg></button></div>
               </div>
               <div class="dl" data-os="linux">
-                <span class="dl-os">Outras distros Linux</span>
-                <strong class="dl-kind">AppImage</strong>
+                <span class="dl-os">{{download.linux.os}}</span>
+                <strong class="dl-kind">{{download.linux.kind}}</strong>
                 <span class="dl-size">{{APPIMAGE_SIZE}}</span>
-                <a class="btn secondary" href="{{APPIMAGE_URL}}"><svg aria-hidden="true"><use href="#i-download"/></svg>Baixar</a>
-                <div class="cmd"><code>chmod +x {{APPIMAGE_NAME}}</code><button type="button" class="copy" aria-label="Copiar o comando"><svg aria-hidden="true"><use href="#i-copy"/></svg></button></div>
+                <a class="btn secondary" href="{{APPIMAGE_URL}}"><svg aria-hidden="true"><use href="#i-download"/></svg>{{download.button}}</a>
+                <div class="cmd"><code>chmod +x {{APPIMAGE_NAME}}</code><button type="button" class="copy" aria-label="{{download.copy}}"><svg aria-hidden="true"><use href="#i-copy"/></svg></button></div>
               </div>
               <div class="dl" data-os="windows">
-                <span class="dl-os">Windows 10 e 11</span>
-                <strong class="dl-kind">Instalador</strong>
+                <span class="dl-os">{{download.windows.os}}</span>
+                <strong class="dl-kind">{{download.windows.kind}}</strong>
                 <span class="dl-size">{{SETUP_SIZE}}</span>
-                <a class="btn secondary" href="{{SETUP_URL}}"><svg aria-hidden="true"><use href="#i-download"/></svg>Baixar</a>
-                <p class="dl-alt">Ou o <a href="{{ZIP_URL}}">.zip</a>, sem instalar (esse não se atualiza).</p>
+                <a class="btn secondary" href="{{SETUP_URL}}"><svg aria-hidden="true"><use href="#i-download"/></svg>{{download.button}}</a>
+                <p class="dl-alt">{{download.windows.alt}}</p>
               </div>
               <div class="dl" data-os="android">
-                <span class="dl-os">Android 7 ou mais novo</span>
-                <strong class="dl-kind">App de celular (.apk)</strong>
+                <span class="dl-os">{{download.android.os}}</span>
+                <strong class="dl-kind">{{download.android.kind}}</strong>
                 <span class="dl-size">{{APK_SIZE}}</span>
-                <a class="btn secondary" href="{{APK_URL}}"><svg aria-hidden="true"><use href="#i-download"/></svg>Baixar</a>
-                <p class="dl-alt">Fora da Play Store: na primeira vez, o Android pede pra liberar a instalação. O app avisa quando sai versão nova.</p>
+                <a class="btn secondary" href="{{APK_URL}}"><svg aria-hidden="true"><use href="#i-download"/></svg>{{download.button}}</a>
+                <p class="dl-alt">{{download.android.alt}}</p>
               </div>
             </div>
-            <p class="note center">Pra entrar, você precisa de uma conta: com convite de alguém do grupo, ou direto, quando o cadastro estiver aberto.</p>
+            <p class="note center">{{download.account}}</p>
             <footer class="foot">
-              <span>Feito pela resenha, pra resenha. Código aberto.</span>
-              <nav aria-label="Links">
-                <a href="https://github.com/LucasLomiento/resenha">Código</a>
-                <a href="https://github.com/LucasLomiento/resenha/blob/main/docs/PRIVACIDADE.md">Privacidade</a>
-                <a href="https://github.com/LucasLomiento/resenha/blob/main/docs/TERMOS.md">Termos</a>
+              <span>{{foot.made}}</span>
+              <nav aria-label="{{foot.links}}">
+                <a href="https://github.com/LucasLomiento/resenha">{{foot.code}}</a>
+                <a href="https://github.com/LucasLomiento/resenha/blob/main/docs/PRIVACIDADE.md" hreflang="pt-BR">{{foot.privacy}}</a>
+                <a href="https://github.com/LucasLomiento/resenha/blob/main/docs/TERMOS.md" hreflang="pt-BR">{{foot.terms}}</a>
               </nav>
             </footer>
           </div>
@@ -438,8 +451,10 @@
       </div>
 
       <!-- O próximo canal, no pé de cada um: dá pra passear sem procurar nada. -->
-      <a class="next-card" href="#call" data-next-card><span class="next-label">Próximo</span><span class="next-name"><svg aria-hidden="true"><use href="#i-volume"/></svg><b>call</b></span><svg class="next-arrow" aria-hidden="true"><use href="#i-right"/></svg></a>
+      <a class="next-card" href="#{{slug.call}}" data-next-card><span class="next-label">{{js.next}}</span><span class="next-name"><svg aria-hidden="true"><use href="#i-volume"/></svg><b>{{channels.call}}</b></span><svg class="next-arrow" aria-hidden="true"><use href="#i-right"/></svg></a>
     </main>
   </div>
+  <!-- Os textos que o main.js escreve, no idioma desta página (site/src/i18n). -->
+  <script type="application/json" id="strings">{{STRINGS}}</script>
 </body>
 </html>
