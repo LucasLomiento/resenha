@@ -1301,8 +1301,19 @@ try {
     const { frames, fewest } = await watching
     check(back && frames > 100 && fewest === 2, `conexão de ${who} cai e volta: B continua assistindo e ninguém sai da call`, `${frames} quadros em 4 s`)
   }
-  // O servidor reinicia (todo mundo cai junto e ele esquece a call): a tela segue e tudo volta sozinho.
+  // O servidor reinicia (o Cloudflare faz isso umas vezes por dia, e todo mundo cai junto): a tela
+  // segue, e a call fica guardada no banco, então pros dois ninguém sai dela em momento nenhum
+  // (até a 1.15.2 cada um via o outro sair e entrar, com os sons) e tudo volta sozinho.
   const before = { a: a.guildSockets.length, b: b.guildSockets.length }
+  const countCall = (page) =>
+    page.evaluate(() => {
+      const watch = (window.__restartWatch = { fewest: Infinity })
+      const look = () => (watch.fewest = Math.min(watch.fewest, document.querySelectorAll('nav .members .member').length))
+      look()
+      watch.timer = setInterval(look, 50)
+    })
+  const fewestInCall = (page) => page.evaluate(() => (clearInterval(window.__restartWatch.timer), window.__restartWatch.fewest))
+  await Promise.all([countCall(a.page), countCall(b.page)])
   const duringRestart = watchFor(b.page, 3000)
   await server.restart()
   const { frames: framesDuring } = await duringRestart
@@ -1314,6 +1325,12 @@ try {
     framesDuring > 60 && after.frames > 90 && after.fewest === 2 && liveBadges === 1,
     'servidor reinicia no meio da transmissão: a tela não para e a call volta sozinha',
     `${framesDuring} quadros durante, ${after.frames} depois`,
+  )
+  const restartFewest = { a: await fewestInCall(a.page), b: await fewestInCall(b.page) }
+  check(
+    restartFewest.a === 2 && restartFewest.b === 2,
+    'servidor reinicia: ninguém sai da call pros outros, nem por um instante (sem som de sair e entrar)',
+    `menos gente na call vista por A: ${restartFewest.a}, por B: ${restartFewest.b}`,
   )
 
   // Tirar e devolver o som da transmissão volta pro volume de antes (B ensurdecido: nada toca).

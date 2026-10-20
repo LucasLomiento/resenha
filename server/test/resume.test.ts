@@ -1,3 +1,4 @@
+import { abortAllDurableObjects, env, evictAllDurableObjects, runInDurableObject } from 'cloudflare:test'
 import { describe, expect, it } from 'vitest'
 import { dmChannelId } from '../../shared/protocol'
 import { guildSocket, homeSocket, tick, world } from './helpers'
@@ -119,6 +120,71 @@ describe('reconexão na call do servidor', () => {
     expect(state.members.find((x) => x.connId === ready.connId)).toMatchObject({ sharing: true, camera: true })
   })
 
+  it('o servidor reiniciou (o Cloudflare derruba todo mundo junto): ninguém sai da call e cada um volta nela', async () => {
+    const { guild, owner, friend, readyA, readyB } = await inCall()
+    await abortAllDurableObjects()
+    const a = await guildSocket(guild.id, owner.token, { key: KEY_A })
+    const backA = await a.next('ready')
+    expect(backA).toMatchObject({ connId: readyA.connId, resumed: true })
+    // O Duarte ainda não voltou, mas pros outros continua na call (e transmitindo).
+    expect(backA.voice.map((m) => m.connId).sort()).toEqual([readyA.connId, readyB.connId].sort())
+    expect(backA.voice.find((m) => m.connId === readyB.connId)).toMatchObject({ sharing: true })
+    a.send({ t: 'rtc.signal', to: readyB.connId, data: { kind: 'watch' } })
+
+    const b = await guildSocket(guild.id, friend.token, { key: KEY_B })
+    expect(await b.next('ready')).toMatchObject({ connId: readyB.connId, resumed: true })
+    expect(await b.next('rtc.signal')).toMatchObject({ from: readyA.connId, data: { kind: 'watch' } })
+    await tick(GRACE + 100)
+    await a.nothing('voice.state', without(readyB.connId))
+    await b.nothing('voice.state', without(readyA.connId))
+  })
+
+  it('o servidor reiniciou e alguém não voltou: sai da call depois da espera', async () => {
+    const { guild, owner, readyA, readyB } = await inCall()
+    await abortAllDurableObjects()
+    const a = await guildSocket(guild.id, owner.token, { key: KEY_A })
+    expect((await a.next('ready')).voice).toHaveLength(2)
+    const left = await a.next('voice.state', without(readyB.connId))
+    expect(left.members.map((m) => m.connId)).toEqual([readyA.connId])
+  })
+
+  it('o servidor reiniciou: quem já tinha saído da call (ou fechado o app) não volta pra ela', async () => {
+    const { guild, owner, friend, a, b, readyA, readyB } = await inCall()
+    a.send({ t: 'voice.leave' })
+    await b.next('voice.state', without(readyA.connId))
+    b.close()
+    await tick(60)
+    await abortAllDurableObjects()
+    const back = await guildSocket(guild.id, owner.token, { key: KEY_A })
+    const ready = await back.next('ready')
+    expect(ready).toMatchObject({ resumed: false, voice: [] })
+    const backB = await guildSocket(guild.id, friend.token, { key: KEY_B })
+    expect(await backB.next('ready')).toMatchObject({ connId: readyB.connId, resumed: false, voice: [] })
+  })
+
+  it('a call guardada de muito tempo atrás (o servidor ficou parado) não volta sozinha', async () => {
+    const { guild, owner, readyA } = await inCall()
+    await abortAllDurableObjects()
+    await runInDurableObject(env.GUILD.get(env.GUILD.idFromName(guild.id)), (_, state) => {
+      state.storage.sql.exec("UPDATE meta SET value = ? WHERE key = 'voice_at'", String(Date.now() - 60 * 60_000))
+    })
+    await abortAllDurableObjects()
+    const a = await guildSocket(guild.id, owner.token, { key: KEY_A })
+    expect(await a.next('ready')).toMatchObject({ connId: readyA.connId, resumed: false, voice: [] })
+  })
+
+  it('hibernar não muda a call: quem saiu antes não volta, e quem ficou continua', async () => {
+    const { a, b, readyA, readyB } = await inCall()
+    b.close()
+    await a.next('voice.state', without(readyB.connId))
+    await evictAllDurableObjects()
+    a.send({ t: 'voice.update', muted: true, deafened: false, sharing: false, camera: false })
+    const state = await a.next('voice.state', (m) => m.members.some((x) => x.connId === readyA.connId && x.muted))
+    expect(state.members.map((m) => m.connId)).toEqual([readyA.connId])
+    await tick(GRACE + 100)
+    await a.nothing('voice.state')
+  })
+
   it('moderador tira da call quem caiu: some na hora, e o aviso chega quando o app volta', async () => {
     const { guild, friend, a, b, readyB } = await inCall()
     b.drop()
@@ -198,6 +264,22 @@ describe('reconexão na chamada privada', () => {
     back.send({ t: 'call.answer', channelId, accept: true, state: { muted: true, deafened: false, sharing: true, camera: false } })
     const state = await homeA.next('call.state', (m) => m.members.length === 2)
     expect(state.members.find((m) => m.connId === readyB.connId)).toMatchObject({ muted: true, sharing: true })
+    await homeA.nothing('call.ringing')
+  })
+
+  it('o servidor reiniciou: a chamada continua e cada um volta nela sem ninguém sair', async () => {
+    const { owner, friend, channelId, readyA, readyB } = await dmCall()
+    await abortAllDurableObjects()
+    const homeA = await homeSocket(owner.user.id, owner.token, { key: KEY_A, call: channelId })
+    const backA = await homeA.next('ready')
+    expect(backA.call?.members.map((m) => m.connId).sort()).toEqual([readyA.connId, readyB.connId].sort())
+    // O app entra de novo como estava (`reconnected`), com o mesmo connId: pra chamada nada muda.
+    homeA.send({ t: 'call.answer', channelId, accept: true, state: { muted: false, deafened: false, sharing: false, camera: false } })
+    const homeB = await homeSocket(friend.user.id, friend.token, { key: KEY_B, call: channelId })
+    expect((await homeB.next('ready')).call?.members).toHaveLength(2)
+    homeB.send({ t: 'call.answer', channelId, accept: true, state: { muted: true, deafened: false, sharing: false, camera: false } })
+    await homeA.next('call.state', (m) => m.members.some((x) => x.connId === readyB.connId && x.muted))
+    await homeA.nothing('call.state', (m: any) => m.members.length < 2)
     await homeA.nothing('call.ringing')
   })
 

@@ -195,6 +195,11 @@ const AUDIT_PAGE = 50
 const AUDIT_KEEP = 90 * DAY
 /** A vista do mapa vai pro banco no máximo a cada 5 s (arrastar manda uma dúzia por segundo). */
 const MAP_SAVE_EVERY = 5000
+/**
+ * A call guardada no banco só volta depois de um reinício se ela foi conferida há menos que isso
+ * (o alarme confere a cada minuto). Mais velha, o servidor ficou parado e ninguém voltou a tempo.
+ */
+const VOICE_STALE = 3 * MINUTE
 const STATUSES: Status[] = ['online', 'idle', 'dnd', 'invisible']
 const NOTIFY_LEVELS: NotifyLevel[] = ['all', 'mentions', 'none']
 
@@ -277,6 +282,10 @@ export class Guild extends DurableObject<Env> {
   private typingAt = new Map<string, number>()
   /** connId -> conexão que caiu e ainda pode voltar (continua na call e online até lá). */
   private ghosts = new Map<string, Ghost>()
+  /** connId -> a call dessa conexão como está no banco (`voice_conns`), pra só gravar o que mudou. */
+  private voiceRows = new Map<string, string>()
+  /** Quando a call no banco foi dada como em dia pela última vez (`voice_at`). */
+  private voiceAt = 0
   /** Sockets que já saíram (o fechamento e o erro podem chegar os dois). */
   private retired = new WeakSet<WebSocket>()
   /** Mandaram o `auth` e o Directory ainda está conferindo o token. */
@@ -297,7 +306,10 @@ export class Guild extends DurableObject<Env> {
     super(ctx, env)
     this.sql = ctx.storage.sql
     this.store = new MessageStore(this.sql, env.FILE_SECRET, () => ({ kind: 'g', id: this.id }))
-    ctx.blockConcurrencyWhile(async () => this.migrate())
+    ctx.blockConcurrencyWhile(async () => {
+      await this.migrate()
+      this.restoreVoice()
+    })
     ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair('ping', 'pong'))
   }
 
@@ -390,6 +402,8 @@ export class Guild extends DurableObject<Env> {
       color INTEGER NOT NULL,
       created_at INTEGER NOT NULL
     )`)
+    // A call de cada conexão, pra quem estava nela continuar depois de um reinício (ver `restoreVoice`).
+    this.sql.exec('CREATE TABLE IF NOT EXISTS voice_conns (conn_id TEXT PRIMARY KEY, state TEXT NOT NULL)')
 
     // A tabela de canais da 0.5 só aceitava texto e voz (CHECK); a nova aceita categoria e tem mais colunas.
     const channelCols = columns(this.sql, 'channels')
@@ -649,6 +663,7 @@ export class Guild extends DurableObject<Env> {
 
   private save(ws: WebSocket, state: ConnState) {
     ws.serializeAttachment(state)
+    this.persistVoice(state)
   }
 
   /** Sockets abertos e autenticados, opcionalmente sem uma conexão que está saindo. */
@@ -799,6 +814,7 @@ export class Guild extends DurableObject<Env> {
       const state = ghost.state
       if (state.userId !== userId || !state.voice || connId === exceptConnId) continue
       ghost.state = { ...state, voice: channelId ? { ...state.voice, channelId, sharing: false, camera: false, music: null } : null }
+      this.persistVoice(ghost.state)
       this.enqueue(ghost, { t: 'voice.forced', channelId })
       changed = true
     }
@@ -824,6 +840,7 @@ export class Guild extends DurableObject<Env> {
       bytes: existing?.bytes ?? 0,
       timer: setTimeout(() => this.releaseGhost(state.connId), graceFor(this.env)),
     })
+    this.persistVoice(state)
   }
 
   /** O app não voltou a tempo: sai da call e fica offline de vez. */
@@ -832,6 +849,7 @@ export class Guild extends DurableObject<Env> {
     if (!ghost) return
     const before = this.presenceOf(ghost.state.userId)
     this.ghosts.delete(connId)
+    this.forgetVoice(connId)
     if (ghost.state.voice) this.broadcastVoice()
     if (ghost.state.map) this.leftMap()
     this.announcePresence(ghost.state.userId, before)
@@ -844,10 +862,97 @@ export class Guild extends DurableObject<Env> {
       if (!match(ghost.state)) continue
       clearTimeout(ghost.timer)
       this.ghosts.delete(connId)
+      this.forgetVoice(connId)
       had.voice ||= !!ghost.state.voice
       had.map ||= !!ghost.state.map
     }
     return had
+  }
+
+  // ---------- A call guardada no banco ----------
+  // O Cloudflare reinicia o Durable Object de vez em quando (deploy, atualização do runtime,
+  // troca de máquina; no `main`, umas seis vezes por dia em out/2026): todas as conexões caem
+  // juntas e some o que estava na memória, os fantasmas e o estado de cada socket. Cada app
+  // voltava fora da call e entrava de novo, e todo mundo ouvia todo mundo sair e entrar. Por
+  // isso a call de cada conexão também fica no banco, e depois de um reinício quem estava nela
+  // vira fantasma: pros outros ninguém saiu, e o app volta com `resumed`.
+
+  /** O que vai pro banco de uma conexão (null: fora da call, ou sem chave pra voltar). */
+  private voiceRow(state: ConnState): string | null {
+    if (!state.voice || !state.resumable || state.pending) return null
+    const { userId, connId, session, voice, status, text } = state
+    return JSON.stringify({ userId, connId, session, voice, status, text })
+  }
+
+  /** Grava (ou apaga) a call dessa conexão, só quando mudou. */
+  private persistVoice(state: ConnState) {
+    // A conexão substituída (4005) deixa a linha pra nova, que tem o mesmo connId.
+    if (state.pending || state.replaced) return
+    const row = this.voiceRow(state)
+    if (row === (this.voiceRows.get(state.connId) ?? null)) return
+    if (row === null) return this.forgetVoice(state.connId)
+    this.sql.exec(
+      'INSERT INTO voice_conns (conn_id, state) VALUES (?, ?) ON CONFLICT (conn_id) DO UPDATE SET state = excluded.state',
+      state.connId,
+      row,
+    )
+    this.voiceRows.set(state.connId, row)
+    this.touchVoice()
+  }
+
+  private forgetVoice(connId: string) {
+    if (this.voiceRows.delete(connId)) this.sql.exec('DELETE FROM voice_conns WHERE conn_id = ?', connId)
+  }
+
+  /** A call no banco está em dia (vai pro banco no máximo a cada 30 s; o alarme renova a cada minuto). */
+  private touchVoice(now = Date.now()) {
+    if (now - this.voiceAt < 30_000) return
+    this.voiceAt = now
+    this.setMeta('voice_at', String(now))
+  }
+
+  /** Deixa o banco igual às conexões de agora (as abertas e as que caíram e ainda podem voltar). */
+  private syncVoiceRows() {
+    const inCall = new Set<string>()
+    for (const state of [...this.sockets().map((ws) => this.state(ws)), ...this.ghostStates()]) {
+      if (this.voiceRow(state) === null) continue
+      inCall.add(state.connId)
+      this.persistVoice(state)
+    }
+    for (const connId of [...this.voiceRows.keys()]) if (!inCall.has(connId)) this.forgetVoice(connId)
+    if (this.voiceRows.size > 0) this.touchVoice()
+  }
+
+  /**
+   * O objeto subiu. Sem nenhuma conexão, ele reiniciou (as de antes caíram com ele): quem estava
+   * na call vira fantasma, como se a rede tivesse caído, e volta nela com o mesmo connId. Acordando
+   * da hibernação as conexões continuam abertas, cada uma com o seu estado, e o banco só é conferido.
+   */
+  private restoreVoice() {
+    const rows = this.sql.exec<{ conn_id: string; state: string }>('SELECT conn_id, state FROM voice_conns').toArray()
+    for (const row of rows) this.voiceRows.set(row.conn_id, row.state)
+    if (rows.length === 0) return
+    this.voiceAt = Number(this.meta('voice_at') ?? 0)
+    if (this.ctx.getWebSockets().length > 0) return this.syncVoiceRows()
+    const fresh = Date.now() - this.voiceAt < VOICE_STALE
+    let restored = 0
+    for (const row of rows) {
+      let saved: Pick<ConnState, 'userId' | 'connId' | 'session' | 'voice' | 'status' | 'text'> | null = null
+      try {
+        saved = JSON.parse(row.state)
+      } catch {
+        // linha estragada: esquece
+      }
+      // A call ainda vale? (canal existe, ainda é membro e pode entrar, não está de castigo)
+      const voice = fresh && saved?.userId && this.member(saved.userId) ? this.validVoice(saved.userId, saved.voice) : null
+      if (!saved || !voice) {
+        this.forgetVoice(row.conn_id)
+        continue
+      }
+      this.holdGhost({ ...saved, connId: row.conn_id, voice, connectedAt: Date.now(), resumable: true })
+      restored++
+    }
+    if (restored > 0) console.log(`[voz] reiniciou com ${restored} na call; esperando voltarem`)
   }
 
   /**
@@ -1368,8 +1473,11 @@ export class Guild extends DurableObject<Env> {
     if (unexpected && state.resumable && this.member(state.userId)) return this.holdGhost(state)
     // O socket que caiu já não está aberto: o "antes" inclui ele à mão.
     const before = aggregate([...this.statesOf(state.userId, state.connId), state])
-    if (state.voice) this.broadcastVoice(state.connId)
-    if (state.map) this.leftMap(state.connId)
+    // Saiu de vez, inclusive do banco (não volta num reinício) e de um fantasma com o mesmo connId.
+    const ghost = this.dropGhosts((s) => s.connId === state.connId)
+    this.forgetVoice(state.connId)
+    if (state.voice || ghost.voice) this.broadcastVoice(state.connId)
+    if (state.map || ghost.map) this.leftMap(state.connId)
     this.announcePresence(state.userId, before, state.connId)
   }
 
@@ -1415,8 +1523,11 @@ export class Guild extends DurableObject<Env> {
       for (const [key, sent] of this.sentNonces) if (now - sent.at > NONCE_TTL) this.sentNonces.delete(key)
     }
 
-    // Com alguém conectado (mesmo sem login), volta logo; sem ninguém, só se sobrou anexo solto.
-    if (this.ctx.getWebSockets().length > 0) await this.ctx.storage.setAlarm(next)
+    // A call no banco acompanha as conexões (e fica marcada como em dia pra um reinício).
+    this.syncVoiceRows()
+
+    // Com alguém conectado (mesmo sem login) ou esperando voltar, volta logo; sem ninguém, só se sobrou anexo solto.
+    if (this.ctx.getWebSockets().length > 0 || this.ghosts.size > 0) await this.ctx.storage.setAlarm(next)
     else if (this.sql.exec('SELECT 1 FROM attachments WHERE message_id IS NULL LIMIT 1').toArray().length > 0) {
       await this.ctx.storage.setAlarm(now + ORPHAN_TTL / 4)
     }
@@ -2138,6 +2249,7 @@ export class Guild extends DurableObject<Env> {
     for (const ghost of this.ghosts.values()) {
       if (ghost.state.voice?.channelId !== channel.id) continue
       ghost.state = { ...ghost.state, voice: null }
+      this.persistVoice(ghost.state)
       this.enqueue(ghost, { t: 'voice.forced', channelId: null })
       voiceChanged = true
     }
@@ -2800,6 +2912,7 @@ export class Guild extends DurableObject<Env> {
 
   async destroy() {
     this.dropGhosts(() => true)
+    this.voiceRows.clear()
     // Nada de gravar a vista do mapa depois de apagar tudo.
     if (this.mapSaveTimer) clearTimeout(this.mapSaveTimer)
     this.mapSaveTimer = null

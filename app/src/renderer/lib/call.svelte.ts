@@ -320,10 +320,11 @@ export class Call {
 
   /**
    * O WebSocket voltou, com o mesmo connId. `resumed`: o servidor manteve a
-   * conexão na call e pros outros nada mudou. Senão (o servidor reiniciou, ou
-   * demorou demais), entra de novo. Em nenhum caso as conexões P2P são
-   * desfeitas: voz e tela não passam pelo servidor. Se o outro lado tiver
-   * recomeçado a dele, os ids na sinalização avisam e a gente recomeça junto.
+   * conexão na call (inclusive depois de reiniciar, pelo banco) e pros outros
+   * nada mudou. Senão (demorou demais), entra de novo. Em nenhum caso as
+   * conexões P2P são desfeitas: voz e tela não passam pelo servidor. Se o outro
+   * lado tiver recomeçado a dele, os ids na sinalização avisam e a gente
+   * recomeça junto.
    */
   reconnected(resumed: boolean) {
     if (!this.transport) return
