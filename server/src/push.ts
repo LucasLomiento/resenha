@@ -136,6 +136,36 @@ export class Pusher {
    * token trocado) e os que o Firebase recusou por outro motivo (`failed`).
    */
   async send(tokens: string[], message: PushMessage): Promise<{ dead: string[]; failed: string[] }> {
+    return this.deliver(tokens, (token) => ({
+      token,
+      notification: { title: message.title, body: message.body },
+      data: message.data,
+      android: {
+        priority: 'high',
+        // Ligação que ninguém atendeu em 30 s já acabou: não adianta entregar depois.
+        ttl: message.kind === 'call' ? '30s' : '86400s',
+        notification: {
+          tag: message.tag,
+          channel_id: message.kind === 'call' ? 'calls' : 'messages',
+          icon: 'ic_stat_resenha',
+          color: '#2b6cf5',
+          sound: 'default',
+        },
+      },
+    }))
+  }
+
+  /**
+   * Tira dos aparelhos o aviso com essa etiqueta (a pessoa leu em outro lugar): um push só de
+   * dados, que o app do Android recebe mesmo fechado (PushService.java). Prioridade normal,
+   * porque não mostra nada: o Firebase rebaixa o app que manda muito push "alto" sem aviso na
+   * tela. Com o celular parado e a tela apagada, chega quando a tela acende.
+   */
+  async dismiss(tokens: string[], tag: string): Promise<{ dead: string[]; failed: string[] }> {
+    return this.deliver(tokens, (token) => ({ token, data: { kind: 'dismiss', tag }, android: { priority: 'normal', ttl: '86400s' } }))
+  }
+
+  private async deliver(tokens: string[], build: (token: string) => object): Promise<{ dead: string[]; failed: string[] }> {
     if (!this.account || tokens.length === 0) return { dead: [], failed: [] }
     const access = await this.accessToken()
     const url = `https://fcm.googleapis.com/v1/projects/${this.account.project_id}/messages:send`
@@ -147,25 +177,7 @@ export class Pusher {
         const res = await this.fetchImpl(url, {
           method: 'POST',
           headers: { Authorization: `Bearer ${access}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            message: {
-              token,
-              notification: { title: message.title, body: message.body },
-              data: message.data,
-              android: {
-                priority: 'high',
-                // Ligação que ninguém atendeu em 30 s já acabou: não adianta entregar depois.
-                ttl: message.kind === 'call' ? '30s' : '86400s',
-                notification: {
-                  tag: message.tag,
-                  channel_id: message.kind === 'call' ? 'calls' : 'messages',
-                  icon: 'ic_stat_resenha',
-                  color: '#2b6cf5',
-                  sound: 'default',
-                },
-              },
-            },
-          }),
+          body: JSON.stringify({ message: build(token) }),
         })
         if (res.ok) return
         const error = (await res.json().catch(() => ({}))) as { error?: { status?: string; details?: { errorCode?: string }[] } }

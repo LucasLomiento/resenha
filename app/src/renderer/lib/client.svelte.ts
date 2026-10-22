@@ -20,7 +20,7 @@ import { GuildState, type GuildHost } from './guild.svelte'
 import { HomeState, type HomeHost } from './home.svelte'
 import { i18n, m } from './i18n.svelte'
 import { plainText } from './markdown'
-import { notify } from './notify'
+import { dismissNotice, notify } from './notify'
 import { badgeOf } from './profile'
 import { attachmentLabel } from './voice-note'
 import { settings } from './settings.svelte'
@@ -769,6 +769,7 @@ class Client implements GuildHost, HomeHost {
       const name = this.home?.dm(channelId)?.user.name ?? m.lib.someone
       notify(m.lib.notify.calling(name), {
         body: m.lib.notify.callingBody,
+        tag: `call:${channelId}`,
         onclick: () => {
           window.resenha.showWindow()
           this.navigate({ kind: 'dm', channelId })
@@ -783,6 +784,8 @@ class Client implements GuildHost, HomeHost {
   }
 
   private stopRinging() {
+    // Atendeu, recusou, atenderam em outro aparelho ou desistiram: o "está ligando" sai da tela.
+    if (this.incomingCall) dismissNotice(`call:${this.incomingCall.channelId}`)
     this.incomingCall = null
     if (this.ringTimer) clearInterval(this.ringTimer)
     this.ringTimer = null
@@ -885,11 +888,27 @@ class Client implements GuildHost, HomeHost {
       body: settings.notifyContent ? body.slice(0, 200) : m.lib.notify.hiddenMessage,
       tag,
       onclick: () => {
+        this.notices.delete(tag)
         window.resenha.showWindow()
         open()
       },
     })
+    this.notices.set(tag, message.id)
     window.resenha.attention()
+  }
+
+  /** Avisos na tela, pela etiqueta: a mensagem de cada um (o aviso sai quando ela é lida). */
+  private notices = new Map<string, string>()
+
+  /**
+   * Leu até `lastReadId` (aqui ou em outro aparelho, como no celular): o aviso dessa conversa sai
+   * da tela. O de uma mensagem mais nova que isso fica.
+   */
+  seen(tag: string, lastReadId: string | null) {
+    const id = this.notices.get(tag)
+    if (!id || !lastReadId || lastReadId < id) return
+    this.notices.delete(tag)
+    dismissNotice(tag)
   }
 
   /** Total pro ícone da bandeja/barra: menções e conversas privadas não lidas. */

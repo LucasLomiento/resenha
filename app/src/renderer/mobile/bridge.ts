@@ -106,15 +106,21 @@ async function registerPush(): Promise<string | null> {
   })
 }
 
-/** O token deste aparelho: o de agora, ou pede ao Firebase (e uma falha deixa tentar de novo depois). */
-function currentToken(): Promise<string | null> {
-  if (latestToken) return Promise.resolve(latestToken)
-  return (pushToken ??= registerPush()
+/**
+ * O token deste aparelho. A primeira vez da sessão passa pelo registerPush (a permissão e os
+ * canais): o Firebase gera um token sozinho logo que o app é instalado, e até a 1.15.2 o app
+ * usava esse direto, sem pedir a permissão (no Android 13+ o push nem aparecia) nem criar os
+ * canais (os avisos caíam em "Diversos"). Depois, o de agora: o Firebase troca de vez em quando.
+ * Uma falha deixa tentar de novo depois.
+ */
+async function currentToken(): Promise<string | null> {
+  const token = await (pushToken ??= registerPush()
     .catch(() => null)
     .then((token) => {
       if (!token) pushToken = null
       return token
     }))
+  return token && (latestToken ?? token)
 }
 
 /** Saiu da conta (ou a sessão acabou): o token morre junto, e o aparelho para de receber os avisos dela. */
@@ -124,6 +130,25 @@ function dropPush() {
   pushToken = null
   PushNotifications.unregister().catch(() => {})
 }
+
+// ---------- Foco: segue o app (na frente ou no fundo) ----------
+
+// A WebView do Android continua "em foco" e "visível" com o app no fundo. O app achava que a
+// pessoa estava olhando a conversa aberta: marcava como lido o que chegava nela com o celular no
+// bolso e, com o aviso que sai quando a conversa é lida, tirava o push da gaveta. Aqui o foco é o
+// do app, e a janela recebe blur/focus como no computador (voltar marca como lido o que está aberto).
+let active = true
+const hasFocus = Document.prototype.hasFocus
+document.hasFocus = function () {
+  return active && hasFocus.call(this)
+}
+function setActive(isActive: boolean) {
+  if (active === isActive) return
+  active = isActive
+  window.dispatchEvent(new Event(isActive ? 'focus' : 'blur'))
+}
+void App.getState().then(({ isActive }) => setActive(isActive))
+void App.addListener('appStateChange', ({ isActive }) => setActive(isActive))
 
 // ---------- Botão voltar: fecha o que está por cima; sem nada, o app vai pro fundo ----------
 
@@ -159,6 +184,8 @@ function callState(state: CallState) {
 // ---------- Avisos (notificação do sistema; clicar abre o que avisou) ----------
 
 const clicks = new Map<number, () => void>()
+/** O id do aviso de cada etiqueta: o novo usa o mesmo (troca o velho), e tirar acha por ele. */
+const tagged = new Map<string, number>()
 // Começa longe do 1, que é o da notificação fixa da call (CallService): o mesmo id trocaria uma pela outra.
 let nextNotification = 1000
 void LocalNotifications.addListener('localNotificationActionPerformed', ({ notification }) => {
@@ -166,12 +193,23 @@ void LocalNotifications.addListener('localNotificationActionPerformed', ({ notif
   clicks.delete(notification.id)
 })
 
-async function notify(title: string, body: string, onclick?: () => void) {
+async function notify(title: string, options: { body: string; tag?: string }, onclick?: () => void) {
   const permission = await LocalNotifications.checkPermissions()
   if (permission.display !== 'granted' && (await LocalNotifications.requestPermissions()).display !== 'granted') return
-  const id = nextNotification++
+  const id = (options.tag ? tagged.get(options.tag) : undefined) ?? nextNotification++
+  if (options.tag) tagged.set(options.tag, id)
   if (onclick) clicks.set(id, onclick)
-  await LocalNotifications.schedule({ notifications: [{ id, title, body }] })
+  else clicks.delete(id)
+  await LocalNotifications.schedule({ notifications: [{ id, title, body: options.body }] })
+}
+
+/** Tira o aviso dessa etiqueta da gaveta. Os do push (app no fundo) quem tira é o PushService.java. */
+function dismissNotification(tag: string) {
+  const id = tagged.get(tag)
+  if (id === undefined) return
+  tagged.delete(tag)
+  clicks.delete(id)
+  LocalNotifications.removeDeliveredNotificationsById({ ids: [id] }).catch(() => {})
 }
 
 // ---------- Atualização (o APK novo, das releases do GitHub) ----------
@@ -276,7 +314,8 @@ const api: ResenhaApi = {
   turnstile: async () => null,
   download: (url) => void Browser.open({ url }),
   setLocale: nothing,
-  notify: (title, body, onclick) => void notify(title, body, onclick),
+  notify: (title, options, onclick) => void notify(title, options, onclick),
+  dismissNotification,
   onBack: (callback) => {
     backHandler = callback
   },

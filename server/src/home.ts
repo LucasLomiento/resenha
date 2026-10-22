@@ -133,6 +133,9 @@ export class Home extends DurableObject<Env> {
         preview INTEGER NOT NULL DEFAULT 1,
         created_at INTEGER NOT NULL
       )`)
+      // Avisos que foram pro celular e ninguém viu ainda (a etiqueta, e a mensagem do aviso):
+      // lidos em qualquer aparelho, saem do celular (pushSeen).
+      this.sql.exec('CREATE TABLE IF NOT EXISTS push_open (tag TEXT PRIMARY KEY, message_id TEXT)')
       // Chamadas privadas em andamento nas conversas da pessoa (o `ready` traz como estão agora).
       this.sql.exec('CREATE TABLE IF NOT EXISTS calls (channel_id TEXT PRIMARY KEY, at INTEGER NOT NULL)')
       this.userId = this.meta('user_id') ?? ''
@@ -753,6 +756,7 @@ export class Home extends DurableObject<Env> {
             ? 0
             : await conversation(this.env, row.channel_id).unreadAfter(row.channel_id, me, lastReadId)
         this.sql.exec('UPDATE dms SET last_read_id = ?, unread = ? WHERE channel_id = ?', lastReadId, unread, row.channel_id)
+        this.ctx.waitUntil(this.pushSeen(`dm:${row.channel_id}`, lastReadId))
         return this.broadcast({ t: 'dm.read', channelId: row.channel_id, lastReadId, unread })
       }
 
@@ -836,6 +840,10 @@ export class Home extends DurableObject<Env> {
       this.sql.exec('INSERT INTO calls (channel_id, at) VALUES (?, ?) ON CONFLICT (channel_id) DO UPDATE SET at = excluded.at', channelId, Date.now())
     }
     if (event.t === 'call.ended') this.sql.exec('DELETE FROM calls WHERE channel_id = ?', channelId)
+    // Atendeu em outro aparelho, recusou, ou a ligação acabou: o "está ligando" sai do celular.
+    if ((event.t === 'call.state' && !event.ringing.includes(this.userId)) || event.t === 'call.ended') {
+      this.ctx.waitUntil(this.pushSeen(`call:${channelId}`))
+    }
     // Apagaram uma mensagem: a última da conversa e a contagem de não lidas acompanham.
     if (event.t === 'dm.deleted') await this.messageDeleted(channelId, event)
     if (event.t === 'dm.message') {
@@ -863,6 +871,8 @@ export class Home extends DurableObject<Env> {
         const row = this.sql.exec<DmRow>('SELECT * FROM dms WHERE channel_id = ?', channelId).one()
         if (peer) this.broadcast({ t: 'dm.channel', channel: this.toDm(row, peer) })
       }
+      // Respondeu (de qualquer aparelho): leu o que tinha antes.
+      if (mine) this.ctx.waitUntil(this.pushSeen(`dm:${channelId}`, event.message.id))
       // Quem recebe o push se decide agora (o computador pode virar "ausente" enquanto o nome chega).
       const devices = mine ? [] : this.pushDevices()
       if (devices.length) this.ctx.waitUntil(this.pushDm(devices, channelId, peerId, event.message))
@@ -891,6 +901,8 @@ export class Home extends DurableObject<Env> {
   async guildPush(input: {
     guildId: string
     channelId: string
+    /** A mensagem do aviso (o "lido" até antes dela não tira o aviso). */
+    messageId?: string
     author: string
     channel: string
     server: string
@@ -909,7 +921,7 @@ export class Home extends DurableObject<Env> {
       role: (id: string) => input.roles?.[id] ?? null,
       channel: (id: string) => input.channels?.[id] ?? null,
     }
-    await this.push(this.pushDevices(), (text, preview) => ({
+    await this.push(this.pushDevices(), input.messageId ?? null, (text, preview) => ({
       title: text.inChannel(input.author, input.channel, input.server),
       body: preview ? pushBody(input.content, input.attachments, lookup, text) || text.hidden : text.hidden,
       data: { kind: 'channel', guildId: input.guildId, channelId: input.channelId },
@@ -953,19 +965,33 @@ export class Home extends DurableObject<Env> {
     }
   }
 
-  /** Manda pros aparelhos: uma mensagem por idioma (e por "mostrar o texto"); tira os tokens que morreram. */
-  private async push(devices: PushRow[], build: (text: (typeof PUSH_TEXT)[PushLocale], preview: boolean) => PushMessage) {
+  /**
+   * Manda pros aparelhos: uma mensagem por idioma (e por "mostrar o texto"); tira os tokens que morreram.
+   * O aviso fica anotado antes de sair, pra um "lido" que chegue durante o envio já tirar ele.
+   * `messageId`: a mensagem do aviso (null na ligação).
+   */
+  private async push(devices: PushRow[], messageId: string | null, build: (text: (typeof PUSH_TEXT)[PushLocale], preview: boolean) => PushMessage) {
     const groups = new Map<string, PushRow[]>()
     for (const row of devices) {
       const key = `${row.locale}:${row.preview}`
       groups.set(key, [...(groups.get(key) ?? []), row])
     }
+    let noted = false
     for (const rows of groups.values()) {
       const locale = (rows[0].locale in PUSH_TEXT ? rows[0].locale : 'pt') as PushLocale
+      const message = build(PUSH_TEXT[locale], rows[0].preview === 1)
+      if (!noted) {
+        this.sql.exec(
+          'INSERT INTO push_open (tag, message_id) VALUES (?, ?) ON CONFLICT (tag) DO UPDATE SET message_id = excluded.message_id',
+          message.tag,
+          messageId,
+        )
+        noted = true
+      }
       try {
         const { dead } = await this.pusher.send(
           rows.map((r) => r.token),
-          build(PUSH_TEXT[locale], rows[0].preview === 1),
+          message,
         )
         for (const token of dead) this.sql.exec('DELETE FROM push_tokens WHERE token = ?', token)
       } catch (err) {
@@ -974,10 +1000,30 @@ export class Home extends DurableObject<Env> {
     }
   }
 
+  /**
+   * A pessoa viu (leu a conversa ou o canal, atendeu, a ligação acabou), aqui ou em outro aparelho:
+   * o aviso que foi pro celular sai de lá. `lastReadId`: até onde leu (o aviso de uma mensagem mais
+   * nova fica). Devolve se tem aparelho com push (sem, o Guild para de perguntar por um tempo).
+   */
+  async pushSeen(tag: string, lastReadId: string | null = null): Promise<boolean> {
+    const devices = this.sql.exec<PushRow>('SELECT * FROM push_tokens').toArray()
+    if (!this.pusher.enabled || devices.length === 0) return false
+    const open = this.sql.exec<{ message_id: string | null }>('SELECT message_id FROM push_open WHERE tag = ?', tag).toArray()[0]
+    if (!open || (open.message_id && (!lastReadId || lastReadId < open.message_id))) return true
+    this.sql.exec('DELETE FROM push_open WHERE tag = ?', tag)
+    try {
+      const { dead } = await this.pusher.dismiss(devices.map((d) => d.token), tag)
+      for (const token of dead) this.sql.exec('DELETE FROM push_tokens WHERE token = ?', token)
+    } catch (err) {
+      console.error('push (tirar o aviso)', err)
+    }
+    return true
+  }
+
   private async pushDm(devices: PushRow[], channelId: string, peerId: string, message: Message) {
     const peer = await directory(this.env).getUser(peerId)
     const name = peer?.name ?? '…'
-    await this.push(devices, (text, preview) => ({
+    await this.push(devices, message.id, (text, preview) => ({
       title: name,
       body: preview ? pushBody(message.content, message.attachments, { user: (id) => (id === peerId ? name : null) }, text) || text.hidden : text.hidden,
       data: { kind: 'dm', channelId },
@@ -988,7 +1034,7 @@ export class Home extends DurableObject<Env> {
 
   private async pushCall(devices: PushRow[], channelId: string, from: string, video: boolean) {
     const name = (await directory(this.env).getUser(from))?.name ?? '…'
-    await this.push(devices, (text) => ({
+    await this.push(devices, null, (text) => ({
       title: video ? text.videoCalling(name) : text.calling(name),
       body: text.tapToAnswer,
       data: { kind: 'call', channelId },

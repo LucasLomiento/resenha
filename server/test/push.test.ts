@@ -86,6 +86,18 @@ describe('push: Firebase (unidade)', () => {
     expect(google.sent[3].message.android).toMatchObject({ ttl: '30s', notification: { channel_id: 'calls' } })
   })
 
+  it('tirar o aviso: push só de dados, sem notificação, com a etiqueta', async () => {
+    const account = await serviceAccount()
+    const google = fakeGoogle([TOKEN_B])
+    const pusher = new Pusher(account.json, google.impl)
+    expect(await pusher.dismiss([TOKEN_A, TOKEN_B], 'dm:dm:a:b')).toEqual({ dead: [TOKEN_B], failed: [] })
+    expect(google.sent[0].message).toEqual({
+      token: TOKEN_A,
+      data: { kind: 'dismiss', tag: 'dm:dm:a:b' },
+      android: { priority: 'normal', ttl: '86400s' },
+    })
+  })
+
   it('sem a chave (ou com uma quebrada), não manda nada', async () => {
     const google = fakeGoogle()
     for (const secret of [undefined, '', '{"project_id":"x"}', 'não é json']) {
@@ -128,6 +140,8 @@ describe('push: quando o celular recebe', () => {
   it('mensagem privada e ligação vão pro celular; só o computador com a pessoa olhando segura; "Não perturbe" também', async () => {
     const { owner, friend } = await world()
     const google = await fakePush(friend.user.id)
+    // Só os avisos (desligar a ligação também tira o aviso dela do celular, com outro push).
+    const shown = () => google.sent.filter((s) => s.message.notification)
     const phone = await homeSocket(friend.user.id, friend.token, { mobile: true })
     await phone.next('ready')
     phone.send({ t: 'push.token', token: TOKEN_A, locale: 'pt', preview: true })
@@ -158,7 +172,7 @@ describe('push: quando o celular recebe', () => {
     const desktop = await homeSocket(friend.user.id, friend.token)
     await desktop.next('ready')
     homeA.send({ t: 'dm.send', channelId, content: 'tá aí?', attachmentIds: [], nonce: '2' })
-    await until(() => google.sent.length === 3)
+    await until(() => shown().length === 3)
 
     // Olhando o app no computador: o aviso fica lá, o celular não toca.
     desktop.send({ t: 'attention', on: true })
@@ -171,8 +185,8 @@ describe('push: quando o celular recebe', () => {
     desktop.send({ t: 'attention', on: false })
     await tick(100)
     homeA.send({ t: 'dm.send', channelId, content: 'acorda', attachmentIds: [], nonce: '4' })
-    await until(() => google.sent.length === 4)
-    expect(google.sent.map((s) => s.message.notification.body)).toEqual(['oi @…', 'Toque pra atender', 'tá aí?', 'acorda'])
+    await until(() => shown().length === 4)
+    expect(shown().map((s) => s.message.notification.body)).toEqual(['oi @…', 'Toque pra atender', 'tá aí?', 'acorda'])
 
     // Voltando (a conexão caiu e reconectou) já olhando: segura desde o começo.
     desktop.drop()
@@ -189,7 +203,7 @@ describe('push: quando o celular recebe', () => {
     homeA.send({ t: 'dm.send', channelId, content: 'psiu', attachmentIds: [], nonce: '6' })
     await homeA.next('dm.message', (m) => m.message.content === 'psiu')
     await tick(200)
-    expect(google.sent).toHaveLength(4)
+    expect(shown()).toHaveLength(4)
   }, 15_000)
 
   it('idioma e "esconder o texto" de cada aparelho; token morto sai; sair da conta para o push', async () => {
@@ -302,3 +316,111 @@ describe('push: quando o celular recebe', () => {
     expect(ownerPush.sent).toHaveLength(0)
   })
 })
+
+describe('push: o aviso sai do celular quando a pessoa vê', () => {
+  /** Os "tirar o aviso" que saíram, pela etiqueta. */
+  const dismissed = (google: ReturnType<typeof fakeGoogle>) => google.sent.filter((s) => s.message.data?.kind === 'dismiss').map((s) => s.message.data.tag)
+
+  it('mensagem privada: lida no computador (ou respondida), sai do celular; lida só até antes dela, fica', async () => {
+    const { owner, friend } = await world()
+    const google = await fakePush(friend.user.id)
+    const phone = await homeSocket(friend.user.id, friend.token, { mobile: true })
+    await phone.next('ready')
+    phone.send({ t: 'push.token', token: TOKEN_A })
+    const desktop = await homeSocket(friend.user.id, friend.token)
+    await desktop.next('ready')
+    const homeA = await homeSocket(owner.user.id, owner.token)
+    await homeA.next('ready')
+    homeA.send({ t: 'dm.open', userId: friend.user.id, reqId: 'o' })
+    await homeA.next('dm.channel')
+    const channelId = dmChannelId(owner.user.id, friend.user.id)
+    const tag = `dm:${channelId}`
+
+    homeA.send({ t: 'dm.send', channelId, content: 'primeira', attachmentIds: [], nonce: '1' })
+    const first = (await desktop.next('dm.message', (m) => m.message.content === 'primeira')).message
+    await until(() => google.sent.length === 1)
+    homeA.send({ t: 'dm.send', channelId, content: 'segunda', attachmentIds: [], nonce: '2' })
+    await desktop.next('dm.message', (m) => m.message.content === 'segunda')
+    await until(() => google.sent.length === 2)
+
+    // Leu só até a primeira (a segunda chegou depois): o aviso, que já mostra a segunda, fica.
+    desktop.send({ t: 'dm.ack', channelId, messageId: first.id })
+    await desktop.next('dm.read')
+    await tick(200)
+    expect(dismissed(google)).toEqual([])
+
+    // Leu tudo no computador: o aviso sai do celular. Ler de novo não manda outro.
+    desktop.send({ t: 'dm.ack', channelId, messageId: (await lastDm(homeA, channelId)).id })
+    await desktop.next('dm.read')
+    await until(() => dismissed(google).length === 1)
+    expect(google.sent.at(-1)).toMatchObject({ token: TOKEN_A, message: { data: { kind: 'dismiss', tag } } })
+    desktop.send({ t: 'dm.ack', channelId, messageId: (await lastDm(homeA, channelId)).id })
+    await desktop.next('dm.read')
+    await tick(200)
+    expect(dismissed(google)).toEqual([tag])
+
+    // Mensagem nova, e a pessoa responde pelo computador sem marcar como lida: também sai.
+    homeA.send({ t: 'dm.send', channelId, content: 'terceira', attachmentIds: [], nonce: '3' })
+    await until(() => google.sent.length === 4)
+    desktop.send({ t: 'dm.send', channelId, content: 'vi', attachmentIds: [], nonce: '4' })
+    await until(() => dismissed(google).length === 2)
+    expect(dismissed(google)).toEqual([tag, tag])
+  })
+
+  it('ligação: atendida no computador ou desligada, o "está ligando" sai do celular', async () => {
+    const { owner, friend } = await world()
+    const google = await fakePush(friend.user.id)
+    const phone = await homeSocket(friend.user.id, friend.token, { mobile: true })
+    await phone.next('ready')
+    phone.send({ t: 'push.token', token: TOKEN_A })
+    const homeA = await homeSocket(owner.user.id, owner.token)
+    await homeA.next('ready')
+    homeA.send({ t: 'dm.open', userId: friend.user.id, reqId: 'o' })
+    await homeA.next('dm.channel')
+    const channelId = dmChannelId(owner.user.id, friend.user.id)
+
+    homeA.send({ t: 'call.ring', channelId, video: false })
+    await until(() => google.sent.length === 1)
+    await tick(200)
+    // Tocando ainda: o aviso fica.
+    expect(dismissed(google)).toEqual([])
+    homeA.send({ t: 'call.hangup', channelId })
+    await until(() => dismissed(google).length === 1)
+    expect(dismissed(google)).toEqual([`call:${channelId}`])
+  })
+
+  it('servidor: o canal lido sai do celular; quem não tem celular para de ser perguntado por um tempo', async () => {
+    const { owner, friend, guild, a, b, text } = await world()
+    const google = await fakePush(friend.user.id)
+    const phone = await homeSocket(friend.user.id, friend.token, { mobile: true })
+    await phone.next('ready')
+    phone.send({ t: 'push.token', token: TOKEN_A })
+    await tick(50)
+
+    a.send({ t: 'chat.send', channelId: text.id, content: 'bom dia', attachmentIds: [], nonce: '1' })
+    const message = (await b.next('chat.message', (m) => m.nonce === '1')).message
+    await until(() => google.sent.length === 1)
+    b.send({ t: 'chat.ack', channelId: text.id, messageId: message.id })
+    await b.next('read.state')
+    await until(() => dismissed(google).length === 1)
+    expect(dismissed(google)).toEqual([`channel:${text.id}`])
+
+    // O dono não tem celular com push: depois do primeiro "lido", o Guild não chama o Home dele toda vez.
+    b.send({ t: 'chat.send', channelId: text.id, content: 'oi', attachmentIds: [], nonce: '2' })
+    const reply = (await a.next('chat.message', (m) => m.nonce === '2')).message
+    a.send({ t: 'chat.ack', channelId: text.id, messageId: reply.id })
+    await a.next('read.state')
+    await tick(200)
+    const skipped = await runInDurableObject(env.GUILD.get(env.GUILD.idFromName(guild.id)), (instance) =>
+      (instance as unknown as { noPush: Map<string, number> }).noPush.has(owner.user.id),
+    )
+    expect(skipped).toBe(true)
+  })
+})
+
+/** A última mensagem da conversa, vista por quem manda (pra marcar como lida). */
+async function lastDm(socket: Awaited<ReturnType<typeof homeSocket>>, channelId: string) {
+  socket.send({ t: 'dm.history', reqId: 'h', channelId })
+  const { messages } = await socket.next('dm.history', (m) => m.reqId === 'h')
+  return messages.at(-1)!
+}

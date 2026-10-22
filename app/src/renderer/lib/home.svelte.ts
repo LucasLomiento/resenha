@@ -45,6 +45,8 @@ export interface HomeHost {
   attention(): boolean
   /** Celular: resultado do aviso de teste do push. */
   pushTested(result: PushTestResult): void
+  /** Leu a conversa até ali (aqui ou em outro aparelho): o aviso dela sai da tela. */
+  seen(tag: string, lastReadId: string | null): void
 }
 
 export interface DmCall {
@@ -308,6 +310,7 @@ export class HomeState {
           if (message.authorId === this.me?.id) {
             dm.unread = 0
             dm.lastReadId = message.id
+            this.host.seen(`dm:${channelId}`, message.id)
           } else if (this.host.viewing(channelId)) {
             this.ack(channelId)
           } else {
@@ -353,6 +356,7 @@ export class HomeState {
           dm.unread = msg.unread
           dm.lastReadId = msg.lastReadId
         }
+        this.host.seen(`dm:${msg.channelId}`, msg.lastReadId)
         return
       }
 

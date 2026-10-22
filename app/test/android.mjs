@@ -88,6 +88,8 @@ async function inviteFor(guildId, token) {
 
 /** Manda uma mensagem privada pelo Home de quem escreve (como o app faz). */
 async function sendDm(from, toUserId, content) {
+  // Um nonce por mensagem: o servidor trata nonce repetido como reenvio da mesma.
+  const nonce = crypto.randomUUID()
   const ws = new WebSocket(`${SERVER.replace('http', 'ws')}/api/home/${from.user.id}/ws`)
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error('a mensagem privada não saiu')), 10_000)
@@ -96,12 +98,34 @@ async function sendDm(from, toUserId, content) {
       const msg = JSON.parse(event.data)
       if (msg.t === 'ready') ws.send(JSON.stringify({ t: 'dm.open', userId: toUserId, reqId: 'o' }))
       if (msg.t === 'dm.channel' && msg.reqId === 'o') {
-        ws.send(JSON.stringify({ t: 'dm.send', channelId: msg.channel.id, content, attachmentIds: [], nonce: 'n' }))
+        ws.send(JSON.stringify({ t: 'dm.send', channelId: msg.channel.id, content, attachmentIds: [], nonce }))
       }
-      if (msg.t === 'dm.message' && msg.nonce === 'n') {
+      if (msg.t === 'dm.message' && msg.nonce === nonce) {
         clearTimeout(timer)
         ws.close()
         resolve(msg.channelId)
+      }
+    }
+  })
+}
+
+/** Marca a conversa com `peerId` como lida por uma conexão à parte (como o computador da mesma pessoa). */
+async function readDm(account, peerId) {
+  const ws = new WebSocket(`${SERVER.replace('http', 'ws')}/api/home/${account.user.id}/ws`)
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('a conversa não foi marcada como lida')), 10_000)
+    ws.onopen = () => ws.send(JSON.stringify({ t: 'auth', token: account.token }))
+    ws.onmessage = (event) => {
+      const msg = JSON.parse(event.data)
+      if (msg.t === 'ready') ws.send(JSON.stringify({ t: 'dm.open', userId: peerId, reqId: 'o' }))
+      if (msg.t === 'dm.channel' && msg.reqId === 'o') ws.send(JSON.stringify({ t: 'dm.history', reqId: 'h', channelId: msg.channel.id }))
+      if (msg.t === 'dm.history' && msg.reqId === 'h') {
+        ws.send(JSON.stringify({ t: 'dm.ack', channelId: msg.channelId, messageId: msg.messages.at(-1).id }))
+      }
+      if (msg.t === 'dm.read') {
+        clearTimeout(timer)
+        ws.close()
+        resolve()
       }
     }
   })
@@ -355,6 +379,28 @@ try {
         .then(() => true, () => false))
     check(opened && (await pane(page)) === 'main', 'tocar no aviso abre a conversa')
     await shot(page, '13-aberto-pelo-push')
+
+    // Lida no computador: o aviso sai da gaveta do celular (push só de dados, com o app no fundo).
+    // A gaveta ainda recolhendo gasta o "home": espera ela fechar antes.
+    adb('shell', 'cmd', 'statusbar', 'collapse')
+    await page.waitForTimeout(800)
+    adb('shell', 'input', 'keyevent', 'KEYCODE_HOME')
+    await page.waitForTimeout(1500)
+    await sendDm(duarte, owner.user.id, 'lida no computador')
+    let unread = []
+    for (let i = 0; i < 40 && !unread.length; i++) {
+      unread = notifications().filter((n) => n.text === 'lida no computador')
+      if (!unread.length) await new Promise((r) => setTimeout(r, 500))
+    }
+    await readDm(owner, duarte.user.id)
+    let left = unread
+    for (let i = 0; i < 40 && left.length; i++) {
+      await new Promise((r) => setTimeout(r, 500))
+      left = notifications().filter((n) => n.text === 'lida no computador')
+    }
+    check(unread.length === 1 && left.length === 0, 'lida no computador, a mensagem sai dos avisos do celular', `${unread.length} → ${left.length}`)
+    adb('shell', 'am', 'start', '-n', `${PACKAGE}/.MainActivity`)
+    await page.waitForTimeout(1000)
 
     // Aviso de teste (Configurações → Notificações): chega com o app no fundo, mesmo com o computador olhando.
     // A gaveta de notificações do sistema pode ainda estar recolhendo e gastar o voltar: fecha ela e usa a setinha.

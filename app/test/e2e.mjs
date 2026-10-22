@@ -63,6 +63,16 @@ async function launch(profile) {
     // LANGUAGE: perfil novo segue o idioma do sistema; o teste procura os textos em português.
     env: { ...process.env, RESENHA_PROFILE: profile, RESENHA_HIDDEN: '1', RESENHA_INK_DRY: '1', LANGUAGE: 'pt_BR' },
   })
+  // Os avisos do sistema ficam anotados no processo principal, sem aparecer na tela de quem roda o teste.
+  await app.evaluate(({ Notification }) => {
+    const log = (globalThis.__notices = [])
+    Notification.prototype.show = function () {
+      log.push({ title: this.title, body: this.body, closed: false, ref: this })
+    }
+    Notification.prototype.close = function () {
+      for (const notice of log) if (notice.ref === this) notice.closed = true
+    }
+  })
   const page = await app.firstWindow()
   // As conexões com os servidores passam pelo teste, pra dar pra derrubar uma no meio (queda de rede).
   const guildSockets = []
@@ -99,6 +109,62 @@ async function launch(profile) {
     return guildSockets.length > before
   }
   return { app, page, dropGuild, guildSockets }
+}
+
+/** Os avisos do sistema de um dos lados (anotados no processo principal). */
+const notices = (side) => side.app.evaluate(() => globalThis.__notices.map(({ title, body, closed }) => ({ title, body, closed })))
+
+/**
+ * A janela escondida do teste responde que está em foco, e com foco o app não manda aviso do
+ * sistema: `away` faz a pessoa "sair da frente" (e voltar) só pro app daquele lado.
+ */
+const away = (side, on) =>
+  side.page.evaluate((on) => {
+    if (on) document.hasFocus = () => false
+    else delete document.hasFocus
+  }, on)
+
+/** Espera um aviso aparecer (`closed: false`) ou sumir (`closed: true`); devolve o último com esse texto. */
+async function noticeFor(side, text, closed) {
+  let found = null
+  for (let i = 0; i < 50; i++) {
+    found = (await notices(side)).filter((n) => n.title.includes(text) || n.body.includes(text)).at(-1) ?? null
+    if (found && found.closed === closed) return found
+    await side.page.waitForTimeout(100)
+  }
+  return found
+}
+
+/**
+ * Outro aparelho da mesma pessoa (como o celular): uma conexão à parte com o Home dela, que
+ * manda uma mensagem privada (`content`) ou marca a conversa com `peerId` como lida.
+ */
+async function otherDevice(account, peerId, content = null) {
+  // Um nonce por mensagem: o servidor trata nonce repetido como reenvio da mesma.
+  const nonce = crypto.randomUUID()
+  const ws = new WebSocket(`${SERVER.replace('http', 'ws')}/api/home/${account.user.id}/ws`)
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('o outro aparelho não terminou')), 10_000)
+    const done = () => {
+      clearTimeout(timer)
+      ws.close()
+      resolve()
+    }
+    ws.onopen = () => ws.send(JSON.stringify({ t: 'auth', token: account.token }))
+    ws.onmessage = (event) => {
+      const msg = JSON.parse(event.data)
+      if (msg.t === 'ready') ws.send(JSON.stringify({ t: 'dm.open', userId: peerId, reqId: 'o' }))
+      if (msg.t === 'dm.channel' && msg.reqId === 'o') {
+        if (content) ws.send(JSON.stringify({ t: 'dm.send', channelId: msg.channel.id, content, attachmentIds: [], nonce }))
+        else ws.send(JSON.stringify({ t: 'dm.history', reqId: 'h', channelId: msg.channel.id }))
+      }
+      if (msg.t === 'dm.message' && msg.nonce === nonce) done()
+      if (msg.t === 'dm.history' && msg.reqId === 'h') {
+        ws.send(JSON.stringify({ t: 'dm.ack', channelId: msg.channelId, messageId: msg.messages.at(-1).id }))
+      }
+      if (msg.t === 'dm.read') done()
+    }
+  })
 }
 
 /** Família de IP do caminho em uso na primeira conexão da call (pelas estatísticas do WebRTC). */
@@ -937,25 +1003,38 @@ try {
   ])
   check(pioneer.join(',') === '1,0', 'A vê o selo de Pioneiro no Duarte (a primeira conta depois do dono), e só nele', pioneer.join(','))
   await a.page.getByRole('button', { name: 'Mensagem', exact: true }).click({ force: true })
+  await away(b, true)
   await a.page.getByPlaceholder('Mensagem pra Duarte').fill('oi no privado')
   await a.page.keyboard.press('Enter')
   await b.page.getByRole('button', { name: 'Mensagem de Lucas', exact: true }).waitFor({ timeout: 5000 })
   await shot(b, '3-dm-nao-lida')
+  const dmNotice = await noticeFor(b, 'oi no privado', false)
+  check(dmNotice?.title === 'Lucas' && !dmNotice.closed, 'a mensagem privada vira aviso do sistema (com a janela fora de foco)', JSON.stringify(dmNotice))
+  await away(b, false)
   await b.page.getByRole('button', { name: 'Mensagem de Lucas', exact: true }).click({ force: true })
   await b.page.locator('.scroller').getByText('oi no privado').waitFor({ timeout: 5000 })
   check(true, 'mensagem privada chega, aparece no trilho e abre')
+  check((await noticeFor(b, 'oi no privado', true))?.closed === true, 'abrir a conversa tira o aviso dela da tela')
   await shot(b, '3b-dm')
 
   // Ligação privada: A liga, B atende, os dois ficam na call; A desliga.
   await fakeMic(a.page)
   await fakeMic(b.page)
+  await away(b, true)
   await a.page.getByRole('button', { name: 'Ligar', exact: true }).first().click({ force: true })
   await b.page.getByRole('button', { name: 'Atender', exact: true }).waitFor({ timeout: 10_000 })
   await shot(b, '4-ligacao')
+  const ringNotice = await noticeFor(b, 'está te ligando', false)
+  await away(b, false)
   await b.page.getByRole('button', { name: 'Atender', exact: true }).click({ force: true })
   await a.page.locator('.dock .status', { hasText: 'Na call' }).waitFor({ timeout: 10_000 })
   await b.page.locator('.dock .status', { hasText: 'Na call' }).waitFor({ timeout: 10_000 })
   check(true, 'ligação privada: B atende e os dois entram na call')
+  check(
+    ringNotice?.closed === false && (await noticeFor(b, 'está te ligando', true))?.closed === true,
+    'o aviso "está te ligando" aparece e sai quando B atende',
+    JSON.stringify(ringNotice),
+  )
   // Como no Discord: quem fica sozinho continua na chamada até desligar também.
   await a.page.getByRole('button', { name: 'Sair da call', exact: true }).click({ force: true })
   await a.page.locator('.dock .status').waitFor({ state: 'detached', timeout: 10_000 })
@@ -967,6 +1046,18 @@ try {
     await side.page.getByRole('button', { name: 'Turma', exact: true }).click({ force: true })
     await channel(side.page, 'geral').click({ force: true })
   }
+
+  // Lida em outro aparelho (o celular de B): o aviso some do computador, como no Discord.
+  await away(b, true)
+  await otherDevice(owner, duarte.user.id, 'viu no celular?')
+  const elsewhere = await noticeFor(b, 'viu no celular?', false)
+  await otherDevice(duarte, owner.user.id)
+  check(
+    elsewhere?.closed === false && (await noticeFor(b, 'viu no celular?', true))?.closed === true,
+    'lida em outro aparelho, a mensagem privada sai dos avisos do computador',
+    JSON.stringify(elsewhere),
+  )
+  await away(b, false)
 
   // Call P2P no canal de voz. O servidor do teste não tem TURN: A ganha um de mentira, pra conferir
   // que a sala direta não usa (tudo P2P; o TURN só vale na sala pelo Cloudflare).

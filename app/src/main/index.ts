@@ -17,7 +17,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync 
 import { dirname, join } from 'node:path'
 import type { CallState, CaptureSource, DesktopPrefs, PlatformInfo, SavedSession, ShortcutAction } from '../preload/api'
 import { attachContextMenu } from './context-menu'
-import { appIcon, hasTray, onTrayUnavailable, registerShortcuts, setAutostart, setTray, showCallState } from './desktop'
+import { appIcon, closeNotice, hasTray, onTrayUnavailable, registerShortcuts, setAutostart, setTray, showCallState, showNotice } from './desktop'
 import { isLocale, localeFrom, mainLocale, setMainLocale, tm, type Locale } from './i18n'
 import { clearHyprShortcuts } from './hyprland'
 import { inkEvent, inkMonitors, inkStart, inkStop, onInkClosed } from './ink'
@@ -389,6 +389,14 @@ listen('attention', () => {
   if (win && !win.isFocused()) win.flashFrame(true)
 })
 listen('show-window', () => showWindow())
+
+listen('notify', (_event, tag: unknown, title: unknown, body: unknown) => {
+  if (typeof tag !== 'string' || typeof title !== 'string' || typeof body !== 'string') return
+  showNotice(tag, title, body, () => win?.webContents.send('notify:click', tag))
+})
+listen('notify:close', (_event, tag: unknown) => {
+  if (typeof tag === 'string') closeNotice(tag)
+})
 
 listen('download', (_event, url: string) => {
   if (/^https?:\/\//.test(url)) win?.webContents.downloadURL(url)

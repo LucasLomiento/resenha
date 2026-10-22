@@ -1653,6 +1653,7 @@ export class Guild extends DurableObject<Env> {
         // Nunca depois da última mensagem do canal (um id "do futuro" marcava tudo como lido pra sempre).
         const last = this.store.lastIds([channel.id])[channel.id]
         const read = this.markRead(userId, channel.id, last && msg.messageId > last ? last : msg.messageId)
+        this.ctx.waitUntil(this.pushSeen(userId, channel.id, read.lastReadId))
         return this.broadcast({ t: 'read.state', state: read }, { userId })
       }
 
@@ -1973,6 +1974,7 @@ export class Guild extends DurableObject<Env> {
     const input = {
       guildId: this.id,
       channelId: channel.id,
+      messageId: message.id,
       author: this.displayName(message.authorId) ?? '…',
       channel: channel.name,
       server: this.info().name,
@@ -1985,6 +1987,15 @@ export class Guild extends DurableObject<Env> {
     results.forEach((r, i) => {
       if (r.status === 'fulfilled' && r.value === false) this.noPush.set(targets[i].user_id, now + NO_PUSH_TTL)
     })
+  }
+
+  /** Leu o canal: o aviso dele sai do celular (o Home sabe se mandou um). Quem não tem celular com push não é perguntado. */
+  private async pushSeen(userId: string, channelId: string, lastReadId: string | null) {
+    if ((this.noPush.get(userId) ?? 0) > Date.now()) return
+    const devices = await home(this.env, userId)
+      .pushSeen(`channel:${channelId}`, lastReadId)
+      .catch(() => true)
+    if (!devices) this.noPush.set(userId, Date.now() + NO_PUSH_TTL)
   }
 
   /** Busca as prévias dos links (depois que a mensagem já chegou pra todo mundo). */

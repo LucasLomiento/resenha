@@ -1,6 +1,15 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { ResenhaApi, ShortcutAction, UpdateState } from './api'
 
+/** O que cada aviso do sistema faz ao ser clicado, pela etiqueta (sem etiqueta, uma só dele). */
+const noticeClicks = new Map<string, () => void>()
+let noticeSeq = 0
+ipcRenderer.on('notify:click', (_event, tag: string) => {
+  const click = noticeClicks.get(tag)
+  noticeClicks.delete(tag)
+  click?.()
+})
+
 const api: ResenhaApi = {
   platform: () => ipcRenderer.invoke('platform:info'),
   session: {
@@ -52,6 +61,16 @@ const api: ResenhaApi = {
   },
   attention: () => ipcRenderer.send('attention'),
   showWindow: () => ipcRenderer.send('show-window'),
+  notify: (title, options, onclick) => {
+    const tag = options.tag ?? `aviso-${++noticeSeq}`
+    if (onclick) noticeClicks.set(tag, onclick)
+    else noticeClicks.delete(tag)
+    ipcRenderer.send('notify', tag, title, options.body)
+  },
+  dismissNotification: (tag) => {
+    noticeClicks.delete(tag)
+    ipcRenderer.send('notify:close', tag)
+  },
   pendingInvite: () => ipcRenderer.invoke('invite:pending'),
   onInvite: (callback) => {
     ipcRenderer.on('invite', (_event, code: string) => callback(code))

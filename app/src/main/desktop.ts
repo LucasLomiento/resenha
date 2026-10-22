@@ -1,7 +1,7 @@
 // Integração com o sistema: ícone na bandeja, botões na barra de tarefas do
-// Windows, atalhos globais e abrir junto com o computador.
+// Windows, avisos do sistema, atalhos globais e abrir junto com o computador.
 
-import { app, BrowserWindow, globalShortcut, Menu, nativeImage, Tray, type NativeImage } from 'electron'
+import { app, BrowserWindow, globalShortcut, Menu, nativeImage, Notification, Tray, type NativeImage } from 'electron'
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
@@ -203,6 +203,39 @@ onLocaleChange(() => {
   taskbarOverlay(lastState, lastWin)
   taskbarButtons(lastState, lastWin, actions.dispatch)
 })
+
+// ---------- Avisos do sistema ----------
+
+/**
+ * Os avisos na tela, pela etiqueta (um por conversa). Saem daqui, e não do Notification da página,
+ * porque precisam poder sair depois (a pessoa leu em outro aparelho): no Windows o `close()` do
+ * Notification do Electron tira o aviso até da central de notificações, enquanto o objeto existir.
+ */
+const notices = new Map<string, Notification>()
+/** Guardados no máximo (os mais velhos já foram vistos ou ficaram esquecidos na central). */
+const MAX_NOTICES = 100
+
+/** Mostra o aviso; o novo com a mesma etiqueta troca o anterior. */
+export function showNotice(tag: string, title: string, body: string, onClick: () => void) {
+  closeNotice(tag)
+  const notice = new Notification({ title, body, silent: true })
+  notice.on('click', () => {
+    notices.delete(tag)
+    onClick()
+  })
+  notices.set(tag, notice)
+  for (const old of notices.keys()) {
+    if (notices.size <= MAX_NOTICES) break
+    notices.delete(old)
+  }
+  notice.show()
+}
+
+/** Tira o aviso dessa etiqueta, se ainda estiver na tela ou na central. */
+export function closeNotice(tag: string) {
+  notices.get(tag)?.close()
+  notices.delete(tag)
+}
 
 // ---------- Atalhos globais ----------
 

@@ -48,6 +48,8 @@ export interface GuildHost {
   signal(guild: GuildState, from: string, data: SignalData): void
   /** A pessoa está olhando esse canal agora (janela em foco). */
   viewing(guildId: string, channelId: string): boolean
+  /** Leu o canal até ali (aqui ou em outro aparelho): o aviso dele sai da tela. */
+  seen(tag: string, lastReadId: string | null): void
 }
 
 export interface ChannelGroup {
@@ -448,6 +450,7 @@ export class GuildState {
         if (typing) delete typing[message.authorId]
         if (message.authorId === this.meId) {
           this.readStates[channelId] = { channelId, lastReadId: message.id, mentions: 0 }
+          this.host.seen(`channel:${channelId}`, message.id)
           return
         }
         if (this.host.viewing(this.id, channelId)) {
@@ -482,6 +485,7 @@ export class GuildState {
 
       case 'read.state':
         this.readStates[msg.state.channelId] = msg.state
+        this.host.seen(`channel:${msg.state.channelId}`, msg.state.lastReadId)
         return
 
       case 'typing':

@@ -226,8 +226,10 @@ export interface ResenhaApi {
   pendingInvite(): Promise<string | null>
   /** Convite aberto por um link resenha:// com o app já aberto. */
   onInvite(callback: (code: string) => void): void
-  /** Aviso do sistema. Sem isso (computador), o app usa o Notification do navegador. */
-  notify?(title: string, body: string, onclick?: () => void): void
+  /** Aviso do sistema. `tag`: o novo com a mesma etiqueta troca o anterior (um por conversa). */
+  notify(title: string, options: { body: string; tag?: string }, onclick?: () => void): void
+  /** Tira o aviso dessa etiqueta (a pessoa já viu, aqui ou em outro aparelho). */
+  dismissNotification(tag: string): void
   /** Celular: notificação push (Firebase). Sem isso (computador, ou APK sem Firebase), os avisos são os do app aberto. */
   push?: {
     /** O token deste aparelho (pede a permissão na primeira vez); null se não deu. */
