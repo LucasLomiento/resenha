@@ -51,9 +51,14 @@ function alertName(state: CallState) {
   return null
 }
 
-/** Ensurdecido > mutado > falando (verde inteiro) > normal. */
+/** Ícone que não pisca: o aviso, ou o microfone verde enquanto está na call. */
+function steadyName(state: CallState) {
+  return alertName(state) ?? (state.inCall ? 'tray-call' : null)
+}
+
+/** Ensurdecido > mutado > falando (verde claro) > na call (verde) > normal. */
 function iconName(state: CallState) {
-  return alertName(state) ?? (state.inCall && state.speaking ? 'tray-speaking' : 'tray')
+  return alertName(state) ?? (state.inCall ? (state.speaking ? 'tray-speaking' : 'tray-call') : 'tray')
 }
 
 function stateIcon(state: CallState) {
@@ -75,7 +80,7 @@ function trayMenu(state: CallState, show: () => void, dispatch: Dispatch) {
 
 function trayTooltip(state: CallState) {
   const t = tm().tray
-  return state.deafened ? t.deafened : state.muted ? t.muted : 'Resenha'
+  return state.deafened ? t.deafened : state.muted ? t.muted : state.inCall ? t.inCall : 'Resenha'
 }
 
 export function setTray(enabled: boolean, show: () => void, dispatch: Dispatch) {
@@ -143,13 +148,14 @@ export function showCallState(state: CallState, win: BrowserWindow | null, show:
   // Linux: a janela também troca de ícone (barra de tarefas do KDE e afins). Falando não troca,
   // porque acende e apaga várias vezes por segundo.
   if (process.platform === 'linux') {
-    const alert = alertName(state)
-    if (alert !== alertName(previous)) win.setIcon(alert ? image(alert, 64) : appIcon())
+    const steady = steadyName(state)
+    if (steady !== steadyName(previous)) win.setIcon(steady ? image(steady, 64) : appIcon())
     return
   }
   if (process.platform !== 'win32') return
 
-  // Windows: selo no ícone da barra de tarefas (verde falando, vermelho mutado) e botões na miniatura.
+  // Windows: selo no ícone da barra de tarefas (verde na call, verde claro falando, vermelho mutado)
+  // e botões na miniatura.
   if (iconChanged) taskbarOverlay(state, win)
   if (menuChanged) taskbarButtons(state, win, dispatch)
 }
@@ -157,7 +163,12 @@ export function showCallState(state: CallState, win: BrowserWindow | null, show:
 function taskbarOverlay(state: CallState, win: BrowserWindow) {
   const t = tm().taskbar
   const name = iconName(state)
-  const label = state.deafened ? t.deafened : state.muted ? t.muted : name === 'tray-speaking' ? t.speaking : ''
+  const label =
+    state.deafened ? t.deafened
+    : state.muted ? t.muted
+    : name === 'tray-speaking' ? t.speaking
+    : name === 'tray-call' ? t.inCall
+    : ''
   win.setOverlayIcon(name === 'tray' ? null : image(name, 16), label)
 }
 
@@ -168,7 +179,7 @@ function taskbarButtons(state: CallState, win: BrowserWindow, dispatch: Dispatch
       ? [
           {
             tooltip: state.muted ? t.unmute : t.mute,
-            icon: image(state.muted ? 'tray-muted' : 'tray', 16),
+            icon: image(state.muted ? 'tray-muted' : 'tray-call', 16),
             click: () => dispatch('toggle-mute'),
           },
           {

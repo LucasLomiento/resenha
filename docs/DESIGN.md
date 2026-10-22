@@ -14,7 +14,7 @@ Guia da interface: o que o app parece, por quê, e como fazer tela nova sem dest
 ## Identidade
 
 - **Ícone:** balão rindo com headset azul, sobre squircle grafite com o brilho do acento (`app/build/icon.svg`; os tamanhos pequenos são desenhados à parte, na grade de pixels). Os PNG e o `.ico` saem do `app/build/render-icons.sh`.
-- **Bandeja:** normal é o ícone; falando, ele fica verde inteiro; mutado ou ensurdecido, vira um quadrado vermelho com o microfone ou o fone cortado (o tray do Omarchy desenha a 12 px, então nada de selo no canto). No Linux a janela troca de ícone junto; no Windows o aviso vai como selo na barra de tarefas.
+- **Bandeja:** fora da call é o ícone; na call com o microfone aberto, vira um quadrado verde com o microfone branco, que clareia enquanto você fala (como a bolinha do Discord); mutado ou ensurdecido, um quadrado vermelho com o microfone ou o fone cortado (o tray do Omarchy desenha a 12 px, então nada de selo no canto: a cor do ícone inteiro é o aviso). No Linux a janela troca de ícone junto (verde na call e vermelho, sem piscar quando fala); no Windows o mesmo ícone vai como selo na barra de tarefas.
 - **Degradê da marca:** `--brand-gradient` (#78c4ff → #4f8cff → #3d6bff). Usar pouco: borda do ícone de boas-vindas do canal, estado vazio.
 - **Fundo da janela:** uma luz azul bem fraca no alto à esquerda (5%), que some atrás do painel.
 - **Tipografia de marca:** **Bricolage Grotesque** (com tamanho óptico) nos títulos: nome do servidor, cabeçalho do painel, boas-vindas do canal, título de página, de modal e de seção, e o login. O resto da interface continua em Geist.

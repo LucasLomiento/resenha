@@ -19,15 +19,17 @@ const pt = {
     deafen: 'Ensurdecer',
     leave: 'Sair da call',
     quit: 'Fechar o Resenha',
-    /** Dica do ícone mutado ou ensurdecido (o normal é só "Resenha"). */
+    /** Dica do ícone mutado, ensurdecido ou na call (o normal é só "Resenha"). */
     muted: 'Resenha · mutado',
     deafened: 'Resenha · ensurdecido',
+    inCall: 'Resenha · na call',
   },
   /** Barra de tarefas do Windows: selo no ícone e botões na miniatura. */
   taskbar: {
     muted: 'Mutado',
     deafened: 'Ensurdecido',
     speaking: 'Falando',
+    inCall: 'Na call',
     mute: 'Mutar',
     unmute: 'Desmutar',
     deafen: 'Ensurdecer',
@@ -92,11 +94,13 @@ const en: typeof pt = {
     quit: 'Quit Resenha',
     muted: 'Resenha · muted',
     deafened: 'Resenha · deafened',
+    inCall: 'Resenha · in a call',
   },
   taskbar: {
     muted: 'Muted',
     deafened: 'Deafened',
     speaking: 'Speaking',
+    inCall: 'In a call',
     mute: 'Mute',
     unmute: 'Unmute',
     deafen: 'Deafen',
@@ -154,11 +158,13 @@ const es: typeof pt = {
     quit: 'Cerrar Resenha',
     muted: 'Resenha · silenciado',
     deafened: 'Resenha · ensordecido',
+    inCall: 'Resenha · en llamada',
   },
   taskbar: {
     muted: 'Silenciado',
     deafened: 'Ensordecido',
     speaking: 'Hablando',
+    inCall: 'En llamada',
     mute: 'Silenciar',
     unmute: 'Quitar silencio',
     deafen: 'Ensordecer',

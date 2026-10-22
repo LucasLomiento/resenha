@@ -13,7 +13,7 @@ for s in 16 24 32; do rsvg-convert -w $s -h $s icon-$s.svg -o "$tmp/$s.png"; don
 for s in 48 64 128 256; do rsvg-convert -w $s -h $s icon.svg -o "$tmp/$s.png"; done
 magick "$tmp"/{16,24,32,48,64,128,256}.png icon.ico
 
-for n in tray tray-speaking tray-muted tray-deafened; do
+for n in tray tray-call tray-speaking tray-muted tray-deafened; do
   rsvg-convert -w 32 -h 32 $n.svg -o $n.png
   rsvg-convert -w 64 -h 64 $n.svg -o $n@2x.png
 done
