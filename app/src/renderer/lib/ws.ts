@@ -28,7 +28,7 @@ const CLOSE_PAUSE = 4008
  * mensagem que chega lá é um pedido na cota diária, que é de todo mundo. Fica abaixo do
  * orçamento do servidor (`server/src/budget.ts`), que pausa a conexão.
  */
-const SEND_BURST = 60
+const SEND_BURST = 150
 const SEND_RATE = 2
 const SEND_HOUR = 2000
 const SEND_DAY = 6000

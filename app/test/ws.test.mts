@@ -49,7 +49,7 @@ function connection() {
 
 const messages = (socket: FakeSocket) => socket.sent.filter((s) => s !== 'ping' && !s.includes('"auth"'))
 
-test('o limite de envio segura um app em laço: rajada de 60, depois 2 por segundo', () => {
+test('o limite de envio segura um app em laço: rajada de 150, depois 2 por segundo', () => {
   mock.timers.enable({ apis: ['setTimeout', 'setInterval', 'Date'], now: 1_000_000 })
   try {
     FakeSocket.all = []
@@ -57,15 +57,15 @@ test('o limite de envio segura um app em laço: rajada de 60, depois 2 por segun
     conn.connect()
     const socket = FakeSocket.all[0]
     socket.accept()
-    for (let i = 0; i < 150; i++) assert.equal(conn.send({ t: 'x', n: i }), true)
-    assert.equal(messages(socket).length, 60)
+    for (let i = 0; i < 300; i++) assert.equal(conn.send({ t: 'x', n: i }), true)
+    assert.equal(messages(socket).length, 150)
     assert.equal(limited.length, 1)
     mock.timers.tick(2000)
     for (let i = 0; i < 20; i++) conn.send({ t: 'x' })
-    assert.equal(messages(socket).length, 64)
+    assert.equal(messages(socket).length, 154)
     // O aviso de descarte passa por fora do limite.
     conn.send({ t: 'incident' }, true)
-    assert.equal(messages(socket).length, 65)
+    assert.equal(messages(socket).length, 155)
     conn.close()
   } finally {
     mock.timers.reset()

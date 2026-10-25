@@ -25,7 +25,7 @@ export const RPC = 1
  * da sinalização (300 sinais = 900 pedidos), que dispara antes e tira a conexão da call.
  */
 export const LIMITS = [
-  { window: 10 * MINUTE, max: 1000 },
+  { window: 10 * MINUTE, max: 1500 },
   { window: HOUR, max: 4000 },
   { window: DAY, max: 10_000 },
 ] as const

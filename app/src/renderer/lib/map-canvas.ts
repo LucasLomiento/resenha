@@ -33,13 +33,16 @@ export interface SharedMapEvents {
   failed(): void
 }
 
-/** Vista mandada no máximo a cada 80 ms (~12 por segundo) enquanto mexe, e a última ao parar. */
-const SEND_EVERY = 80
-const POINTER_EVERY = 100
+/**
+ * Vista e cursor mandados no máximo a cada 200 ms (5 por segundo cada) enquanto mexe, e o último
+ * ao parar. Cada um é um pedido na cota diária do Cloudflare (era 12 e 10 por segundo).
+ */
+const SEND_EVERY = 200
+const POINTER_EVERY = 200
 /** Cursor parado por esse tempo some. */
 const CURSOR_IDLE = 8000
 /** A vista dos outros chegando em sequência: o mapa segue colado; depois de uma pausa, desliza. */
-const FOLLOW_MS = 110
+const FOLLOW_MS = 230
 const SETTLE_MS = 420
 
 const PIN_SVG =
@@ -241,7 +244,7 @@ export class SharedMap {
     const camera = { center: [view.lng, view.lat] as [number, number], zoom: view.zoom, bearing: view.bearing, pitch: view.pitch }
     if (how === 'jump') return void this.map.jumpTo(camera, { remote: true })
     const now = performance.now()
-    const streaming = now - this.remoteAt < 300
+    const streaming = now - this.remoteAt < 450
     this.remoteAt = now
     if (streaming) this.map.easeTo({ ...camera, duration: FOLLOW_MS, easing: (t) => t, essential: true }, { remote: true })
     else this.map.easeTo({ ...camera, duration: SETTLE_MS, essential: true }, { remote: true })

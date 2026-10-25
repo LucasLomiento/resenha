@@ -27,6 +27,8 @@ export const PIN_COLORS = [0x4f8cff, 0xff7a93, 0x36d6ad, 0xffc35a, 0xff9a4d, 0xe
 
 /** Mostra "fulano está movendo o mapa" até esse tempo depois da última vista que chegou. */
 const MOVER_FOR = 1200
+/** Sozinho no mapa: a vista vai só depois de parar de mexer (quem abrir depois começa nela). */
+const ALONE_SETTLE = 600
 
 /**
  * O mapa compartilhado de um servidor: quem está nele (aparece na lista de
@@ -44,6 +46,11 @@ export class GuildMap {
 
   private listener: MapListener | null = null
   private moverTimer: ReturnType<typeof setTimeout> | null = null
+  /** Esta conexão (pra saber se tem mais alguém no mapa). */
+  private connId: string | null = null
+  /** Vista esperando eu parar de mexer, com o mapa só pra mim. */
+  private aloneView: MapView | null = null
+  private aloneTimer: ReturnType<typeof setTimeout> | null = null
 
   /** `quiet`: sem aviso de "sem conexão" (vista e cursor vão muitas vezes por segundo). */
   constructor(private send: (msg: ClientMessage, quiet?: boolean) => boolean) {}
@@ -65,6 +72,7 @@ export class GuildMap {
 
   leave() {
     if (!this.listener) return
+    this.flushAlone()
     this.listener = null
     this.loaded = false
     this.setMover(null)
@@ -74,6 +82,7 @@ export class GuildMap {
   /** A conexão (re)abriu: com o mapa aberto, pede o estado de novo; fechado, garante que saiu. */
   ready(viewers: MapViewer[], connId: string) {
     this.viewers = viewers
+    this.connId = connId
     if (this.listener) this.send({ t: 'map.join' }, true)
     else if (viewers.some((v) => v.connId === connId)) this.send({ t: 'map.leave' }, true)
   }
@@ -82,6 +91,8 @@ export class GuildMap {
     switch (msg.t) {
       case 'map.viewers':
         this.viewers = msg.viewers
+        // Chegou alguém: a vista que eu segurava vai agora.
+        if (!this.alone()) this.flushAlone()
         return
 
       case 'map.state': {
@@ -122,12 +133,37 @@ export class GuildMap {
 
   // ---------- Ações ----------
 
+  /**
+   * Cada vista e cada cursor é um pedido na cota diária do Cloudflare: com mais alguém no mapa,
+   * vão enquanto mexe (o `SharedMap` já espaça); sozinho, o cursor não vai e a vista vai uma vez,
+   * ao parar.
+   */
   moveTo(view: MapView) {
+    if (this.alone()) {
+      this.aloneView = view
+      if (this.aloneTimer) clearTimeout(this.aloneTimer)
+      this.aloneTimer = setTimeout(() => this.flushAlone(), ALONE_SETTLE)
+      return
+    }
+    this.aloneView = null
     this.send({ t: 'map.view', view }, true)
   }
 
   cursor(at: { lng: number; lat: number } | null) {
+    if (this.alone()) return
     this.send({ t: 'map.cursor', lng: at?.lng ?? null, lat: at?.lat ?? null }, true)
+  }
+
+  private alone(): boolean {
+    return !this.viewers.some((v) => v.connId !== this.connId)
+  }
+
+  private flushAlone() {
+    if (this.aloneTimer) clearTimeout(this.aloneTimer)
+    this.aloneTimer = null
+    const view = this.aloneView
+    this.aloneView = null
+    if (view) this.send({ t: 'map.view', view }, true)
   }
 
   addPin(lng: number, lat: number, label: string, color: number): boolean {
