@@ -28,6 +28,7 @@ import type { Api } from './api'
 import { freshTail, mergeMessages } from './history'
 import { fmt, m, serverText } from './i18n.svelte'
 import { GuildMap } from './map.svelte'
+import { appInfo } from './app-info'
 import { Connection, connectionKey, type CloseReason, type ConnectionStatus } from './ws'
 
 /** O que o servidor precisa do resto do app (o Client implementa). */
@@ -127,7 +128,7 @@ export class GuildState {
     this.info = info
     this.conn = new Connection<ServerMessage, ClientMessage>(
       () => host.http().wsUrl(`/api/g/${encodeURIComponent(this.id)}/ws`),
-      () => ({ t: 'auth', token: host.token(), ...host.presence(), key: this.key }),
+      () => ({ t: 'auth', token: host.token(), ...host.presence(), key: this.key, ...appInfo }),
       {
         message: (msg) => this.handle(msg),
         status: (status) => (this.status = status),

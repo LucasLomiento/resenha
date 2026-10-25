@@ -17,6 +17,7 @@ import {
 import type { Api } from './api'
 import { m, serverText } from './i18n.svelte'
 import { freshTail, mergeMessages } from './history'
+import { appInfo } from './app-info'
 import { Connection, connectionKey, type CloseReason, type ConnectionStatus } from './ws'
 
 /** O que a conexão pessoal precisa do resto do app (o Client implementa). */
@@ -112,11 +113,14 @@ export class HomeState {
         // Celular: o servidor manda push pra ele mesmo com o app aberto em outro lugar (só o computador com a pessoa olhando segura).
         mobile: import.meta.env.VITE_MOBILE === '1' || undefined,
         attention: host.attention() || undefined,
+        ...appInfo,
       }),
       {
         message: (msg) => this.handle(msg),
         status: (status) => (this.status = status),
         closed: (reason) => host.closed(reason),
+        // O limite de envio do próprio app descartou mensagens: o dono fica sabendo (Plataforma).
+        limited: (detail) => this.conn.send({ t: 'incident', kind: 'send-limit', detail: `home: ${detail}` }, true),
       },
     )
   }

@@ -40,6 +40,9 @@ export interface AdminUser extends User {
   /** Pode passar uma sala de voz pelo Cloudflare (o dono sempre pode). */
   relay: boolean
   createdAt: number
+  /** Versão do app e sistema com que a pessoa conectou por último (null: app de antes da 1.17). */
+  appVersion: string | null
+  platform: string | null
 }
 
 export interface AdminPanel {
@@ -53,6 +56,12 @@ export interface AdminPanel {
   /** Mídia pelo Cloudflare (SFU + TURN) no mês, contada pelos apps. */
   mediaUsed: number
   mediaLimit: number
+  /**
+   * Freios que dispararam, os mais novos primeiro (até 100). `kind`: `home:signal-loop`,
+   * `guild:signal-loop`, `home:budget-10min`/`-1h`/`-1d`/`-pessoa-1d`, `guild:budget-…`,
+   * `home:reconnect`, `guild:reconnect` ou `app:<tipo>` (o que o app mandou).
+   */
+  incidents: { at: number; userId: string | null; kind: string; detail: string | null }[]
 }
 
 export interface Upload {

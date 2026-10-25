@@ -26,6 +26,7 @@ import { attachmentLabel } from './voice-note'
 import { settings } from './settings.svelte'
 import { playSound } from './sounds'
 import { ui } from './ui.svelte'
+import { setAppInfo } from './app-info'
 import type { CloseReason, ConnectionStatus } from './ws'
 
 /** O servidor da plataforma; definido no build (VITE_DEFAULT_SERVER) pra testes locais. */
@@ -215,6 +216,7 @@ class Client implements GuildHost, HomeHost {
 
   async boot() {
     this.platform = await window.resenha.platform()
+    setAppInfo(this.platform)
     const os = { win32: 'Windows', darwin: 'macOS', android: 'Android' }[this.platform.platform] ?? 'Linux'
     Api.device = `App no ${os}`
     this.desktop = await window.resenha.desktop.get()

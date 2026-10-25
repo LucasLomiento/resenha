@@ -6,8 +6,34 @@ export type CloseReason = 'unauthorized' | 'not-member' | 'gone'
 const PING_EVERY = 20_000
 /** Sem resposta a um ping nesse tempo, a conexão morreu (mesmo que o sistema ainda não tenha avisado). */
 const PONG_TIMEOUT = 10_000
-/** Espera entre as tentativas seguintes (a primeira é na hora). */
-const RETRY_DELAYS = [1000, 2000, 5000, 10_000]
+/**
+ * Espera entre as tentativas seguintes (a primeira é na hora). Depois de algumas, espaça até
+ * 1 min: com o servidor fora do ar (a cota do Cloudflare acabou em 25/10/2026), cada app tentando
+ * a cada 10 s o dia todo também pesava.
+ */
+const RETRY_DELAYS = [1000, 2000, 5000, 10_000, 30_000, 60_000]
+/**
+ * A espera só volta pro começo depois de a conexão ficar de pé esse tempo: uma que o servidor
+ * aceita e derruba logo em seguida (de propósito ou com bug) não vira laço de reconexão.
+ */
+const STABLE_AFTER = 30_000
+/** O servidor pausou este app (4008: mandou coisa demais): volta depois disso. */
+const PAUSE = 5 * 60_000
+/** Fechamento de pausa (ver `server/src/budget.ts`). */
+const CLOSE_PAUSE = 4008
+/**
+ * Teto do que o app manda, mesmo com bug: rajada de até `SEND_BURST` (candidatos da call, o
+ * começo de arrastar o mapa), `SEND_RATE` por segundo sustentado, `SEND_HOUR` por hora e
+ * `SEND_DAY` por dia. Passou, descarta e avisa no console: no plano grátis do Cloudflare cada
+ * mensagem que chega lá é um pedido na cota diária, que é de todo mundo. Fica abaixo do
+ * orçamento do servidor (`server/src/budget.ts`), que pausa a conexão.
+ */
+const SEND_BURST = 60
+const SEND_RATE = 2
+const SEND_HOUR = 2000
+const SEND_DAY = 6000
+/** O aviso de descarte (pro registro do dono) sai no máximo a cada 10 min. */
+const LIMITED_EVERY = 10 * 60_000
 /**
  * Tentativa que não chega ao `ready` nesse tempo é largada: num caminho que engole os pacotes
  * (troca de Wi-Fi, VPN), o sistema levava uns 2 min pra desistir de uma conexão "conectando".
@@ -23,6 +49,15 @@ const PROBE_TIMEOUT = 5000
 export function connectionKey(): string {
   const bytes = crypto.getRandomValues(new Uint8Array(18))
   return btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_')
+}
+
+export interface ConnectionHandlers<In> {
+  message: (msg: In) => void
+  status: (status: ConnectionStatus) => void
+  /** O servidor fechou de vez: sessão inválida, saiu do servidor ou ele foi excluído. */
+  closed: (reason: CloseReason) => void
+  /** O limite de envio descartou mensagens (no máximo a cada 10 min): pro registro do dono. */
+  limited?: (detail: string) => void
 }
 
 /**
@@ -46,18 +81,31 @@ export class Connection<In, Out> {
   private pongTimer: ReturnType<typeof setTimeout> | null = null
   private lastPong = 0
   private closed = false
+  /** Quando a conexão de agora chegou no `ready` (0: ainda não). */
+  private readyAt = 0
+  /** Pausado pelo servidor (4008) até esse instante: nem a rede voltando apressa. */
+  private pausedUntil = 0
+  /** Balde do limite de envio (`SEND_BURST`, `SEND_RATE`) e a conta da hora (`SEND_HOUR`). */
+  private tokens = SEND_BURST
+  private tokensAt = Date.now()
+  private hourStart = Date.now()
+  private hourSent = 0
+  private dayStart = Date.now()
+  private daySent = 0
+  private dropped = 0
+  private limitedAt = 0
 
-  constructor(
-    private url: () => string,
-    /** Primeira mensagem de cada conexão (o `auth` com o token). */
-    private hello: () => Out,
-    private handlers: {
-      message: (msg: In) => void
-      status: (status: ConnectionStatus) => void
-      /** O servidor fechou de vez: sessão inválida, saiu do servidor ou ele foi excluído. */
-      closed: (reason: CloseReason) => void
-    },
-  ) {}
+  private url: () => string
+  /** Primeira mensagem de cada conexão (o `auth` com o token). */
+  private hello: () => Out
+  private handlers: ConnectionHandlers<In>
+
+  // Sem `private` nos parâmetros: o teste (test/ws.test.mts) roda este arquivo direto no Node.
+  constructor(url: () => string, hello: () => Out, handlers: ConnectionHandlers<In>) {
+    this.url = url
+    this.hello = hello
+    this.handlers = handlers
+  }
 
   connect() {
     this.closed = false
@@ -66,7 +114,7 @@ export class Connection<In, Out> {
 
   /** A rede voltou (ou o PC acordou): tenta já, sem esperar o próximo intervalo. */
   nudge() {
-    if (this.closed) return
+    if (this.closed || Date.now() < this.pausedUntil) return
     if (this.ws) {
       // Ainda tentando há um tempo (a rede trocou no meio): larga e tenta de novo, já.
       if (this.ready || Date.now() - this.openedAt < 3000) return
@@ -83,7 +131,7 @@ export class Connection<In, Out> {
    */
   probe() {
     const ws = this.ws
-    if (this.closed) return
+    if (this.closed || Date.now() < this.pausedUntil) return
     if (!ws || !this.ready || ws.readyState !== WebSocket.OPEN) return this.nudge()
     const sentAt = Date.now()
     ws.send('ping')
@@ -99,6 +147,7 @@ export class Connection<In, Out> {
     const ws = new WebSocket(this.url())
     this.ws = ws
     this.ready = false
+    this.readyAt = 0
     this.openedAt = Date.now()
     this.openTimer = setTimeout(() => {
       if (this.ws === ws && !this.ready) this.abandon(ws)
@@ -129,10 +178,10 @@ export class Connection<In, Out> {
         return
       }
       // A primeira resposta (o `ready`): a conexão vale de verdade. A espera entre tentativas
-      // só zera aqui, pra uma conexão que o servidor fecha logo depois de abrir não virar laço.
+      // só zera quando ela cai depois de ficar de pé um tempo (`STABLE_AFTER`, em `lost`).
       if (!this.ready) {
         this.ready = true
-        this.retry = 0
+        this.readyAt = Date.now()
         if (this.openTimer) clearTimeout(this.openTimer)
         this.openTimer = null
         this.handlers.status('open')
@@ -173,6 +222,16 @@ export class Connection<In, Out> {
     if (code === 4003) return this.stop('not-member')
     if (code === 4004) return this.stop('gone')
     this.handlers.status('offline')
+    if (code === CLOSE_PAUSE) {
+      const wait = PAUSE * (0.9 + Math.random() / 5)
+      console.warn(`o servidor pausou a conexão (coisa demais em pouco tempo): volta em ${Math.round(wait / 1000)} s`)
+      this.pausedUntil = Date.now() + wait
+      this.retryTimer = setTimeout(() => this.open(), wait)
+      return
+    }
+    // Ficou de pé um tempo: a queda é nova, e a primeira tentativa vai na hora.
+    if (this.readyAt && Date.now() - this.readyAt >= STABLE_AFTER) this.retry = 0
+    this.readyAt = 0
     // A queda comum é o Cloudflare trocando a conexão de lugar: a primeira tentativa vai
     // na hora (espalhada em até 300 ms, pra todo mundo não chegar no mesmo instante).
     const delay = this.retry === 0 ? Math.random() * 300 : RETRY_DELAYS[Math.min(this.retry - 1, RETRY_DELAYS.length - 1)] * (0.75 + Math.random() / 2)
@@ -190,10 +249,43 @@ export class Connection<In, Out> {
     return this.ready && this.ws?.readyState === WebSocket.OPEN
   }
 
-  send(msg: Out): boolean {
+  /** `force`: fora do limite de envio (só o aviso de que o limite descartou mensagens). */
+  send(msg: Out, force = false): boolean {
     if (!this.isOpen) return false
+    // Passou do limite (só um app com bug chega aqui): conta como enviada, pra quem chamou não
+    // guardar e tentar de novo, e fica no console.
+    if (!force && !this.take()) return true
     this.ws!.send(JSON.stringify(msg))
     return true
+  }
+
+  /** Cabe mais uma no limite de envio? */
+  private take(): boolean {
+    const now = Date.now()
+    this.tokens = Math.min(SEND_BURST, this.tokens + ((now - this.tokensAt) / 1000) * SEND_RATE)
+    this.tokensAt = now
+    if (now - this.hourStart >= 3_600_000) {
+      this.hourStart = now
+      this.hourSent = 0
+    }
+    if (now - this.dayStart >= 86_400_000) {
+      this.dayStart = now
+      this.daySent = 0
+    }
+    if (this.tokens >= 1 && this.hourSent < SEND_HOUR && this.daySent < SEND_DAY) {
+      this.tokens--
+      this.hourSent++
+      this.daySent++
+      return true
+    }
+    this.dropped++
+    if (now - this.limitedAt >= LIMITED_EVERY) {
+      this.limitedAt = now
+      const detail = `${this.dropped} descartadas; ${this.hourSent} na hora, ${this.daySent} no dia`
+      console.warn(`limite de envio: ${detail}`)
+      this.handlers.limited?.(detail)
+    }
+    return false
   }
 
   close() {
