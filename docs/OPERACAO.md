@@ -48,7 +48,34 @@ npx wrangler tail resenha              # logs ao vivo (erros aparecem como "erro
 
 No painel do Cloudflare: Workers → resenha → Observability, com os pedidos, erros e uso de CPU.
 
-O painel da dona da plataforma (no app: Configurações → Plataforma) mostra contas, servidores, convites ativos, o espaço de anexos usado e a mídia pelo Cloudflare do mês.
+O painel da dona da plataforma (no app: Configurações → Plataforma) mostra contas, servidores, convites ativos, o espaço de anexos usado, a mídia pelo Cloudflare do mês e os pedidos do dia (abaixo).
+
+### Pedidos do dia (a cota que derruba tudo)
+
+No plano grátis, passou de **100 mil pedidos aos Durable Objects num dia**, todos eles dão erro até a meia-noite UTC (21h em Brasília): login, chat, calls, avisos, tudo. Conta como pedido: abrir WebSocket, cada RPC entre os objetos (uma mensagem privada passa por três), cada alarme e **cada mensagem de WebSocket recebida, inteira**. Em 25/10/2026 o aviso de 90% e o corte bateram com essa conta, não com o "20 mensagens = 1 pedido" da cobrança do plano pago. O e-mail do Cloudflare chega em 50, 75, 90 e 100%, e o corte veio uns 15 min depois de passar de 100 mil.
+
+Com as chaves das análises (`CF_ACCOUNT_ID` e `CF_ANALYTICS_TOKEN`, as mesmas da mídia), o Directory mede o dia de 10 em 10 min (`server/src/usage.ts`; 144 alarmes por dia) e a Plataforma mostra:
+
+- **Pedidos ao Cloudflare hoje**: quanto já foi de 100 mil, a hora da medição, quando zera e, se o ritmo dos últimos 10 min passa do limite antes da meia-noite, a hora em que acaba. As análises chegam com uns minutos de atraso.
+- **Quem mais gastou hoje**: os objetos do topo com o nome. A conexão pessoal de uma conta (o Home dela), uma conversa privada (as duas contas), um servidor ou "Contas e cadastro" (o Directory). O servidor calcula o id de cada um com `idFromName`, sem acordar ninguém e sem ler mensagem. Conversa só se identifica entre amigos, onde já teve anexo, ou quando uma das duas contas também está no topo; o resto aparece como "Não identificado".
+- **Barrados pelo servidor**: os apps que os freios do servidor seguraram (chamada privada em laço etc.), com a conta e a hora.
+
+O que o servidor faz sozinho:
+
+| Quando | O quê |
+|---|---|
+| 60% antes das 21h UTC, ou o ritmo estourando antes da meia-noite (com 20% já gasto) | Avisa o dono uma vez no dia: aviso na tela e do sistema nos apps abertos e push em todo celular dele (mesmo no "Não perturbe") |
+| 80% | **Modo econômico**: o cadastro aberto fecha até a cota zerar (convite continua valendo; quem tenta sem convite lê "O cadastro está pausado por algumas horas"). A escolha do dono não muda e volta a valer sozinha no dia seguinte. Novo aviso pro dono |
+
+Ninguém que já está usando é derrubado: o modo econômico só segura gente nova.
+
+**Num pico**, pela ordem:
+1. Abra Configurações → Plataforma e veja quem está no topo. Um par de contas com a conversa entre elas no topo é chamada privada em laço; uma conta sozinha com muito mais que as outras é um app com problema.
+2. Fale com a pessoa (fechar o app resolve na hora). Se não der, **Suspender** em Contas tira ela de todos os aparelhos: os pedidos dela param na hora.
+3. Os números de agora, por fora do app (só contagens, nada do conteúdo): a consulta `durableObjectsInvocationsAdaptiveGroups` do GraphQL (ver o item das análises no `CLAUDE.md`), por `objectId` e por minuto.
+4. Se estourar mesmo assim, só o plano pago (US$ 5/mês, sem teto diário) devolve o serviço antes da meia-noite UTC.
+
+Sem as chaves das análises, nada disso aparece (nem o cartão na Plataforma). O e2e sobe o servidor com `CF_ANALYTICS_TOKEN` vazio: o servidor local não lê as análises da conta de verdade.
 
 ## Limites do plano grátis (e o que o Resenha faz)
 
@@ -56,7 +83,7 @@ O painel da dona da plataforma (no app: Configurações → Plataforma) mostra c
 |---|---|---|
 | CPU por pedido no Worker | 10 ms | Senha (PBKDF2) roda dentro do Durable Object, que tem mais folga |
 | Armazenamento dos Durable Objects | 5 GB na conta | Anexos param em 4 GB (2 GB por servidor, 1 GB por conversa, 500 MB por pessoa por dia) |
-| Pedidos aos Durable Objects | 100 mil por dia | WebSocket com hibernação: conexão parada não conta |
+| Pedidos aos Durable Objects | 100 mil por dia | WebSocket com hibernação: conexão parada não conta. Passou disso, tudo para até a meia-noite UTC: o servidor mede, avisa o dono e fecha o cadastro aberto antes (ver "Pedidos do dia") |
 | Linhas escritas no SQLite | 100 mil por dia | Limites de mensagens (5 a cada 5 s), reações, edições e leitura agrupada |
 | Mídia pelo Cloudflare Realtime (SFU + TURN) | 1.000 GB por mês | Só nas salas marcadas "pelo Cloudflare": voz, câmera e tela pelo TURN, e a tela com 2+ assistindo pelo SFU. Sala direta e chamada privada são P2P e não gastam nada. Os apps contam o que passa, o servidor confere com o que o Cloudflare mediu (de hora em hora) e para de oferecer os dois em 850 GB; aí essas salas vão direto (P2P), avisando, até o mês virar. O dono vê o total em Configurações → Plataforma |
 

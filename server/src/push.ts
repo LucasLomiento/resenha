@@ -11,7 +11,20 @@ export type PushLocale = 'pt' | 'en' | 'es'
 
 export const PUSH_TEXT: Record<
   PushLocale,
-  { voiceNote: string; hidden: string; testTitle: string; testBody: string; calling: (name: string) => string; videoCalling: (name: string) => string; tapToAnswer: string; inChannel: (name: string, channel: string, server: string) => string }
+  {
+    voiceNote: string
+    hidden: string
+    testTitle: string
+    testBody: string
+    calling: (name: string) => string
+    videoCalling: (name: string) => string
+    tapToAnswer: string
+    inChannel: (name: string, channel: string, server: string) => string
+    /** Avisos pro dono: a cota diária do Cloudflare (ver usage.ts). */
+    usageHigh: string
+    usageEconomy: string
+    usageBody: (percent: number, top: string[], economy: boolean) => string
+  }
 > = {
   pt: {
     voiceNote: 'Mandou uma mensagem de voz',
@@ -22,6 +35,10 @@ export const PUSH_TEXT: Record<
     videoCalling: (name) => `${name} está fazendo uma chamada de vídeo`,
     tapToAnswer: 'Toque pra atender',
     inChannel: (name, channel, server) => `${name} em #${channel} · ${server}`,
+    usageHigh: 'Uso alto no Cloudflare hoje',
+    usageEconomy: 'Resenha em modo econômico',
+    usageBody: (percent, top, economy) =>
+      `${percent}% da cota do dia.${economy ? ' O cadastro fechou até a cota zerar.' : ''}${top.length ? ` Quem mais gastou: ${top.join(', ')}.` : ''}`,
   },
   en: {
     voiceNote: 'Sent a voice message',
@@ -32,6 +49,10 @@ export const PUSH_TEXT: Record<
     videoCalling: (name) => `${name} is video calling`,
     tapToAnswer: 'Tap to answer',
     inChannel: (name, channel, server) => `${name} in #${channel} · ${server}`,
+    usageHigh: 'High Cloudflare usage today',
+    usageEconomy: 'Resenha is in saving mode',
+    usageBody: (percent, top, economy) =>
+      `${percent}% of today's quota.${economy ? ' Sign-ups are closed until the quota resets.' : ''}${top.length ? ` Top usage: ${top.join(', ')}.` : ''}`,
   },
   es: {
     voiceNote: 'Envió un mensaje de voz',
@@ -42,6 +63,10 @@ export const PUSH_TEXT: Record<
     videoCalling: (name) => `${name} te está haciendo una videollamada`,
     tapToAnswer: 'Toca para contestar',
     inChannel: (name, channel, server) => `${name} en #${channel} · ${server}`,
+    usageHigh: 'Uso alto en Cloudflare hoy',
+    usageEconomy: 'Resenha en modo ahorro',
+    usageBody: (percent, top, economy) =>
+      `${percent}% de la cuota del día.${economy ? ' El registro se cerró hasta que la cuota se reinicie.' : ''}${top.length ? ` Quien más gastó: ${top.join(', ')}.` : ''}`,
   },
 }
 

@@ -12,7 +12,10 @@ export async function startServer(port) {
   let proc = null
   let log = ''
   const up = async () => {
-    proc = spawn('npx', ['wrangler', 'dev', '--local', '--port', String(port), '--ip', '127.0.0.1', '--persist-to', state], {
+    // Sem as análises do Cloudflare (mesmo com a chave no .dev.vars): elas são da conta de verdade, e
+    // o uso alto de lá mandaria aviso pro dono do teste e fecharia o cadastro do servidor local.
+    const args = ['wrangler', 'dev', '--local', '--port', String(port), '--ip', '127.0.0.1', '--persist-to', state, '--var', 'CF_ANALYTICS_TOKEN:']
+    proc = spawn('npx', args, {
       cwd: new URL('../../server', import.meta.url).pathname,
       stdio: ['ignore', 'pipe', 'pipe'],
       detached: true,

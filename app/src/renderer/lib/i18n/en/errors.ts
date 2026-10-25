@@ -14,6 +14,7 @@ export default {
     'Convite inválido, vencido ou já usado.': 'This invite is invalid, expired or already used.',
     'Confirme que você não é um robô.': "Confirm you're not a robot.",
     'Pra criar conta você precisa de um convite.': 'You need an invite to create an account.',
+    'O cadastro está pausado por algumas horas. Com um convite, dá pra entrar agora.': 'Sign-up is paused for a few hours. With an invite, you can join now.',
     'Esse nome de usuário já está em uso.': 'That username is already taken.',
     'Preencha usuário e senha.': 'Enter your username and password.',
     'Usuário ou senha incorretos.': 'Wrong username or password.',

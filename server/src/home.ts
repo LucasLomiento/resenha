@@ -9,6 +9,7 @@ import {
   type HomeServerMessage,
   type Me,
   type Message,
+  type PlatformAlert,
   type Presence,
   type PushTestResult,
   type Status,
@@ -1111,6 +1112,24 @@ export class Home extends DurableObject<Env> {
 
   meUpdated(me: Me) {
     this.broadcast({ t: 'me.updated', me })
+  }
+
+  /**
+   * Só pro dono: o Directory viu o uso do Cloudflare alto hoje. Vai pros apps abertos e pra todo
+   * celular dele, mesmo no "Não perturbe" (é pra agir antes de o servidor parar pra todo mundo).
+   */
+  async platformAlert(alert: PlatformAlert) {
+    this.broadcast({ t: 'platform.alert', alert })
+    if (!this.pusher.enabled) return
+    const devices = this.sql.exec<PushRow>('SELECT * FROM push_tokens').toArray()
+    const percent = Math.round((alert.requests / alert.limit) * 100)
+    await this.push(devices, null, (text) => ({
+      title: alert.kind === 'economy' ? text.usageEconomy : text.usageHigh,
+      body: text.usageBody(percent, alert.top, alert.kind === 'economy'),
+      data: { kind: 'platform' },
+      tag: 'platform:usage',
+      kind: 'message',
+    }))
   }
 
   userUpdated(user: User) {
