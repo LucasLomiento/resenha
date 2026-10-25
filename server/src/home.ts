@@ -108,6 +108,8 @@ const PERSON_DAY = 15_000
 const PERSON_FLUSH = 50
 /** "Digitando…": o app manda a cada 6 s; mais que isso não passa adiante (2 RPCs cada). */
 const TYPING_EVERY = 4000
+/** Trocas de status de uma conexão em 10 min (cada uma vai pro Home de cada amigo). */
+const PRESENCE_CHANGES = 10
 /** Incidente que o app manda: no máximo um a cada 10 min por conexão. */
 const APP_INCIDENT_EVERY = 10 * 60_000
 const MAX_FRAME = 64 * 1024
@@ -168,7 +170,7 @@ export class Home extends DurableObject<Env> {
   private spentByConn = new Map<string, Spent>()
   /** Sinalização de cada conexão na janela do freio (só contagens, pro incidente). */
   private tallies = new Map<string, SignalTally>()
-  /** Gasto do dia da pessoa, em vigésimos (vai pro banco a cada `PERSON_FLUSH`). */
+  /** Gasto do dia da pessoa, em pedidos (vai pro banco a cada `PERSON_FLUSH`). */
   private day: { day: number; spent: number; flushed: number } | null = null
   /** channelId -> último "digitando…" repassado. */
   private typingAt = new Map<string, number>()
@@ -629,7 +631,7 @@ export class Home extends DurableObject<Env> {
         return this.endRunawayCall(ws, state, state.call, tally.detail(now))
       }
     }
-    // O orçamento de sempre (budget.ts): passou, ignora; o app novo pausa.
+    // O orçamento de sempre (budget.ts): passou, o app novo pausa e o antigo fica de fora ou é parado.
     if (!this.charge(ws, state, msg)) return
     try {
       // O estado de agora (com o gasto desta mensagem): quem trata grava por cima dele.
@@ -716,7 +718,8 @@ export class Home extends DurableObject<Env> {
 
     switch (msg.t) {
       case 'presence': {
-        if (!STATUSES.includes(msg.status) || !this.allow(`presence:${state.connId}`, 30, 60_000)) return
+        // Cada troca vai pra cada amigo: poucas por conexão (o ausente automático troca a cada uns minutos).
+        if (!STATUSES.includes(msg.status) || !this.allow(`presence:${state.connId}`, PRESENCE_CHANGES, 10 * 60_000)) return
         const before = this.presence()
         if (msg.auto) {
           // Ausente automático (o aparelho parado): só desta conexão.
@@ -920,16 +923,16 @@ export class Home extends DurableObject<Env> {
   }
 
   /**
-   * Cobra a mensagem do orçamento da conexão e do dia da pessoa (budget.ts). Passou: ignora,
-   * avisa uma vez por minuto e anota o incidente uma vez por janela; o app que entende a pausa
-   * (mandou a versão) fecha com 4008 e espera uns minutos, sem nem mandar o que ia ser ignorado.
+   * Cobra a mensagem do orçamento da conexão e do dia da pessoa (budget.ts). Passou: anota o
+   * incidente e faz o app parar de mandar (ver o fim); só uma rajada do app antigo fica de fora.
    */
   private charge(ws: WebSocket, state: HomeConn, msg: HomeClientMessage): boolean {
     const now = Date.now()
     const essential = ESSENTIAL.has(msg.t)
     let cost = COSTS[msg.t] ?? MESSAGE + RPC
-    // A presença vai pra cada amigo (quando muda).
-    if (msg.t === 'presence') cost += this.friendIds().length * RPC
+    // A presença vai pra cada amigo (quando muda). Conta até 50: quem tem muitos amigos não fica
+    // sem poder mudar de status (o que segura é o limite de trocas, no `presence`).
+    if (msg.t === 'presence') cost += Math.min(this.friendIds().length, 50) * RPC
     // O dia da pessoa estourou (-2): nem conta na conexão.
     const personOver = !essential && this.personDay(now).spent + cost > PERSON_DAY
     // A memória ganha de um attachment que alguém regravou com o estado de antes.

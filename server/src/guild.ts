@@ -1494,7 +1494,7 @@ export class Guild extends DurableObject<Env> {
       return
     }
     // Call em laço de sinalização (como a chamada privada de 25/10/2026): a conexão sai da call.
-    // Aqui não tem RPC, mas cada mensagem que chega ainda conta 1/20 de pedido, o dia inteiro.
+    // Aqui não tem RPC, mas cada mensagem que chega conta um pedido (plano grátis), o dia inteiro.
     if (msg.t === 'rtc.signal' && state.voice) {
       const now = Date.now()
       let tally = this.tallies.get(state.connId)
@@ -1504,7 +1504,7 @@ export class Guild extends DurableObject<Env> {
         return this.leaveRunawayCall(ws, state, tally.detail(now))
       }
     }
-    // O orçamento de sempre (budget.ts): passou, ignora; o app novo pausa.
+    // O orçamento de sempre (budget.ts): passou, o app novo pausa e o antigo fica de fora ou é parado.
     if (!this.charge(ws, state, msg)) return
 
     try {
@@ -1530,9 +1530,8 @@ export class Guild extends DurableObject<Env> {
   }
 
   /**
-   * Cobra a mensagem do orçamento da conexão (budget.ts). Passou: ignora, avisa uma vez por
-   * minuto e anota o incidente; o app que entende a pausa (mandou a versão) fecha com 4008 e
-   * espera uns minutos, sem nem mandar o que ia ser ignorado.
+   * Cobra a mensagem do orçamento da conexão (budget.ts). Passou: anota o incidente e faz o
+   * app parar de mandar (ver o fim); só uma rajada do app antigo fica de fora.
    */
   private charge(ws: WebSocket, state: ConnState, msg: ClientMessage): boolean {
     const essential = ESSENTIAL.has(msg.t)
