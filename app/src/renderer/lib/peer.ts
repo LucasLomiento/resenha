@@ -5,6 +5,9 @@ import type { PathSample } from './route'
 import { audioMidsOf, candidateFamily, ipFamily, keepFamily, tuneScreenOpus, type IpFamily } from './sdp'
 import type { ScreenMode, VideoCodec } from './settings.svelte'
 
+/** Espera antes de refazer o ICE depois de cada falha seguida (a última vale dali em diante). */
+const RESTART_WAIT = [0, 5_000, 15_000, 30_000, 60_000]
+
 /** Sinalização sem os ids das conexões (o Peer põe na hora de mandar). */
 type Signal = SignalData extends infer T ? (T extends unknown ? Omit<T, 'pc' | 'ack'> : never) : never
 
@@ -167,6 +170,9 @@ export class Peer {
   closed = false
   /** Quando mandei a última oferta (pra reenviar se a resposta se perder). */
   private offerSentAt = 0
+  /** Falhas seguidas do ICE (sem conectar no meio) e o próximo reinício marcado. */
+  private failures = 0
+  private restartTimer: ReturnType<typeof setTimeout> | null = null
   /** Canal dos rabiscos na tela (direto entre os dois, sem passar pelo servidor). */
   private inkChannel: RTCDataChannel
   /** Canal do bot do Spotify: o que toca, pedidos e respostas (direto entre os dois). */
@@ -283,9 +289,18 @@ export class Peer {
     }
 
     this.pc.onconnectionstatechange = () => {
-      if (this.pc.connectionState !== 'failed') return
-      this.pc.restartIce()
+      const state = this.pc.connectionState
+      if (state === 'connected') this.failures = 0
+      if (state !== 'failed') return
       this.events.failed()
+      // Sem caminho direto (chamada privada só tem o STUN), refazer o ICE na hora a cada falha
+      // não acabava nunca: o primeiro é na hora, os seguintes esperam cada vez mais.
+      if (this.restartTimer) return
+      const wait = RESTART_WAIT[Math.min(this.failures++, RESTART_WAIT.length - 1)]
+      this.restartTimer = setTimeout(() => {
+        this.restartTimer = null
+        if (!this.closed && this.pc.connectionState === 'failed') this.pc.restartIce()
+      }, wait)
     }
 
     this.pc.ontrack = ({ track, streams, receiver, transceiver }) => {
@@ -743,6 +758,7 @@ export class Peer {
 
   close() {
     this.closed = true
+    if (this.restartTimer) clearTimeout(this.restartTimer)
     this.dropBoost()
     this.audio.srcObject = null
     this.musicAudio.srcObject = null

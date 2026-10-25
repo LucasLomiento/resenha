@@ -40,9 +40,50 @@ export interface AdminUser extends User {
   /** Pode passar uma sala de voz pelo Cloudflare (o dono sempre pode). */
   relay: boolean
   createdAt: number
-  /** Versão do app e sistema com que a pessoa conectou por último (null: app de antes da 1.17). */
-  appVersion: string | null
-  platform: string | null
+  /** Versão e sistema do app que a pessoa usou por último (servidor antigo não manda). */
+  appVersion?: string | null
+  platform?: string | null
+}
+
+/** Um Durable Object que gastou pedidos hoje, e de quem ele é. */
+export interface AdminUsageTarget {
+  /** `user`: a conexão pessoal da conta; `dm`: conversa privada entre `user` e `peer`. */
+  kind: 'user' | 'guild' | 'dm' | 'directory' | 'unknown'
+  requests: number
+  user?: User
+  peer?: User
+  guild?: { id: string; name: string }
+}
+
+/** Pedidos aos Durable Objects hoje (o plano grátis do Cloudflare corta em 100 mil por dia, UTC). */
+export interface AdminUsage {
+  limit: number
+  /** Quando a cota zera (meia-noite UTC). */
+  resetAt: number
+  /** Passou de 80%: o cadastro aberto fechou até a cota zerar. */
+  economy: boolean
+  /** null: ainda não mediu hoje. */
+  measuredAt: number | null
+  requests: number | null
+  perMinute: number | null
+  /** Quando acaba, no ritmo de agora (null: não acaba hoje). */
+  limitAt: number | null
+  top: AdminUsageTarget[]
+}
+
+/** Algo que o servidor barrou num app (ex.: chamada em laço). */
+export interface AdminIncident {
+  at: number
+  /** null: barrado antes de saber de quem era (ex.: reconexão sem login). */
+  userId: string | null
+  /**
+   * `call-loop`/`voice-loop` (sinalização em laço na chamada privada/do servidor),
+   * `home:budget-10min`/`-1h`/`-1d`/`-pessoa-1d`, `guild:budget-…`, `home:reconnect`,
+   * `guild:reconnect` ou `app:<tipo>` (o que o próprio app mandou).
+   */
+  kind: string
+  detail?: string | null
+  user?: User
 }
 
 export interface AdminPanel {
@@ -56,12 +97,9 @@ export interface AdminPanel {
   /** Mídia pelo Cloudflare (SFU + TURN) no mês, contada pelos apps. */
   mediaUsed: number
   mediaLimit: number
-  /**
-   * Freios que dispararam, os mais novos primeiro (até 100). `kind`: `home:signal-loop`,
-   * `guild:signal-loop`, `home:budget-10min`/`-1h`/`-1d`/`-pessoa-1d`, `guild:budget-…`,
-   * `home:reconnect`, `guild:reconnect` ou `app:<tipo>` (o que o app mandou).
-   */
-  incidents: { at: number; userId: string | null; kind: string; detail: string | null }[]
+  /** Sem as chaves das análises no servidor (ou servidor antigo): não vem. */
+  usage?: AdminUsage | null
+  incidents?: AdminIncident[]
 }
 
 export interface Upload {

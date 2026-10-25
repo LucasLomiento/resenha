@@ -13,6 +13,7 @@ export default {
     'Convite inválido, vencido ou já usado.': 'Convite inválido, vencido ou já usado.',
     'Confirme que você não é um robô.': 'Confirme que você não é um robô.',
     'Pra criar conta você precisa de um convite.': 'Pra criar conta você precisa de um convite.',
+    'O cadastro está pausado por algumas horas. Com um convite, dá pra entrar agora.': 'O cadastro está pausado por algumas horas. Com um convite, dá pra entrar agora.',
     'Esse nome de usuário já está em uso.': 'Esse nome de usuário já está em uso.',
     'Preencha usuário e senha.': 'Preencha usuário e senha.',
     'Usuário ou senha incorretos.': 'Usuário ou senha incorretos.',

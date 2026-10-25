@@ -7,6 +7,7 @@ import {
   type HomeServerMessage,
   type Me,
   type Message,
+  type PlatformAlert,
   type Presence,
   type PushTestResult,
   type SignalData,
@@ -46,6 +47,8 @@ export interface HomeHost {
   attention(): boolean
   /** Celular: resultado do aviso de teste do push. */
   pushTested(result: PushTestResult): void
+  /** Só pro dono: o uso do Cloudflare está alto hoje. */
+  platformAlert(alert: PlatformAlert): void
   /** Leu a conversa até ali (aqui ou em outro aparelho): o aviso dela sai da tela. */
   seen(tag: string, lastReadId: string | null): void
 }
@@ -384,6 +387,10 @@ export class HomeState {
 
       case 'push.test':
         this.host.pushTested(msg.result)
+        return
+
+      case 'platform.alert':
+        this.host.platformAlert(msg.alert)
         return
 
       case 'session.revoked':

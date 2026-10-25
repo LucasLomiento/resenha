@@ -814,6 +814,23 @@ export type HomeClientMessage =
 
 export type PushTestResult = 'sent' | 'off' | 'no-device' | 'dead' | 'failed'
 
+/**
+ * Aviso pro dono da plataforma: o servidor está gastando a cota diária de pedidos do Cloudflare
+ * rápido demais. `high`: passou de 60% (ou o ritmo estoura antes da meia-noite UTC); `economy`:
+ * passou de 80% e o cadastro fechou até a cota zerar.
+ */
+export interface PlatformAlert {
+  kind: 'high' | 'economy'
+  requests: number
+  limit: number
+  /** Quando estoura, no ritmo de agora (null: não estoura hoje). */
+  limitAt: number | null
+  /** Quando a cota zera (meia-noite UTC). */
+  resetAt: number
+  /** Quem mais gastou (nomes de conta, servidor ou "A + B" pra conversa privada). */
+  top: string[]
+}
+
 export type HomeServerMessage =
   | {
       t: 'ready'
@@ -866,6 +883,8 @@ export type HomeServerMessage =
    * `failed` (o Firebase recusou por outro motivo).
    */
   | { t: 'push.test'; result: PushTestResult }
+  /** Só pro dono: o uso do Cloudflare está alto hoje (ver PlatformAlert). */
+  | { t: 'platform.alert'; alert: PlatformAlert }
   | { t: 'session.revoked' }
   /** `reqId`: o erro é de um pedido que espera resposta (o app desiste na hora). */
   | { t: 'error'; message: string; nonce?: string; reqId?: string }

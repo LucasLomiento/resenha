@@ -54,6 +54,14 @@ export default {
     disconnected: 'Você foi desconectado da call.',
   },
   /** Avisos do sistema (mensagem e ligação chegando). */
+  platform: {
+    /** Aviso pro dono: o uso do Cloudflare está alto hoje. */
+    high: (percent: number) => `Uso alto no Cloudflare: ${percent}% da cota do dia`,
+    economy: (percent: number) => `Resenha em modo econômico: ${percent}% da cota do dia`,
+    pace: (time: string) => `No ritmo de agora, acaba às ${time}.`,
+    top: (names: string) => `Quem mais gastou: ${names}.`,
+    open: 'Ver na Plataforma',
+  },
   notify: {
     calling: (name: string) => `${name} está te ligando`,
     callingBody: 'Clique pra abrir o Resenha.',

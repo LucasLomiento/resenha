@@ -82,6 +82,13 @@ const USAGE_EVERY = 60_000
 const PEER_GRACE = 15_000
 /** Sinalização guardada enquanto o WebSocket está caído (vai quando voltar). */
 const OUTBOX_MAX = 500
+/**
+ * Freio da sinalização pra cada pessoa: rajada máxima e quanto tempo pra ganhar mais uma.
+ * Entrar, refazer a conexão ou assistir uma tela gasta umas 2 a 15; um laço (as duas pontas
+ * reagindo uma à outra sem parar) passava de 3 por segundo e gastava a cota do servidor.
+ */
+const SIGNAL_BURST = 60
+const SIGNAL_REFILL = 3000
 /** Pedido pro bot do Spotify de outra pessoa sem resposta: desiste. */
 const MUSIC_REPLY_WAIT = 15_000
 /** Pedidos que cada pessoa pode fazer pro meu bot (por 10 s): busca digitando não derruba a cota do Spotify. */
@@ -147,6 +154,8 @@ export class Call {
   private leaving = new Map<string, ReturnType<typeof setTimeout>>()
   /** Sinalização que não saiu (WebSocket caído), na ordem. */
   private outbox: { to: string; data: SignalData }[] = []
+  /** connId -> quanto ainda dá pra mandar de sinalização pra essa pessoa (vale entre conexões refeitas). */
+  private signalBudget = new Map<string, { tokens: number; at: number; held: boolean }>()
   /** Container estável do microfone: o id dele é o que os outros usam pra reconhecer a faixa. */
   private micStream = new MediaStream()
   private micTrack: MediaStreamTrack | null = null
@@ -338,6 +347,7 @@ export class Call {
   }
 
   private sendSignal(to: string, data: SignalData) {
+    if (!this.spendSignal(to)) return
     if (this.outbox.length === 0 && this.transport?.signal(to, data)) return
     // Descrição nova pra essa pessoa: a anterior do mesmo tipo e os candidatos de antes não servem
     // mais (a descrição atual já leva os candidatos que o ICE achou até aqui). A fila não cresce
@@ -350,6 +360,26 @@ export class Call {
     }
     this.outbox.push({ to, data })
     if (this.outbox.length > OUTBOX_MAX) this.outbox.shift()
+  }
+
+  /**
+   * Passou da rajada: o que sobra é descartado até o saldo voltar. Num laço, quem para de
+   * responder para o outro lado junto; numa negociação de verdade, a oferta é reenviada sozinha.
+   */
+  private spendSignal(to: string): boolean {
+    const now = Date.now()
+    const budget = this.signalBudget.get(to) ?? { tokens: SIGNAL_BURST, at: now, held: false }
+    budget.tokens = Math.min(SIGNAL_BURST, budget.tokens + (now - budget.at) / SIGNAL_REFILL)
+    budget.at = now
+    this.signalBudget.set(to, budget)
+    if (budget.tokens < 1) {
+      if (!budget.held) console.warn('[rtc] sinalização demais pra essa conexão; segurando', to)
+      budget.held = true
+      return false
+    }
+    budget.tokens -= 1
+    budget.held = false
+    return true
   }
 
   private flushOutbox() {
@@ -381,6 +411,7 @@ export class Call {
     void this.reportMedia(true)
     for (const connId of [...this.peers.keys()]) this.removePeer(connId)
     this.outbox = []
+    this.signalBudget.clear()
     this.stopShare(false)
     this.stopSfuWatch()
     this.bot.stop()

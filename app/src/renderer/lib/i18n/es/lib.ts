@@ -46,6 +46,13 @@ export default {
     movedElsewhere: 'Te movieron a otro canal.',
     disconnected: 'Te desconectaron de la llamada.',
   },
+  platform: {
+    high: (percent: number) => `Uso alto en Cloudflare: ${percent}% de la cuota del día`,
+    economy: (percent: number) => `Resenha en modo ahorro: ${percent}% de la cuota del día`,
+    pace: (time: string) => `Al ritmo de ahora, se acaba a las ${time}.`,
+    top: (names: string) => `Quién más gastó: ${names}.`,
+    open: 'Ver en Plataforma',
+  },
   notify: {
     calling: (name: string) => `${name} te está llamando`,
     callingBody: 'Haz clic para abrir Resenha.',

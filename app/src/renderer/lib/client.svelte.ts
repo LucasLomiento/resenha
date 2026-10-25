@@ -2,6 +2,7 @@ import type {
   GuildInfo,
   Me,
   Message,
+  PlatformAlert,
   Presence,
   ProfileStyle,
   PushTestResult,
@@ -18,14 +19,14 @@ import { Call, type CallTransport } from './call.svelte'
 import { listDevices, namedDevices } from './devices'
 import { GuildState, type GuildHost } from './guild.svelte'
 import { HomeState, type HomeHost } from './home.svelte'
-import { i18n, m } from './i18n.svelte'
+import { fmt, i18n, m } from './i18n.svelte'
 import { plainText } from './markdown'
 import { dismissNotice, notify } from './notify'
 import { badgeOf } from './profile'
 import { attachmentLabel } from './voice-note'
 import { settings } from './settings.svelte'
 import { playSound } from './sounds'
-import { ui } from './ui.svelte'
+import { openSetting, ui } from './ui.svelte'
 import { setAppInfo } from './app-info'
 import type { CloseReason, ConnectionStatus } from './ws'
 
@@ -831,6 +832,24 @@ class Client implements GuildHost, HomeHost {
 
   pushTested(result: PushTestResult) {
     this.pushTest = result
+  }
+
+  /** Só pro dono: o uso do Cloudflare está alto hoje. Aviso na tela e do sistema; o clique abre a Plataforma. */
+  platformAlert(alert: PlatformAlert) {
+    const t = m.lib.platform
+    const percent = Math.round((alert.requests / alert.limit) * 100)
+    const title = alert.kind === 'economy' ? t.economy(percent) : t.high(percent)
+    const pace = alert.limitAt ? t.pace(fmt.date(alert.limitAt, { hour: '2-digit', minute: '2-digit' })) : ''
+    const top = alert.top.length ? t.top(fmt.list(alert.top)) : ''
+    this.toast(title, 'error', 'platform:usage')
+    notify(title, {
+      body: [pace, top].filter(Boolean).join(' ') || t.open,
+      tag: 'platform:usage',
+      onclick: () => {
+        window.resenha.showWindow()
+        openSetting({ id: 'platform.usage', page: 'platform' })
+      },
+    })
   }
 
   /** Tocou num aviso do push: abre a conversa (a ligação toca de novo quando a conexão volta). */
