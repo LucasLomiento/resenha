@@ -229,6 +229,41 @@ describe('chamada privada', () => {
     await homeB.next('call.ended')
   })
 
+  it('sinalização em laço acaba a chamada pros dois, e dá pra ligar de novo', async () => {
+    const { owner, friend } = await world()
+    const homeA = await homeSocket(owner.user.id, owner.token)
+    await homeA.next('ready')
+    const homeB = await homeSocket(friend.user.id, friend.token)
+    const readyB = await homeB.next('ready')
+    const channelId = dmChannelId(owner.user.id, friend.user.id)
+    homeA.send({ t: 'dm.open', userId: friend.user.id, reqId: 'o' })
+    await homeA.next('dm.channel')
+    homeA.send({ t: 'call.ring', channelId, video: false })
+    await homeB.next('call.ringing')
+    homeB.send({ t: 'call.answer', channelId, accept: true })
+    await homeA.next('call.state', (m) => m.members.length === 2)
+
+    // Até o limite, tudo passa (uma chamada normal manda bem menos que isso).
+    for (let i = 0; i < 300; i++) homeA.send({ t: 'call.signal', channelId, to: readyB.connId, data: { kind: 'watch' } })
+    for (let i = 0; i < 300; i++) await homeB.next('call.signal')
+    await homeB.nothing('call.ended')
+    homeA.send({ t: 'call.signal', channelId, to: readyB.connId, data: { kind: 'watch' } })
+    expect((await homeA.next('error')).message).toBe('A chamada teve um problema e foi encerrada. Liguem de novo.')
+    await homeA.next('call.ended')
+    await homeB.next('call.ended')
+
+    // O que ainda chega depois não passa adiante, e uma ligação nova começa do zero.
+    homeB.drain()
+    homeA.send({ t: 'call.signal', channelId, to: readyB.connId, data: { kind: 'watch' } })
+    await homeB.nothing('call.signal')
+    homeA.send({ t: 'call.ring', channelId, video: false })
+    await homeB.next('call.ringing')
+    homeB.send({ t: 'call.answer', channelId, accept: true })
+    await homeA.next('call.state', (m) => m.members.length === 2)
+    homeA.send({ t: 'call.signal', channelId, to: readyB.connId, data: { kind: 'watch' } })
+    await homeB.next('call.signal')
+  })
+
   it('quem conecta depois vê a ligação tocando no ready (o celular depois do push)', async () => {
     const { owner, friend } = await world()
     const homeA = await homeSocket(owner.user.id, owner.token)

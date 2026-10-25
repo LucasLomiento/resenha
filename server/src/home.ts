@@ -93,6 +93,13 @@ const PUSH_TOKEN = /^[\w:.-]{20,4096}$/
 const MAX_PUSH_DEVICES = 10
 /** O aviso de teste sai depois disso: o tempo de sair do app (com ele na frente, o Android não mostra). */
 const PUSH_TEST_DELAY = 5000
+/**
+ * Sinalização de uma conexão na chamada privada, em 5 min. Uma chamada normal manda poucas dezenas
+ * (entrar, tela, câmera, troca de rota); um app em laço manda várias por segundo sem parar, e cada
+ * uma passa pela Conversation e pelo Home do outro: três pedidos na cota diária do Cloudflare.
+ */
+const SIGNAL_RUNAWAY = 300
+const SIGNAL_RUNAWAY_WINDOW = 5 * 60_000
 
 /** Cabeçalho que o Worker põe com o id do dono deste Home. */
 export const HOME_HEADER = 'X-Resenha-Home'
@@ -538,6 +545,11 @@ export class Home extends DurableObject<Env> {
       if (this.allow(`warn:${state.connId}`, 1, 10_000)) this.send(ws, { t: 'error', message: 'Calma! Muitas ações de uma vez.' })
       return
     }
+    // Chamada em laço (25/10/2026: dois apps trocaram sinalização 6 vezes por segundo por horas e
+    // gastaram a cota do dia): acaba pros dois, e dá pra ligar de novo.
+    if (signal && state.call && !this.allow(`loop:${state.connId}`, SIGNAL_RUNAWAY, SIGNAL_RUNAWAY_WINDOW)) {
+      return this.endRunawayCall(ws, state, state.call)
+    }
     try {
       await this.handle(ws, state, msg)
     } catch (err) {
@@ -807,6 +819,15 @@ export class Home extends DurableObject<Env> {
         if (!this.known(msg.channelId) || state.call !== msg.channelId || !msg.data || typeof msg.to !== 'string') return
         return conversation(this.env, msg.channelId).callSignal(msg.channelId, me, state.connId, msg.to, msg.data)
     }
+  }
+
+  /** Chamada privada em laço de sinalização: acaba pros dois (o app sai dela com o `call.ended`). */
+  private async endRunawayCall(ws: WebSocket, state: HomeConn, channelId: string) {
+    this.flood.delete(`loop:${state.connId}`)
+    console.warn('chamada privada encerrada: sinalização em laço')
+    this.save(ws, { ...state, call: null })
+    await conversation(this.env, channelId).callStop(channelId, this.userId)
+    this.send(ws, { t: 'error', message: 'A chamada teve um problema e foi encerrada. Liguem de novo.' })
   }
 
   /** Uma chamada privada por conexão: entrar em outra sai da anterior. */

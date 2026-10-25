@@ -159,6 +159,7 @@ export default {
     'Não dá pra mandar arquivo pra essa pessoa.': 'Não dá pra mandar arquivo pra essa pessoa.',
     'Não dá pra ligar pra essa pessoa.': 'Não dá pra ligar pra essa pessoa.',
     'Essa chamada já acabou.': 'Essa chamada já acabou.',
+    'A chamada teve um problema e foi encerrada. Liguem de novo.': 'A chamada teve um problema e foi encerrada. Liguem de novo.',
 
     // Arquivos e imagens
     'Você não pode enviar arquivos aqui.': 'Você não pode enviar arquivos aqui.',

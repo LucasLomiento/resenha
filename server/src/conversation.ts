@@ -442,6 +442,13 @@ export class Conversation extends DurableObject<Env> {
     await this.broadcastCall(call, m.pair)
   }
 
+  /** Acaba a chamada pros dois (o Home viu uma conexão dela em laço de sinalização). */
+  async callStop(channelId: string, userId: string) {
+    const m = this.member(channelId, userId)
+    if (!m || !this.call()) return
+    await this.broadcastCall(null, m.pair)
+  }
+
   async callUpdate(
     channelId: string,
     userId: string,
