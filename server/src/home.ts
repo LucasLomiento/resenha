@@ -16,7 +16,7 @@ import {
   type User,
   type VoiceMember,
 } from '../../shared/protocol'
-import { CLOSE_PAUSE, REQUEST, SIGNAL_RUNAWAY, SIGNAL_RUNAWAY_WINDOW, SignalTally, merge, spend, utcDay, windowName, type Spent } from './budget'
+import { CLOSE_PAUSE, CLOSE_STOP_OLD, MESSAGE, RPC, SIGNAL_RUNAWAY, SIGNAL_RUNAWAY_WINDOW, SignalTally, merge, spend, utcDay, windowName, type Spent } from './budget'
 import { samePresence } from './presence'
 import { PUSH_TEXT, Pusher, pushBody, type PushLocale, type PushMessage } from './push'
 import { CLOSE_RETRY, CONN_KEY, GHOST_QUEUE, GHOST_QUEUE_BYTES, IP_HEADER, admitPending, connIdFor, graceFor, unexpectedClose } from './resume'
@@ -95,14 +95,17 @@ const SWEEP_EVERY = 60_000
  * fica "online" pros amigos até uns 6 min, em vez de 2.
  */
 const IDLE_SWEEP_EVERY = 5 * 60_000
-/** Conexões novas da mesma pessoa (todos os aparelhos) em 10 min: um app reconectando sem parar. */
-const MAX_UPGRADES = 40
 /**
- * Teto do dia da pessoa (todas as conexões juntas), em vigésimos de pedido: cada conexão tem o
- * dela (budget.ts), e este segura quem abre várias. A soma vai pro banco a cada 50 pedidos.
+ * Conexões novas da mesma pessoa (todos os aparelhos) em 10 min: um app reconectando sem parar.
+ * Cada uma custa uns 4 pedidos mais um por amigo (token, retrato da conta, presença de cada um).
  */
-const PERSON_DAY = 10_000 * REQUEST
-const PERSON_FLUSH = 50 * REQUEST
+const MAX_UPGRADES = 20
+/**
+ * Teto do dia da pessoa (todas as conexões juntas), em pedidos: cada conexão tem o dela
+ * (budget.ts), e este segura quem abre várias. A soma vai pro banco a cada 50.
+ */
+const PERSON_DAY = 15_000
+const PERSON_FLUSH = 50
 /** "Digitando…": o app manda a cada 6 s; mais que isso não passa adiante (2 RPCs cada). */
 const TYPING_EVERY = 4000
 /** Incidente que o app manda: no máximo um a cada 10 min por conexão. */
@@ -119,29 +122,29 @@ const MAX_PUSH_DEVICES = 10
 /** O aviso de teste sai depois disso: o tempo de sair do app (com ele na frente, o Android não mostra). */
 const PUSH_TEST_DELAY = 5000
 /**
- * O que cada mensagem do app custa na cota do Cloudflare, em vigésimos de pedido (ver budget.ts):
- * a mensagem é 1, cada RPC que ela causa é 20. A presença vai pra cada amigo (conta à parte).
+ * O que cada mensagem do app custa na cota do Cloudflare, em pedidos (ver budget.ts): a mensagem
+ * e cada RPC que ela causa. A presença vai pra cada amigo (conta à parte).
  */
 const COSTS: Partial<Record<HomeClientMessage['t'], number>> = {
-  presence: 1,
-  attention: 1,
-  'push.test': 1,
-  'push.token': 1,
-  incident: 1 + REQUEST,
-  'dm.open': 1 + 3 * REQUEST,
-  'dm.send': 1 + 3 * REQUEST,
-  'dm.edit': 1 + 3 * REQUEST,
-  'dm.delete': 1 + 3 * REQUEST,
-  'dm.react': 1 + 3 * REQUEST,
-  'dm.history': 1 + REQUEST,
-  'dm.typing': 1 + 2 * REQUEST,
-  'dm.ack': 1 + REQUEST,
-  'dm.close': 1,
-  'call.ring': 1 + 5 * REQUEST,
-  'call.answer': 1 + 5 * REQUEST,
-  'call.hangup': 1 + 3 * REQUEST,
-  'call.update': 1 + 3 * REQUEST,
-  'call.signal': 1 + 2 * REQUEST,
+  presence: MESSAGE,
+  attention: MESSAGE,
+  'push.test': MESSAGE,
+  'push.token': MESSAGE,
+  incident: MESSAGE + RPC,
+  'dm.open': MESSAGE + 3 * RPC,
+  'dm.send': MESSAGE + 3 * RPC,
+  'dm.edit': MESSAGE + 3 * RPC,
+  'dm.delete': MESSAGE + 3 * RPC,
+  'dm.react': MESSAGE + 3 * RPC,
+  'dm.history': MESSAGE + RPC,
+  'dm.typing': MESSAGE + 2 * RPC,
+  'dm.ack': MESSAGE + RPC,
+  'dm.close': MESSAGE,
+  'call.ring': MESSAGE + 5 * RPC,
+  'call.answer': MESSAGE + 5 * RPC,
+  'call.hangup': MESSAGE + 3 * RPC,
+  'call.update': MESSAGE + 3 * RPC,
+  'call.signal': MESSAGE + 2 * RPC,
 }
 /** Passam mesmo com o orçamento estourado (contam, mas não podem ficar presas): sair, desligar o push. */
 const ESSENTIAL = new Set<string>(['call.hangup', 'dm.close', 'push.token'])
@@ -924,9 +927,9 @@ export class Home extends DurableObject<Env> {
   private charge(ws: WebSocket, state: HomeConn, msg: HomeClientMessage): boolean {
     const now = Date.now()
     const essential = ESSENTIAL.has(msg.t)
-    let cost = COSTS[msg.t] ?? 1 + REQUEST
+    let cost = COSTS[msg.t] ?? MESSAGE + RPC
     // A presença vai pra cada amigo (quando muda).
-    if (msg.t === 'presence') cost += this.friendIds().length * REQUEST
+    if (msg.t === 'presence') cost += this.friendIds().length * RPC
     // O dia da pessoa estourou (-2): nem conta na conexão.
     const personOver = !essential && this.personDay(now).spent + cost > PERSON_DAY
     // A memória ganha de um attachment que alguém regravou com o estado de antes.
@@ -940,17 +943,23 @@ export class Home extends DurableObject<Env> {
     }
     const which = over === -2 ? 'pessoa-1d' : windowName(over)
     this.report(state, `home:budget-${which}`, `${state.version ?? 'app antigo'}; estourou com ${msg.t}`)
-    // Pausa só pra quem entende, e só nas janelas longas (uma rajada de 10 min só fica de fora).
-    if (state.version && over !== 0) {
-      try {
-        ws.close(CLOSE_PAUSE, 'Muita coisa em pouco tempo')
-      } catch {
-        // já estava fechando
-      }
-      this.ctx.waitUntil(this.dropConnection(ws, state, false))
+    // Ignorar não economiza (cada mensagem já custou ao chegar): o que adianta é o app parar.
+    // O novo pausa uns minutos (4008). O antigo, numa rajada (10 min), só fica de fora; passando
+    // da hora ou do dia, fecha do único jeito que faz ele não voltar na hora (4004).
+    const stop = state.version ? CLOSE_PAUSE : over !== 0 ? CLOSE_STOP_OLD : null
+    if (stop === null) {
+      if (this.allow(`warn:${state.connId}`, 1, 60_000)) this.send(ws, { t: 'error', message: 'Muita coisa em pouco tempo. Espere uns minutos.' })
       return false
     }
-    if (this.allow(`warn:${state.connId}`, 1, 60_000)) this.send(ws, { t: 'error', message: 'Muita coisa em pouco tempo. Espere uns minutos.' })
+    if (stop === CLOSE_STOP_OLD) {
+      this.send(ws, { t: 'error', message: 'Seu app mandou coisa demais e foi desconectado. Atualize ou abra o app de novo.' })
+    }
+    try {
+      ws.close(stop, 'Muita coisa em pouco tempo')
+    } catch {
+      // já estava fechando
+    }
+    this.ctx.waitUntil(this.dropConnection(ws, state, false))
     return false
   }
 
@@ -991,7 +1000,7 @@ export class Home extends DurableObject<Env> {
     this.flood.delete(`loop:${state.connId}`)
     this.tallies.delete(state.connId)
     console.warn('chamada privada encerrada: sinalização em laço', detail)
-    this.report(state, 'home:signal-loop', `${state.version ?? 'app antigo'}; ${detail}`)
+    this.report(state, 'call-loop', `${state.version ?? 'app antigo'}; ${detail}`)
     this.save(ws, { ...state, call: null })
     await conversation(this.env, channelId).callStop(channelId, this.userId)
     this.send(ws, { t: 'error', message: 'A chamada teve um problema e foi encerrada. Liguem de novo.' })

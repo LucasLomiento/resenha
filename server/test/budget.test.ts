@@ -1,7 +1,7 @@
 import { SELF, env, runDurableObjectAlarm, runInDurableObject } from 'cloudflare:test'
 import { describe, expect, it } from 'vitest'
 import { dmChannelId } from '../../shared/protocol'
-import { LIMITS, REQUEST, SignalTally, merge, spend } from '../src/budget'
+import { LIMITS, MESSAGE, SignalTally, merge, spend } from '../src/budget'
 import { BASE, call, homeSocket, world } from './helpers'
 
 const MINUTE = 60_000
@@ -89,13 +89,13 @@ describe('freios no Home', () => {
       })
     }
     await homeA.next('call.ended')
-    const incident = await incidentOf(owner.token, 'home:signal-loop')
+    const incident = await incidentOf(owner.token, 'call-loop')
     expect(incident.userId).toBe(owner.user.id)
     expect(incident.detail).toMatch(/^1\.17\.0; 301 em \d+s: candidate=200 description=101 \(offer=101\); pc=2 ack=1$/)
     expect(incident.detail).not.toMatch(/10\.0\.0\.1|v=0/)
   })
 
-  it('orçamento estourado: a mensagem é ignorada, avisa e anota; o app novo pausa (4008) nas janelas longas', async () => {
+  it('orçamento estourado: o app antigo fica de fora numa rajada e é parado (4004) depois; o novo pausa (4008)', async () => {
     const { owner, friend } = await world()
     const old = await homeSocket(owner.user.id, owner.token)
     const readyOld = await old.next('ready')
@@ -107,11 +107,28 @@ describe('freios no Home', () => {
     await runInDurableObject(stub, (instance) => {
       ;(instance as unknown as { spentByConn: Map<string, number[]> }).spentByConn.set(readyOld.connId, nearlySpent(Date.now()))
     })
-    // App antigo (sem versão): só ignora. A conversa não recebe nada.
+    // App antigo (sem versão) numa rajada de 10 min: só fica de fora. A conversa não recebe nada.
     old.send({ t: 'dm.send', channelId, content: 'oi', attachmentIds: [], nonce: 'n1' })
     expect((await old.next('error')).message).toBe('Muita coisa em pouco tempo. Espere uns minutos.')
     await old.nothing('dm.message')
     expect((await incidentOf(owner.token, 'home:budget-10min')).userId).toBe(owner.user.id)
+
+    // Passando da hora: fecha com 4004, o único jeito de o app até a 1.16 não voltar na hora.
+    await runInDurableObject(stub, (instance) => {
+      const now = Date.now()
+      // A janela de 10 min já passou (começou há 11 min); a de 1 h está no fim.
+      ;(instance as unknown as { spentByConn: Map<string, number[]> }).spentByConn.set(readyOld.connId, [
+        now - 11 * MINUTE,
+        0,
+        now,
+        LIMITS[1].max - 1,
+        now,
+        0,
+      ])
+    })
+    old.send({ t: 'dm.send', channelId, content: 'oi', attachmentIds: [], nonce: 'n1b' })
+    expect((await old.next('error')).message).toBe('Seu app mandou coisa demais e foi desconectado. Atualize ou abra o app de novo.')
+    expect(await old.closed()).toBe(4004)
 
     // App novo estourando a janela de 1 h: fecha com 4008 (pausa).
     const fresh = await homeSocket(owner.user.id, owner.token, { version: '1.17.0', platform: 'linux' })
@@ -203,7 +220,7 @@ describe('freios no Guild', () => {
     expect(await a.next('voice.forced')).toEqual({ t: 'voice.forced', channelId: null })
     expect((await a.next('error')).message).toBe('A call teve um problema e você saiu dela. Entre de novo.')
     await b.next('voice.state', (m) => m.members.length === 1)
-    const incident = await incidentOf(owner.token, 'guild:signal-loop')
+    const incident = await incidentOf(owner.token, 'voice-loop')
     expect(incident.detail).toMatch(/app antigo; 301 em \d+s: watch=301; pc=0 ack=0$/)
 
     // Fora da call, o que ainda chega não passa adiante.
@@ -265,7 +282,7 @@ describe('reconexão em rajada', () => {
       res.webSocket?.accept()
       res.webSocket?.close(1000)
     }
-    expect(refused).toBe(5)
+    expect(refused).toBe(25)
     await incidentOf(owner.token, 'home:reconnect')
   })
 
@@ -288,7 +305,7 @@ describe('reconexão em rajada', () => {
 })
 
 describe('custos', () => {
-  it('um pedido vale 20 mensagens', () => {
-    expect(REQUEST).toBe(20)
+  it('no plano grátis cada mensagem recebida é um pedido inteiro', () => {
+    expect(MESSAGE).toBe(1)
   })
 })

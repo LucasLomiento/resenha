@@ -150,6 +150,30 @@ async function exists(key: string, check: () => Promise<unknown>): Promise<boole
   return true
 }
 
+/**
+ * O objeto recusou o WebSocket por reconexão demais (429): por 10 min, quem pede de novo (do
+ * mesmo IP, pro mesmo lugar) fica aqui, sem acordar ele. Cada tentativa recusada lá dentro ainda
+ * custava um pedido, e o app até a 1.16 tenta de novo a cada 10 s.
+ */
+const held = new Map<string, number>()
+const HOLD_FOR = 10 * 60_000
+
+function holding(key: string): boolean {
+  const until = held.get(key)
+  if (until === undefined) return false
+  if (until > Date.now()) return true
+  held.delete(key)
+  return false
+}
+
+function hold(key: string, res: Response): Response {
+  if (res.status === 429) {
+    if (held.size >= 5000) held.clear()
+    held.set(key, Date.now() + HOLD_FOR)
+  }
+  return res
+}
+
 const escapeHtml = (text: string) =>
   text.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!)
 
@@ -459,16 +483,17 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
   if (pathname === '/ws') return guild(env, 'main').fetch(clean(request, { [LEGACY_HEADER]: '1', ...ipHeader }))
   // Reconectando sem parar (app com bug, script): fica aqui, sem acordar nenhum Durable Object.
   // Por IP e destino: dá pra todo aparelho da casa voltar junto depois de uma queda.
-  if (socket && (await limited(env.WS_LIMITER, `${pathname}:${ipKey}`))) return error(429, 'Conexões demais. Espere um pouco.')
+  const wsKey = `${pathname}:${ipKey}`
+  if (socket && (holding(wsKey) || (await limited(env.WS_LIMITER, wsKey)))) return error(429, 'Conexões demais. Espere um pouco.')
   if ((m = pathname.match(/^\/api\/g\/([\w-]{1,64})\/ws$/))) {
     const id = m[1]
     if (!(await exists(`g:${id}`, () => dir.guildInfo(id)))) return error(404, 'Servidor não existe.')
-    return guild(env, id).fetch(clean(request, ipHeader))
+    return hold(wsKey, await guild(env, id).fetch(clean(request, ipHeader)))
   }
   if ((m = pathname.match(/^\/api\/home\/([\w-]{1,64})\/ws$/))) {
     const id = m[1]
     if (!(await exists(`u:${id}`, () => dir.getUser(id)))) return error(404, 'Conta não existe.')
-    return home(env, id).fetch(clean(request, { [HOME_HEADER]: id, ...ipHeader }))
+    return hold(wsKey, await home(env, id).fetch(clean(request, { [HOME_HEADER]: id, ...ipHeader })))
   }
 
   // ---------- Daqui pra baixo, só logado ----------

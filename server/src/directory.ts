@@ -62,7 +62,7 @@ const MAX_INCIDENTS = 500
 const MAX_INCIDENTS_HOUR = 60
 /** Versão do app como o app manda ("1.16.1"; o resto é descartado). */
 const APP_VERSION = /^\d{1,3}\.\d{1,3}\.\d{1,4}(-[\w.]{1,24})?$/
-const PLATFORM = /^[a-z]{2,16}$/
+const PLATFORM = /^[a-z0-9]{2,16}$/
 
 interface UserRow {
   id: string
@@ -1591,7 +1591,7 @@ export class Directory extends DurableObject<Env> {
     mediaUsed: number
     mediaLimit: number
     /** Freios que dispararam, os mais novos primeiro. */
-    incidents: { at: number; userId: string | null; kind: string; detail: string | null }[]
+    incidents: { at: number; userId: string | null; user: string | null; kind: string; detail: string | null }[]
   }> {
     if (!this.isStaff(viewerId) && this.pioneerId() !== viewerId) return fail(403, 'Só o dono da plataforma.')
     const now = Date.now()
@@ -1607,11 +1607,12 @@ export class Directory extends DurableObject<Env> {
       mediaUsed: this.mediaUsage().bytes,
       mediaLimit: MEDIA_BUDGET,
       incidents: this.sql
-        .exec<{ at: number; user_id: string | null; kind: string; detail: string | null }>(
-          'SELECT at, user_id, kind, detail FROM incidents ORDER BY id DESC LIMIT 100',
+        .exec<{ at: number; user_id: string | null; kind: string; detail: string | null; name: string | null }>(
+          `SELECT i.at, i.user_id, i.kind, i.detail, u.name FROM incidents i LEFT JOIN users u ON u.id = i.user_id
+           ORDER BY i.id DESC LIMIT 100`,
         )
         .toArray()
-        .map((r) => ({ at: r.at, userId: r.user_id, kind: r.kind, detail: r.detail })),
+        .map((r) => ({ at: r.at, userId: r.user_id, user: r.name ?? null, kind: r.kind, detail: r.detail })),
     })
   }
 

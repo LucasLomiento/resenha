@@ -2,29 +2,32 @@
 //
 // O plano grátis do Cloudflare dá 100 mil pedidos de Durable Object por dia pra plataforma
 // inteira: cada RPC entre objetos é um pedido, cada alarme também, e cada mensagem que chega
-// pelo WebSocket conta 1/20. Em 25/10/2026 uma chamada privada em laço gastou isso sozinha. Aqui
-// cada mensagem custa o que ela causa, em vigésimos de pedido (a mensagem em si é 1, cada RPC
-// que ela gera é 20), e cada conexão tem um teto em 10 min, em 1 h e em 1 dia. Passou, o que
-// ela manda é ignorado (sai barato: só o 1/20 da mensagem), e o app que entende o 4008 pausa.
+// pelo WebSocket também conta um inteiro (no pago seria 1/20; o bloqueio de 25/10/2026 só bate
+// contando 1:1). Naquele dia uma chamada privada em laço gastou a cota sozinha. Aqui cada
+// mensagem custa o que ela causa, e cada conexão tem um teto em 10 min, em 1 h e em 1 dia.
+// Ignorar o que passa do teto não economiza nada (a mensagem já custou ao chegar): o que
+// economiza é o app parar de mandar. O app que entende o 4008 pausa; o antigo, só fechando.
 
 const MINUTE = 60_000
 const HOUR = 60 * MINUTE
 const DAY = 24 * HOUR
 
-/** Um pedido na cota, em vigésimos (o preço de uma mensagem de WebSocket). */
-export const REQUEST = 20
+/** Uma mensagem que chega pelo WebSocket: um pedido inteiro no plano grátis. */
+export const MESSAGE = 1
+/** Cada chamada (RPC) pra outro Durable Object. */
+export const RPC = 1
 
 /**
  * Tetos por conexão, em pedidos. Uso de verdade fica muito abaixo: o grupo inteiro (5 pessoas)
- * gastava umas 300 por dia em mensagens. O mais caro que alguém faz de propósito é digitar sem
- * parar numa conversa privada (o app avisa a cada 6 s, 2 RPCs cada: 200 pedidos em 10 min). O
- * de 10 min fica acima do freio da sinalização (300 sinais = 600 pedidos), que dispara antes e
- * tira a conexão da call (só ignorar deixaria o app antigo mandando sem parar).
+ * mandava umas 300 a 1200 mensagens por dia. O mais caro que alguém faz de propósito é conversar
+ * sem parar numa conversa privada: "digitando…" a cada 6 s (a mensagem e 2 RPCs) e mensagens
+ * (a mensagem e 3 RPCs) dão perto de 3 mil pedidos numa hora. O de 10 min fica acima do freio
+ * da sinalização (300 sinais = 900 pedidos), que dispara antes e tira a conexão da call.
  */
 export const LIMITS = [
-  { window: 10 * MINUTE, max: 1000 * REQUEST },
-  { window: HOUR, max: 2500 * REQUEST },
-  { window: DAY, max: 6000 * REQUEST },
+  { window: 10 * MINUTE, max: 1000 },
+  { window: HOUR, max: 4000 },
+  { window: DAY, max: 10_000 },
 ] as const
 
 /**
@@ -34,7 +37,7 @@ export const LIMITS = [
 export type Spent = number[]
 
 /**
- * Gasta `cost` (em vigésimos) se couber em todas as janelas. `over`: a primeira janela que
+ * Gasta `cost` (em pedidos) se couber em todas as janelas. `over`: a primeira janela que
  * estourou (-1 = coube). `essential`: conta mesmo passando (sair da call não pode ser barrado).
  */
 export function spend(
@@ -93,10 +96,17 @@ export const SIGNAL_RUNAWAY_WINDOW = 5 * MINUTE
 
 /**
  * Fechamento "pausa": o app que mandou a versão no `auth` espera uns minutos antes de
- * reconectar (ver `lib/ws.ts`). Só vai pra ele: app antigo trata como queda e volta na hora,
- * e cada reconexão custa mais que ignorar as mensagens.
+ * reconectar (ver `lib/ws.ts`). App antigo (até a 1.16) trata como queda e volta na hora.
  */
 export const CLOSE_PAUSE = 4008
+
+/**
+ * Pro app antigo (até a 1.16), o único fechamento que faz ele parar de reconectar: "servidor
+ * excluído". Na conexão pessoal ela fica parada até o app abrir de novo; na de um servidor, ele
+ * some da lista até a conexão pessoal voltar. Só vai pra quem estourou a janela de 1 h ou de 1
+ * dia: aí cada mensagem que ele mandasse (ignorada ou não) já custaria um pedido.
+ */
+export const CLOSE_STOP_OLD = 4004
 
 /**
  * Contagem da sinalização de uma conexão numa janela, pro incidente quando o freio dispara:

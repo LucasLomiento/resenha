@@ -34,7 +34,7 @@ import {
   type User,
   type VoiceMember,
 } from '../../shared/protocol'
-import { CLOSE_PAUSE, REQUEST, SIGNAL_RUNAWAY, SIGNAL_RUNAWAY_WINDOW, SignalTally, merge, spend, windowName, type Spent } from './budget'
+import { CLOSE_PAUSE, CLOSE_STOP_OLD, MESSAGE, RPC, SIGNAL_RUNAWAY, SIGNAL_RUNAWAY_WINDOW, SignalTally, merge, spend, windowName, type Spent } from './budget'
 import type { LegacyExport } from './directory'
 import { cleanStructure } from './discord-import'
 import { newId } from './ids'
@@ -187,21 +187,21 @@ const IDLE_SWEEP_EVERY = 5 * MINUTE
 /** Conexões novas vindas do mesmo IP em 10 min (um app reconectando sem parar). */
 const MAX_UPGRADES_PER_IP = 60
 /**
- * O que cada mensagem do app custa na cota do Cloudflare, em vigésimos de pedido (ver
- * budget.ts): a mensagem é 1, cada RPC que ela causa é 20 (o resto fica aqui dentro).
+ * O que cada mensagem do app custa na cota do Cloudflare, em pedidos (ver budget.ts): a
+ * mensagem e cada RPC que ela causa (o resto fica aqui dentro).
  */
 const COSTS: Partial<Record<ClientMessage['t'], number>> = {
   // Avisa o celular de quem quer (um RPC por pessoa com push; quem não tem fica de fora um tempo).
-  'chat.send': 1 + 3 * REQUEST,
-  'chat.ack': 1 + REQUEST,
-  'voice.join': 1 + REQUEST,
-  'invite.create': 1 + REQUEST,
-  'invites.list': 1 + REQUEST,
-  'invite.delete': 1 + 2 * REQUEST,
-  'guild.update': 1 + 2 * REQUEST,
-  'guild.transfer': 1 + REQUEST,
-  'member.kick': 1 + REQUEST,
-  'member.ban': 1 + REQUEST,
+  'chat.send': MESSAGE + 3 * RPC,
+  'chat.ack': MESSAGE + RPC,
+  'voice.join': MESSAGE + RPC,
+  'invite.create': MESSAGE + RPC,
+  'invites.list': MESSAGE + RPC,
+  'invite.delete': MESSAGE + 2 * RPC,
+  'guild.update': MESSAGE + 2 * RPC,
+  'guild.transfer': MESSAGE + RPC,
+  'member.kick': MESSAGE + RPC,
+  'member.ban': MESSAGE + RPC,
 }
 /** Passam mesmo com o orçamento estourado (contam, mas não podem ficar presas): sair da call, do mapa. */
 const ESSENTIAL = new Set<string>(['voice.leave', 'map.leave'])
@@ -1538,22 +1538,27 @@ export class Guild extends DurableObject<Env> {
     const essential = ESSENTIAL.has(msg.t)
     // A memória ganha de um attachment que alguém regravou com o estado de antes.
     const base = merge(state.spent, this.spentByConn.get(state.connId))
-    const { spent, over } = spend(base, COSTS[msg.t] ?? 1, Date.now(), essential)
+    const { spent, over } = spend(base, COSTS[msg.t] ?? MESSAGE, Date.now(), essential)
     this.save(ws, { ...state, spent })
     this.spentByConn.set(state.connId, spent)
     if (over === -1 || essential) return true
     this.report(state.userId, state.connId, `guild:budget-${windowName(over)}`, `${state.version ?? 'app antigo'}; estourou com ${msg.t}`)
-    // Pausa só pra quem entende, e só nas janelas longas (uma rajada de 10 min só fica de fora).
-    if (state.version && over !== 0) {
-      try {
-        ws.close(CLOSE_PAUSE, 'Muita coisa em pouco tempo')
-      } catch {
-        // já estava fechando
-      }
-      this.dropConnection(ws, state, false)
+    // Ignorar não economiza (cada mensagem já custou ao chegar): o que adianta é o app parar.
+    // O novo pausa uns minutos (4008). O antigo, numa rajada (10 min), só fica de fora; passando
+    // da hora ou do dia, fecha do único jeito que faz ele não voltar na hora (4004: o servidor
+    // some da lista dele até a conexão pessoal voltar).
+    const stop = state.version ? CLOSE_PAUSE : over !== 0 ? CLOSE_STOP_OLD : null
+    if (stop === null) {
+      if (this.allow(`warn:${state.connId}`, 1, MINUTE)) this.error(ws, 'Muita coisa em pouco tempo. Espere uns minutos.')
       return false
     }
-    if (this.allow(`warn:${state.connId}`, 1, MINUTE)) this.error(ws, 'Muita coisa em pouco tempo. Espere uns minutos.')
+    if (stop === CLOSE_STOP_OLD) this.error(ws, 'Seu app mandou coisa demais e foi desconectado. Atualize ou abra o app de novo.')
+    try {
+      ws.close(stop, 'Muita coisa em pouco tempo')
+    } catch {
+      // já estava fechando
+    }
+    this.dropConnection(ws, state, false)
     return false
   }
 
@@ -1562,7 +1567,7 @@ export class Guild extends DurableObject<Env> {
     this.flood.delete(`loop:${state.connId}`)
     this.tallies.delete(state.connId)
     console.warn('call encerrada pra uma conexão: sinalização em laço', detail)
-    this.report(state.userId, state.connId, 'guild:signal-loop', `${state.version ?? 'app antigo'}; ${detail}`)
+    this.report(state.userId, state.connId, 'voice-loop', `${state.version ?? 'app antigo'}; ${detail}`)
     this.save(ws, { ...state, voice: null })
     this.persistVoice(this.state(ws))
     this.send(ws, { t: 'voice.forced', channelId: null })

@@ -209,6 +209,7 @@ export default {
     // Limites e gerais
     'Calma! Muitas ações de uma vez.': 'Slow down! Too many actions at once.',
     'Muita coisa em pouco tempo. Espere uns minutos.': 'Too much at once. Wait a few minutes.',
+    'Seu app mandou coisa demais e foi desconectado. Atualize ou abra o app de novo.': 'Your app sent too much and was disconnected. Update it or open it again.',
     'A call teve um problema e você saiu dela. Entre de novo.': 'The call ran into a problem and you left it. Join again.',
     'Conexões demais. Espere um pouco.': 'Too many connections. Wait a moment.',
     'Calma! Você está mandando mensagens rápido demais.': "Slow down! You're sending messages too fast.",
