@@ -1,8 +1,10 @@
-## 1.16.0: bandeja da call e avisos que somem
+## 1.17.0: o Resenha aguenta app com problema
 
-- **O ícone da bandeja mostra a call, como no Discord**: na call com o microfone aberto ele fica verde e clareia enquanto você fala; mutado ou ensurdecido, fica vermelho com o microfone ou o fone cortado. No Windows o mesmo ícone aparece num selo sobre o ícone da barra de tarefas.
-- **Viu num aparelho, o aviso some dos outros**: leu (ou respondeu) uma mensagem no computador, o aviso dela sai do celular; leu no celular, sai do computador (no Windows, até da central de notificações). Vale pra mensagem privada e de servidor, e o "está te ligando" some quando você atende em outro lugar ou a ligação acaba.
-- **No celular**, o app parado numa conversa, no fundo, marcava como lidas as mensagens que chegavam nela; não marca mais. E quem instalou o app a partir da 1.15.0 não tinha recebido o pedido de permissão pra avisar e via os avisos sem aparecer por cima da tela: agora o app pergunta ao abrir e os avisos aparecem como deveriam.
+- **Um app com problema não derruba mais o Resenha de todo mundo.** Em 25/10 uma chamada privada entrou em laço e gastou num dia o limite inteiro do servidor; ficou tudo fora até as 21h. Agora o próprio app tem um teto do que manda, o servidor encerra a chamada que entrar em laço (aparece "A chamada teve um problema e foi encerrada. Liguem de novo.") e quem mandar coisa demais é pausado por alguns minutos, sem afetar os outros.
+- **Chamadas mais firmes**: quando os dois lados refaziam a conexão ao mesmo tempo, às vezes a chamada ficava sem som pros dois; não fica mais. E uma conexão que não fecha direto tenta de novo com calma, em vez de sem parar.
+- **Mapa mais leve**: mexer no mapa sozinho não manda nada pros outros (só a posição final), e com mais gente ele manda menos atualizações por segundo, com o movimento ainda suave.
+- **Pra quem cuida da plataforma**: Configurações → Plataforma mostra os pedidos do dia ao servidor, quem mais gastou (com o nome), os apps que o servidor freou e a versão do app de cada conta. Perto do limite, o dono recebe um aviso e o cadastro aberto pausa sozinho até o dia virar.
+- Quem fecha o notebook ou perde a rede sem sair do app pode aparecer online por alguns minutos a mais.
 
 ## Como atualizar
 
