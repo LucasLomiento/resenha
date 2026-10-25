@@ -14,6 +14,9 @@ export const MAX_PINS_PER_CHANNEL = 50
 export const MAX_GUILDS_PER_USER = 100
 export const MAX_MAP_PINS = 200
 export const MAX_MAP_PIN_LABEL = 60
+/** O que o app pode registrar como incidente (`t: 'incident'`); vai pro registro como `app:<tipo>`. */
+export const APP_INCIDENTS = ['signal-loop', 'send-limit', 'reconnect-loop'] as const
+export type AppIncident = (typeof APP_INCIDENTS)[number]
 
 // ---------- Permissões (bits) ----------
 
@@ -524,6 +527,9 @@ export type ClientMessage =
       text?: string | null
       /** Chave desta instância do app, a mesma em toda reconexão: o connId sai dela e a call continua. */
       key?: string
+      /** Versão do app (1.17+; quem manda também entende o fechamento 4008, ver `CLOSE_PAUSE`). */
+      version?: string
+      platform?: string
     }
   /** `auto`: ausente automático (sem mexer no PC) — não muda o status escolhido. */
   | { t: 'presence'; status: Status; text: string | null; auto?: boolean }
@@ -745,6 +751,9 @@ export type HomeClientMessage =
       mobile?: boolean
       /** Computador: a pessoa está olhando o app agora (ver `attention`). */
       attention?: boolean
+      /** Versão do app e o sistema ('linux', 'windows', 'android'…): o dono vê em Plataforma → Contas. */
+      version?: string
+      platform?: string
     }
   | { t: 'presence'; status: Status; text: string | null; auto?: boolean }
   /**
@@ -759,6 +768,12 @@ export type HomeClientMessage =
   | { t: 'attention'; on: boolean }
   /** Celular: manda um aviso de teste pra este aparelho daqui a 5 s (o tempo de sair do app). */
   | { t: 'push.test' }
+  /**
+   * Um freio do próprio app disparou (ex.: sinalização da call em laço): vai pro registro de
+   * incidentes do dono (Plataforma). Só contagens e ids opacos no `detail` (até 1000 caracteres),
+   * nada de SDP, candidato ou IP; no máximo um a cada 10 min por conexão.
+   */
+  | { t: 'incident'; kind: AppIncident; detail: string }
   | { t: 'dm.open'; userId: string; reqId: string }
   | {
       t: 'dm.send'

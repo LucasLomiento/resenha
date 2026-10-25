@@ -1,5 +1,6 @@
 import { DurableObject } from 'cloudflare:workers'
 import {
+  APP_INCIDENTS,
   dmChannelId,
   dmMembers,
   type DmChannel,
@@ -15,6 +16,7 @@ import {
   type User,
   type VoiceMember,
 } from '../../shared/protocol'
+import { CLOSE_PAUSE, REQUEST, SIGNAL_RUNAWAY, SIGNAL_RUNAWAY_WINDOW, SignalTally, merge, spend, utcDay, windowName, type Spent } from './budget'
 import { samePresence } from './presence'
 import { PUSH_TEXT, Pusher, pushBody, type PushLocale, type PushMessage } from './push'
 import { CLOSE_RETRY, CONN_KEY, GHOST_QUEUE, GHOST_QUEUE_BYTES, IP_HEADER, admitPending, connIdFor, graceFor, unexpectedClose } from './resume'
@@ -48,6 +50,10 @@ interface HomeConn {
   mobile?: boolean
   /** Computador com a pessoa olhando o app agora (janela em foco e mexida há pouco): segura o push. */
   attention?: boolean
+  /** Quanto esta conexão já gastou (ver budget.ts); quem volta com o mesmo connId herda. */
+  spent?: Spent
+  /** Versão do app (1.17+): entende o fechamento de pausa (4008). */
+  version?: string
 }
 
 interface PushRow {
@@ -81,7 +87,26 @@ interface DmRow {
 
 const AUTH_TIMEOUT = 15_000
 const DEAD_AFTER = 75_000
+/** Varredura de conexões mortas com alguém numa chamada privada (quem sumiu sai logo da chamada). */
 const SWEEP_EVERY = 60_000
+/**
+ * Sem chamada, a varredura é bem mais espaçada: o alarme de minuto em minuto de cada pessoa
+ * conectada era a maior parte do uso do Cloudflare. Quem some sem fechar (PC dormiu, rede caiu)
+ * fica "online" pros amigos até uns 6 min, em vez de 2.
+ */
+const IDLE_SWEEP_EVERY = 5 * 60_000
+/** Conexões novas da mesma pessoa (todos os aparelhos) em 10 min: um app reconectando sem parar. */
+const MAX_UPGRADES = 40
+/**
+ * Teto do dia da pessoa (todas as conexões juntas), em vigésimos de pedido: cada conexão tem o
+ * dela (budget.ts), e este segura quem abre várias. A soma vai pro banco a cada 50 pedidos.
+ */
+const PERSON_DAY = 10_000 * REQUEST
+const PERSON_FLUSH = 50 * REQUEST
+/** "Digitando…": o app manda a cada 6 s; mais que isso não passa adiante (2 RPCs cada). */
+const TYPING_EVERY = 4000
+/** Incidente que o app manda: no máximo um a cada 10 min por conexão. */
+const APP_INCIDENT_EVERY = 10 * 60_000
 const MAX_FRAME = 64 * 1024
 /** Conexões abertas que ainda não se autenticaram. */
 const MAX_PENDING = 20
@@ -94,12 +119,32 @@ const MAX_PUSH_DEVICES = 10
 /** O aviso de teste sai depois disso: o tempo de sair do app (com ele na frente, o Android não mostra). */
 const PUSH_TEST_DELAY = 5000
 /**
- * Sinalização de uma conexão na chamada privada, em 5 min. Uma chamada normal manda poucas dezenas
- * (entrar, tela, câmera, troca de rota); um app em laço manda várias por segundo sem parar, e cada
- * uma passa pela Conversation e pelo Home do outro: três pedidos na cota diária do Cloudflare.
+ * O que cada mensagem do app custa na cota do Cloudflare, em vigésimos de pedido (ver budget.ts):
+ * a mensagem é 1, cada RPC que ela causa é 20. A presença vai pra cada amigo (conta à parte).
  */
-const SIGNAL_RUNAWAY = 300
-const SIGNAL_RUNAWAY_WINDOW = 5 * 60_000
+const COSTS: Partial<Record<HomeClientMessage['t'], number>> = {
+  presence: 1,
+  attention: 1,
+  'push.test': 1,
+  'push.token': 1,
+  incident: 1 + REQUEST,
+  'dm.open': 1 + 3 * REQUEST,
+  'dm.send': 1 + 3 * REQUEST,
+  'dm.edit': 1 + 3 * REQUEST,
+  'dm.delete': 1 + 3 * REQUEST,
+  'dm.react': 1 + 3 * REQUEST,
+  'dm.history': 1 + REQUEST,
+  'dm.typing': 1 + 2 * REQUEST,
+  'dm.ack': 1 + REQUEST,
+  'dm.close': 1,
+  'call.ring': 1 + 5 * REQUEST,
+  'call.answer': 1 + 5 * REQUEST,
+  'call.hangup': 1 + 3 * REQUEST,
+  'call.update': 1 + 3 * REQUEST,
+  'call.signal': 1 + 2 * REQUEST,
+}
+/** Passam mesmo com o orçamento estourado (contam, mas não podem ficar presas): sair, desligar o push. */
+const ESSENTIAL = new Set<string>(['call.hangup', 'dm.close', 'push.token'])
 
 /** Cabeçalho que o Worker põe com o id do dono deste Home. */
 export const HOME_HEADER = 'X-Resenha-Home'
@@ -114,6 +159,16 @@ export class Home extends DurableObject<Env> {
   private retired = new WeakSet<WebSocket>()
   /** Mandaram o `auth` e o Directory ainda está conferindo o token. */
   private authenticating = new WeakSet<WebSocket>()
+  /** Conta excluída (as tabelas já não existem nesta instância). */
+  private wiped = false
+  /** connId -> o que a conexão gastou (a que volta depois de uma pausa ou queda herda; zera se hibernar). */
+  private spentByConn = new Map<string, Spent>()
+  /** Sinalização de cada conexão na janela do freio (só contagens, pro incidente). */
+  private tallies = new Map<string, SignalTally>()
+  /** Gasto do dia da pessoa, em vigésimos (vai pro banco a cada `PERSON_FLUSH`). */
+  private day: { day: number; spent: number; flushed: number } | null = null
+  /** channelId -> último "digitando…" repassado. */
+  private typingAt = new Map<string, number>()
   /** Push pro celular (Firebase); sem a chave, não manda nada. Os testes trocam o `fetchImpl`. */
   private pusher: Pusher
 
@@ -307,21 +362,24 @@ export class Home extends DurableObject<Env> {
    * anterior, que caiu (fantasma) ou ainda parece aberta mas morreu, e o que
    * ficou guardado pra ela. A anterior fecha sem mexer em nada.
    */
-  private takeOver(ws: WebSocket, connId: string): { call: string | null; queue: string[] } {
+  private takeOver(ws: WebSocket, connId: string): { call: string | null; queue: string[]; spent?: Spent } {
     let call: string | null = null
     let queue: string[] = []
+    let spent: Spent | undefined
     const ghost = this.ghosts.get(connId)
     if (ghost) {
       clearTimeout(ghost.timer)
       this.ghosts.delete(connId)
       call = ghost.state.call ?? null
       queue = ghost.queue
+      spent = ghost.state.spent
     }
     for (const old of this.ctx.getWebSockets()) {
       if (old === ws) continue
       const state = this.state(old)
       if (state.pending || state.connId !== connId) continue
       call = state.call ?? call
+      spent = merge(spent, state.spent)
       this.retired.add(old)
       try {
         this.save(old, { ...state, call: null, replaced: true })
@@ -330,7 +388,7 @@ export class Home extends DurableObject<Env> {
         // já estava fechando
       }
     }
-    return { call, queue }
+    return { call, queue, spent }
   }
 
   private friendIds(): string[] {
@@ -356,6 +414,8 @@ export class Home extends DurableObject<Env> {
 
   async fetch(request: Request): Promise<Response> {
     if (request.headers.get('Upgrade') !== 'websocket') return new Response('Esperava WebSocket', { status: 426 })
+    // Conta excluída agora há pouco (o Worker ainda pode achar que existe, ver `exists` no index.ts).
+    if (this.wiped) return new Response('Conta não existe', { status: 404 })
     const owner = request.headers.get(HOME_HEADER)
     if (!owner || !this.own(owner)) return new Response('Conta errada', { status: 403 })
     // O endereço do nosso servidor (a prévia de link nunca busca ele mesmo).
@@ -366,6 +426,12 @@ export class Home extends DurableObject<Env> {
       .getWebSockets()
       .filter((ws) => ws.readyState === WebSocket.OPEN && this.state(ws).pending)
       .map((ws) => ({ ws, ...this.state(ws) }))
+    // Reconectando sem parar (cada conexão nova custa a conferência do token, o retrato da conta
+    // e a presença dos amigos): espera. O app conta como falha e espaça as tentativas.
+    if (!this.allow('upgrade', MAX_UPGRADES, 10 * 60_000)) {
+      this.report(null, 'home:reconnect', `mais de ${MAX_UPGRADES} conexões em 10 min`)
+      return new Response('Conexões demais, espere um pouco', { status: 429 })
+    }
     if (!admitPending(pending, ip, MAX_PENDING)) return new Response('Ocupado, tente de novo', { status: 503 })
     const [client, server] = Object.values(new WebSocketPair())
     this.ctx.acceptWebSocket(server)
@@ -401,7 +467,8 @@ export class Home extends DurableObject<Env> {
   }
 
   private async completeAuth(ws: WebSocket, pending: HomeConn, msg: Extract<HomeClientMessage, { t: 'auth' }>) {
-    const auth = typeof msg.token === 'string' ? await directory(this.env).authenticate(msg.token) : null
+    const client = typeof msg.version === 'string' ? { version: msg.version, platform: msg.platform } : undefined
+    const auth = typeof msg.token === 'string' ? await directory(this.env).authenticate(msg.token, client) : null
     if (ws.readyState !== WebSocket.OPEN) return
     if (!auth || auth.me.id !== this.userId) return ws.close(4001, 'Sessão inválida')
     const key = typeof msg.key === 'string' && CONN_KEY.test(msg.key) ? msg.key : null
@@ -415,7 +482,7 @@ export class Home extends DurableObject<Env> {
 
     const manual = this.manual()
     const before = this.presence()
-    const resumed = key ? this.takeOver(ws, connId) : { call: null, queue: [] }
+    const resumed: { call: string | null; queue: string[]; spent?: Spent } = key ? this.takeOver(ws, connId) : { call: null, queue: [] }
     const claimed = typeof msg.call === 'string' && this.known(msg.call) ? msg.call : null
     // O app saiu da chamada enquanto estava sem conexão (o "desligar" não chegou): a conexão
     // anterior sai dela agora, em vez de voltar pra lá sem o app saber.
@@ -440,6 +507,9 @@ export class Home extends DurableObject<Env> {
       call,
       mobile: msg.mobile === true,
       attention: msg.attention === true,
+      // A mesma instância voltando (queda, pausa) continua com o que já gastou.
+      spent: merge(resumed.spent, this.spentByConn.get(connId)),
+      ...(typeof msg.version === 'string' ? { version: msg.version.slice(0, 32) } : {}),
     }
     // Caiu de novo enquanto voltava: continua esperando (com a chamada e o que estava guardado).
     if (ws.readyState !== WebSocket.OPEN) {
@@ -547,11 +617,20 @@ export class Home extends DurableObject<Env> {
     }
     // Chamada em laço (25/10/2026: dois apps trocaram sinalização 6 vezes por segundo por horas e
     // gastaram a cota do dia): acaba pros dois, e dá pra ligar de novo.
-    if (signal && state.call && !this.allow(`loop:${state.connId}`, SIGNAL_RUNAWAY, SIGNAL_RUNAWAY_WINDOW)) {
-      return this.endRunawayCall(ws, state, state.call)
+    if (msg.t === 'call.signal' && state.call) {
+      const now = Date.now()
+      let tally = this.tallies.get(state.connId)
+      if (!tally) this.tallies.set(state.connId, (tally = new SignalTally()))
+      tally.add(msg.data, now)
+      if (!this.allow(`loop:${state.connId}`, SIGNAL_RUNAWAY, SIGNAL_RUNAWAY_WINDOW)) {
+        return this.endRunawayCall(ws, state, state.call, tally.detail(now))
+      }
     }
+    // O orçamento de sempre (budget.ts): passou, ignora; o app novo pausa.
+    if (!this.charge(ws, state, msg)) return
     try {
-      await this.handle(ws, state, msg)
+      // O estado de agora (com o gasto desta mensagem): quem trata grava por cima dele.
+      await this.handle(ws, this.state(ws), msg)
     } catch (err) {
       console.error('erro tratando', msg.t, err)
       this.send(ws, { t: 'error', message: 'Erro no servidor.' })
@@ -591,7 +670,9 @@ export class Home extends DurableObject<Env> {
 
   async alarm() {
     const now = Date.now()
-    let next = now + SWEEP_EVERY
+    // Com alguém numa chamada privada (ou esperando voltar pra ela), de minuto em minuto; sem, espaçado.
+    const inCall = this.sockets().some((ws) => !!this.state(ws).call) || [...this.ghosts.values()].some((g) => !!g.state.call)
+    let next = now + (inCall ? SWEEP_EVERY : IDLE_SWEEP_EVERY)
     for (const ws of this.ctx.getWebSockets()) {
       const state = this.state(ws)
       if (!state.pending) continue
@@ -606,6 +687,9 @@ export class Home extends DurableObject<Env> {
         await this.dropConnection(ws, state, true)
       }
     }
+    for (const connId of [...this.tallies.keys()]) if (!this.reachable(connId)) this.tallies.delete(connId)
+    if (this.spentByConn.size > 200) this.spentByConn.clear()
+    if (this.typingAt.size > 200) this.typingAt.clear()
     if (this.ctx.getWebSockets().length > 0) await this.ctx.storage.setAlarm(next)
   }
 
@@ -753,9 +837,20 @@ export class Home extends DurableObject<Env> {
         if (!this.known(msg.channelId)) return
         return result(await conversation(this.env, msg.channelId).react(msg.channelId, me, msg.id, msg.emoji, !!msg.on))
 
-      case 'dm.typing':
+      case 'dm.typing': {
         if (!this.known(msg.channelId)) return
+        // A Conversation já segura a cada 2 s; aqui nem chega a chamar ela.
+        const now = Date.now()
+        if (now - (this.typingAt.get(msg.channelId) ?? 0) < TYPING_EVERY) return
+        this.typingAt.set(msg.channelId, now)
         return conversation(this.env, msg.channelId).typing(msg.channelId, me)
+      }
+
+      case 'incident': {
+        if (!(APP_INCIDENTS as readonly unknown[]).includes(msg.kind) || typeof msg.detail !== 'string') return
+        if (!this.allow(`incident:${state.connId}`, 1, APP_INCIDENT_EVERY)) return
+        return directory(this.env).incident(me, `app:${msg.kind}`, `${state.version ?? 'app antigo'}; ${msg.detail.slice(0, 1000)}`)
+      }
 
       case 'dm.ack': {
         const row = typeof msg.channelId === 'string'
@@ -821,10 +916,82 @@ export class Home extends DurableObject<Env> {
     }
   }
 
+  /**
+   * Cobra a mensagem do orçamento da conexão e do dia da pessoa (budget.ts). Passou: ignora,
+   * avisa uma vez por minuto e anota o incidente uma vez por janela; o app que entende a pausa
+   * (mandou a versão) fecha com 4008 e espera uns minutos, sem nem mandar o que ia ser ignorado.
+   */
+  private charge(ws: WebSocket, state: HomeConn, msg: HomeClientMessage): boolean {
+    const now = Date.now()
+    const essential = ESSENTIAL.has(msg.t)
+    let cost = COSTS[msg.t] ?? 1 + REQUEST
+    // A presença vai pra cada amigo (quando muda).
+    if (msg.t === 'presence') cost += this.friendIds().length * REQUEST
+    // O dia da pessoa estourou (-2): nem conta na conexão.
+    const personOver = !essential && this.personDay(now).spent + cost > PERSON_DAY
+    // A memória ganha de um attachment que alguém regravou com o estado de antes.
+    const base = merge(state.spent, this.spentByConn.get(state.connId))
+    const { spent, over } = personOver ? { spent: spend(base, 0, now).spent, over: -2 } : spend(base, cost, now, essential)
+    this.save(ws, { ...state, spent })
+    this.spentByConn.set(state.connId, spent)
+    if (over === -1 || essential) {
+      this.addPersonDay(cost)
+      return true
+    }
+    const which = over === -2 ? 'pessoa-1d' : windowName(over)
+    this.report(state, `home:budget-${which}`, `${state.version ?? 'app antigo'}; estourou com ${msg.t}`)
+    // Pausa só pra quem entende, e só nas janelas longas (uma rajada de 10 min só fica de fora).
+    if (state.version && over !== 0) {
+      try {
+        ws.close(CLOSE_PAUSE, 'Muita coisa em pouco tempo')
+      } catch {
+        // já estava fechando
+      }
+      this.ctx.waitUntil(this.dropConnection(ws, state, false))
+      return false
+    }
+    if (this.allow(`warn:${state.connId}`, 1, 60_000)) this.send(ws, { t: 'error', message: 'Muita coisa em pouco tempo. Espere uns minutos.' })
+    return false
+  }
+
+  /** Gasto do dia da pessoa, lido do banco quando o objeto sobe (ou o dia vira, à meia-noite UTC). */
+  private personDay(now: number): { day: number; spent: number; flushed: number } {
+    const today = utcDay(now)
+    if (this.day?.day === today) return this.day
+    const [day, spent] = (this.meta('spent_day') ?? '0:0').split(':').map(Number)
+    const kept = day === today && Number.isFinite(spent) ? spent : 0
+    this.day = { day: today, spent: kept, flushed: kept }
+    return this.day
+  }
+
+  private addPersonDay(cost: number) {
+    if (!this.day) return
+    this.day.spent += cost
+    if (this.day.spent - this.day.flushed >= PERSON_FLUSH) {
+      this.day.flushed = this.day.spent
+      this.setMeta('spent_day', `${this.day.day}:${this.day.spent}`)
+    }
+  }
+
+  /**
+   * Anota um incidente no Directory (Plataforma → incidentes), uma vez por tipo e conexão a
+   * cada 10 min: cada anotação é um RPC, e um freio não pode virar outro laço.
+   */
+  private report(state: HomeConn | null, kind: string, detail: string) {
+    if (!this.allow(`report:${state?.connId ?? '-'}:${kind}`, 1, 10 * 60_000)) return
+    this.ctx.waitUntil(
+      directory(this.env)
+        .incident(this.userId || null, kind, detail)
+        .catch((err) => console.error('não deu pra anotar o incidente', err)),
+    )
+  }
+
   /** Chamada privada em laço de sinalização: acaba pros dois (o app sai dela com o `call.ended`). */
-  private async endRunawayCall(ws: WebSocket, state: HomeConn, channelId: string) {
+  private async endRunawayCall(ws: WebSocket, state: HomeConn, channelId: string, detail: string) {
     this.flood.delete(`loop:${state.connId}`)
-    console.warn('chamada privada encerrada: sinalização em laço')
+    this.tallies.delete(state.connId)
+    console.warn('chamada privada encerrada: sinalização em laço', detail)
+    this.report(state, 'home:signal-loop', `${state.version ?? 'app antigo'}; ${detail}`)
     this.save(ws, { ...state, call: null })
     await conversation(this.env, channelId).callStop(channelId, this.userId)
     this.send(ws, { t: 'error', message: 'A chamada teve um problema e foi encerrada. Liguem de novo.' })
@@ -1158,6 +1325,7 @@ export class Home extends DurableObject<Env> {
     await this.ctx.storage.deleteAlarm()
     await this.ctx.storage.deleteAll()
     this.userId = ''
+    this.wiped = true
   }
 
   /** Migração da 0.5: conversa privada que já existia. */

@@ -57,6 +57,12 @@ const RESERVATION_TTL = 15 * MINUTE
 
 const INVITE_AGES = [0, 1800, 3600, 6 * 3600, 12 * 3600, 86400, 7 * 86400]
 const INVITE_USES = [1, 5, 10, 25, 50, 100]
+/** Freios anotados: os mais novos que ficam, e no máximo quantos por hora. */
+const MAX_INCIDENTS = 500
+const MAX_INCIDENTS_HOUR = 60
+/** Versão do app como o app manda ("1.16.1"; o resto é descartado). */
+const APP_VERSION = /^\d{1,3}\.\d{1,3}\.\d{1,4}(-[\w.]{1,24})?$/
+const PLATFORM = /^[a-z]{2,16}$/
 
 interface UserRow {
   id: string
@@ -264,6 +270,16 @@ export class Directory extends DurableObject<Env> {
     // A soma do espaço das fotos lia os blobs inteiros (o tamanho vem depois deles na linha).
     this.sql.exec('CREATE INDEX IF NOT EXISTS media_size ON media (size)')
     this.sql.exec('CREATE INDEX IF NOT EXISTS users_by_created ON users (created_at)')
+    // Freios que dispararam (app em laço, rajada de mensagens…): o dono vê em Plataforma.
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS incidents (
+      id INTEGER PRIMARY KEY,
+      at INTEGER NOT NULL,
+      user_id TEXT,
+      kind TEXT NOT NULL,
+      detail TEXT
+    )`)
+    // A última versão do app (e o sistema) com que cada pessoa conectou.
+    this.sql.exec('CREATE TABLE IF NOT EXISTS user_versions (user_id TEXT PRIMARY KEY, version TEXT, platform TEXT, at INTEGER)')
   }
 
   // ---------- Mídia pelo Cloudflare (media.ts) ----------
@@ -648,7 +664,8 @@ export class Directory extends DurableObject<Env> {
     return token
   }
 
-  async authenticate(token: string): Promise<AuthContext | null> {
+  /** `client`: versão e sistema do app que conectou (o Home manda; vai pra Plataforma → Contas). */
+  async authenticate(token: string, client?: { version?: unknown; platform?: unknown }): Promise<AuthContext | null> {
     if (typeof token !== 'string' || token.length < 20 || token.length > 100) return null
     const tokenHash = await hashToken(token)
     const now = Date.now()
@@ -661,7 +678,47 @@ export class Directory extends DurableObject<Env> {
     if (now - session.last_seen_at > SEEN_EVERY) {
       this.sql.exec('UPDATE sessions SET last_seen_at = ?, expires_at = ? WHERE id = ?', now, now + SESSION_IDLE, session.id)
     }
+    if (client) this.recordVersion(row.id, client.version, client.platform, now)
     return { me: this.toMe(row), sessionId: session.id, tokenHash }
+  }
+
+  /** Grava só quando muda (ou uma vez por dia): cada reconexão passa por aqui. */
+  private recordVersion(userId: string, version: unknown, platform: unknown, now: number) {
+    const v = typeof version === 'string' && APP_VERSION.test(version) ? version : null
+    if (!v) return
+    const p = typeof platform === 'string' && PLATFORM.test(platform) ? platform : null
+    const current = this.sql
+      .exec<{ version: string | null; platform: string | null; at: number | null }>('SELECT version, platform, at FROM user_versions WHERE user_id = ?', userId)
+      .toArray()[0]
+    if (current && current.version === v && current.platform === p && now - (current.at ?? 0) < DAY) return
+    this.sql.exec(
+      `INSERT INTO user_versions (user_id, version, platform, at) VALUES (?, ?, ?, ?)
+       ON CONFLICT (user_id) DO UPDATE SET version = excluded.version, platform = excluded.platform, at = excluded.at`,
+      userId,
+      v,
+      p,
+      now,
+    )
+  }
+
+  /**
+   * Um freio disparou (o Home ou o Guild viram uma conexão em laço, uma rajada…): fica anotado
+   * pro dono ver. Quem chama já limita (uma vez por disparo); aqui, um teto por hora pra
+   * nenhum laço novo virar outro laço de chamadas.
+   */
+  incident(userId: string | null, kind: string, detail?: string) {
+    if (typeof kind !== 'string' || !kind || kind.length > 64) return
+    const now = Date.now()
+    const recent = this.sql.exec<{ n: number }>('SELECT COUNT(*) AS n FROM incidents WHERE at > ?', now - HOUR).one().n
+    if (recent >= MAX_INCIDENTS_HOUR) return
+    this.sql.exec(
+      'INSERT INTO incidents (at, user_id, kind, detail) VALUES (?, ?, ?, ?)',
+      now,
+      typeof userId === 'string' ? userId.slice(0, 64) : null,
+      kind,
+      typeof detail === 'string' ? detail.slice(0, 1000) : null,
+    )
+    this.sql.exec('DELETE FROM incidents WHERE id NOT IN (SELECT id FROM incidents ORDER BY id DESC LIMIT ?)', MAX_INCIDENTS)
   }
 
   async logout(token: string) {
@@ -1533,6 +1590,8 @@ export class Directory extends DurableObject<Env> {
     storageLimit: number
     mediaUsed: number
     mediaLimit: number
+    /** Freios que dispararam, os mais novos primeiro. */
+    incidents: { at: number; userId: string | null; kind: string; detail: string | null }[]
   }> {
     if (!this.isStaff(viewerId) && this.pioneerId() !== viewerId) return fail(403, 'Só o dono da plataforma.')
     const now = Date.now()
@@ -1547,6 +1606,12 @@ export class Directory extends DurableObject<Env> {
       storageLimit: STORAGE_LIMIT,
       mediaUsed: this.mediaUsage().bytes,
       mediaLimit: MEDIA_BUDGET,
+      incidents: this.sql
+        .exec<{ at: number; user_id: string | null; kind: string; detail: string | null }>(
+          'SELECT at, user_id, kind, detail FROM incidents ORDER BY id DESC LIMIT 100',
+        )
+        .toArray()
+        .map((r) => ({ at: r.at, userId: r.user_id, kind: r.kind, detail: r.detail })),
     })
   }
 
@@ -1557,15 +1622,20 @@ export class Directory extends DurableObject<Env> {
     return ok(null)
   }
 
-  adminUsers(staffId: string, query: unknown): Result<(User & { banned: boolean; relay: boolean; createdAt: number })[]> {
+  adminUsers(
+    staffId: string,
+    query: unknown,
+  ): Result<(User & { banned: boolean; relay: boolean; createdAt: number; appVersion: string | null; platform: string | null })[]> {
     if (!this.isStaff(staffId)) return fail(403, 'Só o dono da plataforma.')
     // "_" e "%" são curingas no LIKE: escapados, "duarte_ze" acha "duarte_ze".
     const q = typeof query === 'string' ? `%${query.trim().toLowerCase().replace(/[!%_]/g, (c) => `!${c}`)}%` : '%'
     const pioneer = this.pioneerId()
     return ok(
       this.sql
-        .exec<UserRow>(
-          `SELECT * FROM users WHERE (username LIKE ? ESCAPE '!' OR lower(name) LIKE ? ESCAPE '!') AND (flags & ?) = 0
+        .exec<UserRow & { app_version: string | null; app_platform: string | null }>(
+          `SELECT users.*, v.version AS app_version, v.platform AS app_platform FROM users
+           LEFT JOIN user_versions v ON v.user_id = users.id
+           WHERE (username LIKE ? ESCAPE '!' OR lower(name) LIKE ? ESCAPE '!') AND (flags & ?) = 0
            ORDER BY created_at DESC LIMIT 100`,
           q,
           q,
@@ -1577,6 +1647,8 @@ export class Directory extends DurableObject<Env> {
           banned: (r.flags & FLAG_BANNED) !== 0,
           relay: (r.flags & (FLAG_STAFF | FLAG_RELAY)) !== 0,
           createdAt: r.created_at,
+          appVersion: r.app_version ?? null,
+          platform: r.app_platform ?? null,
         })),
     )
   }

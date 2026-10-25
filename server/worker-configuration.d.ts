@@ -6,6 +6,7 @@ interface __BaseEnv_Env {
 	AUTH_LIMITER: RateLimit;
 	USER_LIMITER: RateLimit;
 	IMPORT_LIMITER: RateLimit;
+	WS_LIMITER: RateLimit;
 	AI: Ai;
 	TURNSTILE_SITE_KEY: string;
 	FILE_SECRET: string;

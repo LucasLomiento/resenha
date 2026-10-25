@@ -34,6 +34,7 @@ import {
   type User,
   type VoiceMember,
 } from '../../shared/protocol'
+import { CLOSE_PAUSE, REQUEST, SIGNAL_RUNAWAY, SIGNAL_RUNAWAY_WINDOW, SignalTally, merge, spend, windowName, type Spent } from './budget'
 import type { LegacyExport } from './directory'
 import { cleanStructure } from './discord-import'
 import { newId } from './ids'
@@ -105,6 +106,10 @@ interface ConnState {
   map?: number
   /** No Street View, olhando esse lugar. */
   street?: StreetSpot
+  /** Quanto esta conexão já gastou (ver budget.ts); quem volta com o mesmo connId herda. */
+  spent?: Spent
+  /** Versão do app (1.17+): entende o fechamento de pausa (4008). */
+  version?: string
 }
 
 /** Conexão que caiu sem avisar, esperando o app voltar. */
@@ -173,6 +178,33 @@ const AUTH_TIMEOUT = 15_000
 /** O app manda "ping" a cada 20 s; sem resposta por mais que isso, a conexão morreu. */
 const DEAD_AFTER = 75_000
 const SWEEP_EVERY = 60_000
+/**
+ * Sem ninguém na call nem no mapa, a varredura é bem mais espaçada: o alarme de minuto em minuto
+ * de cada servidor com alguém conectado era boa parte do uso do Cloudflare. Quem some sem fechar
+ * fica "online" até uns 6 min; na call continua saindo em até 2 min.
+ */
+const IDLE_SWEEP_EVERY = 5 * MINUTE
+/** Conexões novas vindas do mesmo IP em 10 min (um app reconectando sem parar). */
+const MAX_UPGRADES_PER_IP = 60
+/**
+ * O que cada mensagem do app custa na cota do Cloudflare, em vigésimos de pedido (ver
+ * budget.ts): a mensagem é 1, cada RPC que ela causa é 20 (o resto fica aqui dentro).
+ */
+const COSTS: Partial<Record<ClientMessage['t'], number>> = {
+  // Avisa o celular de quem quer (um RPC por pessoa com push; quem não tem fica de fora um tempo).
+  'chat.send': 1 + 3 * REQUEST,
+  'chat.ack': 1 + REQUEST,
+  'voice.join': 1 + REQUEST,
+  'invite.create': 1 + REQUEST,
+  'invites.list': 1 + REQUEST,
+  'invite.delete': 1 + 2 * REQUEST,
+  'guild.update': 1 + 2 * REQUEST,
+  'guild.transfer': 1 + REQUEST,
+  'member.kick': 1 + REQUEST,
+  'member.ban': 1 + REQUEST,
+}
+/** Passam mesmo com o orçamento estourado (contam, mas não podem ficar presas): sair da call, do mapa. */
+const ESSENTIAL = new Set<string>(['voice.leave', 'map.leave'])
 const ORPHAN_TTL = DAY
 /** Teto de anexos por servidor (a plataforma inteira tem outro teto, no Directory). */
 const FILES_LIMIT = 2 * 1024 ** 3
@@ -290,6 +322,12 @@ export class Guild extends DurableObject<Env> {
   private retired = new WeakSet<WebSocket>()
   /** Mandaram o `auth` e o Directory ainda está conferindo o token. */
   private authenticating = new WeakSet<WebSocket>()
+  /** Excluído (as tabelas já não existem nesta instância). */
+  private destroyed = false
+  /** connId -> o que a conexão gastou (a que volta depois de uma pausa herda; zera se hibernar). */
+  private spentByConn = new Map<string, Spent>()
+  /** Sinalização de cada conexão na janela do freio (só contagens, pro incidente). */
+  private tallies = new Map<string, SignalTally>()
   /** Quando rodou a limpeza pesada (na memória: depois de reiniciar, roda de novo, e tudo bem). */
   private cleanedAt = 0
   /** Quem não tem celular com push (até quando não precisa perguntar de novo pro Home dela). */
@@ -964,11 +1002,12 @@ export class Guild extends DurableObject<Env> {
     ws: WebSocket,
     userId: string,
     connId: string,
-  ): { voice: VoiceState | null; map?: number; street?: StreetSpot; queue: string[] } {
+  ): { voice: VoiceState | null; map?: number; street?: StreetSpot; queue: string[]; spent?: Spent } {
     let voice: VoiceState | null = null
     let map: number | undefined
     let street: StreetSpot | undefined
     let queue: string[] = []
+    let spent: Spent | undefined
     const ghost = this.ghosts.get(connId)
     if (ghost && ghost.state.userId === userId) {
       clearTimeout(ghost.timer)
@@ -977,11 +1016,13 @@ export class Guild extends DurableObject<Env> {
       map = ghost.state.map
       street = ghost.state.street
       queue = ghost.queue
+      spent = ghost.state.spent
     }
     for (const old of this.ctx.getWebSockets()) {
       if (old === ws) continue
       const state = this.state(old)
       if (state.pending || state.connId !== connId || state.userId !== userId) continue
+      spent = merge(spent, state.spent)
       voice = state.voice ?? voice
       map = state.map ?? map
       street = state.street ?? street
@@ -993,7 +1034,7 @@ export class Guild extends DurableObject<Env> {
         // já estava fechando
       }
     }
-    return { voice, map, street, queue }
+    return { voice, map, street, queue, spent }
   }
 
   /** A call que voltou ainda vale? (canal existe, pode entrar, não está de castigo) */
@@ -1266,6 +1307,8 @@ export class Guild extends DurableObject<Env> {
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url)
     const { pathname } = url
+    // Excluído agora há pouco (o Worker ainda pode achar que existe, ver `exists` no index.ts).
+    if (this.destroyed) return new Response('Servidor não existe', { status: 404 })
 
     // Só pra migração das conversas privadas da 0.5 (chamado por outro DO, nunca pelo Worker).
     const legacyFile = pathname.match(/^\/internal\/legacy-file\/([\w-]+)$/)
@@ -1302,6 +1345,11 @@ export class Guild extends DurableObject<Env> {
       .getWebSockets()
       .filter((ws) => ws.readyState === WebSocket.OPEN && this.state(ws).pending)
       .map((ws) => ({ ws, ...this.state(ws) }))
+    // Reconectando sem parar: espera (o app conta como falha e espaça as tentativas).
+    if (ip && !this.allow(`upgrade:${ip}`, MAX_UPGRADES_PER_IP, 10 * MINUTE)) {
+      this.report(null, null, 'guild:reconnect', `mais de ${MAX_UPGRADES_PER_IP} conexões do mesmo IP em 10 min`)
+      return new Response('Conexões demais, espere um pouco', { status: 429 })
+    }
     if (!admitPending(waiting, ip, MAX_PENDING)) return new Response('Ocupado, tente de novo', { status: 503 })
 
     const [client, server] = Object.values(new WebSocketPair())
@@ -1345,7 +1393,7 @@ export class Guild extends DurableObject<Env> {
 
     if (this.saveProfile({ ...auth.me, admin: false })) this.broadcastMember(auth.me.id)
     const before = this.presenceOf(auth.me.id)
-    const resumed = key ? this.takeOver(ws, auth.me.id, connId) : { voice: null, queue: [] }
+    const resumed: ReturnType<Guild['takeOver']> = key ? this.takeOver(ws, auth.me.id, connId) : { voice: null, queue: [] }
     // Quem estava no mapa continua nele (pros outros nada muda); o app confirma com `map.join` ou sai.
     const voice = this.validVoice(auth.me.id, resumed.voice)
     const state: ConnState = {
@@ -1361,6 +1409,9 @@ export class Guild extends DurableObject<Env> {
       voice,
       map: resumed.map,
       street: resumed.map ? resumed.street : undefined,
+      // A mesma instância voltando (queda, pausa) continua com o que já gastou.
+      spent: merge(resumed.spent, this.spentByConn.get(connId)),
+      ...(typeof msg.version === 'string' ? { version: msg.version.slice(0, 32) } : {}),
     }
     this.save(ws, state)
 
@@ -1429,7 +1480,7 @@ export class Guild extends DurableObject<Env> {
     if (!member) return ws.close(4003, 'Você não está nesse servidor')
     // O mapa tem balde próprio: arrastar e mexer o mouse mandam uma dúzia de mensagens por segundo.
     if (msg.t === 'map.view' || msg.t === 'map.cursor') {
-      if (this.allow(`map:${state.connId}`, 300, 10_000)) this.mapMotion(state, msg, member)
+      if (this.allow(`map:${state.connId}`, 300, 10_000) && this.charge(ws, state, msg)) this.mapMotion(state, msg, member)
       return
     }
     // Limite por conexão (sinalização da call tem folga maior: muitos candidatos ICE de uma vez),
@@ -1442,9 +1493,23 @@ export class Guild extends DurableObject<Env> {
       if (this.allow(`warn:${state.connId}`, 1, 10_000)) this.error(ws, 'Calma! Muitas ações de uma vez.')
       return
     }
+    // Call em laço de sinalização (como a chamada privada de 25/10/2026): a conexão sai da call.
+    // Aqui não tem RPC, mas cada mensagem que chega ainda conta 1/20 de pedido, o dia inteiro.
+    if (msg.t === 'rtc.signal' && state.voice) {
+      const now = Date.now()
+      let tally = this.tallies.get(state.connId)
+      if (!tally) this.tallies.set(state.connId, (tally = new SignalTally()))
+      tally.add(msg.data, now)
+      if (!this.allow(`loop:${state.connId}`, SIGNAL_RUNAWAY, SIGNAL_RUNAWAY_WINDOW)) {
+        return this.leaveRunawayCall(ws, state, tally.detail(now))
+      }
+    }
+    // O orçamento de sempre (budget.ts): passou, ignora; o app novo pausa.
+    if (!this.charge(ws, state, msg)) return
 
     try {
-      await this.handle(ws, state, msg)
+      // O estado de agora (com o gasto desta mensagem): quem trata grava por cima dele.
+      await this.handle(ws, this.state(ws), msg)
     } catch (err) {
       console.error('erro tratando', msg.t, err)
       this.error(ws, 'Erro no servidor.')
@@ -1462,6 +1527,60 @@ export class Guild extends DurableObject<Env> {
 
   async webSocketError(ws: WebSocket) {
     this.dropConnection(ws, this.state(ws), true)
+  }
+
+  /**
+   * Cobra a mensagem do orçamento da conexão (budget.ts). Passou: ignora, avisa uma vez por
+   * minuto e anota o incidente; o app que entende a pausa (mandou a versão) fecha com 4008 e
+   * espera uns minutos, sem nem mandar o que ia ser ignorado.
+   */
+  private charge(ws: WebSocket, state: ConnState, msg: ClientMessage): boolean {
+    const essential = ESSENTIAL.has(msg.t)
+    // A memória ganha de um attachment que alguém regravou com o estado de antes.
+    const base = merge(state.spent, this.spentByConn.get(state.connId))
+    const { spent, over } = spend(base, COSTS[msg.t] ?? 1, Date.now(), essential)
+    this.save(ws, { ...state, spent })
+    this.spentByConn.set(state.connId, spent)
+    if (over === -1 || essential) return true
+    this.report(state.userId, state.connId, `guild:budget-${windowName(over)}`, `${state.version ?? 'app antigo'}; estourou com ${msg.t}`)
+    // Pausa só pra quem entende, e só nas janelas longas (uma rajada de 10 min só fica de fora).
+    if (state.version && over !== 0) {
+      try {
+        ws.close(CLOSE_PAUSE, 'Muita coisa em pouco tempo')
+      } catch {
+        // já estava fechando
+      }
+      this.dropConnection(ws, state, false)
+      return false
+    }
+    if (this.allow(`warn:${state.connId}`, 1, MINUTE)) this.error(ws, 'Muita coisa em pouco tempo. Espere uns minutos.')
+    return false
+  }
+
+  /** Sinalização em laço: esta conexão sai da call (o app sai junto com o `voice.forced`). */
+  private leaveRunawayCall(ws: WebSocket, state: ConnState, detail: string) {
+    this.flood.delete(`loop:${state.connId}`)
+    this.tallies.delete(state.connId)
+    console.warn('call encerrada pra uma conexão: sinalização em laço', detail)
+    this.report(state.userId, state.connId, 'guild:signal-loop', `${state.version ?? 'app antigo'}; ${detail}`)
+    this.save(ws, { ...state, voice: null })
+    this.persistVoice(this.state(ws))
+    this.send(ws, { t: 'voice.forced', channelId: null })
+    this.error(ws, 'A call teve um problema e você saiu dela. Entre de novo.')
+    this.broadcastVoice()
+  }
+
+  /**
+   * Anota um incidente no Directory (Plataforma → incidentes), uma vez por tipo e conexão a
+   * cada 10 min: cada anotação é um RPC, e um freio não pode virar outro laço.
+   */
+  private report(userId: string | null, connId: string | null, kind: string, detail: string) {
+    if (!this.allow(`report:${connId ?? '-'}:${kind}`, 1, 10 * MINUTE)) return
+    this.ctx.waitUntil(
+      directory(this.env)
+        .incident(userId, kind, `servidor ${this.id}; ${detail}`)
+        .catch((err) => console.error('não deu pra anotar o incidente', err)),
+    )
   }
 
   /** `unexpected`: caiu sem o app pedir (rede, servidor reiniciando). */
@@ -1484,7 +1603,11 @@ export class Guild extends DurableObject<Env> {
   /** Varre conexões mortas, castigos que acabaram e anexos que nunca foram usados. */
   async alarm() {
     const now = Date.now()
-    let next = now + SWEEP_EVERY
+    // Com alguém na call ou no mapa (ou esperando voltar), de minuto em minuto: quem sumiu sai logo,
+    // e a call no banco fica em dia pra um reinício (VOICE_STALE). Sem, espaçado.
+    const states = [...this.sockets().map((ws) => this.state(ws)), ...this.ghostStates()]
+    const busy = this.ghosts.size > 0 || this.voiceRows.size > 0 || states.some((s) => !!s.voice || !!s.map)
+    let next = now + (busy ? SWEEP_EVERY : IDLE_SWEEP_EVERY)
     for (const ws of this.ctx.getWebSockets()) {
       const state = this.state(ws)
       if (!state.pending) continue
@@ -1512,6 +1635,13 @@ export class Guild extends DurableObject<Env> {
         this.broadcast({ t: 'permissions', permissions: Object.fromEntries(this.perms(user_id)) }, { userId: user_id })
       }
     }
+    // O próximo castigo que acaba: o alarme vem na hora dele, mesmo com a varredura espaçada.
+    const nextTimeout = this.sql
+      .exec<{ at: number | null }>('SELECT MIN(timeout_until) AS at FROM members WHERE timeout_until IS NOT NULL')
+      .one().at
+    if (nextTimeout) next = Math.min(next, Math.max(nextTimeout, now + 1000))
+    for (const connId of [...this.tallies.keys()]) if (!this.ghosts.has(connId) && !states.some((s) => s.connId === connId)) this.tallies.delete(connId)
+    if (this.spentByConn.size > 500) this.spentByConn.clear()
 
     // O resto não precisa de minuto em minuto (o alarme roda o dia todo com alguém conectado).
     if (now - this.cleanedAt >= CLEANUP_EVERY) {
@@ -2548,6 +2678,11 @@ export class Guild extends DurableObject<Env> {
         this.sql.exec('UPDATE members SET timeout_until = ? WHERE user_id = ?', until, targetId)
         this.audit(userId, 'member.timeout', targetId, `${name}: ${msg.minutes ? `${msg.minutes} min` : 'tirou o castigo'}${reason ? ` — ${reason}` : ''}`)
         this.pushAccess(before)
+        // A varredura pode estar espaçada (5 min): o alarme vem quando o castigo acaba.
+        if (until) {
+          const at = await this.ctx.storage.getAlarm()
+          if (at === null || at > until) await this.ctx.storage.setAlarm(until)
+        }
         return this.broadcastMember(targetId)
       }
 
@@ -2933,6 +3068,7 @@ export class Guild extends DurableObject<Env> {
     await this.ctx.storage.deleteAlarm()
     await this.ctx.storage.deleteAll()
     this.id = ''
+    this.destroyed = true
     this.invalidate()
   }
 }

@@ -207,6 +207,9 @@ export default {
 
     // Limites e gerais
     'Calma! Muitas ações de uma vez.': 'Calma! Muitas ações de uma vez.',
+    'Muita coisa em pouco tempo. Espere uns minutos.': 'Muita coisa em pouco tempo. Espere uns minutos.',
+    'A call teve um problema e você saiu dela. Entre de novo.': 'A call teve um problema e você saiu dela. Entre de novo.',
+    'Conexões demais. Espere um pouco.': 'Conexões demais. Espere um pouco.',
     'Calma! Você está mandando mensagens rápido demais.': 'Calma! Você está mandando mensagens rápido demais.',
     'Calma! Edições rápidas demais.': 'Calma! Edições rápidas demais.',
     'Calma! Reações rápidas demais.': 'Calma! Reações rápidas demais.',

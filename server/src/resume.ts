@@ -54,10 +54,11 @@ export function admitPending(pending: { ws: WebSocket; connectedAt: number; ip?:
 
 /**
  * Fechamentos de propósito: o app saiu (1000, 1001), a sessão acabou (4001),
- * saiu do servidor (4003), o servidor foi excluído (4004) ou outra conexão
- * tomou o lugar (4005). Esses não esperam ninguém voltar.
+ * saiu do servidor (4003), o servidor foi excluído (4004), outra conexão
+ * tomou o lugar (4005) ou o servidor pausou o app (4008, ver budget.ts).
+ * Esses não esperam ninguém voltar.
  */
-const DELIBERATE = new Set([1000, 1001, 4001, 4003, 4004, 4005])
+const DELIBERATE = new Set([1000, 1001, 4001, 4003, 4004, 4005, 4008])
 
 export function unexpectedClose(code: number): boolean {
   return !DELIBERATE.has(code)

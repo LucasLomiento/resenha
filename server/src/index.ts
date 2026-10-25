@@ -132,6 +132,24 @@ async function limited(limiter: RateLimit | undefined, key: string | null): Prom
   }
 }
 
+/**
+ * Servidores e contas que existem, por 10 min (na memória desta instância do Worker): cada
+ * WebSocket aberto perguntava ao Directory, e cada pergunta é um pedido na cota de Durable
+ * Objects. Só o "existe" fica guardado; quem foi excluído nesse meio é recusado pelo próprio
+ * objeto (4004/4001).
+ */
+const existing = new Map<string, number>()
+const EXISTS_TTL = 10 * 60_000
+
+async function exists(key: string, check: () => Promise<unknown>): Promise<boolean> {
+  const now = Date.now()
+  if ((existing.get(key) ?? 0) > now) return true
+  if (!(await check())) return false
+  if (existing.size >= 5000) existing.clear()
+  existing.set(key, now + EXISTS_TTL)
+  return true
+}
+
 const escapeHtml = (text: string) =>
   text.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!)
 
@@ -439,13 +457,18 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
   if (socket && request.headers.get('Upgrade') !== 'websocket') return error(426, 'Esperava WebSocket.')
   const ipHeader: Record<string, string> = socket && ip ? { [IP_HEADER]: await hashIp(env.FILE_SECRET, ip) } : {}
   if (pathname === '/ws') return guild(env, 'main').fetch(clean(request, { [LEGACY_HEADER]: '1', ...ipHeader }))
+  // Reconectando sem parar (app com bug, script): fica aqui, sem acordar nenhum Durable Object.
+  // Por IP e destino: dá pra todo aparelho da casa voltar junto depois de uma queda.
+  if (socket && (await limited(env.WS_LIMITER, `${pathname}:${ipKey}`))) return error(429, 'Conexões demais. Espere um pouco.')
   if ((m = pathname.match(/^\/api\/g\/([\w-]{1,64})\/ws$/))) {
-    if (!(await dir.guildInfo(m[1]))) return error(404, 'Servidor não existe.')
-    return guild(env, m[1]).fetch(clean(request, ipHeader))
+    const id = m[1]
+    if (!(await exists(`g:${id}`, () => dir.guildInfo(id)))) return error(404, 'Servidor não existe.')
+    return guild(env, id).fetch(clean(request, ipHeader))
   }
   if ((m = pathname.match(/^\/api\/home\/([\w-]{1,64})\/ws$/))) {
-    if (!(await dir.getUser(m[1]))) return error(404, 'Conta não existe.')
-    return home(env, m[1]).fetch(clean(request, { [HOME_HEADER]: m[1], ...ipHeader }))
+    const id = m[1]
+    if (!(await exists(`u:${id}`, () => dir.getUser(id)))) return error(404, 'Conta não existe.')
+    return home(env, id).fetch(clean(request, { [HOME_HEADER]: id, ...ipHeader }))
   }
 
   // ---------- Daqui pra baixo, só logado ----------

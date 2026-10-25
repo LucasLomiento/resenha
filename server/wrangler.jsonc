@@ -24,7 +24,9 @@
     { "name": "AUTH_LIMITER", "namespace_id": "4102", "simple": { "limit": 20, "period": 60 } },
     { "name": "USER_LIMITER", "namespace_id": "4103", "simple": { "limit": 20, "period": 60 } },
     // Ler print do Discord (Workers AI): poucos por minuto por pessoa.
-    { "name": "IMPORT_LIMITER", "namespace_id": "4104", "simple": { "limit": 6, "period": 60 } }
+    { "name": "IMPORT_LIMITER", "namespace_id": "4104", "simple": { "limit": 6, "period": 60 } },
+    // WebSocket aberto, por IP e destino: um app reconectando sem parar fica no Worker (sem acordar DO).
+    { "name": "WS_LIMITER", "namespace_id": "4105", "simple": { "limit": 20, "period": 60 } }
   ],
   // Modelo de visão pra importar canais de um print do Discord (src/discord-import.ts).
   "ai": { "binding": "AI" },
