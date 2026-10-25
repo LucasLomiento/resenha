@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte'
-  import type { AdminPanel, AdminUser } from '../../lib/api'
+  import type { AdminIncident, AdminPanel, AdminUsageTarget, AdminUser } from '../../lib/api'
   import { client } from '../../lib/client.svelte'
   import { formatSize } from '../../lib/format'
   import { fmt, m } from '../../lib/i18n.svelte'
@@ -31,6 +31,41 @@
   const tone = (part: number) => (part >= 1 ? 'full' : part >= 0.9 ? 'warn' : 'ok')
   const storage = $derived(panel ? fraction(panel.storageUsed, panel.storageLimit) : 0)
   const media = $derived(panel ? fraction(panel.mediaUsed ?? 0, panel.mediaLimit ?? 1) : 0)
+
+  // ---------- Pedidos do dia no Cloudflare ----------
+
+  /** Sem as chaves das análises no servidor, não vem: o cartão nem aparece. */
+  const usage = $derived(panel?.usage ?? null)
+  const usagePart = $derived(usage?.requests != null ? fraction(usage.requests, usage.limit) : 0)
+  /** A cota do dia: amarelo a partir do aviso pro dono (60%), vermelho no modo econômico (80%). */
+  const usageTone = (part: number) => (part >= 0.8 ? 'full' : part >= 0.6 ? 'warn' : 'ok')
+  const time = (ms: number) => fmt.date(ms, { hour: '2-digit', minute: '2-digit' })
+  const share = (part: number) => fmt.number(part, { style: 'percent', maximumFractionDigits: part < 0.01 ? 1 : 0 })
+
+  /** De quem é: a conta, a conversa (as duas contas) ou o servidor. */
+  function targetName(target: AdminUsageTarget): string {
+    if (target.kind === 'dm') return t.usage.dm(target.user?.name ?? '?', target.peer?.name ?? '?')
+    if (target.kind === 'user') return target.user?.name ?? t.usage.unknown
+    if (target.kind === 'guild') return target.guild?.name || t.usage.kinds.guild
+    if (target.kind === 'directory') return t.usage.kinds.directory
+    return t.usage.unknown
+  }
+
+  const TARGET_ICON = { guild: 'hash', dm: 'message', directory: 'shield', unknown: 'activity', user: 'user' } as const
+
+  // ---------- Barrados pelo servidor e versão do app ----------
+
+  const SYSTEMS: Record<string, string> = { linux: 'Linux', win32: 'Windows', windows: 'Windows', android: 'Android', darwin: 'macOS' }
+  const system = (platform?: string | null) => (platform ? (SYSTEMS[platform.toLowerCase()] ?? platform) : '')
+  const when = (ms: number) => fmt.date(ms, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+
+  function incidentName(incident: AdminIncident): string {
+    return incident.user?.name ?? client.user(incident.userId)?.name ?? users?.find((u) => u.id === incident.userId)?.name ?? incident.userId
+  }
+
+  function incidentText(incident: AdminIncident): string {
+    return incident.kind === 'call-loop' ? t.incidents.callLoop : incident.detail || t.incidents.other
+  }
 
   async function loadPanel() {
     const api = client.api
@@ -192,29 +227,82 @@
         <span class="stat-note tone-{tone(media)}">{t.mediaNote}</span>
       {/if}
     </div>
+    {#if usage}
+      <div class="stat wide" data-setting="platform.usage">
+        <span class="stat-label">{t.usage.title}</span>
+        {#if usage.requests === null || usage.measuredAt === null}
+          <span class="stat-value">—</span>
+          <span class="stat-note">{t.usage.waiting}</span>
+        {:else}
+          <span class="stat-value">{fmt.number(usage.requests)} <small>{t.stats.of(fmt.number(usage.limit))}</small></span>
+          {@render meter(t.usage.title, usagePart, usageTone(usagePart))}
+          {#if usage.economy}
+            <span class="stat-note tone-full"><Icon name="circle-alert" size={14} />{t.usage.economy(time(usage.resetAt))}</span>
+          {:else if usage.limitAt}
+            <span class="stat-note tone-warn"><Icon name="triangle-alert" size={14} />{t.usage.pace(time(usage.limitAt))}</span>
+          {/if}
+          <span class="stat-note">{t.usage.note(time(usage.resetAt), time(usage.measuredAt))}</span>
+        {/if}
+      </div>
+    {/if}
   </div>
 
-  {#snippet meter(label: string, part: number)}
+  {#snippet meter(label: string, part: number, level = tone(part))}
     {@const percent = Math.round(part * 100)}
-    <div class="meter tone-{tone(part)}" role="meter" aria-label={label} aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent} aria-valuetext="{percent}%">
+    <div class="meter tone-{level}" role="meter" aria-label={label} aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent} aria-valuetext="{percent}%">
       {#if part > 0}<div class="fill" style:width="{part * 100}%"></div>{/if}
     </div>
   {/snippet}
 
+  {#if usage && usage.top.length > 0}
+    <div class="block">
+      <Section title={t.usage.topTitle} description={t.usage.topDescription}>
+        {#each usage.top.slice(0, 8) as target, i (i)}
+          <Row label={targetName(target)} description={target.kind === 'directory' ? t.usage.directory : t.usage.kinds[target.kind]}>
+            {#snippet leading()}
+              {#if target.kind === 'user' && target.user}
+                <Avatar id={target.user.id} name={target.user.name} size={32} src={client.api?.avatar(target.user) ?? null} cutout="var(--bg-raised)" />
+              {:else}
+                <span class="target-icon"><Icon name={TARGET_ICON[target.kind]} size={16} /></span>
+              {/if}
+            {/snippet}
+            <span class="count">{t.usage.requests(fmt.number(target.requests), share(target.requests / Math.max(1, usage.requests ?? 0)))}</span>
+          </Row>
+        {/each}
+      </Section>
+    </div>
+  {/if}
+
+  {#if panel.incidents?.length}
+    <div class="block">
+      <Section title={t.incidents.title} description={t.incidents.description}>
+        {#each panel.incidents.slice(0, 20) as incident, i (i)}
+          <Row label={incidentName(incident)} description={t.incidents.when(when(incident.at), incidentText(incident))}>
+            {#snippet leading()}
+              <span class="target-icon warn"><Icon name="triangle-alert" size={16} /></span>
+            {/snippet}
+          </Row>
+        {/each}
+      </Section>
+    </div>
+  {/if}
+
   {#if owner}
-    <Section title={t.signup.title} setting="platform.signup">
-      <RadioGroup
-        label={t.signup.title}
-        bind:value={() => panel!.signup, (mode) => setSignup(mode)}
-        options={[
-          { value: 'invite', label: t.signup.invite, description: t.signup.inviteDescription },
-          { value: 'open', label: t.signup.open, description: t.signup.openDescription },
-        ]}
-      />
-    </Section>
-    {#if signupError}
-      <p class="error" role="alert"><Icon name="circle-alert" size={14} />{signupError}</p>
-    {/if}
+    <div class="block">
+      <Section title={t.signup.title} setting="platform.signup">
+        <RadioGroup
+          label={t.signup.title}
+          bind:value={() => panel!.signup, (mode) => setSignup(mode)}
+          options={[
+            { value: 'invite', label: t.signup.invite, description: t.signup.inviteDescription },
+            { value: 'open', label: t.signup.open, description: t.signup.openDescription },
+          ]}
+        />
+      </Section>
+      {#if signupError}
+        <p class="error" role="alert"><Icon name="circle-alert" size={14} />{signupError}</p>
+      {/if}
+    </div>
   {/if}
 {:else if panelError}
   <Section>
@@ -244,7 +332,12 @@
         {#each users as user (user.id)}
           {@const self = user.id === client.me?.id}
           {@const badge = badgeOf(user)}
-          <Row label={user.name} description={t.accounts.since(user.username, date(user.createdAt))}>
+          <Row
+            label={user.name}
+            description={user.appVersion
+              ? `${t.accounts.since(user.username, date(user.createdAt))} · ${t.accounts.appVersion(user.appVersion, system(user.platform))}`
+              : t.accounts.since(user.username, date(user.createdAt))}
+          >
             {#snippet leading()}
               <Avatar id={user.id} name={user.name} size={32} src={client.api?.avatar(user) ?? null} cutout="var(--bg-raised)" />
             {/snippet}
@@ -288,7 +381,6 @@
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 12px;
-    margin-bottom: var(--s-8);
   }
 
   .stat.wide {
@@ -396,8 +488,31 @@
     animation: rs-fade-in var(--t) var(--ease) 300ms both;
   }
 
-  .accounts {
+  .accounts,
+  .block {
     margin-top: var(--s-8);
+  }
+
+  .target-icon {
+    display: grid;
+    place-items: center;
+    width: 32px;
+    height: 32px;
+    border-radius: var(--r-full);
+    background: rgb(var(--tint-rgb) / 0.06);
+    color: var(--fg-2);
+  }
+
+  .target-icon.warn {
+    background: var(--yellow-soft);
+    color: var(--yellow);
+  }
+
+  .count {
+    color: var(--fg-3);
+    font-size: var(--text-sm);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
   }
 
   .search {

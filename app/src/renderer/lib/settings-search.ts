@@ -116,6 +116,7 @@ export const SETTINGS: SettingEntry[] = [
   { id: 'platform.storage', page: 'platform', platform: true },
   { id: 'platform.invites', page: 'platform', platform: true },
   { id: 'platform.media', page: 'platform', platform: true },
+  { id: 'platform.usage', page: 'platform', platform: true },
 ]
 
 /** Sem acento, minúsculo, só letras/números (o resto vira espaço). */

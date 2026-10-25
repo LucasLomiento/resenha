@@ -1606,6 +1606,38 @@ try {
     Math.round(document.querySelector('.settings-content [data-setting="profile.photo"]')?.getBoundingClientRect().height ?? -1),
   )
   check(photoRow > 0 && photoRow < 200, 'a linha da foto no Perfil não tem espaço sobrando', `${photoRow} px`)
+  // O servidor do e2e não tem as chaves das análises do Cloudflare: o uso do dia, quem mais gastou e
+  // os barrados pelo servidor entram de mentira por cima do /api/admin (só pra A, o dono).
+  const fakeUser = (id, name) => ({ id, username: name.toLowerCase(), name, avatar: null, bio: '', accent: null, admin: false })
+  await a.page.route('**/api/admin', async (route) => {
+    const res = await route.fetch()
+    const now = Date.now()
+    const zeca = fakeUser('e2e-zeca', 'Zeca')
+    const bia = fakeUser('e2e-bia', 'Bia')
+    await route.fulfill({
+      response: res,
+      json: {
+        ...(await res.json()),
+        usage: {
+          limit: 100_000,
+          resetAt: Date.parse(new Date(now).toISOString().slice(0, 10)) + 86_400_000,
+          economy: false,
+          measuredAt: now - 4 * 60_000,
+          requests: 64_210,
+          perMinute: 950,
+          limitAt: now + 38 * 60_000,
+          top: [
+            { kind: 'user', requests: 21_400, user: zeca },
+            { kind: 'dm', requests: 20_950, user: zeca, peer: bia },
+            { kind: 'user', requests: 20_870, user: bia },
+            { kind: 'guild', requests: 610, guild: { id: 'g', name: 'Turma' } },
+            { kind: 'directory', requests: 240 },
+          ],
+        },
+        incidents: [{ at: now - 20 * 60_000, userId: zeca.id, kind: 'call-loop', user: zeca }],
+      },
+    })
+  })
   // Configurações em tela cheia: a navegação e o título da página não mudam de lugar entre as páginas.
   const positions = () =>
     a.page.evaluate(() => {
@@ -1628,6 +1660,18 @@ try {
     ['platform.invites', 'platform.signup', 'platform.accounts'].map((id) => a.page.locator(`.settings-content [data-setting="${id}"]`).count()),
   )
   check(ownerPanel.join(',') === '1,1,1', 'o dono vê a Plataforma inteira: números, convites, cadastro e contas', ownerPanel.join(','))
+  const usageCard = (await a.page.locator('.settings-content [data-setting="platform.usage"]').innerText().catch(() => '')).replace(/\s+/g, ' ')
+  check(/64\.210/.test(usageCard) && /acaba às/.test(usageCard), 'a Plataforma mostra os pedidos do dia no Cloudflare e quando acabam no ritmo de agora', usageCard)
+  const platformText = await a.page.locator('.settings-content').innerText()
+  check(
+    /Quem mais gastou hoje/.test(platformText) && /Zeca e Bia/.test(platformText) && /Chamada privada em laço/.test(platformText),
+    'quem mais gastou aparece com o nome (a conversa com as duas contas) e os barrados pelo servidor também',
+  )
+  await a.page.locator('.settings-content [data-setting="platform.usage"]').scrollIntoViewIfNeeded()
+  await shot(a, '6f-plataforma-uso')
+  await a.page.locator('.settings-content h3', { hasText: 'Barrados pelo servidor' }).scrollIntoViewIfNeeded()
+  await shot(a, '6g-plataforma-quem-gastou')
+  await a.page.unroute('**/api/admin')
   // Idiomas: Aplicativo → Idioma troca a interface na hora (inglês, espanhol) e volta pro português.
   await a.page.locator('.settings-nav button', { hasText: 'Aplicativo' }).first().click({ force: true })
   const pageTitle = () => a.page.locator('.settings-content h1').innerText()

@@ -46,6 +46,13 @@ export default {
     movedElsewhere: 'You were moved to another channel.',
     disconnected: 'You were disconnected from the call.',
   },
+  platform: {
+    high: (percent: number) => `High Cloudflare usage: ${percent}% of today's quota`,
+    economy: (percent: number) => `Resenha is in saving mode: ${percent}% of today's quota`,
+    pace: (time: string) => `At the current pace, it runs out at ${time}.`,
+    top: (names: string) => `Top usage: ${names}.`,
+    open: 'See in Platform',
+  },
   notify: {
     calling: (name: string) => `${name} is calling you`,
     callingBody: 'Click to open Resenha.',
