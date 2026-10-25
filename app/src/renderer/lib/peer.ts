@@ -4,6 +4,7 @@ import { setSink } from './devices'
 import type { PathSample } from './route'
 import { audioMidsOf, candidateFamily, ipFamily, keepFamily, tuneScreenOpus, type IpFamily } from './sdp'
 import type { ScreenMode, VideoCodec } from './settings.svelte'
+import { peerId } from './signal-ids'
 
 /** Espera antes de refazer o ICE depois de cada falha seguida (a última vale dali em diante). */
 const RESTART_WAIT = [0, 5_000, 15_000, 30_000, 60_000]
@@ -163,9 +164,11 @@ export class Peer {
   /** O outro app entende o bot do Spotify (só ele recebe a faixa: app antigo tocaria no lugar da voz). */
   musicCapable = false
   /** Id desta RTCPeerConnection: vai em toda sinalização, pra cada lado saber se o outro recomeçou. */
-  readonly id = crypto.randomUUID().slice(0, 13)
+  readonly id = peerId()
   /** Id da conexão do outro lado (null até a primeira mensagem dele). */
   remoteId: string | null = null
+  /** Já aplicou uma descrição do outro lado (daí não dá mais pra trocar de conexão do outro lado sem refazer esta). */
+  described = false
   remoteScreen: MediaStream | null = null
   closed = false
   /** Quando mandei a última oferta (pra reenviar se a resposta se perder). */
@@ -393,6 +396,16 @@ export class Peer {
     if (!this.closed) this.emit({ kind: watching ? 'watch' : 'unwatch' })
   }
 
+  /**
+   * O outro lado trocou de conexão antes de a gente negociar com a anterior: passa a falar com a
+   * nova (os candidatos guardados eram da antiga). A oferta que eu já tinha mandado vai de novo, pra ela.
+   */
+  follow(remoteId: string) {
+    this.remoteId = remoteId
+    this.pendingCandidates = []
+    this.resendOffer(true)
+  }
+
   /** Sinalização chega em ordem e é processada uma de cada vez. */
   handle(data: SignalData) {
     if (data.pc && !this.remoteId) this.remoteId = data.pc
@@ -403,6 +416,8 @@ export class Peer {
 
   private async process(data: SignalData) {
     if (this.closed) return
+    // Da conexão do outro lado que eu deixei de seguir enquanto isso esperava na fila.
+    if (data.pc && this.remoteId && data.pc !== this.remoteId) return
     switch (data.kind) {
       case 'description': {
         Object.assign(this.remoteStreams, data.streams)
@@ -419,6 +434,7 @@ export class Peer {
 
         this.settingAnswer = description.type === 'answer'
         await this.pc.setRemoteDescription(description)
+        this.described = true
         this.settingAnswer = false
         await this.flushCandidates()
         if (description.type === 'offer') {
