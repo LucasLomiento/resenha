@@ -14,6 +14,7 @@ export default {
     'Convite inválido, vencido ou já usado.': 'La invitación no es válida, venció o ya se usó.',
     'Confirme que você não é um robô.': 'Confirma que no eres un robot.',
     'Pra criar conta você precisa de um convite.': 'Necesitas una invitación para crear una cuenta.',
+    'O cadastro está pausado por algumas horas. Com um convite, dá pra entrar agora.': 'El registro está en pausa por unas horas. Con una invitación, puedes entrar ahora.',
     'Esse nome de usuário já está em uso.': 'Ese nombre de usuario ya está en uso.',
     'Preencha usuário e senha.': 'Ingresa tu usuario y contraseña.',
     'Usuário ou senha incorretos.': 'Usuario o contraseña incorrectos.',

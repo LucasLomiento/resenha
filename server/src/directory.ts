@@ -12,6 +12,7 @@ import {
   type Invite,
   type InvitePreview,
   type Me,
+  type PlatformAlert,
   type SessionInfo,
   type User,
 } from '../../shared/protocol'
@@ -23,6 +24,7 @@ import { applyStylePatch, isAnimated, parseStyle, publicStyle, styleText } from 
 import { cleanLine, cleanText, color, passwordProblem, slugUsername, username as validUsername } from './validate'
 import { MAX_USAGE_REPORT, MEASURE_EVERY, MEDIA_BUDGET, analyticsConfig, measuredUsage, usageMonth } from './media'
 import { revokeTurn } from './turn'
+import { DAILY_REQUESTS, USAGE_EVERY, measuredRequests, nextReset, project, usageLevel, utcDay, type RequestUsage } from './usage'
 
 // O Directory é o cadastro central: contas, sessões, limites de tentativa,
 // fotos de perfil, a lista de servidores e quem é membro de qual, convites,
@@ -57,6 +59,43 @@ const RESERVATION_TTL = 15 * MINUTE
 
 const INVITE_AGES = [0, 1800, 3600, 6 * 3600, 12 * 3600, 86400, 7 * 86400]
 const INVITE_USES = [1, 5, 10, 25, 50, 100]
+
+/** Um objeto que gastou pedidos hoje, e de quem ele é (ids; os nomes saem na hora de mostrar). */
+interface UsageTarget {
+  kind: 'user' | 'guild' | 'dm' | 'directory' | 'unknown'
+  requests: number
+  userId?: string
+  /** Conversa privada: a outra conta. */
+  peerId?: string
+  guildId?: string
+}
+
+/** A última medição do dia (meta `usage`). */
+interface UsageSnapshot {
+  day: string
+  measuredAt: number
+  requests: number
+  byType: Record<string, number>
+  /** Pedidos por minuto desde a medição anterior (null: primeira do dia). */
+  perMinute: number | null
+  /** Previsto pra meia-noite UTC, e quando passa do limite (null: não passa hoje). */
+  atReset: number | null
+  limitAt: number | null
+  top: UsageTarget[]
+}
+
+/** O uso do dia como a Plataforma mostra (com o perfil de quem gastou). */
+interface AdminUsage {
+  limit: number
+  resetAt: number
+  economy: boolean
+  /** null: ainda não mediu hoje. */
+  measuredAt: number | null
+  requests: number | null
+  perMinute: number | null
+  limitAt: number | null
+  top: { kind: UsageTarget['kind']; requests: number; user?: User; peer?: User; guild?: { id: string; name: string } }[]
+}
 
 interface UserRow {
   id: string
@@ -153,6 +192,11 @@ export class Directory extends DurableObject<Env> {
     ctx.blockConcurrencyWhile(async () => {
       this.schema()
       await this.importLegacy()
+      // Com as análises, o alarme mede o uso do dia de 10 em 10 min (sem elas, segue de dia em dia).
+      if (analyticsConfig(env)) {
+        const at = await ctx.storage.getAlarm()
+        if (at === null || at > Date.now() + USAGE_EVERY) await ctx.storage.setAlarm(Date.now() + USAGE_EVERY)
+      }
     })
   }
 
@@ -332,6 +376,149 @@ export class Directory extends DurableObject<Env> {
     return this.measuring
   }
 
+  // ---------- Pedidos do dia (usage.ts) ----------
+
+  /** Troca nos testes (as análises de mentira); sem troca, o `fetch` de verdade. */
+  analyticsFetch: typeof fetch | undefined = undefined
+
+  /** A última medição do dia, com os objetos que mais gastaram já identificados. */
+  private usage(): UsageSnapshot | null {
+    const raw = this.meta('usage')
+    if (!raw) return null
+    try {
+      const usage = JSON.parse(raw) as UsageSnapshot
+      return usage.day === utcDay() ? usage : null
+    } catch {
+      return null
+    }
+  }
+
+  /** Modo econômico ligado hoje (UTC): desliga sozinho quando a cota zera. */
+  economy(): boolean {
+    return this.meta('economy_day') === utcDay()
+  }
+
+  /**
+   * Mede o dia no Cloudflare, acha quem mais gastou (pelo nome) e, se o uso estiver alto, avisa o
+   * dono e liga o modo econômico. Erro nas análises não muda nada (fica a medição anterior).
+   */
+  async measureRequests(now = Date.now()): Promise<void> {
+    const config = analyticsConfig(this.env)
+    if (!config) return
+    let measured: RequestUsage
+    try {
+      measured = await measuredRequests(config, now, this.analyticsFetch)
+    } catch (err) {
+      console.error('[uso] não deu pra medir o dia no Cloudflare:', (err as Error).message)
+      return
+    }
+    const before = this.usage()
+    // Ritmo desde a medição anterior do mesmo dia (as análises chegam atrasadas: com menos de 5 min, não dá ritmo).
+    const elapsed = before && before.day === measured.day ? (now - before.measuredAt) / MINUTE : 0
+    const perMinute = elapsed >= 5 ? Math.max(0, (measured.requests - before!.requests) / elapsed) : (before?.perMinute ?? null)
+    const { atReset, limitAt } = project(measured.requests, perMinute, now)
+    const usage: UsageSnapshot = {
+      day: measured.day,
+      measuredAt: now,
+      requests: measured.requests,
+      byType: measured.byType,
+      perMinute: perMinute === null ? null : Math.round(perMinute),
+      atReset,
+      limitAt,
+      top: this.identify(measured.top),
+    }
+    this.setMeta('usage', JSON.stringify(usage))
+
+    const level = usageLevel(measured.requests, limitAt, now)
+    if (level.economy && !this.economy()) {
+      this.setMeta('economy_day', measured.day)
+      console.warn(`[uso] modo econômico ligado: ${measured.requests} pedidos hoje`)
+    }
+    const kind = level.economy ? 'economy' : level.warn || level.pace ? 'high' : null
+    const sent = this.meta('usage_alert')
+    if (kind && sent !== `${measured.day}:${kind}` && !(kind === 'high' && sent === `${measured.day}:economy`)) {
+      this.setMeta('usage_alert', `${measured.day}:${kind}`)
+      await this.alertStaff({
+        kind,
+        requests: measured.requests,
+        limit: DAILY_REQUESTS,
+        limitAt,
+        resetAt: nextReset(now),
+        top: usage.top.slice(0, 3).map((t) => this.targetName(t)).filter((n): n is string => !!n),
+      })
+    }
+  }
+
+  /** Avisa o dono (os apps abertos e o celular dele). Um aviso que não sai não segura nada. */
+  private async alertStaff(alert: PlatformAlert) {
+    const staff = this.sql
+      .exec<{ id: string }>('SELECT id FROM users WHERE (flags & ?) != 0 AND (flags & ?) = 0', FLAG_STAFF, FLAG_DELETED)
+      .toArray()
+    await Promise.allSettled(staff.map(({ id }) => this.home(id).platformAlert(alert)))
+  }
+
+  /** id do Durable Object -> o que ele é (calculado aqui dentro: `idFromName` não acorda ninguém). */
+  private objectIds = new Map<string, string>()
+
+  private objectId(namespace: DurableObjectNamespace, kind: string, name: string): string {
+    const key = `${kind}:${name}`
+    let id = this.objectIds.get(key)
+    if (!id) {
+      id = namespace.idFromName(name).toString()
+      if (this.objectIds.size > 50_000) this.objectIds.clear()
+      this.objectIds.set(key, id)
+    }
+    return id
+  }
+
+  /**
+   * Diz de quem é cada objeto que gastou: o Home de uma conta, um servidor, uma conversa privada
+   * (as duas contas) ou o próprio Directory. Conversa só se acha entre quem tem amizade, quem já
+   * mandou arquivo nela ou quando uma das duas contas também está no topo. Só contagens: nada
+   * aqui lê mensagem.
+   */
+  private identify(top: { objectId: string; requests: number }[]): UsageTarget[] {
+    const wanted = new Set(top.map((t) => t.objectId))
+    const found = new Map<string, Omit<UsageTarget, 'requests'>>()
+    const check = (id: string, target: Omit<UsageTarget, 'requests'>) => {
+      if (wanted.has(id) && !found.has(id)) found.set(id, target)
+    }
+    check(this.objectId(this.env.DIRECTORY, 'directory', 'directory'), { kind: 'directory' })
+    const users = this.sql.exec<{ id: string }>('SELECT id FROM users').toArray()
+    for (const { id } of users) check(this.objectId(this.env.HOME, 'home', id), { kind: 'user', userId: id })
+    for (const { id } of this.sql.exec<{ id: string }>('SELECT id FROM guilds').toArray()) {
+      check(this.objectId(this.env.GUILD, 'guild', id), { kind: 'guild', guildId: id })
+    }
+    if (found.size < wanted.size) {
+      const pairs = new Set<string>()
+      const add = (a: string, b: string) => a !== b && pairs.add(pair(a, b).join(':'))
+      for (const r of this.sql.exec<{ low: string; high: string }>('SELECT low, high FROM friendships').toArray()) add(r.low, r.high)
+      for (const r of this.sql.exec<{ scope: string }>("SELECT scope FROM storage WHERE scope LIKE 'c:dm:%'").toArray()) {
+        const [, , a, b] = r.scope.split(':')
+        if (a && b) add(a, b)
+      }
+      // Quem está no topo, com qualquer conta (no laço de 25/10, as duas contas e a conversa estavam lá).
+      const heavy = [...found.values()].filter((t) => t.kind === 'user').map((t) => t.userId!)
+      for (const a of heavy) for (const { id } of users) add(a, id)
+      for (const p of pairs) {
+        const [a, b] = p.split(':')
+        check(this.objectId(this.env.CONVERSATION, 'dm', `dm:${a}:${b}`), { kind: 'dm', userId: a, peerId: b })
+      }
+    }
+    return top.map((t) => ({ ...(found.get(t.objectId) ?? { kind: 'unknown' as const }), requests: t.requests }))
+  }
+
+  /** Nome curto pra um aviso ("Fulano", "Servidor X", "Fulano e Beltrano"). */
+  private targetName(target: UsageTarget): string | null {
+    const name = (id?: string) => (id ? (this.user(id)?.name ?? null) : null)
+    if (target.kind === 'user') return name(target.userId)
+    if (target.kind === 'dm') return [name(target.userId), name(target.peerId)].filter(Boolean).join(' + ') || null
+    if (target.kind === 'guild') {
+      return this.sql.exec<{ name: string }>('SELECT name FROM guilds WHERE id = ?', target.guildId ?? '').toArray()[0]?.name ?? null
+    }
+    return null
+  }
+
   /** Relatórios de uso de cada pessoa no último minuto (na memória: zera se o DO reiniciar, e tudo bem). */
   private reports = new Map<string, number[]>()
 
@@ -500,8 +687,14 @@ export class Directory extends DurableObject<Env> {
 
   // ---------- Contas ----------
 
+  /** Como o cadastro está valendo agora: no modo econômico, o aberto fecha até a cota zerar. */
   status(): { signup: 'invite' | 'open'; users: number } {
-    return { signup: this.meta('signup_mode') === 'open' ? 'open' : 'invite', users: this.userCount() }
+    return { signup: this.signupMode() === 'open' && !this.economy() ? 'open' : 'invite', users: this.userCount() }
+  }
+
+  /** O que o dono escolheu (Plataforma), valendo ou não hoje. */
+  private signupMode(): 'invite' | 'open' {
+    return this.meta('signup_mode') === 'open' ? 'open' : 'invite'
   }
 
   private userCount(): number {
@@ -533,6 +726,7 @@ export class Directory extends DurableObject<Env> {
     const refused = (): Result<never> | null => {
       if (code) return this.validInvite(code, now) ? null : fail(403, 'Convite inválido, vencido ou já usado.')
       if (this.userCount() === 0 || (this.status().signup === 'open' && input.turnstile)) return null
+      if (this.economy() && this.signupMode() === 'open') return fail(503, 'O cadastro está pausado por algumas horas. Com um convite, dá pra entrar agora.')
       return fail(403, this.status().signup === 'open' ? 'Confirme que você não é um robô.' : 'Pra criar conta você precisa de um convite.')
     }
     const taken = () =>
@@ -1533,6 +1727,8 @@ export class Directory extends DurableObject<Env> {
     storageLimit: number
     mediaUsed: number
     mediaLimit: number
+    /** Pedidos do dia no Cloudflare (null: servidor sem as chaves das análises). */
+    usage: AdminUsage | null
   }> {
     if (!this.isStaff(viewerId) && this.pioneerId() !== viewerId) return fail(403, 'Só o dono da plataforma.')
     const now = Date.now()
@@ -1541,13 +1737,44 @@ export class Directory extends DurableObject<Env> {
       .one().n
     return ok({
       ...this.status(),
+      // O que o dono escolheu (o modo econômico fecha por cima, sem mudar a escolha).
+      signup: this.signupMode(),
       guilds: this.sql.exec<{ n: number }>('SELECT COUNT(*) AS n FROM guilds').one().n,
       invites,
       storageUsed: this.storageUsed(),
       storageLimit: STORAGE_LIMIT,
       mediaUsed: this.mediaUsage().bytes,
       mediaLimit: MEDIA_BUDGET,
+      usage: this.adminUsage(now),
     })
+  }
+
+  private adminUsage(now: number): AdminUsage | null {
+    if (!analyticsConfig(this.env)) return null
+    const usage = this.usage()
+    const pioneer = this.pioneerId()
+    const profile = (id?: string) => {
+      const row = id ? this.user(id) : null
+      return row ? this.toUser(row, pioneer) : undefined
+    }
+    return {
+      limit: DAILY_REQUESTS,
+      resetAt: nextReset(now),
+      economy: this.economy(),
+      measuredAt: usage?.measuredAt ?? null,
+      requests: usage?.requests ?? null,
+      perMinute: usage?.perMinute ?? null,
+      limitAt: usage?.limitAt ?? null,
+      top: (usage?.top ?? []).map((t) => ({
+        kind: t.kind,
+        requests: t.requests,
+        user: profile(t.userId),
+        peer: profile(t.peerId),
+        guild: t.guildId
+          ? { id: t.guildId, name: this.sql.exec<{ name: string }>('SELECT name FROM guilds WHERE id = ?', t.guildId).toArray()[0]?.name ?? '' }
+          : undefined,
+      })),
+    }
   }
 
   adminSetSignup(staffId: string, mode: unknown): Result<null> {
@@ -1641,6 +1868,13 @@ export class Directory extends DurableObject<Env> {
         next = now + 1000
         return
       }
+      // Com as análises, mede o dia de 10 em 10 min (144 alarmes por dia); a limpeza continua diária.
+      if (analyticsConfig(this.env)) {
+        next = now + USAGE_EVERY
+        await this.measureRequests(now)
+        if (now - Number(this.meta('cleaned_at') ?? 0) < DAY) return
+      }
+      this.setMeta('cleaned_at', String(now))
       // Sessão vencida: o aparelho dela para de receber push (o token fica preso à sessão no Home).
       const expired = this.sql.exec<SessionRow>('SELECT * FROM sessions WHERE expires_at < ?', now).toArray()
       this.sql.exec('DELETE FROM sessions WHERE expires_at < ?', now)
