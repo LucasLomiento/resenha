@@ -12,6 +12,7 @@ import { RoutePicker, stunOnly } from './route'
 import type { IpFamily } from './sdp'
 import { PRESETS, settings } from './settings.svelte'
 import { SfuPublisher, SfuViewer } from './sfu'
+import { signalRoute } from './signal-ids'
 import { playSound, type SoundName } from './sounds'
 
 /** App do celular (build próprio): câmera pela frente/trás em vez do aparelho escolhido. */
@@ -154,6 +155,8 @@ export class Call {
   private leaving = new Map<string, ReturnType<typeof setTimeout>>()
   /** Sinalização que não saiu (WebSocket caído), na ordem. */
   private outbox: { to: string; data: SignalData }[] = []
+  /** connId -> conexões do outro lado que ele já trocou por outra (as mais novas primeiro). */
+  private replaced = new Map<string, string[]>()
   /** connId -> quanto ainda dá pra mandar de sinalização pra essa pessoa (vale entre conexões refeitas). */
   private signalBudget = new Map<string, { tokens: number; at: number; held: boolean }>()
   /** Container estável do microfone: o id dele é o que os outros usam pra reconhecer a faixa. */
@@ -412,6 +415,7 @@ export class Call {
     for (const connId of [...this.peers.keys()]) this.removePeer(connId)
     this.outbox = []
     this.signalBudget.clear()
+    this.replaced.clear()
     this.stopShare(false)
     this.stopSfuWatch()
     this.bot.stop()
@@ -671,15 +675,16 @@ export class Call {
 
   signal(from: string, data: SignalData) {
     let peer = this.peers.get(from)
-    if (peer && data.pc) {
-      // Pra uma conexão minha que já não existe (o outro lado ainda não sabe da nova): ignora.
-      if (data.ack && data.ack !== peer.id) return
-      // O outro lado recomeçou a conexão dele e ainda não conhece a minha: recomeço a minha também.
-      if (peer.remoteId && peer.remoteId !== data.pc) {
-        if (data.ack) return
-        this.removePeer(from)
-        peer = undefined
-      }
+    const route = signalRoute(peer, data, this.replaced.get(from))
+    if (route === 'drop') return
+    // O outro lado trocou de conexão: a que ele deixou não vale mais (mensagem atrasada dela é descartada).
+    if (peer?.remoteId && (route === 'follow' || route === 'recreate')) {
+      this.replaced.set(from, [peer.remoteId, ...(this.replaced.get(from) ?? [])].slice(0, 8))
+    }
+    if (route === 'follow') peer!.follow(data.pc!)
+    if (route === 'recreate') {
+      this.removePeer(from)
+      peer = undefined
     }
     if (!peer) {
       const member = this.members().find((m) => m.connId === from && m.channelId === this.channelId)
