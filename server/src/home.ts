@@ -1,4 +1,5 @@
 import { DurableObject } from 'cloudflare:workers'
+import { armAlarm } from './alarm'
 import {
   APP_INCIDENTS,
   dmChannelId,
@@ -452,8 +453,7 @@ export class Home extends DurableObject<Env> {
     }
     server.serializeAttachment(state)
     // A varredura vem logo depois do prazo do `auth` (quem não se autentica não fica ocupando vaga).
-    const at = await this.ctx.storage.getAlarm()
-    if (at === null || at > now + AUTH_TIMEOUT + 1000) await this.ctx.storage.setAlarm(now + AUTH_TIMEOUT + 1000)
+    await armAlarm(this.ctx.storage, now + AUTH_TIMEOUT + 1000, now)
     return new Response(null, { status: 101, webSocket: client })
   }
 

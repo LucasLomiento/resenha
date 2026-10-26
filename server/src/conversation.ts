@@ -1,4 +1,5 @@
 import { DurableObject } from 'cloudflare:workers'
+import { armAlarm } from './alarm'
 import {
   MAX_MESSAGE_LENGTH,
   dmMembers,
@@ -287,7 +288,7 @@ export class Conversation extends DurableObject<Env> {
       if (!m) return Response.json({ error: 'Conversa não encontrada.' }, { status: 404 })
       if (!(await this.canSend(userId, m.peer))) return Response.json({ error: 'Não dá pra mandar arquivo pra essa pessoa.' }, { status: 403 })
       if (!this.allow(`upload:${userId}`, 30, MINUTE)) return Response.json({ error: 'Calma! Muitos arquivos de uma vez.' }, { status: 429 })
-      if ((await this.ctx.storage.getAlarm()) === null) await this.ctx.storage.setAlarm(Date.now() + ORPHAN_TTL)
+      await armAlarm(this.ctx.storage, Date.now() + ORPHAN_TTL)
       return this.store.upload(request, userId, (bytes) => this.reserve(userId, bytes))
     }
     const file = url.pathname.match(/\/files\/([\w-]+)\/[^/]+$/)

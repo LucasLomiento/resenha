@@ -1,4 +1,5 @@
 import { DurableObject } from 'cloudflare:workers'
+import { armAlarm } from './alarm'
 import {
   MAX_ANIMATED_BYTES,
   MAX_AVATAR_BYTES,
@@ -200,8 +201,7 @@ export class Directory extends DurableObject<Env> {
       await this.importLegacy()
       // Com as análises, o alarme mede o uso do dia de 10 em 10 min (sem elas, segue de dia em dia).
       if (analyticsConfig(env)) {
-        const at = await ctx.storage.getAlarm()
-        if (at === null || at > Date.now() + USAGE_EVERY) await ctx.storage.setAlarm(Date.now() + USAGE_EVERY)
+        await armAlarm(ctx.storage, Date.now() + USAGE_EVERY)
       }
     })
   }
@@ -1986,7 +1986,7 @@ export class Directory extends DurableObject<Env> {
    * Conversations. Cada passo pode ser repetido sem duplicar nada.
    */
   private async importLegacy() {
-    if ((await this.ctx.storage.getAlarm()) === null) await this.ctx.storage.setAlarm(Date.now() + DAY)
+    await armAlarm(this.ctx.storage, Date.now() + DAY)
     if (this.meta('legacy')) return
     const main = this.guild('main')
     const data = await main.exportLegacy()

@@ -152,6 +152,8 @@ Em 25/10/2026 uma chamada privada em laço (dois apps trocando sinalização uma
 - **Alarmes mais baratos**: eram ~75% de um dia normal (um por minuto por pessoa conectada e por servidor com alguém). Sem call, mapa nem fantasma esperando voltar, a varredura passa a cada 5 min; quem some sem fechar fica "online" até uns 6 min.
 - **Medição e modo econômico**: o Directory mede o dia pelas análises, mostra quem gastou na Plataforma e fecha o cadastro com 80% (ver "Pedidos do dia" em `OPERACAO.md`). Cada freio que dispara vira um incidente no Directory (`incidents`, até 60 por hora), com a versão do app (`user_versions`).
 
+**Alarme que falha sete vezes seguidas para de vez** (a primeira e as seis novas tentativas do Cloudflare), mas continua marcado no passado: o `getAlarm()` devolve aquela hora. Com a cota estourada em 25/10/2026, todo alarme falhou, e sete objetos (o `main` inclusive) ficaram sem varredura até o deploy de 26/10, porque quem arma só armava sem alarme nenhum. Todo lugar que arma usa o `armAlarm` (`server/src/alarm.ts`), que trata um alarme vencido há mais de 1 min como inexistente; a próxima conexão rearma.
+
 **Deploy não reinicia um objeto ocupado na hora.** Em 25/10/2026 os três objetos do laço (que nunca ficavam ociosos) seguiram rodando a versão antiga por pelo menos 3 min depois do deploy, enquanto os outros pegaram a nova; um freio novo pode demorar a valer justamente onde precisa (confira o `scriptVersion` por `objectId` nas análises).
 
 ## Migração dos dados da 0.5

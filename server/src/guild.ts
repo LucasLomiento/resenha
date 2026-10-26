@@ -1,4 +1,5 @@
 import { DurableObject } from 'cloudflare:workers'
+import { armAlarm } from './alarm'
 import {
   ALL_PERMISSIONS,
   DEFAULT_PERMISSIONS,
@@ -1331,7 +1332,7 @@ export class Guild extends DurableObject<Env> {
         return Response.json({ error: 'Calma! Muitos arquivos de uma vez.' }, { status: 429 })
       }
       // Anexo que nunca virar mensagem some num dia, mesmo sem ninguém conectado.
-      if ((await this.ctx.storage.getAlarm()) === null) await this.ctx.storage.setAlarm(Date.now() + ORPHAN_TTL)
+      await armAlarm(this.ctx.storage, Date.now() + ORPHAN_TTL)
       return this.store.upload(request, row.user_id, (bytes) => this.reserve(row.user_id, bytes))
     }
     const file = pathname.match(/\/files\/([\w-]+)\/[^/]+$/)
@@ -1368,8 +1369,7 @@ export class Guild extends DurableObject<Env> {
     server.serializeAttachment(pending)
     // A varredura vem logo depois do prazo do `auth`. Sem isso, o alarme de um anexo solto
     // (6 h ou 1 dia) adiava a varredura: conexão morta não saía e pendente não fechava.
-    const at = await this.ctx.storage.getAlarm()
-    if (at === null || at > now + AUTH_TIMEOUT + 1000) await this.ctx.storage.setAlarm(now + AUTH_TIMEOUT + 1000)
+    await armAlarm(this.ctx.storage, now + AUTH_TIMEOUT + 1000, now)
     return new Response(null, { status: 101, webSocket: client })
   }
 
@@ -2683,10 +2683,7 @@ export class Guild extends DurableObject<Env> {
         this.audit(userId, 'member.timeout', targetId, `${name}: ${msg.minutes ? `${msg.minutes} min` : 'tirou o castigo'}${reason ? ` — ${reason}` : ''}`)
         this.pushAccess(before)
         // A varredura pode estar espaçada (5 min): o alarme vem quando o castigo acaba.
-        if (until) {
-          const at = await this.ctx.storage.getAlarm()
-          if (at === null || at > until) await this.ctx.storage.setAlarm(until)
-        }
+        if (until) await armAlarm(this.ctx.storage, until)
         return this.broadcastMember(targetId)
       }
 

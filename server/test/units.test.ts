@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { ALL_PERMISSIONS, DEFAULT_PERMISSIONS, P, type Channel, type Role } from '../../shared/protocol'
+import { armAlarm } from '../src/alarm'
 import { ipPrefix, resignProxyUrl, signFileUrl, signProxyUrl, verifyFileSignature, verifyProxyUrl } from '../src/auth'
 import { validEmoji } from '../src/messages'
 import { channelPermissions, outranks, sameOverwrites, sanitizeOverwrites } from '../../shared/permissions'
@@ -190,5 +191,32 @@ describe('URLs assinadas', () => {
     const [u, exp, sig] = ['u', 'exp', 'sig'].map((k) => url.searchParams.get(k))
     expect(await verifyProxyUrl('k', u, exp, sig, now)).toBe('https://img.com/a.png')
     expect(await resignProxyUrl('k', '/outra/coisa')).toBe('/outra/coisa')
+  })
+})
+
+describe('alarme', () => {
+  const storage = (at: number | null) => {
+    const set: number[] = []
+    return { set, storage: { getAlarm: async () => at, setAlarm: async (when: number) => void set.push(when) } as unknown as DurableObjectStorage }
+  }
+
+  it('arma sem alarme, antecipa um mais tarde e deixa um mais cedo', async () => {
+    const now = 1_000_000
+    for (const [at, want] of [[null, [now + 16_000]], [now + 60_000, [now + 16_000]], [now + 5_000, []]] as const) {
+      const s = storage(at)
+      await armAlarm(s.storage, now + 16_000, now)
+      expect(s.set).toEqual(want)
+    }
+  })
+
+  it('alarme vencido há mais de 1 min (desistido depois das falhas) conta como sem alarme', async () => {
+    const now = 1_000_000
+    const stuck = storage(now - 15 * 3_600_000)
+    await armAlarm(stuck.storage, now + 16_000, now)
+    expect(stuck.set).toEqual([now + 16_000])
+    // Vencido há pouco: ainda vai disparar, não mexe.
+    const due = storage(now - 5_000)
+    await armAlarm(due.storage, now + 16_000, now)
+    expect(due.set).toEqual([])
   })
 })
