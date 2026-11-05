@@ -287,15 +287,17 @@ const SOUNDS: Record<SoundName, (bus: Bus, at: number) => void> = {
     drop(bus, NOTE.E6, at, { fall: true, gain: 0.75, pan: 0.1 })
     drop(bus, NOTE.A5, at + 0.09, { fall: true, gain: 0.7, pan: -0.1, decay: 0.26 })
   },
-  mute: (bus, at) => blip(bus, 900, 470, at, { gain: 0.9 }),
-  unmute: (bus, at) => blip(bus, 470, 900, at, { gain: 0.9 }),
+  // Abrir (desmutar, voltar a ouvir) é o som mais agudo. O que o ouvido guarda é a nota do ataque, porque o
+  // volume morre enquanto o glissando anda: por isso o agudo é o que COMEÇA em cima, mesmo descendo.
+  mute: (bus, at) => blip(bus, 470, 900, at, { gain: 0.9 }),
+  unmute: (bus, at) => blip(bus, 900, 470, at, { gain: 0.9 }),
   deafen: (bus, at) => {
-    blip(bus, 640, 320, at, { gain: 0.95, decay: 0.1, click: 0.25 })
-    blip(bus, 430, 215, at + 0.085, { gain: 0.95, decay: 0.14, click: 0.2 })
-  },
-  undeafen: (bus, at) => {
     blip(bus, 215, 430, at, { gain: 0.9, decay: 0.09, click: 0.2 })
     blip(bus, 320, 640, at + 0.075, { gain: 0.9, decay: 0.12, click: 0.25 })
+  },
+  undeafen: (bus, at) => {
+    blip(bus, 640, 320, at, { gain: 0.95, decay: 0.1, click: 0.25 })
+    blip(bus, 430, 215, at + 0.085, { gain: 0.95, decay: 0.14, click: 0.2 })
   },
   live: (bus, at) => {
     const notes = [NOTE.G5, NOTE.B5, NOTE.D6, NOTE.G6]
@@ -351,10 +353,10 @@ const LEVEL: Record<SoundName, number> = {
   leave: 0.85,
   'founder-join': 0.54,
   'pioneer-join': 0.6,
-  mute: 1.57,
-  unmute: 1.6,
-  deafen: 0.73,
-  undeafen: 0.82,
+  mute: 1.6,
+  unmute: 1.57,
+  deafen: 0.82,
+  undeafen: 0.73,
   live: 0.99,
   'stream-end': 0.78,
   'viewer-join': 0.99,

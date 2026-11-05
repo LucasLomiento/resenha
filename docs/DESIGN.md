@@ -145,8 +145,8 @@ Sintetizados na hora (`lib/sounds.ts`), um timbre por família, pra dar pra sabe
 |---|---|---|
 | Você na call | marimba, arpejo de 4 notas (sobe ao entrar, desce ao sair) | `self-join`, `self-leave` |
 | Os outros na call | gota (sobe/desce) | `join`, `leave` |
-| Microfone | clique com glissando (desce ao mutar) | `mute`, `unmute` |
-| Fone | clique grave duplo | `deafen`, `undeafen` |
+| Microfone | clique com glissando (o agudo é desmutar: o ouvido guarda a nota do ataque, então ele começa em cima) | `mute`, `unmute` |
+| Fone | clique grave duplo (o mais agudo é voltar a ouvir) | `deafen`, `undeafen` |
 | Transmissão | brilho (sinos em arpejo) | `live`, `stream-end` |
 | Quem assiste a sua tela | sopro + sininho | `viewer-join`, `viewer-leave` |
 | Conversa | sino de vidro (menção: duas notas, mais brilhante) | `message`, `mention` |
