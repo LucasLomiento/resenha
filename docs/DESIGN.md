@@ -260,6 +260,10 @@ Tudo passa por um reverb curto e um compressor. O volume de cada som foi medido 
 - **Criar:** botão de barras ao lado do clipe, no campo de mensagem (some no celular enquanto a pessoa digita). O diálogo "Nova enquete": a pergunta, as opções uma embaixo da outra (Enter pula pra próxima e cria mais uma na última; X tira, com duas no mínimo), "Adicionar opção", o interruptor "Várias respostas" e a duração (24 horas por padrão).
 - **Na conversa** (`ui/chat/PollCard.svelte`): um cartão de até 460 px no lugar do texto da mensagem. Em cima, "Enquete" pequeno no azul, a pergunta na fonte de título e a dica ("Escolha uma", "Escolha quantas quiser" ou "Encerrada"). Cada opção é uma linha clicável com a marca (bolinha no voto único, quadradinho em várias), o texto, e "votos · porcentagem" à direita; a barra do resultado cresce por trás do texto. A sua fica com fio e barra azuis; encerrada, a mais votada fica verde. A dica de cada opção mostra quem votou. No pé: total de votos, "Fecha em 3 horas" e, pra quem criou ou modera, "Encerrar enquete" (pede confirmação).
 
+### Ordem dos servidores no trilho
+
+- Arrastar o azulejo de um servidor pra cima ou pra baixo: ele fica apagado enquanto anda e um traço azul mostra onde vai cair (antes ou depois do servidor embaixo do mouse). A ordem vale só neste aparelho (`settings.guildOrder`); servidor novo entra no fim.
+
 ### Apertar pra falar
 
 - **Onde:** Configurações → Atalhos, numa seção própria em cima dos outros atalhos: "Tecla de falar", com a frase do que muda ("o microfone só abre enquanto você segura ela…") e o mesmo campo de gravar tecla dos atalhos. O X tira a tecla, e aí o microfone volta a ficar aberto o tempo todo: não tem interruptor à parte.

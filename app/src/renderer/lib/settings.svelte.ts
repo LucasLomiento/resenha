@@ -52,6 +52,8 @@ export interface Settings {
   updateDismissed: string | null
   /** Largura da lista de canais (arrastando a borda dela). */
   sidebarWidth: number
+  /** Ordem dos servidores no trilho, como a pessoa arrastou (neste aparelho); vazio = a do servidor. */
+  guildOrder: string[]
   /** Quantas pessoas assistindo pra tela ir pelo SFU (sem opção na tela; o e2e usa 1). */
   sfuMinViewers?: number
   showStats: boolean
@@ -102,6 +104,7 @@ const defaults: Settings = {
   inkTool: 'laser',
   updateDismissed: null,
   sidebarWidth: 248,
+  guildOrder: [],
   showStats: false,
   sounds: true,
   soundVolume: 0.6,

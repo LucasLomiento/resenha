@@ -2256,6 +2256,24 @@ try {
     })
     .catch(() => false)
   check(suggested === 'Resenha dos Amigos' && fresh === true, '"Trazer do Discord" cria o servidor com o nome e só os canais do print', `${suggested} · ${fresh}`)
+
+  // Trilho: arrastar um servidor pra cima do outro muda a ordem, e ela fica guardada neste aparelho.
+  const railOrder = () => a.page.locator('nav.rail button.guild[draggable]').evaluateAll((els) => els.map((el) => el.getAttribute('aria-label')))
+  const railBefore = await railOrder()
+  await a.page
+    .locator('nav.rail')
+    .getByRole('button', { name: 'Resenha dos Amigos', exact: true })
+    .dragTo(a.page.locator('nav.rail').getByRole('button', { name: 'Turma', exact: true }), { targetPosition: { x: 22, y: 4 } })
+  const railAfter = await railOrder()
+  // As configurações são gravadas em rajadas de até 300 ms.
+  await a.page.waitForTimeout(450)
+  const savedOrder = await a.page.evaluate(() => JSON.parse(localStorage.getItem('resenha.settings') ?? '{}').guildOrder?.length ?? 0)
+  check(
+    railBefore.join(' > ') === 'Turma > Resenha dos Amigos' && railAfter.join(' > ') === 'Resenha dos Amigos > Turma' && savedOrder === 2,
+    'arrastar um servidor no trilho muda a ordem e ela fica guardada',
+    `${railBefore.join(' > ')} → ${railAfter.join(' > ')}`,
+  )
+  await shot(a, 'trilho-reordenado')
   await shot(a, '10b-servidor-do-discord')
 
   // Atualizar no meio da call: o app grava a sala ao reiniciar e, ao abrir de novo, oferece

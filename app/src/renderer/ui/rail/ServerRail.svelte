@@ -16,6 +16,36 @@
 
   let menu = $state<{ guild: GuildState; anchor: { x: number; y: number } } | null>(null)
 
+  // Arrastar um servidor pra cima ou pra baixo muda a ordem do trilho (fica neste aparelho).
+  let dragging = $state<string | null>(null)
+  let dropAt = $state<{ id: string; place: 'before' | 'after' } | null>(null)
+
+  function dragStart(event: DragEvent, guild: GuildState) {
+    dragging = guild.id
+    if (event.dataTransfer) {
+      event.dataTransfer.effectAllowed = 'move'
+      event.dataTransfer.setData('text/plain', guild.info.name)
+    }
+  }
+
+  function dragOver(event: DragEvent, guild: GuildState) {
+    if (!dragging || dragging === guild.id) return
+    event.preventDefault()
+    const box = (event.currentTarget as HTMLElement).getBoundingClientRect()
+    dropAt = { id: guild.id, place: event.clientY < box.top + box.height / 2 ? 'before' : 'after' }
+  }
+
+  function drop(event: DragEvent) {
+    event.preventDefault()
+    if (dragging && dropAt) client.moveGuild(dragging, dropAt.id, dropAt.place)
+    dragEnd()
+  }
+
+  function dragEnd() {
+    dragging = null
+    dropAt = null
+  }
+
   function guildMenu(guild: GuildState): MenuItem[] {
     const items: MenuItem[] = [
       { label: t.markRead, icon: 'check', onselect: () => guild.ackAll() },
@@ -105,11 +135,24 @@
   {#each client.guildList as guild (guild.id)}
     {@const active = route.kind === 'guild' && route.guildId === guild.id}
     {@const mentions = guild.muted ? 0 : guild.mentionTotal}
-    <div class="slot" class:active class:unread={guild.hasUnread}>
+    <div
+      class="slot"
+      class:active
+      class:unread={guild.hasUnread}
+      class:dragging={dragging === guild.id}
+      class:drop-before={dropAt?.id === guild.id && dropAt.place === 'before'}
+      class:drop-after={dropAt?.id === guild.id && dropAt.place === 'after'}
+      role="presentation"
+      ondragover={(e) => dragOver(e, guild)}
+      ondrop={drop}
+    >
       <span class="indicator"></span>
       <button
         class="guild"
         class:loading={!guild.loaded}
+        draggable="true"
+        ondragstart={(e) => dragStart(e, guild)}
+        ondragend={dragEnd}
         aria-label={guild.info.name}
         use:tooltip={{ text: guild.info.name, placement: 'right' }}
         onclick={() => {
@@ -184,6 +227,31 @@
 
   .slot.bottom {
     margin-top: auto;
+  }
+
+  /* Arrastando um servidor: ele apaga, e um traço azul mostra onde vai cair. */
+  .slot.dragging {
+    opacity: 0.4;
+  }
+
+  .slot.drop-before::before,
+  .slot.drop-after::after {
+    content: '';
+    position: absolute;
+    left: 16px;
+    right: 16px;
+    height: 3px;
+    border-radius: var(--r-full);
+    background: var(--accent);
+    pointer-events: none;
+  }
+
+  .slot.drop-before::before {
+    top: -6px;
+  }
+
+  .slot.drop-after::after {
+    bottom: -6px;
   }
 
   /*

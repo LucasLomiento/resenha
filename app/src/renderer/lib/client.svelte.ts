@@ -25,6 +25,7 @@ import { plainText } from './markdown'
 import { dismissNotice, notify } from './notify'
 import { badgeOf } from './profile'
 import { attachmentLabel } from './voice-note'
+import { moveId, orderBy } from './guild-order'
 import { settings } from './settings.svelte'
 import { playSound } from './sounds'
 import { openSetting, ui } from './ui.svelte'
@@ -292,9 +293,20 @@ class Client implements GuildHost, HomeHost {
     return this.route.kind === 'guild' ? (this.guilds[this.route.guildId] ?? null) : null
   }
 
-  /** Servidores na ordem do trilho (a da conexão pessoal). */
+  /** Servidores na ordem do trilho: a que a pessoa arrastou, senão a da conexão pessoal. */
   get guildList(): GuildState[] {
-    return (this.home?.guilds ?? []).map((g) => this.guilds[g.id]).filter((g): g is GuildState => !!g)
+    const list = (this.home?.guilds ?? []).map((g) => this.guilds[g.id]).filter((g): g is GuildState => !!g)
+    return orderBy(list, settings.guildOrder)
+  }
+
+  /** Arrastou um servidor no trilho pra antes ou depois de outro: a ordem fica guardada neste aparelho. */
+  moveGuild(movingId: string, targetId: string, place: 'before' | 'after') {
+    settings.guildOrder = moveId(
+      this.guildList.map((g) => g.id),
+      movingId,
+      targetId,
+      place,
+    )
   }
 
   /** Servidor da call (null fora de call ou numa chamada privada). */

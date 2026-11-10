@@ -67,7 +67,7 @@ As etapas 0.6 a 0.9 saíram juntas na 1.0 (uma atualização em vez de quatro).
 - [x] App de Android (1.14): a mesma interface, uma tela de cada vez, com push pelo Firebase e call com a tela apagada
 - [x] Busca de emoji com nomes em inglês e espanhol (1.9)
 - [ ] Modo privado (tudo via TURN, esconde o IP até dos amigos): precisa da chave TURN
-- [ ] Arrastar servidores no trilho pra reordenar
+- [x] Arrastar servidores no trilho pra reordenar (1.18; a ordem fica no aparelho)
 - [ ] Emojis próprios de cada servidor
 
 ## Pra chegar perto do Discord

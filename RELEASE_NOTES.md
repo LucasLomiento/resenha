@@ -4,6 +4,7 @@
 - **Apertar pra falar.** Em Configurações → Atalhos, escolha a "Tecla de falar": o microfone só abre enquanto você segura ela, mesmo com um jogo em foco. Funciona no Linux com Wayland (Hyprland, KDE, GNOME); onde o sistema não deixa, a opção nem aparece.
 - **Código colorido no chat.** Bloco de código com a linguagem (` ```js `, `py`, `sh`, `json`…) ganha cores, e passando o mouse aparece o botão de copiar.
 - **Calls mais firmes.** Uma resposta repetida da conexão podia deixar a call renegociando sem parar; não deixa mais. Quem saía da call com a internet caída não fica mais "preso" na lista da sala. Atender logo depois de clicar numa sala funciona, e atender uma ligação que já acabou não liga de volta sozinho.
+- **Arraste os servidores no trilho** pra pôr na ordem que quiser (a ordem fica guardada no seu computador).
 - **Câmera e tela respeitam a permissão da sala**: sem a permissão de vídeo, os botões ficam apagados (antes a câmera ligava e ninguém via).
 - **O celular avisa na hora** mesmo que o computador tenha dormido com o Resenha aberto (antes podia segurar o aviso por uns 6 minutos).
 - **Mensagens depois de uma queda**: o reenvio automático não bagunça mais as não lidas, e uma mensagem só com imagem não volta com "o anexo não está mais disponível". Mensagem de voz tenta de novo antes de desistir, em vez de perder a gravação.
