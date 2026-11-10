@@ -2,7 +2,7 @@ import { SELF, env, runDurableObjectAlarm, runInDurableObject } from 'cloudflare
 import { describe, expect, it } from 'vitest'
 import { dmChannelId } from '../../shared/protocol'
 import { LIMITS, MESSAGE, SignalTally, merge, spend } from '../src/budget'
-import { BASE, call, homeSocket, world } from './helpers'
+import { BASE, call, guildSocket, homeSocket, world } from './helpers'
 
 const MINUTE = 60_000
 
@@ -33,14 +33,34 @@ describe('orçamento (budget.ts)', () => {
     expect(over).toBe(-1)
     ;({ spent, over } = spend(spent, 10, t0 + 2, false, [{ window: MINUTE, max: 25 }]))
     expect(over).toBe(0)
-    expect(spent[1]).toBe(20)
-    // Sair da call conta, mas passa.
+    // Recusada, mas a mensagem em si já custou um pedido ao chegar.
+    expect(spent[1]).toBe(21)
+    // Sair da call conta inteiro, e passa.
     ;({ spent, over } = spend(spent, 10, t0 + 3, true, [{ window: MINUTE, max: 25 }]))
     expect(over).toBe(0)
-    expect(spent[1]).toBe(30)
+    expect(spent[1]).toBe(31)
     ;({ spent, over } = spend(spent, 10, t0 + MINUTE, false, [{ window: MINUTE, max: 25 }]))
     expect(over).toBe(-1)
     expect(spent).toEqual([t0 + MINUTE, 10])
+  })
+
+  it('o que passa do teto pequeno continua contando nos maiores: um laço chega no teto da hora por volume de verdade', () => {
+    const limits = [
+      { window: 10 * MINUTE, max: 100 },
+      { window: 60 * MINUTE, max: 250 },
+    ]
+    const t0 = 1_000_000
+    let spent: number[] | undefined
+    let over = -1
+    let sent = 0
+    // Um app em laço, 1 mensagem por segundo: até a 1.17 só as 100 primeiras de cada janela de
+    // 10 min contavam, e o teto da hora (250) só era visto na terceira janela, com 1200 já gastos.
+    while (over !== 1 && sent < 5000) {
+      ;({ spent, over } = spend(spent, 1, t0 + sent * 1000, false, limits))
+      sent++
+    }
+    expect(over).toBe(1)
+    expect(sent).toBeLessThanOrEqual(252)
   })
 
   it('quem volta herda o maior gasto', () => {
@@ -269,21 +289,74 @@ describe('reconexão em rajada', () => {
     expect(statuses.slice(20)).toEqual([429, 429, 429, 429, 429])
   })
 
+  it('mensagem essencial com o orçamento estourado: é tratada, mas a conexão fecha em seguida (um laço só dela nunca parava)', async () => {
+    const { owner, guild, voice } = await world()
+    const a = await guildSocket(guild.id, owner.token, { version: '1.18.0', platform: 'linux' })
+    const ready = await a.next('ready')
+    a.send({ t: 'voice.join', channelId: voice.id, muted: false, deafened: false })
+    await a.next('voice.state', (m) => m.members.length === 1)
+    const stub = env.GUILD.get(env.GUILD.idFromName(guild.id))
+    await runInDurableObject(stub, (instance) => {
+      const now = Date.now()
+      ;(instance as unknown as { spentByConn: Map<string, number[]> }).spentByConn.set(ready.connId, [now, LIMITS[0].max, now, LIMITS[0].max, now, LIMITS[0].max])
+    })
+    // Sair da call passa (a pessoa não fica presa nela)...
+    a.send({ t: 'voice.leave' })
+    expect((await a.next('voice.state', (m) => m.members.length === 0)).members).toEqual([])
+    // ...e a conexão pausa, como qualquer outra que estoura.
+    expect(await a.closed()).toBe(4008)
+    expect((await incidentOf(owner.token, 'guild:budget-10min')).userId).toBe(owner.user.id)
+  })
+
   it('o Home recusa conexão nova de quem reconecta sem parar (mesmo vindo de vários IPs)', async () => {
     const { owner } = await world()
-    // Direto no objeto: o limite do Worker é por IP, este é da pessoa.
+    // Direto no objeto: o limite do Worker é por IP, este é da pessoa (das conexões que entraram de verdade).
     const stub = env.HOME.get(env.HOME.idFromName(owner.user.id))
     let refused = 0
-    for (let i = 0; i < 45; i++) {
+    for (let i = 0; i < 25; i++) {
       const res = await stub.fetch(`${BASE}/api/home/${owner.user.id}/ws`, {
         headers: { Upgrade: 'websocket', 'X-Resenha-Home': owner.user.id, 'X-Resenha-Ip': `ip-${i}` },
       })
+      if (res.status === 429) {
+        refused++
+        continue
+      }
+      const ws = res.webSocket!
+      ws.accept()
+      const ready = new Promise((resolve) => ws.addEventListener('message', resolve, { once: true }))
+      ws.send(JSON.stringify({ t: 'auth', token: owner.token }))
+      await ready
+      ws.close(1000)
+    }
+    expect(refused).toBe(5)
+    await incidentOf(owner.token, 'home:reconnect')
+  })
+
+  it('conexão sem login não gasta o limite da pessoa: quem não tem a conta não tranca o dono fora', async () => {
+    const { owner } = await world()
+    const stub = env.HOME.get(env.HOME.idFromName(owner.user.id))
+    const open = (ip: string) =>
+      stub.fetch(`${BASE}/api/home/${owner.user.id}/ws`, { headers: { Upgrade: 'websocket', 'X-Resenha-Home': owner.user.id, 'X-Resenha-Ip': ip } })
+    // 45 conexões sem login de IPs diferentes (até a 1.17, da 21ª em diante todo mundo levava 429, o dono inclusive).
+    let refused = 0
+    for (let i = 0; i < 45; i++) {
+      const res = await open(`ip-${i}`)
       if (res.status === 429) refused++
       res.webSocket?.accept()
       res.webSocket?.close(1000)
     }
-    expect(refused).toBe(25)
-    await incidentOf(owner.token, 'home:reconnect')
+    expect(refused).toBe(0)
+    // Do mesmo IP, a 21ª sem login é recusada (só pra ele).
+    for (let i = 0; i < 25; i++) {
+      const res = await open('insistente')
+      if (res.status === 429) refused++
+      res.webSocket?.accept()
+      res.webSocket?.close(1000)
+    }
+    expect(refused).toBe(5)
+    // E o dono entra normalmente.
+    const home = await homeSocket(owner.user.id, owner.token)
+    expect((await home.next('ready')).me.id).toBe(owner.user.id)
   })
 
   it('o Guild recusa conexão nova do mesmo IP sem parar', async () => {

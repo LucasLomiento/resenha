@@ -218,8 +218,13 @@ const MAX_CONNECTIONS = 10
 const CLEANUP_EVERY = 60 * MINUTE
 /** Por quanto tempo um nonce de mensagem enviada é lembrado (o reenvio do app vem em segundos). */
 const NONCE_TTL = 10 * MINUTE
-/** Quem não tem celular com push: o Guild para de perguntar pro Home dela por esse tempo. */
-const NO_PUSH_TTL = 10 * MINUTE
+/**
+ * Quem não tem celular com push: o Guild para de perguntar pro Home dela por esse tempo. Fica no
+ * banco (`no_push`): até a 1.17 era só na memória e de 10 em 10 min, e como o servidor dorme
+ * entre uma mensagem e outra, quase toda mensagem voltava a chamar o Home de cada membro. Quem
+ * abre o app do celular volta a ser perguntada na hora (ver `completeAuth`).
+ */
+const NO_PUSH_TTL = 6 * 60 * MINUTE
 const MAX_CHANNELS = 500
 const MAX_ROLES = 250
 const MAX_FRAME = 64 * 1024
@@ -322,6 +327,10 @@ export class Guild extends DurableObject<Env> {
   private voiceAt = 0
   /** Sockets que já saíram (o fechamento e o erro podem chegar os dois). */
   private retired = new WeakSet<WebSocket>()
+  /** O prazo do `auth` de cada conexão que ainda não entrou. */
+  private authTimers = new Map<WebSocket, ReturnType<typeof setTimeout>>()
+  /** Conexões que estouraram o orçamento com uma mensagem essencial: fecham depois de ela ser tratada. */
+  private stopAfter = new WeakMap<WebSocket, number>()
   /** Mandaram o `auth` e o Directory ainda está conferindo o token. */
   private authenticating = new WeakSet<WebSocket>()
   /** Excluído (as tabelas já não existem nesta instância). */
@@ -334,6 +343,8 @@ export class Guild extends DurableObject<Env> {
   private cleanedAt = 0
   /** Quem não tem celular com push (até quando não precisa perguntar de novo pro Home dela). */
   private noPush = new Map<string, number>()
+  /** O `no_push` do banco já foi lido pra memória (depois de acordar). */
+  private noPushLoaded = false
   /** Mensagens que já entraram, por pessoa e nonce: o reenvio de uma que ficou sem resposta não duplica. */
   private sentNonces = new Map<string, { id: string; at: number }>()
   /** Última vista do mapa (undefined: ainda não leu do banco). */
@@ -444,6 +455,15 @@ export class Guild extends DurableObject<Env> {
     )`)
     // A call de cada conexão, pra quem estava nela continuar depois de um reinício (ver `restoreVoice`).
     this.sql.exec('CREATE TABLE IF NOT EXISTS voice_conns (conn_id TEXT PRIMARY KEY, state TEXT NOT NULL)')
+    // Push: quem não tem celular (até quando não perguntar de novo) e os avisos que foram pro
+    // celular de alguém e ainda não foram lidos (um por pessoa e canal, com a mensagem do aviso).
+    this.sql.exec('CREATE TABLE IF NOT EXISTS no_push (user_id TEXT PRIMARY KEY, until INTEGER NOT NULL)')
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS push_open (
+      user_id TEXT NOT NULL,
+      channel_id TEXT NOT NULL,
+      message_id TEXT NOT NULL,
+      PRIMARY KEY (user_id, channel_id)
+    )`)
 
     // A tabela de canais da 0.5 só aceitava texto e voz (CHECK); a nova aceita categoria e tem mais colunas.
     const channelCols = columns(this.sql, 'channels')
@@ -1368,10 +1388,36 @@ export class Guild extends DurableObject<Env> {
       ...(ip ? { ip } : {}),
     }
     server.serializeAttachment(pending)
-    // A varredura vem logo depois do prazo do `auth`. Sem isso, o alarme de um anexo solto
-    // (6 h ou 1 dia) adiava a varredura: conexão morta não saía e pendente não fechava.
-    await armAlarm(this.ctx.storage, now + AUTH_TIMEOUT + 1000, now)
+    this.authDeadline(server)
+    // Garante que tem varredura por vir (o alarme de um anexo solto, de 6 h ou 1 dia, adiava ela:
+    // conexão morta não saía). Até a 1.17 cada conexão nova puxava o alarme pra 16 s depois, por
+    // causa do prazo do `auth`: um alarme (um pedido) a mais por reconexão, quase sempre à toa.
+    await armAlarm(this.ctx.storage, now + IDLE_SWEEP_EVERY, now)
     return new Response(null, { status: 101, webSocket: client })
+  }
+
+  /**
+   * Quem não manda o `auth` no prazo sai. É um temporizador (não custa pedido), cancelado quando o
+   * login passa; se o objeto for despejado antes, a varredura fecha a conexão do mesmo jeito.
+   */
+  private authDeadline(ws: WebSocket) {
+    this.authTimers.set(
+      ws,
+      setTimeout(() => {
+        this.authTimers.delete(ws)
+        try {
+          if (ws.readyState === WebSocket.OPEN && this.state(ws).pending) ws.close(CLOSE_RETRY, 'Faltou autenticar')
+        } catch {
+          // já estava fechando
+        }
+      }, AUTH_TIMEOUT),
+    )
+  }
+
+  private authDone(ws: WebSocket) {
+    const timer = this.authTimers.get(ws)
+    if (timer !== undefined) clearTimeout(timer)
+    this.authTimers.delete(ws)
   }
 
   /** Valida o token da conexão (no Directory) e só então manda o estado inicial (`ready`). */
@@ -1393,6 +1439,8 @@ export class Guild extends DurableObject<Env> {
     }
 
     if (this.saveProfile({ ...auth.me, admin: false })) this.broadcastMember(auth.me.id)
+    // O app do celular abriu: o push pode ter acabado de ser ligado nele.
+    if (msg.platform === 'android') this.clearNoPush(auth.me.id)
     const before = this.presenceOf(auth.me.id)
     const resumed: ReturnType<Guild['takeOver']> = key ? this.takeOver(ws, auth.me.id, connId) : { voice: null, queue: [] }
     // O app diz que não está em call aqui (1.18+): saiu com a conexão caída e o "sair" não chegou.
@@ -1418,6 +1466,7 @@ export class Guild extends DurableObject<Env> {
       ...(typeof msg.version === 'string' ? { version: msg.version.slice(0, 32) } : {}),
     }
     this.save(ws, state)
+    this.authDone(ws)
 
     const perms = this.perms(state.userId)
     const channels = this.visibleChannels(state.userId)
@@ -1484,7 +1533,8 @@ export class Guild extends DurableObject<Env> {
     if (!member) return ws.close(4003, 'Você não está nesse servidor')
     // O mapa tem balde próprio: arrastar e mexer o mouse mandam uma dúzia de mensagens por segundo.
     if (msg.t === 'map.view' || msg.t === 'map.cursor') {
-      if (this.allow(`map:${state.connId}`, 300, 10_000) && this.charge(ws, state, msg)) this.mapMotion(state, msg, member)
+      // Cobra antes do balde: a que o balde descarta também custou um pedido ao chegar.
+      if (this.charge(ws, state, msg) && this.allow(`map:${state.connId}`, 300, 10_000)) this.mapMotion(state, msg, member)
       return
     }
     // Limite por conexão (sinalização da call tem folga maior: muitos candidatos ICE de uma vez),
@@ -1494,7 +1544,9 @@ export class Guild extends DurableObject<Env> {
       !this.allow(`${signal ? 'sig' : 'ws'}:${state.connId}`, signal ? 400 : 120, 10_000) ||
       !this.allow(`${signal ? 'sig' : 'ws'}:user:${state.userId}`, signal ? 800 : 240, 10_000)
     ) {
-      if (this.allow(`warn:${state.connId}`, 1, 10_000)) this.error(ws, 'Calma! Muitas ações de uma vez.')
+      // Descartada, mas já custou um pedido ao chegar: entra no orçamento (até a 1.17 não entrava,
+      // e um laço rápido gastava muito mais que o teto antes de ser parado).
+      if (this.charge(ws, state, msg) && this.allow(`warn:${state.connId}`, 1, 10_000)) this.error(ws, 'Calma! Muitas ações de uma vez.')
       return
     }
     // Call em laço de sinalização (como a chamada privada de 25/10/2026): a conexão sai da call.
@@ -1518,9 +1570,16 @@ export class Guild extends DurableObject<Env> {
       console.error('erro tratando', msg.t, err)
       this.error(ws, 'Erro no servidor.')
     }
+    // Passou por ser essencial (sair da call) com o orçamento estourado: agora a conexão fecha.
+    const stop = this.stopAfter.get(ws)
+    if (stop !== undefined) {
+      this.stopAfter.delete(ws)
+      this.stopOver(ws, this.state(ws), stop)
+    }
   }
 
   async webSocketClose(ws: WebSocket, code: number, reason: string) {
+    this.authDone(ws)
     try {
       ws.close(code === 1005 ? 1000 : code, reason)
     } catch {
@@ -1544,17 +1603,29 @@ export class Guild extends DurableObject<Env> {
     const { spent, over } = spend(base, COSTS[msg.t] ?? MESSAGE, Date.now(), essential)
     this.save(ws, { ...state, spent })
     this.spentByConn.set(state.connId, spent)
-    if (over === -1 || essential) return true
+    if (over === -1) return true
     this.report(state.userId, state.connId, `guild:budget-${windowName(over)}`, `${state.version ?? 'app antigo'}; estourou com ${msg.t}`)
     // Ignorar não economiza (cada mensagem já custou ao chegar): o que adianta é o app parar.
     // O novo pausa uns minutos (4008). O antigo, numa rajada (10 min), só fica de fora; passando
     // da hora ou do dia, fecha do único jeito que faz ele não voltar na hora (4004: o servidor
     // some da lista dele até a conexão pessoal voltar).
     const stop = state.version ? CLOSE_PAUSE : over !== 0 ? CLOSE_STOP_OLD : null
+    // Sair da call ou do mapa vale sempre, mas não vira passe livre: depois de tratada, a conexão
+    // fecha como qualquer outra (um laço só de `voice.leave` nunca era parado).
+    if (essential) {
+      if (stop !== null) this.stopAfter.set(ws, stop)
+      return true
+    }
     if (stop === null) {
       if (this.allow(`warn:${state.connId}`, 1, MINUTE)) this.error(ws, 'Muita coisa em pouco tempo. Espere uns minutos.')
       return false
     }
+    this.stopOver(ws, state, stop)
+    return false
+  }
+
+  /** Fecha a conexão que estourou o orçamento (4008: o app pausa; 4004: o app antigo para). */
+  private stopOver(ws: WebSocket, state: ConnState, stop: number) {
     if (stop === CLOSE_STOP_OLD) this.error(ws, 'Seu app mandou coisa demais e foi desconectado. Atualize ou abra o app de novo.')
     try {
       ws.close(stop, 'Muita coisa em pouco tempo')
@@ -1562,7 +1633,6 @@ export class Guild extends DurableObject<Env> {
       // já estava fechando
     }
     this.dropConnection(ws, state, false)
-    return false
   }
 
   /** Sinalização em laço: esta conexão sai da call (o app sai junto com o `voice.forced`). */
@@ -1662,6 +1732,9 @@ export class Guild extends DurableObject<Env> {
       this.sql.exec('DELETE FROM slowmode WHERE last_at < ?', now - 6 * 60 * MINUTE)
       this.sql.exec('DELETE FROM audit WHERE created_at < ?', now - AUDIT_KEEP)
       for (const [key, until] of this.noPush) if (until <= now) this.noPush.delete(key)
+      this.sql.exec('DELETE FROM no_push WHERE until <= ?', now)
+      // Aviso de canal que não existe mais, ou de quem saiu do servidor: ninguém vai ler.
+      this.sql.exec('DELETE FROM push_open WHERE channel_id NOT IN (SELECT id FROM channels) OR user_id NOT IN (SELECT user_id FROM members)')
       for (const [key, sent] of this.sentNonces) if (now - sent.at > NONCE_TTL) this.sentNonces.delete(key)
     }
 
@@ -2154,7 +2227,7 @@ export class Guild extends DurableObject<Env> {
     const targets = this.members().filter(
       (row) =>
         row.user_id !== message.authorId &&
-        (this.noPush.get(row.user_id) ?? 0) <= now &&
+        !this.skipsPush(row.user_id, now) &&
         this.can(row.user_id, channel.id, P.VIEW_CHANNEL) &&
         this.wantsPush(row, message),
     )
@@ -2180,17 +2253,57 @@ export class Guild extends DurableObject<Env> {
     }
     const results = await Promise.allSettled(targets.map((row) => home(this.env, row.user_id).guildPush(input)))
     results.forEach((r, i) => {
-      if (r.status === 'fulfilled' && r.value === false) this.noPush.set(targets[i].user_id, now + NO_PUSH_TTL)
+      if (r.status !== 'fulfilled') return
+      const userId = targets[i].user_id
+      if (r.value === false) return this.setNoPush(userId, now + NO_PUSH_TTL)
+      // O aviso saiu pro celular: fica anotado pra sair de lá quando a pessoa ler o canal. (O Home
+      // de antes da 1.18 devolve `true` tendo celular, mandando ou não: conta como mandado.)
+      if (r.value !== 'held') {
+        this.sql.exec(
+          'INSERT INTO push_open (user_id, channel_id, message_id) VALUES (?, ?, ?) ON CONFLICT (user_id, channel_id) DO UPDATE SET message_id = excluded.message_id',
+          userId,
+          channel.id,
+          message.id,
+        )
+      }
     })
+  }
+
+  /** A pessoa não tem celular com push (perguntado há pouco): o Home dela não é chamado. */
+  private skipsPush(userId: string, now: number): boolean {
+    if (!this.noPushLoaded) {
+      this.noPushLoaded = true
+      for (const row of this.sql.exec<{ user_id: string; until: number }>('SELECT user_id, until FROM no_push WHERE until > ?', now).toArray()) {
+        this.noPush.set(row.user_id, row.until)
+      }
+    }
+    return (this.noPush.get(userId) ?? 0) > now
+  }
+
+  private setNoPush(userId: string, until: number) {
+    this.noPush.set(userId, until)
+    this.sql.exec('INSERT INTO no_push (user_id, until) VALUES (?, ?) ON CONFLICT (user_id) DO UPDATE SET until = excluded.until', userId, until)
+  }
+
+  /** Abriu o app do celular (pode ter acabado de ligar o push): volta a ser perguntada. */
+  private clearNoPush(userId: string) {
+    this.noPush.delete(userId)
+    this.sql.exec('DELETE FROM no_push WHERE user_id = ?', userId)
   }
 
   /** Leu o canal: o aviso dele sai do celular (o Home sabe se mandou um). Quem não tem celular com push não é perguntado. */
   private async pushSeen(userId: string, channelId: string, lastReadId: string | null) {
-    if ((this.noPush.get(userId) ?? 0) > Date.now()) return
+    // Só chama o Home se um aviso desse canal foi mesmo pro celular dela e a leitura chegou nele:
+    // até a 1.17 todo "lido" de quem tem celular era uma chamada.
+    const open = this.sql
+      .exec<{ message_id: string }>('SELECT message_id FROM push_open WHERE user_id = ? AND channel_id = ?', userId, channelId)
+      .toArray()[0]
+    if (!open || !lastReadId || lastReadId < open.message_id) return
+    this.sql.exec('DELETE FROM push_open WHERE user_id = ? AND channel_id = ?', userId, channelId)
     const devices = await home(this.env, userId)
       .pushSeen(`channel:${channelId}`, lastReadId)
       .catch(() => true)
-    if (!devices) this.noPush.set(userId, Date.now() + NO_PUSH_TTL)
+    if (!devices) this.setNoPush(userId, Date.now() + NO_PUSH_TTL)
   }
 
   /** Busca as prévias dos links (depois que a mensagem já chegou pra todo mundo). */

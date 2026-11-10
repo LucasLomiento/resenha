@@ -1,8 +1,8 @@
-import { env, runInDurableObject } from 'cloudflare:test'
+import { env, evictAllDurableObjects, runInDurableObject } from 'cloudflare:test'
 import { describe, expect, it } from 'vitest'
 import { dmChannelId } from '../../shared/protocol'
 import { PUSH_TEXT, Pusher, pushBody, signedAssertion, type PushMessage } from '../src/push'
-import { homeSocket, login, post, tick, world } from './helpers'
+import { guildSocket, homeSocket, login, post, tick, world } from './helpers'
 
 const TOKEN_A = 'aparelho-do-duarte:APA91b-token-de-teste-1'
 const TOKEN_B = 'aparelho-velho-desinstalado:APA91b-token-2'
@@ -400,10 +400,23 @@ describe('push: o aviso sai do celular quando a pessoa vê', () => {
     a.send({ t: 'chat.send', channelId: text.id, content: 'bom dia', attachmentIds: [], nonce: '1' })
     const message = (await b.next('chat.message', (m) => m.nonce === '1')).message
     await until(() => google.sent.length === 1)
+    const stub = env.GUILD.get(env.GUILD.idFromName(guild.id))
+    const pushRows = () =>
+      runInDurableObject(stub, (_, state) => ({
+        open: state.storage.sql.exec<{ user_id: string; message_id: string }>('SELECT user_id, message_id FROM push_open').toArray(),
+        noPush: state.storage.sql.exec<{ user_id: string }>('SELECT user_id FROM no_push').toArray().map((r) => r.user_id),
+      }))
+    // O servidor anota o aviso que foi pro celular do Duarte (pra tirar quando ele ler o canal).
+    expect((await pushRows()).open).toEqual([{ user_id: friend.user.id, message_id: message.id }])
     b.send({ t: 'chat.ack', channelId: text.id, messageId: message.id })
     await b.next('read.state')
     await until(() => dismissed(google).length === 1)
     expect(dismissed(google)).toEqual([`channel:${text.id}`])
+    expect((await pushRows()).open).toEqual([])
+    // Ler de novo sem aviso aberto não chama o Home (nada novo sai pro celular).
+    b.send({ t: 'chat.ack', channelId: text.id, messageId: message.id })
+    await tick(150)
+    expect(dismissed(google)).toHaveLength(1)
 
     // O dono não tem celular com push: depois do primeiro "lido", o Guild não chama o Home dele toda vez.
     b.send({ t: 'chat.send', channelId: text.id, content: 'oi', attachmentIds: [], nonce: '2' })
@@ -415,6 +428,19 @@ describe('push: o aviso sai do celular quando a pessoa vê', () => {
       (instance as unknown as { noPush: Map<string, number> }).noPush.has(owner.user.id),
     )
     expect(skipped).toBe(true)
+    // Fica no banco: o servidor dorme entre uma mensagem e outra, e só na memória ele voltava a
+    // chamar o Home de cada membro em quase toda mensagem.
+    await evictAllDurableObjects()
+    expect((await pushRows()).noPush).toEqual([owner.user.id])
+    b.send({ t: 'chat.send', channelId: text.id, content: 'de novo', attachmentIds: [], nonce: '3' })
+    await a.next('chat.message', (m) => m.nonce === '3')
+    await tick(100)
+    const loaded = await runInDurableObject(stub, (instance) => (instance as unknown as { noPush: Map<string, number> }).noPush.has(owner.user.id))
+    expect(loaded).toBe(true)
+    // Abrir o app do celular faz o servidor voltar a perguntar na hora (o push pode ter sido ligado agora).
+    const mobile = await guildSocket(guild.id, owner.token, { version: '1.18.0', platform: 'android' })
+    await mobile.next('ready')
+    expect((await pushRows()).noPush).toEqual([])
   })
 })
 

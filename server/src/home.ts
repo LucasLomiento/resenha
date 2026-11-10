@@ -100,8 +100,10 @@ const IDLE_SWEEP_EVERY = 5 * 60_000
 /**
  * Conexões novas da mesma pessoa (todos os aparelhos) em 10 min: um app reconectando sem parar.
  * Cada uma custa uns 4 pedidos mais um por amigo (token, retrato da conta, presença de cada um).
+ * Só conta a que passou pelo login; antes dele o limite é por IP (ver o `fetch`).
  */
 const MAX_UPGRADES = 20
+const UPGRADE_WINDOW = 10 * 60_000
 /**
  * Teto do dia da pessoa (todas as conexões juntas), em pedidos: cada conexão tem o dela
  * (budget.ts), e este segura quem abre várias. A soma vai pro banco a cada 50.
@@ -166,6 +168,10 @@ export class Home extends DurableObject<Env> {
   private ghosts = new Map<string, Ghost>()
   /** Sockets que já saíram (o fechamento e o erro podem chegar os dois). */
   private retired = new WeakSet<WebSocket>()
+  /** O prazo do `auth` de cada conexão que ainda não entrou. */
+  private authTimers = new Map<WebSocket, ReturnType<typeof setTimeout>>()
+  /** Conexões que estouraram o orçamento com uma mensagem essencial: fecham depois de ela ser tratada. */
+  private stopAfter = new WeakMap<WebSocket, number>()
   /** Mandaram o `auth` e o Directory ainda está conferindo o token. */
   private authenticating = new WeakSet<WebSocket>()
   /** Conta excluída (as tabelas já não existem nesta instância). */
@@ -232,6 +238,12 @@ export class Home extends DurableObject<Env> {
     this.flood.set(key, recent)
     if (this.flood.size > 5000) this.flood.clear()
     return true
+  }
+
+  /** Quantas vezes essa chave passou pelo `allow` na janela (sem contar mais uma). */
+  private recent(key: string, window: number): number {
+    const now = Date.now()
+    return (this.flood.get(key) ?? []).filter((t) => now - t < window).length
   }
 
   private dmRow(channelId: unknown): DmRow | undefined {
@@ -436,9 +448,16 @@ export class Home extends DurableObject<Env> {
       .filter((ws) => ws.readyState === WebSocket.OPEN && this.state(ws).pending)
       .map((ws) => ({ ws, ...this.state(ws) }))
     // Reconectando sem parar (cada conexão nova custa a conferência do token, o retrato da conta
-    // e a presença dos amigos): espera. O app conta como falha e espaça as tentativas.
-    if (!this.allow('upgrade', MAX_UPGRADES, 10 * 60_000)) {
+    // e a presença dos amigos): espera. O app conta como falha e espaça as tentativas. O limite da
+    // pessoa só conta as conexões que passaram pelo login: até a 1.17 contava qualquer upgrade, e
+    // 20 conexões sem login (de qualquer um que soubesse o id) trancavam a pessoa fora por 10 min.
+    if (this.recent('upgrade:ok', UPGRADE_WINDOW) >= MAX_UPGRADES) {
       this.report(null, 'home:reconnect', `mais de ${MAX_UPGRADES} conexões em 10 min`)
+      return new Response('Conexões demais, espere um pouco', { status: 429 })
+    }
+    // Antes do login, por IP: quem insiste sem entrar só tranca a si mesmo.
+    if (!this.allow(`upgrade:${ip ?? ''}`, MAX_UPGRADES, UPGRADE_WINDOW)) {
+      this.report(null, 'home:reconnect-ip', `mais de ${MAX_UPGRADES} conexões do mesmo IP em 10 min`)
       return new Response('Conexões demais, espere um pouco', { status: 429 })
     }
     if (!admitPending(pending, ip, MAX_PENDING)) return new Response('Ocupado, tente de novo', { status: 503 })
@@ -454,9 +473,35 @@ export class Home extends DurableObject<Env> {
       ...(ip ? { ip } : {}),
     }
     server.serializeAttachment(state)
-    // A varredura vem logo depois do prazo do `auth` (quem não se autentica não fica ocupando vaga).
-    await armAlarm(this.ctx.storage, now + AUTH_TIMEOUT + 1000, now)
+    this.authDeadline(server)
+    // Garante que tem varredura por vir. Até a 1.17 cada conexão nova puxava o alarme pra 16 s
+    // depois, por causa do prazo do `auth`: um alarme (um pedido) a mais por reconexão.
+    await armAlarm(this.ctx.storage, now + IDLE_SWEEP_EVERY, now)
     return new Response(null, { status: 101, webSocket: client })
+  }
+
+  /**
+   * Quem não manda o `auth` no prazo sai (não fica ocupando vaga). É um temporizador (não custa
+   * pedido), cancelado quando o login passa; se o objeto for despejado antes, a varredura fecha.
+   */
+  private authDeadline(ws: WebSocket) {
+    this.authTimers.set(
+      ws,
+      setTimeout(() => {
+        this.authTimers.delete(ws)
+        try {
+          if (ws.readyState === WebSocket.OPEN && this.state(ws).pending) ws.close(CLOSE_RETRY, 'Faltou autenticar')
+        } catch {
+          // já estava fechando
+        }
+      }, AUTH_TIMEOUT),
+    )
+  }
+
+  private authDone(ws: WebSocket) {
+    const timer = this.authTimers.get(ws)
+    if (timer !== undefined) clearTimeout(timer)
+    this.authTimers.delete(ws)
   }
 
   private dmRows(): DmRow[] {
@@ -479,6 +524,8 @@ export class Home extends DurableObject<Env> {
     const auth = typeof msg.token === 'string' ? await directory(this.env).authenticate(msg.token, client) : null
     if (ws.readyState !== WebSocket.OPEN) return
     if (!auth || auth.me.id !== this.userId) return ws.close(4001, 'Sessão inválida')
+    // Entrou de verdade: conta pro limite de reconexão da pessoa (ver o `fetch`).
+    this.allow('upgrade:ok', Infinity, UPGRADE_WINDOW)
     const key = typeof msg.key === 'string' && CONN_KEY.test(msg.key) ? msg.key : null
     const connId = key ? await connIdFor(auth.me.id, key) : pending.connId
     if (ws.readyState !== WebSocket.OPEN) return
@@ -525,6 +572,7 @@ export class Home extends DurableObject<Env> {
       return
     }
     this.save(ws, state)
+    this.authDone(ws)
 
     const rows = this.dmRows()
     const snapshot = await directory(this.env).homeSnapshot(this.userId, rows.map((r) => r.peer_id))
@@ -620,7 +668,11 @@ export class Home extends DurableObject<Env> {
       !this.allow(`${signal ? 'sig' : 'ws'}:${state.connId}`, signal ? 400 : 120, 10_000) ||
       !this.allow(signal ? 'sig' : 'ws', signal ? 800 : 240, 10_000)
     ) {
-      if (this.allow(`warn:${state.connId}`, 1, 10_000)) this.send(ws, { t: 'error', message: 'Calma! Muitas ações de uma vez.' })
+      // Descartada, mas já custou um pedido ao chegar: entra no orçamento (até a 1.17 não entrava,
+      // e um laço rápido gastava muito mais que o teto antes de ser parado).
+      if (this.charge(ws, state, msg) && this.allow(`warn:${state.connId}`, 1, 10_000)) {
+        this.send(ws, { t: 'error', message: 'Calma! Muitas ações de uma vez.' })
+      }
       return
     }
     // Chamada em laço (25/10/2026: dois apps trocaram sinalização 6 vezes por segundo por horas e
@@ -643,9 +695,16 @@ export class Home extends DurableObject<Env> {
       console.error('erro tratando', msg.t, err)
       this.send(ws, { t: 'error', message: 'Erro no servidor.' })
     }
+    // Passou por ser essencial (desligar, tirar o push) com o orçamento estourado: agora a conexão fecha.
+    const stop = this.stopAfter.get(ws)
+    if (stop !== undefined) {
+      this.stopAfter.delete(ws)
+      this.stopOver(ws, this.state(ws), stop)
+    }
   }
 
   async webSocketClose(ws: WebSocket, code: number, reason: string) {
+    this.authDone(ws)
     try {
       ws.close(code === 1005 ? 1000 : code, reason)
     } catch {
@@ -938,26 +997,42 @@ export class Home extends DurableObject<Env> {
     // sem poder mudar de status (o que segura é o limite de trocas, no `presence`).
     if (msg.t === 'presence') cost += Math.min(this.friendIds().length, 50) * RPC
     // O dia da pessoa estourou (-2): nem conta na conexão.
-    const personOver = !essential && this.personDay(now).spent + cost > PERSON_DAY
+    const personOver = this.personDay(now).spent + cost > PERSON_DAY
     // A memória ganha de um attachment que alguém regravou com o estado de antes.
     const base = merge(state.spent, this.spentByConn.get(state.connId))
-    const { spent, over } = personOver ? { spent: spend(base, 0, now).spent, over: -2 } : spend(base, cost, now, essential)
+    const charged = personOver && !essential ? { spent: spend(base, 0, now).spent, over: -2 } : spend(base, cost, now, essential)
+    const spent = charged.spent
+    const over = charged.over === -1 && personOver ? -2 : charged.over
     this.save(ws, { ...state, spent })
     this.spentByConn.set(state.connId, spent)
-    if (over === -1 || essential) {
+    if (over === -1) {
       this.addPersonDay(cost)
       return true
     }
+    // Recusada, a mensagem ainda custou um pedido ao chegar; a essencial roda e conta inteira.
+    this.addPersonDay(essential ? cost : MESSAGE)
     const which = over === -2 ? 'pessoa-1d' : windowName(over)
     this.report(state, `home:budget-${which}`, `${state.version ?? 'app antigo'}; estourou com ${msg.t}`)
     // Ignorar não economiza (cada mensagem já custou ao chegar): o que adianta é o app parar.
     // O novo pausa uns minutos (4008). O antigo, numa rajada (10 min), só fica de fora; passando
     // da hora ou do dia, fecha do único jeito que faz ele não voltar na hora (4004).
     const stop = state.version ? CLOSE_PAUSE : over !== 0 ? CLOSE_STOP_OLD : null
+    // Desligar a chamada ou tirar o push vale sempre, mas não vira passe livre: depois de tratada,
+    // a conexão fecha como qualquer outra (um laço só de `call.hangup` nunca era parado).
+    if (essential) {
+      if (stop !== null) this.stopAfter.set(ws, stop)
+      return true
+    }
     if (stop === null) {
       if (this.allow(`warn:${state.connId}`, 1, 60_000)) this.send(ws, { t: 'error', message: 'Muita coisa em pouco tempo. Espere uns minutos.' })
       return false
     }
+    this.stopOver(ws, state, stop)
+    return false
+  }
+
+  /** Fecha a conexão que estourou o orçamento (4008: o app pausa; 4004: o app antigo para). */
+  private stopOver(ws: WebSocket, state: HomeConn, stop: number) {
     if (stop === CLOSE_STOP_OLD) {
       this.send(ws, { t: 'error', message: 'Seu app mandou coisa demais e foi desconectado. Atualize ou abra o app de novo.' })
     }
@@ -967,7 +1042,6 @@ export class Home extends DurableObject<Env> {
       // já estava fechando
     }
     this.ctx.waitUntil(this.dropConnection(ws, state, false))
-    return false
   }
 
   /** Gasto do dia da pessoa, lido do banco quando o objeto sobe (ou o dia vira, à meia-noite UTC). */
@@ -1121,7 +1195,7 @@ export class Home extends DurableObject<Env> {
     /** Nomes dos cargos e canais citados (<@&id>, <#id>). */
     roles?: Record<string, string>
     channels?: Record<string, string>
-  }): Promise<boolean> {
+  }): Promise<false | 'sent' | 'held'> {
     // Sem aparelho com push, o servidor pode parar de perguntar por um tempo (devolve false).
     if (!this.pusher.enabled || this.sql.exec('SELECT 1 FROM push_tokens LIMIT 1').toArray().length === 0) return false
     const lookup = {
@@ -1129,14 +1203,17 @@ export class Home extends DurableObject<Env> {
       role: (id: string) => input.roles?.[id] ?? null,
       channel: (id: string) => input.channels?.[id] ?? null,
     }
-    await this.push(this.pushDevices(), input.messageId ?? null, (text, preview) => ({
+    const devices = this.pushDevices()
+    await this.push(devices, input.messageId ?? null, (text, preview) => ({
       title: text.inChannel(input.author, input.channel, input.server),
       body: preview ? pushBody(input.content, input.attachments, lookup, text) || text.hidden : text.hidden,
       data: { kind: 'channel', guildId: input.guildId, channelId: input.channelId },
       tag: `channel:${input.channelId}`,
       kind: 'message',
     }))
-    return true
+    // `sent`: o aviso foi pro celular (o servidor guarda, pra tirar quando o canal for lido);
+    // `held`: tem celular, mas agora não avisa ("Não perturbe", ou olhando o app no computador).
+    return devices.length > 0 ? 'sent' : 'held'
   }
 
   // ---------- Push (celular) ----------

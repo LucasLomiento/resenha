@@ -136,6 +136,24 @@ describe('custo de pedidos', () => {
     await a.nothing('user.upsert')
   })
 
+  it('conexão nova não puxa o alarme pra daqui a 16 s (o prazo do login é um temporizador, sem pedido a mais)', async () => {
+    const { guild, owner } = await world()
+    for (const [stub, connect] of [
+      [env.GUILD.get(env.GUILD.idFromName(guild.id)), () => guildSocket(guild.id, owner.token)],
+      [env.HOME.get(env.HOME.idFromName(owner.user.id)), () => homeSocket(owner.user.id, owner.token)],
+    ] as const) {
+      const first = await connect()
+      await first.next('ready')
+      const alarmIn = async () => (await runInDurableObject(stub, (_, state) => state.storage.getAlarm()))! - Date.now()
+      await runDurableObjectAlarm(stub)
+      expect(await alarmIn()).toBeGreaterThan(4 * MINUTE)
+      // Uma reconexão (cada pessoa tem uma a cada 10 a 60 min): a varredura continua onde estava.
+      const again = await connect()
+      await again.next('ready')
+      expect(await alarmIn()).toBeGreaterThan(4 * MINUTE)
+    }
+  })
+
   it('incidente do app: um a cada 10 min por pessoa, mesmo com várias conexões', async () => {
     const { owner } = await world()
     const one = await homeSocket(owner.user.id, owner.token)

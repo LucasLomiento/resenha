@@ -37,8 +37,11 @@ export const LIMITS = [
 export type Spent = number[]
 
 /**
- * Gasta `cost` (em pedidos) se couber em todas as janelas. `over`: a primeira janela que
- * estourou (-1 = coube). `essential`: conta mesmo passando (sair da call não pode ser barrado).
+ * Gasta `cost` (em pedidos) se couber em todas as janelas. `over`: a maior janela que estourou
+ * (-1 = coube). `essential`: conta inteiro mesmo passando (sair da call não pode ser barrado).
+ * Recusada, a mensagem ainda conta `MESSAGE` em todas as janelas, porque já custou um pedido ao
+ * chegar: até a 1.17 o que passava do teto de 10 min não entrava em conta nenhuma, e um app
+ * antigo em laço só chegava no teto da hora (o que fecha ele) depois de gastar várias vezes mais.
  */
 export function spend(
   spent: Spent | undefined,
@@ -56,11 +59,11 @@ export function spend(
       start = now
       used = 0
     }
-    if (over === -1 && used + cost > limits[i].max) over = i
+    if (used + cost > limits[i].max) over = i
     next.push(start, used)
   }
-  if (over !== -1 && !essential) return { spent: next, over }
-  for (let i = 0; i < limits.length; i++) next[2 * i + 1] += cost
+  const counted = over !== -1 && !essential ? Math.min(cost, MESSAGE) : cost
+  for (let i = 0; i < limits.length; i++) next[2 * i + 1] += counted
   return { spent: next, over }
 }
 

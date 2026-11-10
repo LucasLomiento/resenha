@@ -83,7 +83,8 @@ describe('Cota de mídia do mês', () => {
     const me = await signup('lucas')
     const status = await call('GET', '/api/media', undefined, me.token)
     expect(status.body).toMatchObject({ sfu: false, used: 0, limit: MEDIA_BUDGET })
-    expect((await call('POST', '/api/media/sessions', {}, me.token)).status).toBe(503)
+    // Sem dizer a sala, nem chega a olhar se tem SFU (o caso com a sala está em audit.test.ts).
+    expect((await call('POST', '/api/media/sessions', {}, me.token)).status).toBe(403)
     expect((await call('GET', '/api/media')).status).toBe(401)
   })
 
