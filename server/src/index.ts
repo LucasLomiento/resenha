@@ -174,6 +174,48 @@ function hold(key: string, res: Response): Response {
   return res
 }
 
+/**
+ * Respostas "não existe" ou "sessão inválida" por IP, na memória desta instância do Worker. Cada
+ * uma custou uma pergunta a um Durable Object (um pedido da cota do dia), e quem acerta nunca
+ * junta muitas: passou de 20 num minuto, as próximas desse IP são recusadas aqui, sem perguntar.
+ * Antes disso, um IP só mandando ids ou tokens inventados gastava 300 pedidos por minuto.
+ */
+const strikes = new Map<string, { n: number; until: number }>()
+const STRIKE_WINDOW = 60_000
+const MAX_STRIKES = 20
+
+function struck(ipKey: string | null): boolean {
+  const entry = ipKey ? strikes.get(ipKey) : undefined
+  if (!entry) return false
+  if (entry.until <= Date.now()) {
+    strikes.delete(ipKey!)
+    return false
+  }
+  return entry.n >= MAX_STRIKES
+}
+
+function strike(ipKey: string | null) {
+  if (!ipKey) return
+  const now = Date.now()
+  const entry = strikes.get(ipKey)
+  if (entry && entry.until > now) entry.n++
+  else {
+    if (strikes.size >= 5000) strikes.clear()
+    strikes.set(ipKey, { n: 1, until: now + STRIKE_WINDOW })
+  }
+}
+
+/** Token de sessão: base64url de 32 bytes (o da 0.5 tinha outro tamanho). Fora disso nem pergunta ao Directory. */
+const TOKEN_SHAPE = /^[\w.~+/=-]{16,128}$/
+
+/**
+ * O `/api/status` (modo do cadastro) por 15 s nesta instância: a tela de entrada de todo app
+ * pergunta, e sem login qualquer um perguntava 300 vezes por minuto, cada uma um pedido ao
+ * Directory. Criar conta e mexer na Plataforma por aqui já renovam na hora.
+ */
+let statusCache: { until: number; value: { signup: 'invite' | 'open'; users: number } } | null = null
+const STATUS_TTL = 15_000
+
 const escapeHtml = (text: string) =>
   text.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!)
 
@@ -434,8 +476,12 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
 
   // ---------- Sem login ----------
 
+  // Conta nova ou mudança na Plataforma: o status guardado deixa de valer.
+  if (method !== 'GET' && (pathname === '/api/register' || pathname.startsWith('/api/admin'))) statusCache = null
+
   if (pathname === '/api/status' && method === 'GET') {
-    const status = await dir.status()
+    if (!statusCache || statusCache.until <= Date.now()) statusCache = { until: Date.now() + STATUS_TTL, value: await dir.status() }
+    const status = statusCache.value
     const open = signupOpen(env) && status.signup === 'open'
     return json({
       needsInvite: status.users > 0 && !open,
@@ -471,8 +517,12 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
   if ((m = pathname.match(/^\/i\/([\w-]{4,32})\/?$/)) && method === 'GET') return invitePage(await dir.previewInvite(m[1]), m[1])
 
   if ((m = pathname.match(/^\/media\/([\w-]{8,64})$/)) && method === 'GET') {
+    if (struck(ipKey)) return error(429, 'Muitos pedidos. Espere um pouco.')
     const media = await dir.getMedia(m[1])
-    if (!media) return error(404, 'Imagem não existe.')
+    if (!media) {
+      strike(ipKey)
+      return error(404, 'Imagem não existe.')
+    }
     return new Response(media.bytes, {
       headers: {
         'Content-Type': media.type,
@@ -506,27 +556,39 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
   const socket = pathname === '/ws' || /^\/api\/(g|home)\/[\w-]{1,64}\/ws$/.test(pathname)
   if (socket && request.headers.get('Upgrade') !== 'websocket') return error(426, 'Esperava WebSocket.')
   const ipHeader: Record<string, string> = socket && ip ? { [IP_HEADER]: await hashIp(env.FILE_SECRET, ip) } : {}
-  if (pathname === '/ws') return guild(env, 'main').fetch(clean(request, { [LEGACY_HEADER]: '1', ...ipHeader }))
   // Reconectando sem parar (app com bug, script): fica aqui, sem acordar nenhum Durable Object.
-  // Por IP e destino: dá pra todo aparelho da casa voltar junto depois de uma queda.
+  // Por IP e destino: dá pra todo aparelho da casa voltar junto depois de uma queda. Vale também
+  // pro `/ws` da 0.5 (até a 1.17 ele passava direto, a 300 por minuto, sem o 429 dele segurar).
   const wsKey = `${pathname}:${ipKey}`
-  if (socket && (holding(wsKey) || (await limited(env.WS_LIMITER, wsKey)))) return error(429, 'Conexões demais. Espere um pouco.')
+  if (socket && (holding(wsKey) || struck(ipKey) || (await limited(env.WS_LIMITER, wsKey)))) return error(429, 'Conexões demais. Espere um pouco.')
+  if (pathname === '/ws') return hold(wsKey, await guild(env, 'main').fetch(clean(request, { [LEGACY_HEADER]: '1', ...ipHeader })))
   if ((m = pathname.match(/^\/api\/g\/([\w-]{1,64})\/ws$/))) {
     const id = m[1]
-    if (!(await exists(`g:${id}`, () => dir.guildInfo(id)))) return error(404, 'Servidor não existe.')
+    if (!(await exists(`g:${id}`, () => dir.guildInfo(id)))) {
+      strike(ipKey)
+      return error(404, 'Servidor não existe.')
+    }
     return hold(wsKey, await guild(env, id).fetch(clean(request, ipHeader)))
   }
   if ((m = pathname.match(/^\/api\/home\/([\w-]{1,64})\/ws$/))) {
     const id = m[1]
-    if (!(await exists(`u:${id}`, () => dir.getUser(id)))) return error(404, 'Conta não existe.')
+    if (!(await exists(`u:${id}`, () => dir.getUser(id)))) {
+      strike(ipKey)
+      return error(404, 'Conta não existe.')
+    }
     return hold(wsKey, await home(env, id).fetch(clean(request, { [HOME_HEADER]: id, ...ipHeader })))
   }
 
   // ---------- Daqui pra baixo, só logado ----------
 
   const token = bearer(request)
-  const auth: AuthContext | null = token ? await dir.authenticate(token) : null
-  if (!auth) return error(401, 'Sessão inválida. Entre de novo.')
+  // Token que nem tem cara de token, ou IP que já errou demais: recusado sem perguntar ao Directory.
+  if (token && struck(ipKey)) return error(429, 'Muitos pedidos. Espere um pouco.')
+  const auth: AuthContext | null = token && TOKEN_SHAPE.test(token) ? await dir.authenticate(token) : null
+  if (!auth) {
+    if (token) strike(ipKey)
+    return error(401, 'Sessão inválida. Entre de novo.')
+  }
   const me = auth.me.id
 
   if (pathname === '/api/logout' && method === 'POST') {

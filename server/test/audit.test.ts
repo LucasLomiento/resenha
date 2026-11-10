@@ -1,7 +1,7 @@
 import { env, runDurableObjectAlarm, runInDurableObject } from 'cloudflare:test'
 import { describe, expect, it } from 'vitest'
 import { dmChannelId } from '../../shared/protocol'
-import { call, guildSocket, homeSocket, post, tick, upload, world } from './helpers'
+import { api, call, guildSocket, homeSocket, post, tick, upload, world } from './helpers'
 
 // Correções da auditoria da 1.18 (uma por teste, com o cenário que dava errado).
 
@@ -138,10 +138,12 @@ describe('custo de pedidos', () => {
 
   it('conexão nova não puxa o alarme pra daqui a 16 s (o prazo do login é um temporizador, sem pedido a mais)', async () => {
     const { guild, owner } = await world()
-    for (const [stub, connect] of [
+    type Ready = { next(t: 'ready'): Promise<unknown> }
+    const cases: [DurableObjectStub, () => Promise<Ready>][] = [
       [env.GUILD.get(env.GUILD.idFromName(guild.id)), () => guildSocket(guild.id, owner.token)],
       [env.HOME.get(env.HOME.idFromName(owner.user.id)), () => homeSocket(owner.user.id, owner.token)],
-    ] as const) {
+    ]
+    for (const [stub, connect] of cases) {
       const first = await connect()
       await first.next('ready')
       const alarmIn = async () => (await runInDurableObject(stub, (_, state) => state.storage.getAlarm()))! - Date.now()
@@ -187,5 +189,38 @@ describe('mídia pelo Cloudflare', () => {
     expect((await open(friend.token, { guild: guild.id, channel: 'nao-existe' })).status).toBe(403)
     expect((await open(friend.token, { guild: 'outro', channel: voice.id })).status).toBe(403)
     expect((await open(friend.token, { guild: { $ne: 1 }, channel: [voice.id] })).status).toBe(403)
+  })
+})
+
+describe('Worker: quem só erra não gasta os pedidos do dia', () => {
+  const from = (ip: string, path: string, headers: Record<string, string> = {}) => api(path, { headers: { 'CF-Connecting-IP': ip, ...headers } })
+
+  it('imagem que não existe: depois de 20 num minuto, o IP é recusado sem perguntar ao Directory', async () => {
+    const statuses: number[] = []
+    for (let i = 0; i < 24; i++) statuses.push((await from('203.0.113.7', `/media/inventada${String(i).padStart(4, '0')}`)).status)
+    expect(statuses.slice(0, 20).every((s) => s === 404)).toBe(true)
+    expect(statuses.slice(20)).toEqual([429, 429, 429, 429])
+    // Outro IP não tem nada com isso.
+    expect((await from('203.0.113.8', '/media/inventada9999')).status).toBe(404)
+  })
+
+  it('token inventado: o que nem tem cara de token não chega no Directory, e quem insiste é recusado', async () => {
+    const { owner } = await world()
+    const me = (ip: string, token: string) => from(ip, '/api/me', { Authorization: `Bearer ${token}` })
+    expect((await me('203.0.113.20', 'x')).status).toBe(401)
+    expect((await me('203.0.113.20', 'tem espaço e é inválido')).status).toBe(401)
+    const statuses: number[] = []
+    for (let i = 0; i < 22; i++) statuses.push((await me('203.0.113.21', `token-inventado-numero-${i}-aaaaaaaaaaaa`)).status)
+    expect(statuses.slice(0, 20).every((s) => s === 401)).toBe(true)
+    expect(statuses.slice(20)).toEqual([429, 429])
+    // A sessão de verdade, de outro IP, segue valendo.
+    expect((await me('203.0.113.22', owner.token)).status).toBe(200)
+  })
+
+  it('o modo do cadastro fica guardado uns segundos, e criar conta renova na hora', async () => {
+    expect((await api('/api/status')).body).toMatchObject({ needsInvite: false })
+    await world()
+    // A primeira conta acabou de ser criada por aqui: o status já reflete.
+    expect((await api('/api/status')).body).toMatchObject({ needsInvite: true, signup: 'invite' })
   })
 })
