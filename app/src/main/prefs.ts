@@ -21,6 +21,7 @@ const defaults: DesktopPrefs = {
     'toggle-share': null,
     'leave-call': null,
     'show-window': null,
+    'push-to-talk': null,
   },
 }
 

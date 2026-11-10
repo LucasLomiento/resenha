@@ -1269,6 +1269,40 @@ try {
   check(outputDefault === 1 && stillSpeaking === 1, 'setinha do fone mostra a saída, e a voz continua chegando depois de trocar o perfil', `${outputDefault}/${stillSpeaking}`)
   check(micFallbacks.length === 0, 'microfone passa pelo processador (RNNoise/limiar) carregado no AudioWorklet')
 
+  // Apertar pra falar: com a tecla escolhida, o microfone de A só abre enquanto ela está apertada.
+  // O teste manda o "desceu"/"subiu" que o sistema mandaria (atalho global não se aperta daqui).
+  if (await a.page.evaluate(() => window.resenha.platform().then((p) => !!p.pushToTalk))) {
+    const lucasSpeaking = b.page.locator('.member', { hasText: 'Lucas' }).locator('.avatar.speaking')
+    const gone = () => lucasSpeaking.waitFor({ state: 'detached', timeout: 5000 }).then(() => true, () => false)
+    const there = () => lucasSpeaking.waitFor({ timeout: 5000 }).then(() => true, () => false)
+    const talk = (down) => a.app.evaluate(({ BrowserWindow }, down) => BrowserWindow.getAllWindows()[0].webContents.send('ptt', down), down)
+    const shortcutsPage = async () => {
+      await a.page.getByRole('button', { name: 'Configurações', exact: true }).click({ force: true })
+      await a.page.locator('.settings-nav button', { hasText: 'Atalhos' }).first().click({ force: true })
+    }
+    await shortcutsPage()
+    await a.page.getByRole('button', { name: 'Mudar a tecla de falar', exact: true }).click({ force: true })
+    await a.page.keyboard.press('F9')
+    const talkKey = await a.page.locator('[data-setting="shortcuts.push-to-talk"] .key').innerText()
+    await shot(a, 'atalhos-apertar-pra-falar')
+    await a.page.locator('.settings button.close').click({ force: true })
+    const closedMic = await gone()
+    await talk(true)
+    const opened = await there()
+    await talk(false)
+    const closedAgain = await gone()
+    // Sem a tecla, o microfone volta a ficar aberto o tempo todo.
+    await shortcutsPage()
+    await a.page.getByRole('button', { name: 'Tirar a tecla de falar', exact: true }).click({ force: true })
+    await a.page.locator('.settings button.close').click({ force: true })
+    const openAgain = await there()
+    check(
+      talkKey.includes('F9') && closedMic && opened && closedAgain && openAgain,
+      'apertar pra falar: com a tecla escolhida o microfone só abre enquanto ela está apertada, e sem a tecla volta ao normal',
+      `${talkKey.trim()} · ${closedMic}/${opened}/${closedAgain}/${openAgain}`,
+    )
+  }
+
   // Webcam: B tem duas câmeras, então ligar abre a escolha (com as duas ao vivo); B liga a segunda.
   // A abre a tela da call e vê o vídeo; B desliga e volta o avatar.
   const camBefore = await rectOf(b.page, 'Ligar câmera')

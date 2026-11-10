@@ -138,6 +138,7 @@ export default {
       'shortcuts.leave-call': { label: 'Leave call shortcut', keywords: ['key', 'hang up', 'disconnect', 'keybind', 'hotkey'] },
       'shortcuts.show-window': { label: 'Show Resenha shortcut', keywords: ['key', 'open window', 'bring to front', 'keybind', 'hotkey'] },
       'shortcuts.all': { label: 'All shortcuts', keywords: ['shortcut list', 'keyboard', 'ctrl', 'keybinds', 'hotkeys', 'commands'] },
+      'shortcuts.push-to-talk': { label: 'Push to talk', section: 'Push to talk', keywords: ['ptt', 'talk key', 'hold to talk', 'apertar pra falar', 'pulsar para hablar', 'microphone', 'radio', 'walkie talkie'] },
       'shortcuts.hyprland': { label: 'Shortcuts on Hyprland', keywords: ['bind', 'hyprland.conf', 'config', 'background'] },
 
       // App
@@ -433,6 +434,16 @@ export default {
     none: 'None',
     remove: 'Remove shortcut',
     failed: "The system didn't let this shortcut work outside the app. It works while Resenha is open.",
+    /** Apertar pra falar: a tecla de segurar (só onde o sistema avisa a tecla subindo). */
+    talk: {
+      section: 'Push to talk',
+      label: 'Talk key',
+      hint: 'With a key here, your mic only opens while you hold it, even with a game focused. Without a key, it stays open all the time.',
+      change: 'Change the talk key',
+      remove: 'Remove the talk key',
+      failed: "The system didn't let this key work (it's already in use). Meanwhile your mic stays closed in calls: pick another one or remove it.",
+      needsMod: 'On your system the talk key needs Ctrl, Alt, Shift or Super with it (or an F key).',
+    },
     hyprland: {
       section: 'On Hyprland',
       text: "Resenha sets these shortcuts up in Hyprland by itself while it's open (they show up in your system's keybindings list). If a key is already used in your config, it leaves it alone and warns you here. To bind them another way, {command} also works, as do {toggle-deafen}, {toggle-share}, {leave-call} and {show-window}.",

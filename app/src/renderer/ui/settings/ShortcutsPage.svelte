@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte'
-  import type { ShortcutAction } from '../../../preload/api'
+  import type { ShortcutId } from '../../../preload/api'
   import { ACTIONS, acceleratorFrom, describeAccelerator } from '../../lib/shortcuts'
   import { client } from '../../lib/client.svelte'
   import { m } from '../../lib/i18n.svelte'
@@ -12,8 +12,10 @@
   const hyprland = $derived(t.hyprland.text.split(/(\{[\w-]+\})/).filter(Boolean))
   const marker = (part: string) => /^\{[\w-]+\}$/.test(part)
 
-  let recording = $state<ShortcutAction | null>(null)
-  let failed = $state<ShortcutAction[]>([])
+  let recording = $state<ShortcutId | null>(null)
+  let failed = $state<ShortcutId[]>([])
+  /** A tecla de falar foi recusada por faltar modificador (fora do Hyprland a tecla sozinha deixaria de digitar). */
+  let needsMod = $state(false)
 
   // Recusados ao abrir o app (no Hyprland, tecla que a config já usa).
   onMount(async () => {
@@ -25,7 +27,8 @@
     if (!ui.recordingShortcut) recording = null
   })
 
-  function record(action: ShortcutAction) {
+  function record(action: ShortcutId) {
+    needsMod = false
     recording = action
     ui.recordingShortcut = true
   }
@@ -35,11 +38,11 @@
     ui.recordingShortcut = false
   }
 
-  async function setShortcut(action: ShortcutAction, accelerator: string | null) {
+  async function setShortcut(action: ShortcutId, accelerator: string | null) {
     if (!client.desktop) return
     // O mesmo atalho não pode ficar em duas ações.
     const shortcuts = { ...client.desktop.shortcuts }
-    for (const key of Object.keys(shortcuts) as ShortcutAction[]) if (accelerator && shortcuts[key] === accelerator) shortcuts[key] = null
+    for (const key of Object.keys(shortcuts) as ShortcutId[]) if (accelerator && shortcuts[key] === accelerator) shortcuts[key] = null
     shortcuts[action] = accelerator
     failed = await client.setDesktop({ shortcuts })
   }
@@ -48,8 +51,14 @@
     if (!recording || event.key === 'Escape') return
     event.preventDefault()
     event.stopPropagation()
-    const accelerator = acceleratorFrom(event)
-    if (!accelerator) return // só modificador até agora: espera a tecla de verdade
+    // A tecla de falar pode ser uma tecla sozinha no Hyprland (o bind de lá não "come" a tecla).
+    const talk = recording === 'push-to-talk'
+    const accelerator = acceleratorFrom(event, talk && !!client.platform?.hyprland)
+    if (!accelerator) {
+      // Só modificador até agora: espera a tecla de verdade. Tecla sozinha onde não pode: avisa.
+      if (talk && !['Control', 'Shift', 'Alt', 'Meta'].includes(event.key)) needsMod = true
+      return
+    }
     const action = recording
     stopRecording()
     setShortcut(action, accelerator)
@@ -67,6 +76,34 @@
     <Button size="sm" variant="secondary" icon="keyboard" onclick={() => (ui.shortcutsHelp = true)}>{t.all}</Button>
   {/snippet}
 </PageHeader>
+
+{#if client.desktop && client.platform?.pushToTalk}
+  {@const value = client.desktop.shortcuts['push-to-talk']}
+  <Section title={t.talk.section}>
+    <Row label={t.talk.label} description={t.talk.hint} setting="shortcuts.push-to-talk">
+      <button
+        class="key"
+        class:recording={recording === 'push-to-talk'}
+        aria-label={t.talk.change}
+        onclick={() => (recording === 'push-to-talk' ? stopRecording() : record('push-to-talk'))}
+      >
+        {#if recording === 'push-to-talk'}
+          {t.recording}
+        {:else if value}
+          <Kbd keys={describeAccelerator(value, platform)} />
+        {:else}
+          <span class="none">{t.none}</span>
+        {/if}
+      </button>
+      <IconButton icon="x" label={t.talk.remove} size="sm" disabled={!value} onclick={() => setShortcut('push-to-talk', null)} />
+    </Row>
+    {#if needsMod}
+      <div class="failed"><Icon name="triangle-alert" size={14} />{t.talk.needsMod}</div>
+    {:else if value && failed.includes('push-to-talk')}
+      <div class="failed"><Icon name="triangle-alert" size={14} />{t.talk.failed}</div>
+    {/if}
+  </Section>
+{/if}
 
 {#if client.desktop}
   <Section>

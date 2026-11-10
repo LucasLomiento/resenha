@@ -9,7 +9,7 @@ import { execFile, execFileSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { connect, type Socket } from 'node:net'
 import { join } from 'node:path'
-import type { DesktopPrefs, ShortcutAction } from '../preload/api'
+import type { DesktopPrefs, ShortcutAction, ShortcutId } from '../preload/api'
 import { onLocaleChange, tm } from './i18n'
 import { keyCombo, type Modifier } from './keysym'
 
@@ -18,6 +18,9 @@ const PREFIX = 'resenha:'
 const DESCRIPTION = 'Resenha: '
 
 const ACTIONS: ShortcutAction[] = ['toggle-mute', 'toggle-deafen', 'toggle-share', 'leave-call', 'show-window']
+/** Apertar pra falar: um evento quando a tecla desce e outro quando sobe. */
+const TALK_DOWN = 'ptt-down'
+const TALK_UP = 'ptt-up'
 
 /** Bit de cada modificador no `modmask` que o `hyprctl binds -j` mostra. */
 const BITS: Record<Modifier, number> = { SHIFT: 1, CTRL: 4, ALT: 8, SUPER: 64 }
@@ -93,32 +96,61 @@ function unbindMine(binds: HyprBind[]): string[] {
   return [...lines]
 }
 
+/**
+ * Os dois binds do apertar pra falar: um quando a tecla desce e um quando sobe. Nenhum "come"
+ * a tecla (o jogo em foco continua recebendo). Tecla sem modificador vale com qualquer
+ * modificador apertado (Shift correndo no jogo); a subida vale sempre, senão soltar o Ctrl
+ * antes da tecla deixava o microfone aberto.
+ */
+export function talkBinds(combo: HyprCombo, label: string): string[] {
+  const description = `description = ${lua(DESCRIPTION + label)}`
+  const anyMods = combo.modmask === 0 ? ', ignore_mods = true' : ''
+  return [
+    `hl.bind(${lua(combo.keys)}, hl.dsp.event(${lua(PREFIX + TALK_DOWN)}), { ${description}, non_consuming = true${anyMods} })`,
+    `hl.bind(${lua(combo.keys)}, hl.dsp.event(${lua(PREFIX + TALK_UP)}), { ${description}, release = true, non_consuming = true, ignore_mods = true })`,
+  ]
+}
+
+/** Linha do socket de eventos do Hyprland -> o que o app faz com ela (null: não é do app). */
+export function hyprEvent(line: string): { action: ShortcutAction } | { talk: boolean } | null {
+  if (!line.startsWith(`custom>>${PREFIX}`)) return null
+  const name = line.slice(`custom>>${PREFIX}`.length)
+  if (name === TALK_DOWN || name === TALK_UP) return { talk: name === TALK_DOWN }
+  return ACTIONS.includes(name as ShortcutAction) ? { action: name as ShortcutAction } : null
+}
+
 let wanted = {} as DesktopPrefs['shortcuts']
 let onAction: (action: ShortcutAction) => void = () => {}
+let onTalk: (down: boolean) => void = () => {}
 let events: Socket | null = null
 let stopped = false
 /** Uma passada por vez (mudança nas configurações e config recarregada podem chegar juntas). */
-let queue: Promise<ShortcutAction[]> = Promise.resolve([])
+let queue: Promise<ShortcutId[]> = Promise.resolve([])
 
 /**
  * Troca os binds do app pelos atalhos escolhidos e devolve os que não deu: tecla que o
  * Hyprland não conhece, ou já usada pela config da pessoa (aí o app não mexe).
  */
-export function setHyprShortcuts(shortcuts: DesktopPrefs['shortcuts'], dispatch: (action: ShortcutAction) => void): Promise<ShortcutAction[]> {
+export function setHyprShortcuts(
+  shortcuts: DesktopPrefs['shortcuts'],
+  dispatch: (action: ShortcutAction) => void,
+  talk: (down: boolean) => void = () => {},
+): Promise<ShortcutId[]> {
   wanted = shortcuts
   onAction = dispatch
+  onTalk = talk
   stopped = false
   listen()
   return reapply()
 }
 
-function reapply(): Promise<ShortcutAction[]> {
+function reapply(): Promise<ShortcutId[]> {
   queue = queue.then(apply, apply)
   return queue
 }
 
-async function apply(): Promise<ShortcutAction[]> {
-  const configured = ACTIONS.filter((action) => wanted[action])
+async function apply(): Promise<ShortcutId[]> {
+  const configured: ShortcutId[] = [...ACTIONS.filter((action) => wanted[action]), ...(wanted['push-to-talk'] ? (['push-to-talk'] as const) : [])]
   let binds: HyprBind[]
   try {
     binds = (JSON.parse(await hyprctl(['binds', '-j'])) as HyprBind[]).filter((b) => !b.submap)
@@ -126,7 +158,7 @@ async function apply(): Promise<ShortcutAction[]> {
     return configured
   }
   const lines = unbindMine(binds)
-  const failed: ShortcutAction[] = []
+  const failed: ShortcutId[] = []
   const labels = tm().shortcuts
   for (const action of configured) {
     const combo = hyprCombo(wanted[action]!)
@@ -134,7 +166,8 @@ async function apply(): Promise<ShortcutAction[]> {
       failed.push(action)
       continue
     }
-    lines.push(`hl.bind(${lua(combo.keys)}, hl.dsp.event(${lua(PREFIX + action)}), { description = ${lua(DESCRIPTION + labels[action])} })`)
+    if (action === 'push-to-talk') lines.push(...talkBinds(combo, labels[action]))
+    else lines.push(`hl.bind(${lua(combo.keys)}, hl.dsp.event(${lua(PREFIX + action)}), { description = ${lua(DESCRIPTION + labels[action])} })`)
   }
   if (!lines.length) return failed
   try {
@@ -165,10 +198,12 @@ function listen() {
     const lines = buffer.split('\n')
     buffer = lines.pop() ?? ''
     for (const line of lines) {
-      if (line.startsWith(`custom>>${PREFIX}`)) {
-        const action = line.slice(`custom>>${PREFIX}`.length) as ShortcutAction
-        if (ACTIONS.includes(action)) onAction(action)
-      } else if (line.startsWith('configreloaded>>')) {
+      const event = hyprEvent(line)
+      if (event && 'talk' in event) onTalk(event.talk)
+      else if (event) onAction(event.action)
+      else if (line.startsWith('configreloaded>>')) {
+        // Os binds somem com a config: se a tecla estava apertada, a subida não ia chegar.
+        onTalk(false)
         clearTimeout(reload)
         reload = setTimeout(() => void reapply(), 300)
       }
@@ -177,6 +212,8 @@ function listen() {
   // Caiu (o Hyprland reiniciou): tenta de novo daqui a pouco, e refaz os binds.
   socket.on('close', () => {
     if (events === socket) events = null
+    // Sem os eventos, a subida da tecla não chega: o microfone não fica aberto por engano.
+    onTalk(false)
     if (!stopped) setTimeout(() => (listen(), void reapply()), 2000)
   })
   socket.on('error', () => {})
@@ -185,6 +222,8 @@ function listen() {
 /** Ao fechar o app: tira os binds (senão a tecla fica presa num evento que ninguém escuta). */
 export function clearHyprShortcuts() {
   stopped = true
+  // O socket fecha depois, com a janela já fechada: ninguém mais pra avisar.
+  onTalk = () => {}
   events?.destroy()
   events = null
   // Perfil de teste (e2e, capturas) não cria binds: os que estão lá são do app de verdade aberto.

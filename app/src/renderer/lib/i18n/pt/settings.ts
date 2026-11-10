@@ -149,6 +149,7 @@ export default {
       'shortcuts.leave-call': { label: 'Atalho de sair da call', keywords: ['tecla', 'desligar', 'keybind', 'hotkey'] },
       'shortcuts.show-window': { label: 'Atalho de mostrar o Resenha', keywords: ['tecla', 'abrir janela', 'trazer pra frente', 'keybind', 'hotkey'] },
       'shortcuts.all': { label: 'Todos os atalhos', keywords: ['lista de atalhos', 'teclado', 'ctrl', 'keybinds', 'comandos'] },
+      'shortcuts.push-to-talk': { label: 'Apertar pra falar', section: 'Apertar pra falar', keywords: ['push to talk', 'ptt', 'tecla de falar', 'segurar pra falar', 'pulsar para hablar', 'microfone', 'rádio', 'walkie talkie'] },
       'shortcuts.hyprland': { label: 'Atalhos no Hyprland', keywords: ['bind', 'hyprland.conf', 'config', 'segundo plano'] },
 
       // Aplicativo
@@ -451,6 +452,16 @@ export default {
     none: 'Nenhum',
     remove: 'Remover atalho',
     failed: 'O sistema não deixou usar esse atalho fora do app. Com o Resenha aberto, ele funciona.',
+    /** Apertar pra falar: a tecla de segurar (só onde o sistema avisa a tecla subindo). */
+    talk: {
+      section: 'Apertar pra falar',
+      label: 'Tecla de falar',
+      hint: 'Com uma tecla aqui, o microfone só abre enquanto você segura ela, mesmo com um jogo em foco. Sem tecla, ele fica aberto o tempo todo.',
+      change: 'Mudar a tecla de falar',
+      remove: 'Tirar a tecla de falar',
+      failed: 'O sistema não deixou usar essa tecla (ela já tem uso). Enquanto isso, o microfone fica fechado na call: escolha outra ou tire.',
+      needsMod: 'No seu sistema a tecla de falar precisa de Ctrl, Alt, Shift ou Super junto (ou uma tecla F).',
+    },
     hyprland: {
       section: 'No Hyprland',
       // {command} e {ação} viram código: o comando inteiro e o nome de cada ação.

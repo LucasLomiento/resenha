@@ -5,7 +5,7 @@ import { app, BrowserWindow, globalShortcut, Menu, nativeImage, Notification, Tr
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import type { CallState, DesktopPrefs, ShortcutAction } from '../preload/api'
+import type { CallState, DesktopPrefs, ShortcutAction, ShortcutId } from '../preload/api'
 import { onLocaleChange, tm } from './i18n'
 import { hasHyprland, setHyprShortcuts } from './hyprland'
 import { setPortalShortcuts, usesPortalShortcuts } from './portal-shortcuts'
@@ -246,13 +246,23 @@ export function closeNotice(tag: string) {
  * (KDE, GNOME) vão pelo portal, com o bind feito toda vez (ver portal-shortcuts.ts). No X11 e
  * no Windows, pelo `globalShortcut` do Electron.
  */
-export async function registerShortcuts(shortcuts: DesktopPrefs['shortcuts'], dispatch: Dispatch): Promise<ShortcutAction[]> {
+export async function registerShortcuts(
+  shortcuts: DesktopPrefs['shortcuts'],
+  dispatch: Dispatch,
+  /** A tecla do apertar pra falar desceu ou subiu. */
+  talk: (down: boolean) => void,
+): Promise<ShortcutId[]> {
   globalShortcut.unregisterAll()
-  if (hasHyprland()) return setHyprShortcuts(shortcuts, dispatch)
-  if (usesPortalShortcuts()) return setPortalShortcuts(shortcuts, dispatch)
-  const failed: ShortcutAction[] = []
-  for (const [action, accelerator] of Object.entries(shortcuts) as [ShortcutAction, string | null][]) {
+  if (hasHyprland()) return setHyprShortcuts(shortcuts, dispatch, talk)
+  if (usesPortalShortcuts()) return setPortalShortcuts(shortcuts, dispatch, talk)
+  const failed: ShortcutId[] = []
+  for (const [action, accelerator] of Object.entries(shortcuts) as [ShortcutId, string | null][]) {
     if (!accelerator) continue
+    // O `globalShortcut` do Electron não avisa quando a tecla sobe: aqui não tem apertar pra falar.
+    if (action === 'push-to-talk') {
+      failed.push(action)
+      continue
+    }
     try {
       if (!globalShortcut.register(accelerator, () => dispatch(action))) failed.push(action)
     } catch {
@@ -260,6 +270,15 @@ export async function registerShortcuts(shortcuts: DesktopPrefs['shortcuts'], di
     }
   }
   return failed
+}
+
+/**
+ * O sistema avisa a tecla descendo e subindo fora da janela: Hyprland (binds) e o resto do
+ * Wayland (portal). Vale também no perfil de teste, que não registra atalho mas mostra a opção.
+ */
+export function pushToTalkSupported(): boolean {
+  if (process.platform !== 'linux') return false
+  return !!process.env.HYPRLAND_INSTANCE_SIGNATURE || process.env.XDG_SESSION_TYPE === 'wayland' || !!process.env.WAYLAND_DISPLAY
 }
 
 // ---------- Abrir junto com o computador ----------

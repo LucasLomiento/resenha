@@ -74,6 +74,9 @@ export default {
     relayOff: 'The room is back to going direct (P2P).',
     directFailed: (name: string) => `Couldn’t connect directly to ${name}. If you still can’t hear each other, the room can go through Cloudflare.`,
     listenOnly: 'No microphone: you joined to listen only. Unmute once it’s connected.',
+    /** Entrou na call com o apertar pra falar valendo (ou com a tecla recusada pelo sistema). */
+    talkOn: 'Push to talk is on: hold the key to open your mic.',
+    talkBroken: 'The system refused your push-to-talk key, so your mic is closed. Pick another one in Settings → Shortcuts.',
     notJoined: 'The server didn’t confirm you joined the call. Try again.',
     otherDevice: 'The call continued on another device.',
     micLost: 'The microphone disconnected; switching to the system default.',

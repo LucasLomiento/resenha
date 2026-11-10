@@ -7,7 +7,7 @@
 // diálogo. Sem nada do Electron aqui: o teste roda no Node, contra o portal de verdade.
 
 import dbus, { Message, Variant, type MessageBus } from 'dbus-next'
-import type { DesktopPrefs, ShortcutAction } from '../preload/api'
+import type { DesktopPrefs, ShortcutAction, ShortcutId } from '../preload/api'
 import { onLocaleChange, tm } from './i18n'
 import { keyCombo } from './keysym'
 
@@ -15,6 +15,8 @@ const PORTAL = 'org.freedesktop.portal.Desktop'
 const PORTAL_PATH = '/org/freedesktop/portal/desktop'
 const SHORTCUTS = 'org.freedesktop.portal.GlobalShortcuts'
 const ACTIONS: ShortcutAction[] = ['toggle-mute', 'toggle-deafen', 'toggle-share', 'leave-call', 'show-window']
+/** Todos os atalhos: as ações de um toque e o apertar pra falar (que usa também o sinal de soltar). */
+const IDS: ShortcutId[] = [...ACTIONS, 'push-to-talk']
 /** BindShortcuts pode esperar a pessoa responder o diálogo do sistema (atalho novo). */
 const BIND_TIMEOUT = 5 * 60_000
 
@@ -31,9 +33,21 @@ export function xdgTrigger(accelerator: string): string | null {
  * Id do atalho no portal: a ação e a tecla. Trocar a tecla no Resenha vira um atalho novo
  * (o sistema guarda a tecla de cada id e ignoraria a sugestão nova num id que já existe).
  */
-export const shortcutId = (action: ShortcutAction, trigger: string) => `${action}@${trigger}`
+export const shortcutId = (action: ShortcutId, trigger: string) => `${action}@${trigger}`
 
-const actionOf = (id: string) => ACTIONS.find((action) => id.startsWith(`${action}@`)) ?? null
+export const actionOf = (id: string): ShortcutId | null => IDS.find((action) => id.startsWith(`${action}@`)) ?? null
+
+/**
+ * Sinal do portal -> o que o app faz: `Activated` roda a ação (ou abre o microfone, no apertar
+ * pra falar) e `Deactivated` só interessa ao apertar pra falar (a tecla subiu).
+ */
+export function portalSignal(member: string, id: string): { action: ShortcutAction } | { talk: boolean } | null {
+  if (member !== 'Activated' && member !== 'Deactivated') return null
+  const action = actionOf(id)
+  if (!action) return null
+  if (action === 'push-to-talk') return { talk: member === 'Activated' }
+  return member === 'Activated' ? { action } : null
+}
 
 /** Wayland fora do Hyprland, e fora de um perfil de teste (e2e, capturas). */
 export function usesPortalShortcuts(): boolean {
@@ -50,11 +64,12 @@ let connecting: Promise<MessageBus> | null = null
 let session: string | null = null
 let wanted = {} as DesktopPrefs['shortcuts']
 let onAction: (action: ShortcutAction) => void = () => {}
+let onTalk: (down: boolean) => void = () => {}
 /** Respostas esperadas dos pedidos ao portal, pelo caminho do objeto Request. */
 const responses = new Map<string, (code: number, results: Record<string, Variant>) => void>()
 let tokens = 0
 /** Uma troca por vez (abrir o app e mudar o atalho podem chegar juntos). */
-let queue: Promise<ShortcutAction[]> = Promise.resolve([])
+let queue: Promise<ShortcutId[]> = Promise.resolve([])
 
 function connect(): Promise<MessageBus> {
   if (bus) return Promise.resolve(bus)
@@ -106,10 +121,11 @@ function received(msg: Message) {
     if (!settle) return
     responses.delete(msg.path)
     settle(msg.body[0] as number, (msg.body[1] ?? {}) as Record<string, Variant>)
-  } else if (msg.interface === SHORTCUTS && msg.member === 'Activated') {
+  } else if (msg.interface === SHORTCUTS && (msg.member === 'Activated' || msg.member === 'Deactivated')) {
     const [from, id] = msg.body as [string, string]
-    const action = from === session ? actionOf(id) : null
-    if (action) onAction(action)
+    const signal = from === session ? portalSignal(msg.member, id) : null
+    if (signal && 'talk' in signal) onTalk(signal.talk)
+    else if (signal) onAction(signal.action)
   }
 }
 
@@ -160,15 +176,20 @@ function closeSession(target: MessageBus | null) {
  * Troca os atalhos: fecha a sessão de antes, abre outra e faz o bind de todos. Devolve os
  * que não ficaram ativos (portal sem atalhos, pessoa recusou no diálogo, tecla inválida).
  */
-export function setPortalShortcuts(shortcuts: DesktopPrefs['shortcuts'], dispatch: (action: ShortcutAction) => void): Promise<ShortcutAction[]> {
+export function setPortalShortcuts(
+  shortcuts: DesktopPrefs['shortcuts'],
+  dispatch: (action: ShortcutAction) => void,
+  talk: (down: boolean) => void = onTalk,
+): Promise<ShortcutId[]> {
   wanted = shortcuts
   onAction = dispatch
+  onTalk = talk
   queue = queue.then(apply, apply)
   return queue
 }
 
-async function apply(): Promise<ShortcutAction[]> {
-  const configured = ACTIONS.filter((action) => wanted[action])
+async function apply(): Promise<ShortcutId[]> {
+  const configured = IDS.filter((action) => wanted[action])
   let target: MessageBus
   try {
     target = await connect()
@@ -176,10 +197,12 @@ async function apply(): Promise<ShortcutAction[]> {
     console.warn('atalhos globais: sem o barramento do sistema', err)
     return configured
   }
+  // A sessão de antes fecha: se a tecla do apertar pra falar estava apertada, a subida não chega mais.
+  if (session) onTalk(false)
   closeSession(target)
   const labels = tm().shortcuts
   const list: [string, Record<string, Variant>][] = []
-  const failed: ShortcutAction[] = []
+  const failed: ShortcutId[] = []
   for (const action of configured) {
     const trigger = xdgTrigger(wanted[action]!)
     if (!trigger) {
@@ -233,6 +256,7 @@ onLocaleChange(() => {
 
 /** Ao fechar o app: fecha a sessão (o sistema para de mandar os atalhos pra ele). */
 export function clearPortalShortcuts() {
+  onTalk = () => {}
   closeSession(bus)
   bus?.disconnect()
   bus = null

@@ -20,9 +20,17 @@ export interface PlatformInfo {
   music: boolean
   /** App de celular (Android): sem o que é só de computador (compartilhar tela, bandeja, atalhos, zoom...). */
   mobile: boolean
+  /**
+   * Dá pra apertar pra falar: o sistema avisa quando a tecla global desce e quando sobe (binds do
+   * Hyprland, portal de atalhos do KDE/GNOME). No X11 e no Windows o atalho global só avisa que
+   * desceu, então a opção nem aparece.
+   */
+  pushToTalk?: boolean
 }
 
 export type ShortcutAction = 'toggle-mute' | 'toggle-deafen' | 'toggle-share' | 'leave-call' | 'show-window'
+/** Os atalhos globais: as ações de um toque e a tecla de segurar do apertar pra falar. */
+export type ShortcutId = ShortcutAction | 'push-to-talk'
 
 /** Preferências que o processo principal precisa já na partida (bandeja, atalhos, início com o PC). */
 export interface DesktopPrefs {
@@ -32,7 +40,7 @@ export interface DesktopPrefs {
   startHidden: boolean
   zoom: number
   /** Atalhos no formato de accelerator do Electron (ex.: "CommandOrControl+Shift+M"). */
-  shortcuts: Record<ShortcutAction, string | null>
+  shortcuts: Record<ShortcutId, string | null>
   /** Último idioma da interface (a bandeja abre nele antes da janela carregar). */
   locale?: 'pt' | 'en' | 'es'
 }
@@ -253,9 +261,9 @@ export interface ResenhaApi {
     /** null: sem nada disso (celular: sem bandeja, atalhos nem zoom). */
     get(): Promise<DesktopPrefs | null>
     /** Aplica e salva; devolve as preferências e os atalhos que o sistema recusou. */
-    set(patch: Partial<DesktopPrefs>): Promise<{ prefs: DesktopPrefs; failed: ShortcutAction[] }>
+    set(patch: Partial<DesktopPrefs>): Promise<{ prefs: DesktopPrefs; failed: ShortcutId[] }>
     /** Os atalhos que o sistema recusou da última vez (tecla já usada, por exemplo). */
-    failed(): Promise<ShortcutAction[]>
+    failed(): Promise<ShortcutId[]>
   }
   /** Bot do Spotify na call. */
   spotify: {
@@ -285,6 +293,8 @@ export interface ResenhaApi {
   unread(count: number): void
   /** Ações vindas da bandeja, de atalho global ou da linha de comando. */
   onAction(callback: (action: ShortcutAction) => void): void
+  /** A tecla do apertar pra falar desceu (true) ou subiu (false), com a janela em foco ou não. */
+  onPushToTalk?(callback: (down: boolean) => void): void
   /** O PC acordou (só no computador): a página confere as conexões. */
   onResume?(callback: () => void): void
   update: {

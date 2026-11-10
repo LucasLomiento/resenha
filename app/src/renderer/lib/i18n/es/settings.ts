@@ -142,6 +142,7 @@ export default {
       'shortcuts.leave-call': { label: 'Atajo de salir de la llamada', keywords: ['tecla', 'colgar', 'keybind', 'hotkey'] },
       'shortcuts.show-window': { label: 'Atajo de mostrar Resenha', keywords: ['tecla', 'abrir ventana', 'traer al frente', 'keybind', 'hotkey'] },
       'shortcuts.all': { label: 'Todos los atajos', keywords: ['lista de atajos', 'teclado', 'ctrl', 'keybinds', 'comandos'] },
+      'shortcuts.push-to-talk': { label: 'Pulsar para hablar', section: 'Pulsar para hablar', keywords: ['push to talk', 'ptt', 'tecla para hablar', 'mantener para hablar', 'apertar pra falar', 'micrófono', 'radio', 'walkie talkie'] },
       'shortcuts.hyprland': { label: 'Atajos en Hyprland', keywords: ['bind', 'hyprland.conf', 'config', 'segundo plano'] },
 
       // Aplicación
@@ -437,6 +438,16 @@ export default {
     none: 'Ninguno',
     remove: 'Quitar atajo',
     failed: 'El sistema no dejó usar este atajo fuera de la app. Con Resenha abierto, funciona.',
+    /** Apertar pra falar: a tecla de segurar (só onde o sistema avisa a tecla subindo). */
+    talk: {
+      section: 'Pulsar para hablar',
+      label: 'Tecla para hablar',
+      hint: 'Con una tecla aquí, el micrófono solo se abre mientras la mantienes presionada, incluso con un juego en primer plano. Sin tecla, queda abierto todo el tiempo.',
+      change: 'Cambiar la tecla para hablar',
+      remove: 'Quitar la tecla para hablar',
+      failed: 'El sistema no dejó usar esta tecla (ya tiene uso). Mientras tanto, el micrófono queda cerrado en la llamada: elige otra o quítala.',
+      needsMod: 'En tu sistema la tecla para hablar necesita Ctrl, Alt, Shift o Super (o una tecla F).',
+    },
     hyprland: {
       section: 'En Hyprland',
       text: 'Resenha crea estos atajos en Hyprland por su cuenta mientras está abierto (aparecen en la lista de atajos del sistema). Si una tecla ya tiene uso en tu config, no la toca y te avisa aquí. Para asignarlos de otra forma, también sirve {command}, igual que {toggle-deafen}, {toggle-share}, {leave-call} y {show-window}.',

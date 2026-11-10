@@ -15,9 +15,20 @@ import {
 } from 'electron'
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import type { CallState, CaptureSource, DesktopPrefs, PlatformInfo, SavedSession, ShortcutAction } from '../preload/api'
+import type { CallState, CaptureSource, DesktopPrefs, PlatformInfo, SavedSession, ShortcutAction, ShortcutId } from '../preload/api'
 import { attachContextMenu } from './context-menu'
-import { appIcon, closeNotice, hasTray, onTrayUnavailable, registerShortcuts, setAutostart, setTray, showCallState, showNotice } from './desktop'
+import {
+  appIcon,
+  closeNotice,
+  hasTray,
+  onTrayUnavailable,
+  pushToTalkSupported,
+  registerShortcuts,
+  setAutostart,
+  setTray,
+  showCallState,
+  showNotice,
+} from './desktop'
 import { isLocale, localeFrom, mainLocale, setMainLocale, tm, type Locale } from './i18n'
 import { clearHyprShortcuts } from './hyprland'
 import { inkEvent, inkMonitors, inkStart, inkStop, onInkClosed } from './ink'
@@ -153,6 +164,11 @@ function showWindow() {
 function dispatch(action: ShortcutAction) {
   if (action === 'show-window') return showWindow()
   win?.webContents.send('action', action)
+}
+
+/** A tecla do apertar pra falar desceu ou subiu (a interface abre e fecha o microfone). */
+function pushToTalk(down: boolean) {
+  if (win && !win.isDestroyed()) win.webContents.send('ptt', down)
 }
 
 function createWindow() {
@@ -369,7 +385,16 @@ handle('platform:info', (): PlatformInfo => {
   let screenAudio: PlatformInfo['screenAudio'] = 'none'
   if (isLinux && screenAudioAvailable()) screenAudio = 'venmic'
   else if (windowsScreenAudio) screenAudio = 'loopback-all'
-  return { platform: process.platform, portalPicker, screenAudio, version: app.getVersion(), hyprland: isHyprland, music: spotifySupported(), mobile: false }
+  return {
+    platform: process.platform,
+    portalPicker,
+    screenAudio,
+    version: app.getVersion(),
+    hyprland: isHyprland,
+    music: spotifySupported(),
+    mobile: false,
+    pushToTalk: pushToTalkSupported(),
+  }
 })
 
 /**
@@ -463,18 +488,23 @@ handle('turnstile:verify', (_event, server: string): Promise<string | null> => {
 // ---------- Bandeja, atalhos, início automático, zoom ----------
 
 /** Os atalhos que o sistema recusou da última vez (a página de atalhos mostra ao abrir). */
-let shortcutFailures: ShortcutAction[] = []
+let shortcutFailures: ShortcutId[] = []
+/** O registro em andamento (ao abrir o app): quem pergunta os recusados espera ele acabar. */
+let registering: Promise<unknown> = Promise.resolve()
 
-async function applyPrefs(previous: DesktopPrefs | null): Promise<ShortcutAction[]> {
+async function applyPrefs(previous: DesktopPrefs | null): Promise<ShortcutId[]> {
   setTray(prefs.tray, showWindow, dispatch)
   if (!previous || previous.autostart !== prefs.autostart) setAutostart(prefs.autostart)
   win?.webContents.setZoomFactor(prefs.zoom)
-  shortcutFailures = await registerShortcuts(prefs.shortcuts, dispatch)
+  shortcutFailures = await registerShortcuts(prefs.shortcuts, dispatch, pushToTalk)
   return shortcutFailures
 }
 
 handle('desktop:get', () => prefs)
-handle('desktop:failed', () => shortcutFailures)
+handle('desktop:failed', async () => {
+  await registering.catch(() => {})
+  return shortcutFailures
+})
 
 handle('desktop:set', async (_event, patch: Partial<DesktopPrefs>) => {
   const previous = prefs
@@ -619,7 +649,7 @@ app.whenReady().then(() => {
   createWindow()
   // O PC acordou: a página confere as conexões na hora (as que morreram durante o sono pareciam abertas).
   powerMonitor.on('resume', () => win?.webContents.send('resume'))
-  void applyPrefs(null)
+  registering = applyPrefs(null)
   if (!hidden) setupUpdater((state) => win?.webContents.send('update:state', state))
 })
 

@@ -85,6 +85,9 @@ export default {
     directFailed: (name: string) => `Não deu pra conectar direto com ${name}. Se continuar sem som, a sala pode passar pelo Cloudflare.`,
     /** Entrou sem microfone (ou sem permissão): dá pra ouvir, e desmutar tenta abrir ele. */
     listenOnly: 'Sem microfone: você entrou só pra ouvir. Desmute quando ele estiver ligado.',
+    /** Entrou na call com o apertar pra falar valendo (ou com a tecla recusada pelo sistema). */
+    talkOn: 'Apertar pra falar ligado: segure a tecla pra abrir o microfone.',
+    talkBroken: 'O sistema recusou a tecla de apertar pra falar, e o microfone está fechado. Escolha outra em Configurações → Atalhos.',
     /** O servidor não pôs a conexão na call (recusou sem avisar). */
     notJoined: 'O servidor não confirmou a entrada na call. Tente de novo.',
     /** Chamada privada: entrou pelo outro aparelho e esta conexão saiu. */

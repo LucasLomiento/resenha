@@ -24,7 +24,7 @@ const catalogs = {
   es: (await import('../src/renderer/lib/i18n/es/settings.ts')).default,
 }
 
-const everyone = { staff: false, platform: false, desktop: true, hyprland: true, locale: 'pt' as const }
+const everyone = { staff: false, platform: false, desktop: true, hyprland: true, talk: true, locale: 'pt' as const }
 const first = (query: string, context: Parameters<typeof searchSettings>[1] = everyone) => searchSettings(query, context)[0]?.id
 
 test('acha pelo nome, sem acento e sem maiúscula', () => {
@@ -70,6 +70,10 @@ test('esconde o que não vale pra pessoa', () => {
   assert.equal(first('banir', { ...everyone, platform: true }), undefined)
   assert.equal(first('bandeja', { ...everyone, desktop: false }), undefined)
   assert.ok(!searchSettings('hyprland', { ...everyone, hyprland: false }).some((e) => e.id === 'shortcuts.hyprland'))
+  // Apertar pra falar só aparece onde o sistema avisa a tecla subindo.
+  assert.equal(first('push to talk'), 'shortcuts.push-to-talk')
+  assert.equal(first('ptt'), 'shortcuts.push-to-talk')
+  assert.ok(!searchSettings('push to talk', { ...everyone, talk: false }).some((e) => e.id === 'shortcuts.push-to-talk'))
 })
 
 test('busca vazia não lista nada', () => {

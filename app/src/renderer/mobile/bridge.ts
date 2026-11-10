@@ -23,7 +23,7 @@ const DESKTOP: DesktopPrefs = {
   autostart: false,
   startHidden: false,
   zoom: 1,
-  shortcuts: { 'toggle-mute': null, 'toggle-deafen': null, 'toggle-share': null, 'leave-call': null, 'show-window': null },
+  shortcuts: { 'toggle-mute': null, 'toggle-deafen': null, 'toggle-share': null, 'leave-call': null, 'show-window': null, 'push-to-talk': null },
 }
 
 // ---------- Convites (resenha://invite/<código> ou o link /i/<código>) ----------

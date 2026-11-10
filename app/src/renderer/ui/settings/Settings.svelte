@@ -59,6 +59,7 @@
           platform: seesPlatform(client.me),
           desktop: !!client.desktop,
           hyprland: !!client.platform?.hyprland,
+          talk: !!client.platform?.pushToTalk,
           locale: i18n.locale,
         })
       : null,

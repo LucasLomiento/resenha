@@ -12,7 +12,7 @@ import type {
   VisibleStatus,
   VoiceMember,
 } from '../../../../shared/protocol'
-import type { DesktopPrefs, PlatformInfo, SavedSession, ShortcutAction, UpdateState } from '../../preload/api'
+import type { DesktopPrefs, PlatformInfo, SavedSession, ShortcutAction, ShortcutId, UpdateState } from '../../preload/api'
 import { untrack } from 'svelte'
 import { Api, HttpError } from './api'
 import { Call, type CallTransport } from './call.svelte'
@@ -221,6 +221,10 @@ class Client implements GuildHost, HomeHost {
     const os = { win32: 'Windows', darwin: 'macOS', android: 'Android' }[this.platform.platform] ?? 'Linux'
     Api.device = `App no ${os}`
     this.desktop = await window.resenha.desktop.get()
+    this.syncTalk()
+    window.resenha.onPushToTalk?.((down) => this.call.pressTalk(down))
+    // Os atalhos que o sistema recusou ao abrir (o registro termina um pouco depois da janela).
+    if (this.desktop) void window.resenha.desktop.failed().then((failed) => this.syncTalk(failed))
     this.rejoin = await takeRejoin()
     this.update = await window.resenha.update.state()
     window.resenha.update.onState((state) => (this.update = state))
@@ -594,6 +598,10 @@ class Client implements GuildHost, HomeHost {
     if (this.call.guildId === guild.id) {
       if (reconnected) this.call.reconnected(resumed)
       else this.call.sync()
+    } else if (guild.connId && guild.voice.some((v) => v.connId === guild.connId)) {
+      // Saí da call com a conexão caída (o "sair" não chegou) e o servidor me pôs de volta nela
+      // ao reconectar: sem isso eu ficava na lista da sala pra todo mundo, sem estar.
+      guild.send({ t: 'voice.leave' })
     }
     if (this.route.kind === 'guild' && this.route.guildId === guild.id) this.ensureChannel(guild)
   }
@@ -1223,7 +1231,18 @@ class Client implements GuildHost, HomeHost {
   async setDesktop(patch: Partial<DesktopPrefs>) {
     const { prefs, failed } = await window.resenha.desktop.set($state.snapshot(patch) as Partial<DesktopPrefs>)
     this.desktop = prefs
+    this.syncTalk(failed)
     return failed
+  }
+
+  /**
+   * Apertar pra falar vale quando tem tecla escolhida num sistema que avisa a tecla subindo.
+   * Tecla recusada pelo sistema não abre o microfone (ele fica fechado, e a call avisa): cair
+   * pro microfone sempre aberto pegaria de surpresa quem conta com a tecla.
+   */
+  private syncTalk(failed?: ShortcutId[]) {
+    if (failed) this.call.talkBroken = failed.includes('push-to-talk')
+    this.call.setPushToTalk(!!this.platform?.pushToTalk && !!this.desktop?.shortcuts['push-to-talk'])
   }
 }
 

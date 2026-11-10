@@ -14,7 +14,7 @@ registerHooks({
   },
 })
 
-const { shortcutId, usesPortalShortcuts, xdgTrigger } = await import('../src/main/portal-shortcuts.ts')
+const { portalSignal, shortcutId, usesPortalShortcuts, xdgTrigger } = await import('../src/main/portal-shortcuts.ts')
 
 test('accelerator do Electron vira o gatilho do portal (SHIFT, CTRL, ALT, LOGO + tecla do xkb)', () => {
   assert.equal(xdgTrigger('CommandOrControl+Shift+M'), 'CTRL+SHIFT+M')
@@ -27,6 +27,15 @@ test('accelerator do Electron vira o gatilho do portal (SHIFT, CTRL, ALT, LOGO +
 test('o id do atalho leva a tecla: trocar a tecla vira outro atalho no sistema', () => {
   assert.equal(shortcutId('toggle-mute', 'CTRL+SHIFT+M'), 'toggle-mute@CTRL+SHIFT+M')
   assert.notEqual(shortcutId('toggle-mute', 'CTRL+SHIFT+M'), shortcutId('toggle-mute', 'CTRL+SHIFT+N'))
+})
+
+test('sinais do portal: ação no Activated; a tecla de falar abre no Activated e fecha no Deactivated', () => {
+  assert.deepEqual(portalSignal('Activated', 'toggle-mute@CTRL+SHIFT+M'), { action: 'toggle-mute' })
+  assert.equal(portalSignal('Deactivated', 'toggle-mute@CTRL+SHIFT+M'), null)
+  assert.deepEqual(portalSignal('Activated', shortcutId('push-to-talk', 'CTRL+grave')), { talk: true })
+  assert.deepEqual(portalSignal('Deactivated', shortcutId('push-to-talk', 'CTRL+grave')), { talk: false })
+  assert.equal(portalSignal('ShortcutsChanged', 'toggle-mute@CTRL+SHIFT+M'), null)
+  assert.equal(portalSignal('Activated', 'outro@CTRL+M'), null)
 })
 
 test('o portal só vale no Wayland fora do Hyprland, e nunca num perfil de teste', () => {

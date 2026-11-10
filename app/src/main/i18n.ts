@@ -42,6 +42,7 @@ const pt = {
     'toggle-share': 'compartilhar ou parar a tela',
     'leave-call': 'sair da call',
     'show-window': 'mostrar a janela',
+    'push-to-talk': 'apertar pra falar',
   },
   update: {
     /** Título da janela do terminal que pede a senha. */
@@ -112,6 +113,7 @@ const en: typeof pt = {
     'toggle-share': 'start or stop screen share',
     'leave-call': 'leave call',
     'show-window': 'show window',
+    'push-to-talk': 'push to talk',
   },
   update: {
     terminalTitle: 'Update Resenha',
@@ -176,6 +178,7 @@ const es: typeof pt = {
     'toggle-share': 'compartir o dejar de compartir pantalla',
     'leave-call': 'salir de la llamada',
     'show-window': 'mostrar la ventana',
+    'push-to-talk': 'pulsar para hablar',
   },
   update: {
     terminalTitle: 'Actualizar Resenha',

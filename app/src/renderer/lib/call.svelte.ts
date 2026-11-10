@@ -94,6 +94,8 @@ const SIGNAL_REFILL = 3000
 const MUSIC_REPLY_WAIT = 15_000
 /** Pedidos que cada pessoa pode fazer pro meu bot (por 10 s): busca digitando não derruba a cota do Spotify. */
 const MUSIC_RATE = 20
+/** Apertar pra falar: soltou a tecla, o microfone fica aberto mais esse tempo (o fim da palavra). */
+const TALK_RELEASE = 200
 const SPEAKING_MUSIC = 0.01
 
 /** O que vai pros outros da call: o nome do outro aparelho de quem pôs o bot fica só com ele. */
@@ -141,6 +143,13 @@ export class Call {
   cameraOpening = $state(false)
   /** Estou falando (com uma folga pra não piscar), pro ícone da bandeja. */
   selfSpeaking = $state(false)
+  /** Apertar pra falar ligado (tem tecla valendo): o microfone só abre com ela apertada. */
+  pushToTalk = $state(false)
+  /** A tecla do apertar pra falar está apertada agora (ou acabou de soltar). */
+  talking = $state(false)
+  /** O sistema recusou a tecla (já tem uso): o microfone fica fechado, e entrar na call avisa. */
+  talkBroken = false
+  private talkRelease: ReturnType<typeof setTimeout> | undefined
   private lastSpoke = 0
   /** Muda a cada entrar e sair: o que termina de abrir (tela, câmera, microfone) depois disso não fica ligado. */
   private session = 0
@@ -294,6 +303,7 @@ export class Call {
       this.joinTimer = setTimeout(() => this.confirmJoin(transport), JOIN_CONFIRM_WAIT)
       this.startTickers()
       playSound(joinSound(this.deps.badge()) ?? 'self-join')
+      if (this.pushToTalk && !this.muted) this.deps.toast(this.talkBroken ? m.lib.call.talkBroken : m.lib.call.talkOn, 'info')
     } catch (err) {
       console.error(err)
       this.deps.toast(m.lib.call.joinFailed((err as Error).message))
@@ -437,6 +447,8 @@ export class Call {
     this.serverDeafened = false
     this.silenced.clear()
     this.selfSpeaking = false
+    clearTimeout(this.talkRelease)
+    this.talking = false
     if (this.micTrack) this.micStream.removeTrack(this.micTrack)
     this.mic?.close()
     this.mic = null
@@ -465,7 +477,7 @@ export class Call {
     }
     if (session !== this.session) return mic.close()
     const track = mic.track
-    track.enabled = !this.muted && !this.serverMuted
+    track.enabled = this.micOpen
     if (this.micTrack) this.micStream.removeTrack(this.micTrack)
     const previous = this.mic
     this.micStream.addTrack(track)
@@ -569,8 +581,42 @@ export class Call {
     this.applyMuteState()
   }
 
+  /** O microfone manda som agora: desmutado e, no apertar pra falar, com a tecla apertada. */
+  private get micOpen(): boolean {
+    return !this.muted && !this.serverMuted && (!this.pushToTalk || this.talking)
+  }
+
+  /** Liga ou desliga o apertar pra falar (a tecla foi escolhida, tirada, ou o sistema recusou). */
+  setPushToTalk(on: boolean) {
+    if (on === this.pushToTalk) return
+    this.pushToTalk = on
+    clearTimeout(this.talkRelease)
+    this.talking = false
+    if (this.micTrack) this.micTrack.enabled = this.micOpen
+  }
+
+  /**
+   * A tecla do apertar pra falar desceu ou subiu. Nada vai pro servidor (os outros só deixam de
+   * ouvir): avisar a cada apertada gastaria uma mensagem por palavra.
+   */
+  pressTalk(down: boolean) {
+    if (!this.pushToTalk) return
+    clearTimeout(this.talkRelease)
+    if (down) {
+      if (this.talking) return
+      this.talking = true
+      if (this.micTrack) this.micTrack.enabled = this.micOpen
+      return
+    }
+    if (!this.talking) return
+    this.talkRelease = setTimeout(() => {
+      this.talking = false
+      if (this.micTrack) this.micTrack.enabled = this.micOpen
+    }, TALK_RELEASE)
+  }
+
   private applyMuteState(notify = true) {
-    if (this.micTrack) this.micTrack.enabled = !this.muted && !this.serverMuted
+    if (this.micTrack) this.micTrack.enabled = this.micOpen
     for (const peer of this.peers.values()) peer.setDeafened(this.deafened || this.serverDeafened)
     this.applyMusicOutput()
     if (notify) this.sendState()
@@ -1497,7 +1543,7 @@ export class Call {
     this.ticker = setInterval(() => {
       const me = this.connId()
       const next: Record<string, boolean> = {}
-      const talking = !this.muted && !this.serverMuted && !!this.mic?.speaking
+      const talking = this.micOpen && !!this.mic?.speaking
       if (me) next[me] = talking
       if (talking) this.lastSpoke = Date.now()
       const selfSpeaking = talking || Date.now() - this.lastSpoke < 400

@@ -57,8 +57,11 @@ function keyName(code: string): string | null {
   return NAMED[code] ?? null
 }
 
-/** Tecla apertada -> accelerator. Exige modificador, menos nas teclas F e de mídia/pausa. */
-export function acceleratorFrom(event: KeyboardEvent): string | null {
+/**
+ * Tecla apertada -> accelerator. Exige modificador, menos nas teclas F e de mídia/pausa.
+ * `bare`: qualquer tecla sozinha vale (a de apertar pra falar no Hyprland, que não "come" a tecla).
+ */
+export function acceleratorFrom(event: KeyboardEvent, bare = false): string | null {
   const key = keyName(event.code)
   if (!key) return null
   const parts: string[] = []
@@ -66,7 +69,7 @@ export function acceleratorFrom(event: KeyboardEvent): string | null {
   if (event.altKey) parts.push('Alt')
   if (event.shiftKey) parts.push('Shift')
   if (event.metaKey) parts.push('Super')
-  if (parts.length === 0 && !/^(F\d+|Pause|Scrolllock|PrintScreen|Insert)$/.test(key)) return null
+  if (parts.length === 0 && !bare && !/^(F\d+|Pause|Scrolllock|PrintScreen|Insert)$/.test(key)) return null
   return [...parts, key].join('+')
 }
 

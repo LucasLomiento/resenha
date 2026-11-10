@@ -138,6 +138,7 @@
         platform: seesPlatform(client.me),
         desktop: !!client.desktop,
         hyprland: !!client.platform?.hyprland,
+        talk: !!client.platform?.pushToTalk,
         locale: i18n.locale,
       }
       for (const [i, entry] of searchSettings(raw, context).slice(0, 5).entries()) {

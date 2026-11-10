@@ -88,6 +88,9 @@ const api: ResenhaApi = {
   onAction: (callback) => {
     ipcRenderer.on('action', (_event, action: ShortcutAction) => callback(action))
   },
+  onPushToTalk: (callback) => {
+    ipcRenderer.on('ptt', (_event, down: unknown) => callback(down === true))
+  },
   onResume: (callback) => {
     ipcRenderer.on('resume', () => callback())
   },

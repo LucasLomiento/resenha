@@ -27,6 +27,8 @@ export interface SettingEntry {
   desktop?: boolean
   /** Só no Hyprland. */
   hyprland?: boolean
+  /** Só onde dá pra apertar pra falar (`PlatformInfo.pushToTalk`). */
+  talk?: boolean
 }
 
 /** Configuração achada, com os textos no idioma da busca. */
@@ -97,6 +99,7 @@ export const SETTINGS: SettingEntry[] = [
   { id: 'shortcuts.toggle-share', page: 'shortcuts', desktop: true },
   { id: 'shortcuts.leave-call', page: 'shortcuts', desktop: true },
   { id: 'shortcuts.show-window', page: 'shortcuts', desktop: true },
+  { id: 'shortcuts.push-to-talk', page: 'shortcuts', talk: true },
   { id: 'shortcuts.all', page: 'shortcuts', desktop: true },
   { id: 'shortcuts.hyprland', page: 'shortcuts', hyprland: true },
 
@@ -168,6 +171,8 @@ export interface SettingContext {
   platform: boolean
   desktop: boolean
   hyprland: boolean
+  /** O sistema avisa a tecla subindo (apertar pra falar). */
+  talk?: boolean
   /** Idioma da interface (`i18n.locale`); sem ele, português. */
   locale?: Locale
 }
@@ -216,7 +221,7 @@ export function searchSettings(query: string, context: SettingContext): SettingM
   if (terms.length === 0) return []
   const results: { entry: SettingEntry; score: number }[] = []
   for (const entry of SETTINGS) {
-    if ((entry.staff && !context.staff) || (entry.platform && !context.platform) || (entry.desktop && !context.desktop) || (entry.hyprland && !context.hyprland)) continue
+    if ((entry.staff && !context.staff) || (entry.platform && !context.platform) || (entry.desktop && !context.desktop) || (entry.hyprland && !context.hyprland) || (entry.talk && !context.talk)) continue
     const own = folded(locale, entry)
     const others = OTHERS[locale].map((other) => folded(other, entry))
     let score = 0

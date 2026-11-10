@@ -74,6 +74,9 @@ export default {
     relayOff: 'La sala volvió a ir directa (P2P).',
     directFailed: (name: string) => `No se pudo conectar directo con ${name}. Si siguen sin oírse, la sala puede pasar por Cloudflare.`,
     listenOnly: 'Sin micrófono: entraste solo para escuchar. Activa el micrófono cuando esté conectado.',
+    /** Entrou na call com o apertar pra falar valendo (ou com a tecla recusada pelo sistema). */
+    talkOn: 'Pulsar para hablar activado: mantén la tecla para abrir el micrófono.',
+    talkBroken: 'El sistema rechazó la tecla de pulsar para hablar y el micrófono está cerrado. Elige otra en Ajustes → Atajos.',
     notJoined: 'El servidor no confirmó tu entrada a la llamada. Inténtalo de nuevo.',
     otherDevice: 'La llamada siguió en otro dispositivo.',
     micLost: 'El micrófono se desconectó; volviendo al predeterminado del sistema.',
