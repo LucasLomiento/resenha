@@ -36,6 +36,8 @@ export default {
     retrying: 'Sin conexión con el servidor. Intentando de nuevo…',
     accountDeleted: 'Tu cuenta fue eliminada.',
     callDropped: 'Se cayó la llamada.',
+    /** Atendeu, mas quem ligou desistiu enquanto o microfone abria. */
+    callOver: 'La llamada ya había terminado.',
     kickedFrom: (server: string) => `Te expulsaron de ${server}.`,
     kicked: 'Te expulsaron de un servidor.',
     bannedFrom: (server: string) => `Te banearon de ${server}.`,
@@ -76,7 +78,7 @@ export default {
     listenOnly: 'Sin micrófono: entraste solo para escuchar. Activa el micrófono cuando esté conectado.',
     /** Entrou na call com o apertar pra falar valendo (ou com a tecla recusada pelo sistema). */
     talkOn: 'Pulsar para hablar activado: mantén la tecla para abrir el micrófono.',
-    talkBroken: 'El sistema rechazó la tecla de pulsar para hablar y el micrófono está cerrado. Elige otra en Ajustes → Atajos.',
+    talkBroken: 'El sistema rechazó la tecla de pulsar para hablar y el micrófono está cerrado. Elige otra en Configuración → Atajos.',
     notJoined: 'El servidor no confirmó tu entrada a la llamada. Inténtalo de nuevo.',
     otherDevice: 'La llamada siguió en otro dispositivo.',
     micLost: 'El micrófono se desconectó; volviendo al predeterminado del sistema.',

@@ -58,6 +58,9 @@ export default {
     camera: 'Cámara',
     cameraOn: 'Encender cámara',
     cameraOff: 'Apagar cámara',
+    /** Sala em que o cargo da pessoa não tem a permissão "Vídeo". */
+    noVideo: 'No puedes encender la cámara ni compartir pantalla en esta sala.',
+    videoLost: 'Perdiste el permiso de video en esta sala: se apagaron la cámara y la pantalla.',
     screen: 'Pantalla',
     shareScreen: 'Compartir pantalla',
     live: 'En vivo',

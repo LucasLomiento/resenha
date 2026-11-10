@@ -59,6 +59,9 @@ export default {
     camera: 'Câmera',
     cameraOn: 'Ligar câmera',
     cameraOff: 'Desligar câmera',
+    /** Sala em que o cargo da pessoa não tem a permissão "Vídeo". */
+    noVideo: 'Você não pode ligar câmera nem tela nesta sala.',
+    videoLost: 'Você perdeu a permissão de vídeo nesta sala: a câmera e a tela foram desligadas.',
     screen: 'Tela',
     shareScreen: 'Compartilhar tela',
     live: 'Ao vivo',

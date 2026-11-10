@@ -43,6 +43,8 @@ export default {
     retrying: 'Sem conexão com o servidor. Tentando de novo…',
     accountDeleted: 'Sua conta foi excluída.',
     callDropped: 'A ligação caiu.',
+    /** Atendeu, mas quem ligou desistiu enquanto o microfone abria. */
+    callOver: 'A ligação já tinha acabado.',
     kickedFrom: (server: string) => `Você foi expulso de ${server}.`,
     kicked: 'Você foi expulso de um servidor.',
     bannedFrom: (server: string) => `Você foi banido de ${server}.`,

@@ -58,6 +58,9 @@ export default {
     camera: 'Camera',
     cameraOn: 'Turn on camera',
     cameraOff: 'Turn off camera',
+    /** Sala em que o cargo da pessoa não tem a permissão "Vídeo". */
+    noVideo: "You can't turn on your camera or share your screen in this room.",
+    videoLost: 'You lost video permission in this room: your camera and screen were turned off.',
     screen: 'Screen',
     shareScreen: 'Share screen',
     live: 'Live',

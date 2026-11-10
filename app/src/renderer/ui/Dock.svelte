@@ -101,8 +101,11 @@
 
   function screenClick() {
     if (call.sharing) ui.sharePanel = !ui.sharePanel
-    else ui.share = true
+    else if (client.canVideo) ui.share = true
   }
+
+  /** Sem a permissão "Vídeo" na sala, câmera e tela ficam apagadas, dizendo por quê. */
+  const noVideo = $derived(!client.canVideo)
 </script>
 
 <!-- Um lugar só pros controles: a call (quando tem) em cima, você embaixo. Os botões nunca mudam de lugar. -->
@@ -148,10 +151,10 @@
         <button
           class="action"
           class:on={!!call.camera}
-          disabled={!call.channelId || call.cameraOpening}
+          disabled={!call.channelId || call.cameraOpening || (noVideo && !call.camera)}
           aria-label={call.camera ? t.cameraOff : t.cameraOn}
           aria-pressed={!!call.camera}
-          use:tooltip={call.camera ? t.cameraOff : t.cameraOn}
+          use:tooltip={noVideo && !call.camera ? t.noVideo : call.camera ? t.cameraOff : t.cameraOn}
           onclick={() => client.toggleCamera()}
         >
           <Icon name="camera" size={16} />
@@ -161,10 +164,10 @@
           <button
             class="action"
             class:sharing={call.sharing}
-            disabled={!call.channelId}
+            disabled={!call.channelId || (noVideo && !call.sharing)}
             aria-label={call.sharing ? t.liveOptions : t.shareScreen}
             aria-expanded={call.sharing ? ui.sharePanel : undefined}
-            use:tooltip={call.sharing ? t.streamOptions : t.shareScreen}
+            use:tooltip={noVideo && !call.sharing ? t.noVideo : call.sharing ? t.streamOptions : t.shareScreen}
             onclick={screenClick}
           >
             {#if call.sharing}

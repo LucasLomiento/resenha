@@ -139,7 +139,7 @@
         tip={false}
         active={!!call.camera}
         aria-pressed={!!call.camera}
-        disabled={call.cameraOpening}
+        disabled={call.cameraOpening || (!client.canVideo && !call.camera)}
         onclick={() => client.toggleCamera()}
       />
       {#if call.camera && client.platform?.mobile}

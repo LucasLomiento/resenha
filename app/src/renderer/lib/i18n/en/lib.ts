@@ -36,6 +36,8 @@ export default {
     retrying: "Can't reach the server. Trying again…",
     accountDeleted: 'Your account was deleted.',
     callDropped: 'The call dropped.',
+    /** Atendeu, mas quem ligou desistiu enquanto o microfone abria. */
+    callOver: 'The call had already ended.',
     kickedFrom: (server: string) => `You were kicked from ${server}.`,
     kicked: 'You were kicked from a server.',
     bannedFrom: (server: string) => `You were banned from ${server}.`,

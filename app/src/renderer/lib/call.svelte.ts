@@ -153,6 +153,8 @@ export class Call {
   private lastSpoke = 0
   /** Muda a cada entrar e sair: o que termina de abrir (tela, câmera, microfone) depois disso não fica ligado. */
   private session = 0
+  /** O "entrar" pedido enquanto outro ainda abria: roda quando o de antes terminar. */
+  private queued: { transport: CallTransport; done: () => void } | null = null
   private shareStarting = false
   /** Já apareci na lista desta call (o servidor confirmou a entrada) e com que conta. */
   private seenSelf = false
@@ -269,8 +271,18 @@ export class Call {
 
   // ---------- Entrar e sair ----------
 
-  async join(transport: CallTransport) {
-    if (this.isIn(transport) || this.joining) return
+  async join(transport: CallTransport): Promise<void> {
+    if (this.isIn(transport)) return
+    // Outro pedido com um ainda abrindo o microfone (clicou em outra sala, atendeu uma ligação):
+    // fica o mais novo, e o que estava em andamento é largado. Até a 1.17 o segundo era engolido:
+    // atender logo depois de clicar numa sala fechava o cartão da ligação sem atender.
+    if (this.joining) {
+      this.queued?.done()
+      this.session++
+      return new Promise<void>((resolve) => {
+        this.queued = { transport, done: resolve }
+      })
+    }
     if (this.transport) this.leave()
     const session = ++this.session
     this.joining = true
@@ -309,6 +321,9 @@ export class Call {
       this.deps.toast(m.lib.call.joinFailed((err as Error).message))
     } finally {
       this.joining = false
+      const next = this.queued
+      this.queued = null
+      if (next) void this.join(next.transport).finally(next.done)
     }
   }
 
@@ -336,7 +351,9 @@ export class Call {
     this.joinTimer = null
     if (this.transport !== transport || this.seenSelf) return
     console.warn('[call] o servidor não confirmou a entrada', transport.channelId)
-    this.leave(false)
+    // Avisando o servidor: se o `voice.join` chegou e só a resposta demorou, ele tira a pessoa da
+    // sala (sem avisar, ela ficava na lista pra todo mundo sem estar na call).
+    this.leave()
     this.deps.toast(m.lib.call.notJoined)
   }
 
@@ -406,6 +423,12 @@ export class Call {
   /** Sai da call. `notify = false`: o servidor já tirou (moderador, canal apagado). */
   leave(notify = true) {
     this.session++
+    // Saiu de propósito com um "entrar" na fila: ele não acontece mais. (O sair interno de um
+    // entrar que foi largado não mexe na fila: é pra ela que ele abre caminho.)
+    if (!this.joining && this.queued) {
+      this.queued.done()
+      this.queued = null
+    }
     this.relay = false
     this.relayAsked = false
     if (this.joinTimer) clearTimeout(this.joinTimer)

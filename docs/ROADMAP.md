@@ -65,21 +65,21 @@ As etapas 0.6 a 0.9 saíram juntas na 1.0 (uma atualização em vez de quatro).
 - [x] Bot do Spotify na call: toca pra todo mundo, cada um no seu volume, e qualquer um controla (pular, buscar, fila, playlists)
 - [x] Volume de cada pessoa até 200% (amplificado no app), mudar de sala com clique duplo (opção) e sala pelo Cloudflare liberada por pessoa
 - [x] App de Android (1.14): a mesma interface, uma tela de cada vez, com push pelo Firebase e call com a tela apagada
-- [ ] Busca de emoji com nomes em inglês e espanhol (hoje só em português)
+- [x] Busca de emoji com nomes em inglês e espanhol (1.9)
 - [ ] Modo privado (tudo via TURN, esconde o IP até dos amigos): precisa da chave TURN
 - [ ] Arrastar servidores no trilho pra reordenar
 - [ ] Emojis próprios de cada servidor
 
 ## Pra chegar perto do Discord
 
-Plano pausado em 09/10/2026, nada daqui foi lançado. A versão detalhada não chegou ao repositório: esta é a lista que sobrou.
+Plano pausado em 09/10/2026 e retomado em parte na 1.18 (10/11/2026). A versão detalhada não chegou ao repositório: esta é a lista que sobrou.
 
 ### Lote 1
-- [ ] Apertar pra falar
+- [x] Apertar pra falar (1.18: Hyprland e o resto do Wayland; no X11 e no Windows o sistema não avisa a tecla subindo)
 - [ ] Soundboard
 - [ ] Emojis e figurinhas do servidor
-- [ ] Enquetes
-- [ ] Cores no código
+- [x] Enquetes (1.18, nos canais de servidor)
+- [x] Cores no código (1.18, com botão de copiar)
 - [ ] "Jogando X"
 - [ ] GPU mais leve
 

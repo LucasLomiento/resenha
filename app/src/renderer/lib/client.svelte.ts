@@ -12,6 +12,7 @@ import type {
   VisibleStatus,
   VoiceMember,
 } from '../../../../shared/protocol'
+import { P } from '../../../../shared/protocol'
 import type { DesktopPrefs, PlatformInfo, SavedSession, ShortcutAction, ShortcutId, UpdateState } from '../../preload/api'
 import { untrack } from 'svelte'
 import { Api, HttpError } from './api'
@@ -180,6 +181,17 @@ class Client implements GuildHost, HomeHost {
         const { guildId, channelId } = this.call
         void (guildId && channelId && this.guilds[guildId]?.channel(channelId)?.relay)
         untrack(() => this.call.updateRelay())
+      })
+      // Perdeu a permissão de vídeo da sala no meio da call: câmera e tela desligam (o servidor
+      // já não mostra pra ninguém; sem isso a luz da câmera ficava acesa e a captura rodando à toa).
+      $effect(() => {
+        const allowed = this.canVideo
+        untrack(() => {
+          if (allowed || (!this.call.camera && !this.call.sharing)) return
+          if (this.call.camera) void this.call.toggleCamera()
+          if (this.call.sharing) this.call.stopShare()
+          this.toast(m.app.dock.videoLost, 'info')
+        })
       })
       // Saiu da ligação privada (por qualquer caminho): o "chamando…" para junto.
       $effect(() => {
@@ -1109,7 +1121,8 @@ class Client implements GuildHost, HomeHost {
     }
   }
 
-  private dmTransport(home: HomeState, channelId: string, video: boolean): CallTransport {
+  /** `answering`: atendendo uma ligação (se ela acabou enquanto o microfone abria, não liga de volta). */
+  private dmTransport(home: HomeState, channelId: string, video: boolean, answering = false): CallTransport {
     return {
       kind: 'dm',
       scopeId: channelId,
@@ -1121,6 +1134,11 @@ class Client implements GuildHost, HomeHost {
         if (back) return home.send({ t: 'call.answer', channelId, accept: true, state: { muted, deafened, ...back } })
         const live = home.calls[channelId]?.members.length
         if (live) return home.send({ t: 'call.answer', channelId, accept: true, state: { muted, deafened, sharing: false, camera: false } })
+        // Atendi, mas quem ligou desistiu enquanto o microfone abria: avisa, em vez de ligar pra ele.
+        if (answering) {
+          this.toast(m.lib.client.callOver, 'info')
+          return false
+        }
         // Já entra mutado, se for o caso (antes ia num `call.update` que às vezes chegava antes da ligação).
         const ok = home.send({ t: 'call.ring', channelId, video, state: { muted, deafened } })
         // Servidor antigo (sem o `state` do call.ring): manda o mudo logo depois, como antes.
@@ -1163,7 +1181,7 @@ class Client implements GuildHost, HomeHost {
     if (!incoming || !this.home) return
     this.stopRinging()
     this.navigate({ kind: 'dm', channelId: incoming.channelId })
-    await this.call.join(this.dmTransport(this.home, incoming.channelId, incoming.video))
+    await this.call.join(this.dmTransport(this.home, incoming.channelId, incoming.video, true))
   }
 
   declineCall() {
@@ -1173,10 +1191,22 @@ class Client implements GuildHost, HomeHost {
     this.home?.send({ t: 'call.answer', channelId: incoming.channelId, accept: false })
   }
 
+  /**
+   * Dá pra ligar câmera e tela nesta call? Na sala de um servidor depende da permissão "Vídeo"
+   * do canal: sem ela o servidor não mostra a faixa pra ninguém, e até a 1.17 a câmera ligava do
+   * mesmo jeito (luz acesa, vídeo saindo, ninguém vendo).
+   */
+  get canVideo(): boolean {
+    const { guildId, channelId } = this.call
+    if (!guildId || !channelId) return true
+    return this.guilds[guildId]?.can(channelId, P.VIDEO) ?? true
+  }
+
   /** Liga ou desliga a câmera. No computador, com mais de uma, pergunta qual antes. */
   async toggleCamera() {
     const call = this.call
     if (call.camera) return call.toggleCamera()
+    if (!this.canVideo) return void this.toast(m.app.dock.noVideo, 'info')
     if (!this.platform?.mobile && namedDevices((await listDevices()).cameras).length > 1) return void (ui.camera = true)
     await call.toggleCamera()
     if (call.camera) this.view = 'call'
@@ -1228,6 +1258,7 @@ class Client implements GuildHost, HomeHost {
         return this.leaveCall()
       case 'toggle-share':
         if (this.call.sharing) return this.call.stopShare()
+        if (this.call.channelId && !this.canVideo) return this.toast(m.app.dock.noVideo, 'info')
         if (this.call.channelId) ui.share = true
         return
     }

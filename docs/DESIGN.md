@@ -250,6 +250,22 @@ Tudo passa por um reverb curto e um compressor. O volume de cada som foi medido 
 - **Permitir:** interruptor "Deixar quem assiste rabiscar" no diálogo de compartilhar (antes de começar), "Rabiscos de quem assiste" no painel "Ao vivo" (durante) e "Quem assiste pode rabiscar na minha tela" em Voz e vídeo → Transmissão. É a mesma opção nos três.
 - **Painel da transmissão:** "Rabiscos de quem assiste" com interruptor; "Limpar rabiscos"; e uma linha cinza explicando quando não dá (janela em vez de monitor, sistema sem layer-shell, monitor transmitido não encontrado). Não tem escolha de monitor: os rabiscos vão sempre pro monitor que está sendo transmitido.
 
+### Código colorido
+
+- **Bloco de código com linguagem** (` ```ts `): as cores saem dos tokens `--code-*` do `app.css` (palavra-chave no azul do acento, texto entre aspas verde, número amarelo, função ciano, tipo rosa, comentário cinza em itálico), sobre o `--bg-input`. Sem linguagem, ou com uma que o app não conhece, fica sem cor (sem adivinhar).
+- **Copiar:** botão redondo no canto de cima à direita do bloco, só com o mouse em cima (no celular fica sempre lá, mais apagado); vira um ✓ verde por um instante.
+
+### Enquete
+
+- **Criar:** botão de barras ao lado do clipe, no campo de mensagem (some no celular enquanto a pessoa digita). O diálogo "Nova enquete": a pergunta, as opções uma embaixo da outra (Enter pula pra próxima e cria mais uma na última; X tira, com duas no mínimo), "Adicionar opção", o interruptor "Várias respostas" e a duração (24 horas por padrão).
+- **Na conversa** (`ui/chat/PollCard.svelte`): um cartão de até 460 px no lugar do texto da mensagem. Em cima, "Enquete" pequeno no azul, a pergunta na fonte de título e a dica ("Escolha uma", "Escolha quantas quiser" ou "Encerrada"). Cada opção é uma linha clicável com a marca (bolinha no voto único, quadradinho em várias), o texto, e "votos · porcentagem" à direita; a barra do resultado cresce por trás do texto. A sua fica com fio e barra azuis; encerrada, a mais votada fica verde. A dica de cada opção mostra quem votou. No pé: total de votos, "Fecha em 3 horas" e, pra quem criou ou modera, "Encerrar enquete" (pede confirmação).
+
+### Apertar pra falar
+
+- **Onde:** Configurações → Atalhos, numa seção própria em cima dos outros atalhos: "Tecla de falar", com a frase do que muda ("o microfone só abre enquanto você segura ela…") e o mesmo campo de gravar tecla dos atalhos. O X tira a tecla, e aí o microfone volta a ficar aberto o tempo todo: não tem interruptor à parte.
+- **Avisos:** embaixo da linha, em amarelo, quando o sistema recusou a tecla (o microfone fica fechado até escolher outra) ou quando a tecla precisa de modificador (fora do Hyprland). Ao entrar numa call com a tecla valendo, um aviso lembra de segurar.
+- A seção só existe onde funciona (Hyprland e o resto do Wayland).
+
 ### Mensagem de voz
 
 - **Gravar:** microfone no campo de mensagem (ao lado do emoji). Gravando, a linha vira: descartar (lixeira, ou Esc), ponto vermelho pulsando, o tempo, barrinhas do volume andando da direita pra esquerda e enviar (avião, ou Enter). Depois de parar: "Preparando o áudio…" (virando MP3) e "Enviando N%". Até 15 minutos; no limite, envia sozinho. Responde a mensagem que estiver marcada.
