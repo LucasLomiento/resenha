@@ -70,6 +70,14 @@
   --red-fill: #e23b50; /* vermelho como preenchimento com texto branco */
   --red-fill-hover: #ec4b5f;
 
+  /* ---------- Cor: código (blocos ```ts do chat, sobre --bg-input) ---------- */
+  --code-keyword: var(--accent-fg); /* palavras-chave, tags */
+  --code-string: #7fdcae; /* textos entre aspas */
+  --code-number: #f5c97a; /* números, true/false/null */
+  --code-title: #6cd3ea; /* funções, chaves, atributos */
+  --code-type: #f4a6b8; /* tipos e nativos */
+  --code-comment: #7d7d88; /* comentários (4,8:1 no fundo do bloco) */
+
   /* ---------- Tipografia ---------- */
   --font: 'Geist Variable', 'Geist', 'Inter', system-ui, 'Segoe UI', sans-serif;
   --font-display: 'Bricolage Grotesque Variable', var(--font);

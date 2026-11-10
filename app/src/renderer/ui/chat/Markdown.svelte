@@ -15,6 +15,7 @@
   import { m } from '../../lib/i18n.svelte'
   import { isJumbo, parseMarkdown, type Block, type Inline } from '../../lib/markdown'
   import { Icon } from '../kit'
+  import CodeBlock from './CodeBlock.svelte'
   import Spoiler from './Spoiler.svelte'
 
   let { content, names }: { content: string; names: MentionNames } = $props()
@@ -59,7 +60,7 @@
   {#if node.t === 'paragraph'}
     <p>{@render inline(node.children)}</p>
   {:else if node.t === 'code'}
-    <pre class="selectable" data-lang={node.lang || null}><code>{node.text}</code></pre>
+    <CodeBlock lang={node.lang} text={node.text} />
   {:else if node.t === 'quote'}
     <blockquote>
       {#each node.children as child, i (i)}{@render block(child)}{/each}
@@ -116,25 +117,6 @@
     box-shadow: inset 0 0 0 1px var(--line);
     font-family: var(--mono);
     font-size: 0.86em;
-  }
-
-  pre {
-    margin: 6px 0;
-    padding: 12px 14px;
-    border-radius: var(--r-lg);
-    background: var(--bg-input);
-    box-shadow: inset 0 0 0 1px var(--line);
-    font-family: var(--mono);
-    font-size: 13px;
-    line-height: 1.55;
-    white-space: pre-wrap;
-    overflow-x: auto;
-  }
-
-  pre code {
-    padding: 0;
-    background: none;
-    font-size: inherit;
   }
 
   blockquote {
