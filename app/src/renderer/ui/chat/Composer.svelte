@@ -14,6 +14,7 @@
   import { VOICE_MAX_SECONDS, VoiceRecording, clock } from '../../lib/voice-note'
   import { Avatar, Icon, IconButton, Kbd, Spinner } from '../kit'
   import EmojiPicker from './EmojiPicker.svelte'
+  import PollDialog from './PollDialog.svelte'
   import { toRaw } from './mentions'
   import type { ChatTarget } from './target.svelte'
 
@@ -50,6 +51,7 @@
   let picker = $state<HTMLInputElement>()
   let emojiButton = $state<HTMLElement>()
   let emojiOpen = $state(false)
+  let pollOpen = $state(false)
   let uploadKey = 0
   /** Modo lento: até quando esperar pra mandar de novo. */
   let waitUntil = $state(0)
@@ -302,7 +304,17 @@
         if (dest.slowmode) waitUntil = Date.now() + dest.slowmode * 1000
         onsent?.()
       }
-      await dest.send('', [attachment.id], reply)
+      // O áudio já está no servidor: se o envio for recusado (várias mensagens seguidas, conexão
+      // caindo), tenta de novo em vez de perder a gravação.
+      for (let attempt = 0; ; attempt++) {
+        try {
+          await dest.send('', [attachment.id], reply)
+          break
+        } catch (err) {
+          if (attempt >= 2) throw err
+          await new Promise((r) => setTimeout(r, 5500))
+        }
+      }
     } catch (err) {
       if ((err as Error).name !== 'AbortError') client.toast((err as Error).message || m.chat.composer.voiceFailed)
     } finally {
@@ -619,6 +631,9 @@
       {#if target.canAttach && target.canSend}
         <IconButton icon="paperclip" label={t.attach} onclick={() => picker?.click()} />
       {/if}
+      {#if target.canPoll && !(mobile && text.trim())}
+        <IconButton icon="poll" label={m.chat.poll.create} onclick={() => (pollOpen = true)} />
+      {/if}
       <textarea
         bind:this={input}
         bind:value={text}
@@ -675,6 +690,10 @@
     }}
   />
 </div>
+
+{#if pollOpen}
+  <PollDialog {target} onclose={() => (pollOpen = false)} onsent={() => onsent?.()} />
+{/if}
 
 {#if emojiOpen && emojiButton}
   <EmojiPicker

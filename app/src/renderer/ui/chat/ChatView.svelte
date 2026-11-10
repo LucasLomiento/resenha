@@ -202,7 +202,7 @@
   /** Seta pra cima no campo vazio: edita a última mensagem minha que está na tela. */
   function editLast() {
     const me = client.me?.id
-    const last = [...messages].reverse().find((m) => m.authorId === me && m.content)
+    const last = [...messages].reverse().find((m) => m.authorId === me && m.content && !m.poll)
     if (!last) return
     refs[last.id]?.startEdit()
     tick().then(() => scroller?.querySelector(`[data-message-id="${CSS.escape(last.id)}"]`)?.scrollIntoView({ block: 'nearest' }))

@@ -7,6 +7,7 @@ import {
   MAX_MAP_PIN_LABEL,
   MAX_MESSAGE_LENGTH,
   MAX_PINS_PER_CHANNEL,
+  MAX_POLL_QUESTION_LENGTH,
   P,
   dmMembers,
   has,
@@ -65,7 +66,7 @@ import { aggregate, samePresence } from './presence'
 import { directory, home } from './stubs'
 import { parseStyle, styleText } from './style'
 import { unfurlAll } from './unfurl'
-import { cleanLine, cleanMusic, cleanText, color } from './validate'
+import { cleanLine, cleanMusic, cleanPoll, cleanText, color } from './validate'
 
 // Um servidor (como os do Discord): canais, cargos, membros, mensagens,
 // anexos, moderação, quem está em cada canal de voz e o repasse da sinalização
@@ -1685,6 +1686,8 @@ export class Guild extends DurableObject<Env> {
       case 'chat.edit': {
         const row = this.store.get(msg.id)
         if (!row || row.author_id !== userId) return
+        // A pergunta de uma enquete não muda depois de aberta (quem já votou votou naquela).
+        if (row.poll) return this.error(ws, 'Enquete não dá pra editar.')
         if (!this.allow(`edit:${userId}`, 5, 5000)) return this.error(ws, 'Calma! Edições rápidas demais.')
         const channel = this.channel(row.channel_id, 'text')
         if (!channel || !this.can(userId, channel.id, P.VIEW_CHANNEL)) return
@@ -1744,6 +1747,32 @@ export class Guild extends DurableObject<Env> {
         if (!this.store.react(row.id, userId, emoji, !!msg.on)) return this.error(ws, 'Essa mensagem já tem reações demais.')
         return this.broadcast(
           { t: 'chat.reactions', id: row.id, channelId: channel.id, reactions: this.store.reactions(row.id) },
+          { channelId: channel.id },
+        )
+      }
+
+      case 'chat.vote': {
+        const row = this.store.get(msg.id)
+        if (!row || !row.poll) return
+        const channel = this.channel(row.channel_id, 'text')
+        if (!channel || !this.can(userId, channel.id, P.READ_HISTORY)) return
+        if (this.timedOut(this.member(userId))) return this.error(ws, 'Você está de castigo e não pode votar agora.')
+        if (!this.allow(`vote:${userId}`, 15, 5000)) return this.error(ws, 'Calma! Votos rápidos demais.')
+        const voted = this.store.vote(row, userId, msg.options)
+        if (voted === 'closed') return this.error(ws, 'Essa enquete já foi encerrada.')
+        if (voted === 'invalid') return
+        return this.broadcast({ t: 'chat.poll', id: row.id, channelId: channel.id, poll: this.store.poll(row)! }, { channelId: channel.id })
+      }
+
+      case 'chat.poll.close': {
+        const row = this.store.get(msg.id)
+        if (!row || !row.poll) return
+        const channel = this.channel(row.channel_id, 'text')
+        if (!channel || !this.can(userId, channel.id, P.VIEW_CHANNEL)) return
+        if (row.author_id !== userId && !this.can(userId, channel.id, P.MANAGE_MESSAGES)) return
+        if (!this.store.closePoll(row)) return
+        return this.broadcast(
+          { t: 'chat.poll', id: row.id, channelId: channel.id, poll: this.store.poll(this.store.get(row.id)!)! },
           { channelId: channel.id },
         )
       }
@@ -2021,7 +2050,14 @@ export class Guild extends DurableObject<Env> {
     if (content.length > MAX_MESSAGE_LENGTH) return this.error(ws, 'Mensagem grande demais.', nonce)
     const requested = Array.isArray(msg.attachmentIds) ? msg.attachmentIds.filter((id) => typeof id === 'string').slice(0, 10) : []
     if (requested.length > 0 && !has(perms, P.ATTACH_FILES)) return this.error(ws, 'Você não pode enviar arquivos nesse canal.', nonce)
-    const attachments = this.store.pendingAttachments(userId, requested)
+    // Enquete: a pergunta é o texto da mensagem, e não vai anexo junto.
+    const poll = msg.poll === undefined || msg.poll === null ? null : cleanPoll(msg.poll)
+    if (typeof poll === 'string') return this.error(ws, poll, nonce)
+    if (poll && !content) return this.error(ws, 'Faltou a pergunta da enquete.', nonce)
+    if (poll && content.length > MAX_POLL_QUESTION_LENGTH) {
+      return this.error(ws, `A pergunta da enquete passa de ${MAX_POLL_QUESTION_LENGTH} caracteres.`, nonce)
+    }
+    const attachments = poll ? [] : this.store.pendingAttachments(userId, requested)
     if (!content && attachments.length === 0) {
       // Só com anexo que venceu (ou de outra pessoa): avisa, e o app devolve pro campo.
       return requested.length > 0 ? this.error(ws, 'O anexo não está mais disponível. Envie de novo.', nonce) : undefined
@@ -2053,7 +2089,16 @@ export class Guild extends DurableObject<Env> {
     const replyTo = reply && reply.channel_id === channel.id ? reply : null
     const mentions = this.mentionsIn(content, userId, perms, replyTo?.author_id ?? null)
     const row = this.store.insert(
-      { id: newId(), channelId: channel.id, authorId: userId, content, replyTo: replyTo?.id ?? null, nonce, ...mentions },
+      {
+        id: newId(),
+        channelId: channel.id,
+        authorId: userId,
+        content,
+        replyTo: replyTo?.id ?? null,
+        nonce,
+        ...mentions,
+        poll: poll ? { ...poll, closedAt: null } : null,
+      },
       attachments,
     )
     this.recordMentions(row.id, channel.id, userId, mentions)

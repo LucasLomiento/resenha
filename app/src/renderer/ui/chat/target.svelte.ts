@@ -1,4 +1,4 @@
-import { P, has, type Channel, type DmChannel, type Message, type User } from '../../../../../shared/protocol'
+import { P, has, type Channel, type DmChannel, type Message, type NewPoll, type User } from '../../../../../shared/protocol'
 import { client } from '../../lib/client.svelte'
 import { m } from '../../lib/i18n.svelte'
 import type { GuildState } from '../../lib/guild.svelte'
@@ -33,6 +33,8 @@ export interface ChatTarget {
   canManage: boolean
   canPin: boolean
   canSearch: boolean
+  /** Dá pra criar enquete aqui (só nos canais de servidor). */
+  canPoll: boolean
   canMentionEveryone: boolean
   slowmode: number
   /** Até onde eu tinha lido quando abri (pra linha de "novas"). */
@@ -53,6 +55,11 @@ export interface ChatTarget {
   edit(id: string, content: string): void
   remove(id: string): void
   react(id: string, emoji: string, on: boolean): void
+  /** Enquete: a pergunta vira o texto da mensagem. */
+  sendPoll(question: string, poll: NewPoll): Promise<void>
+  /** Meu voto: as opções marcadas (nenhuma tira o voto). */
+  vote(id: string, options: number[]): void
+  closePoll(id: string): void
   pin(id: string, on: boolean): void
   loadMore(): void
   loadNewer(): void
@@ -111,6 +118,9 @@ export function channelTarget(guild: GuildState, channel: Channel): ChatTarget {
       return has(perms(), P.MANAGE_MESSAGES)
     },
     canSearch: true,
+    get canPoll() {
+      return has(perms(), P.SEND_MESSAGES)
+    },
     get canMentionEveryone() {
       return has(perms(), P.MENTION_EVERYONE)
     },
@@ -142,6 +152,9 @@ export function channelTarget(guild: GuildState, channel: Channel): ChatTarget {
     edit: (messageId, content) => guild.editMessage(messageId, content),
     remove: (messageId) => guild.deleteMessage(messageId),
     react: (messageId, emoji, on) => guild.react(messageId, emoji, on),
+    sendPoll: (question, poll) => guild.sendMessage(id, question, [], null, poll),
+    vote: (messageId, options) => guild.vote(messageId, options),
+    closePoll: (messageId) => guild.closePoll(messageId),
     pin: (messageId, on) => guild.pin(messageId, on),
     loadMore: () => {
       const first = guild.messages[id]?.[0]
@@ -192,6 +205,7 @@ export function dmTarget(home: HomeState, dm: DmChannel): ChatTarget {
     canManage: false,
     canPin: false,
     canSearch: false,
+    canPoll: false,
     canMentionEveryone: false,
     slowmode: 0,
     lastReadId: client.readMark(id) !== undefined ? client.readMark(id)! : dm.lastReadId,
@@ -212,6 +226,9 @@ export function dmTarget(home: HomeState, dm: DmChannel): ChatTarget {
     edit: (messageId, content) => home.editMessage(id, messageId, content),
     remove: (messageId) => home.deleteMessage(id, messageId),
     react: (messageId, emoji, on) => home.react(id, messageId, emoji, on),
+    sendPoll: () => Promise.resolve(),
+    vote: () => {},
+    closePoll: () => {},
     pin: () => {},
     loadMore: () => {
       const first = home.messages[id]?.[0]

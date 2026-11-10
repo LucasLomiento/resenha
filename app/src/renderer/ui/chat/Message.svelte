@@ -10,6 +10,7 @@
   import { Avatar, Button, UserBadge, Icon, IconButton, Kbd, Menu, tooltip, type MenuItem } from '../kit'
   import EmojiPicker from './EmojiPicker.svelte'
   import Markdown from './Markdown.svelte'
+  import PollCard from './PollCard.svelte'
   import VoicePlayer from './VoicePlayer.svelte'
   import { toEditable, toRaw } from './mentions'
   import type { ChatTarget } from './target.svelte'
@@ -41,6 +42,8 @@
   let hovered = $state(false)
   const mentioned = $derived(!mine && target.mentionsMe(message))
   const canDelete = $derived(mine || target.canManage)
+  /** A pergunta de uma enquete não se edita (quem votou, votou naquela). */
+  const canEdit = $derived(mine && !!message.content && !message.poll)
   const t = $derived(m.chat.message)
   /** Celular: o Enter do teclado pula linha também ao editar, e salvar/cancelar viram botões. */
   const mobile = $derived(!!client.platform?.mobile)
@@ -109,7 +112,7 @@
     const items: MenuItem[] = []
     if (target.canReact) items.push({ label: t.react, icon: 'emoji-plus', onselect: () => (pickerAnchor = anchor) })
     if (target.canSend) items.push({ label: t.reply, icon: 'reply', onselect: () => onreply(message) })
-    if (mine && message.content) items.push({ label: m.common.edit, icon: 'pencil', onselect: startEdit })
+    if (canEdit) items.push({ label: m.common.edit, icon: 'pencil', onselect: startEdit })
     if (target.canPin) {
       items.push({ label: message.pinned ? t.unpin : t.pin, icon: message.pinned ? 'pin-off' : 'pin', onselect: () => target.pin(message.id, !message.pinned) })
     }
@@ -263,6 +266,8 @@
             <span><Kbd keys="Esc" /> {t.editCancel}</span>
           </div>
         {/if}
+      {:else if message.poll}
+        <PollCard {message} {target} />
       {:else if message.content}
         <div class="content">
           <Markdown content={message.content} names={{ ...target.names, openUser: (id, anchor) => openProfile(id, target.guild?.id ?? null, anchor) }} />
@@ -350,7 +355,7 @@
       {#if target.canSend}
         <IconButton icon="reply" label={t.reply} size="sm" onclick={() => onreply(message)} />
       {/if}
-      {#if mine && message.content}
+      {#if canEdit}
         <IconButton icon="pencil" label={m.common.edit} size="sm" onclick={startEdit} />
       {:else if target.canPin}
         <IconButton icon={message.pinned ? 'pin-off' : 'pin'} label={message.pinned ? t.unpin : t.pin} size="sm" onclick={() => target.pin(message.id, !message.pinned)} />

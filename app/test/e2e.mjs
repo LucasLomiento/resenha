@@ -857,6 +857,61 @@ try {
   const injected = await a.page.locator('article img[src="x"]').count()
   check(injected === 0, 'formatação funciona e HTML na mensagem não vira elemento')
 
+  // Bloco de código com linguagem: ganha cores (o highlight.js chega sob demanda), com o mesmo texto.
+  // Quem manda é A: B já mandou várias, e o servidor segura mais de 5 mensagens a cada 5 s.
+  const code = 'const total: number = itens.length // <b>conta</b>'
+  await composerA.fill('```ts\n' + code + '\n```')
+  await composerA.press('Enter')
+  const block = b.page.locator('article pre[data-lang="ts"]')
+  await block
+    .locator('.hljs-keyword', { hasText: 'const' })
+    .waitFor({ timeout: 10_000 })
+    .catch(() => {})
+  const painted = await block.evaluate((el) => [el.textContent, el.querySelectorAll('span[class^="hljs-"]').length, el.querySelectorAll('b').length])
+  const keywordColor = await block.locator('.hljs-keyword').first().evaluate((el) => [getComputedStyle(el).color, getComputedStyle(el.closest('pre')).color])
+  check(
+    painted[0] === code && painted[1] >= 3 && painted[2] === 0 && keywordColor[0] !== keywordColor[1],
+    'bloco de código com linguagem ganha cores, com o mesmo texto e sem virar HTML',
+    `${painted[1]} trechos, ${keywordColor[0]}`,
+  )
+  await shot(b, 'chat-codigo')
+
+  // Enquete: A cria, B vota, os dois veem o resultado na hora, e A encerra.
+  await a.page.getByRole('button', { name: 'Criar enquete', exact: true }).click()
+  const pollDialog = a.page.getByRole('dialog', { name: 'Nova enquete' })
+  await pollDialog.getByLabel('Pergunta').fill('Pizza ou hambúrguer?')
+  await pollDialog.getByPlaceholder('Opção 1').fill('Pizza')
+  await pollDialog.getByPlaceholder('Opção 2').fill('Hambúrguer')
+  await pollDialog.getByPlaceholder('Opção 2').press('Enter')
+  await pollDialog.getByPlaceholder('Opção 3').fill('Os dois')
+  await shot(a, 'enquete-criar')
+  await pollDialog.getByRole('button', { name: 'Criar enquete', exact: true }).click()
+  const pollB = b.page.locator('article .poll', { hasText: 'Pizza ou hambúrguer?' })
+  await pollB.waitFor({ timeout: 5000 })
+  await pollB.getByRole('radio', { name: /^Pizza:/ }).click()
+  const pollA = a.page.locator('article .poll', { hasText: 'Pizza ou hambúrguer?' })
+  await pollA.getByRole('radio', { name: 'Pizza: 1 voto, 100%' }).waitFor({ timeout: 5000 })
+  await pollA.getByRole('radio', { name: /^Os dois:/ }).click()
+  await pollB.getByRole('radio', { name: 'Os dois: 1 voto, 50%' }).waitFor({ timeout: 5000 })
+  const voted = await pollB.evaluate((el) => [
+    el.querySelectorAll('.option').length,
+    el.querySelector('.option.voted .text')?.textContent,
+    el.querySelector('footer')?.textContent?.includes('2 votos'),
+    // Só quem criou (ou modera) vê o "Encerrar enquete".
+    el.querySelectorAll('footer .close').length,
+  ])
+  await shot(a, 'enquete-votada')
+  await pollA.getByRole('button', { name: 'Encerrar enquete' }).click()
+  await a.page.getByRole('dialog', { name: 'Encerrar a enquete?' }).getByRole('button', { name: 'Encerrar', exact: true }).click()
+  await pollB.locator('.hint', { hasText: 'Encerrada' }).waitFor({ timeout: 5000 })
+  const afterClose = await pollB.evaluate((el) => [...el.querySelectorAll('.option')].every((o) => o.disabled))
+  check(
+    voted[0] === 3 && voted[1] === 'Pizza' && voted[2] === true && voted[3] === 0 && afterClose,
+    'enquete: A cria, B vota, o resultado aparece pros dois e encerrar trava os votos',
+    JSON.stringify(voted),
+  )
+  await shot(b, 'enquete-encerrada')
+
   // Anexo.
   const png = Buffer.from(
     'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
@@ -890,7 +945,14 @@ try {
   await shot(b, '2a-gravando-voz')
   await b.page.getByRole('button', { name: 'Enviar (Enter)', exact: true }).click({ force: true })
   const voice = a.page.locator('article .voice').last()
-  await voice.waitFor({ timeout: 20_000 })
+  await voice.waitFor({ timeout: 20_000 }).catch(async (err) => {
+    const debug = await b.page.evaluate(() => ({
+      row: document.querySelector('.voice-row')?.textContent?.trim() ?? null,
+      toasts: document.querySelector('.toasts')?.textContent ?? null,
+    }))
+    console.log('   a mensagem de voz não chegou:', JSON.stringify(debug))
+    throw err
+  })
   const voiceInfo = await voice.evaluate(async (el) => {
     const audio = el.querySelector('audio')
     if (!audio.duration) await new Promise((r) => audio.addEventListener('loadedmetadata', r, { once: true }))

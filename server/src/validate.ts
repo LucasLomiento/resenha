@@ -1,7 +1,13 @@
 // Validação de tudo que vem de fora. O app nunca é confiável: cada campo é
 // conferido aqui antes de ir pro banco.
 
-import type { MusicStatus } from '../../shared/protocol'
+import {
+  MAX_POLL_OPTIONS,
+  MAX_POLL_OPTION_LENGTH,
+  MIN_POLL_OPTIONS,
+  POLL_HOURS,
+  type MusicStatus,
+} from '../../shared/protocol'
 
 // Caracteres de controle e invisíveis (espaço de largura zero, troca de direção
 // do texto, separadores de linha, os "preenchimentos" do hangul e do braille…),
@@ -99,4 +105,26 @@ export function cleanMusic(value: unknown): MusicStatus | null {
   const music = value as Record<string, unknown>
   const line = (text: unknown) => (typeof text === 'string' ? (cleanLine(text.slice(0, 200), 0, 200) ?? '') : '')
   return { title: line(music.title), artist: line(music.artist), playing: music.playing === true }
+}
+
+/**
+ * A enquete que o app mandou no `chat.send`: de 2 a 10 opções diferentes (sem contar maiúsculas
+ * e espaços), cada uma com 1 a 80 caracteres visíveis, e um dos prazos da lista. Devolve a
+ * enquete limpa, ou o erro pra mostrar.
+ */
+export function cleanPoll(value: unknown, now = Date.now()): { options: string[]; multiple: boolean; closesAt: number | null } | string {
+  const input = value as { options?: unknown; multiple?: unknown; hours?: unknown } | null
+  if (!input || typeof input !== 'object' || !Array.isArray(input.options)) return 'Enquete inválida.'
+  if (input.options.length < MIN_POLL_OPTIONS) return `A enquete precisa de pelo menos ${MIN_POLL_OPTIONS} opções.`
+  if (input.options.length > MAX_POLL_OPTIONS) return `A enquete pode ter até ${MAX_POLL_OPTIONS} opções.`
+  const options: string[] = []
+  for (const raw of input.options) {
+    const text = cleanLine(raw, 1, MAX_POLL_OPTION_LENGTH)
+    if (text === null) return `Cada opção da enquete precisa ter de 1 a ${MAX_POLL_OPTION_LENGTH} caracteres.`
+    if (options.some((o) => o.toLowerCase() === text.toLowerCase())) return 'A enquete tem opções repetidas.'
+    options.push(text)
+  }
+  const hours = typeof input.hours === 'number' ? input.hours : 0
+  if (!(POLL_HOURS as readonly number[]).includes(hours)) return 'Prazo de enquete inválido.'
+  return { options, multiple: input.multiple === true, closesAt: hours > 0 ? now + hours * 3_600_000 : null }
 }

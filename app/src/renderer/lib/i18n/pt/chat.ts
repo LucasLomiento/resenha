@@ -86,6 +86,38 @@ export default {
     /** Dica da reação: até 8 nomes (já juntos) e quantos sobraram. */
     reactors: (names: string, more: number) => (more > 0 ? `${names} e mais ${more}` : names),
   },
+  poll: {
+    create: 'Criar enquete',
+    title: 'Nova enquete',
+    question: 'Pergunta',
+    questionPlaceholder: 'O que você quer perguntar?',
+    options: 'Opções',
+    option: (n: number) => `Opção ${n}`,
+    addOption: 'Adicionar opção',
+    removeOption: (n: number) => `Tirar a opção ${n}`,
+    multiple: 'Várias respostas',
+    multipleHint: 'Cada pessoa pode marcar mais de uma opção.',
+    duration: 'Duração',
+    durations: { 0: 'Sem prazo', 1: '1 hora', 4: '4 horas', 8: '8 horas', 24: '24 horas', 72: '3 dias', 168: '1 semana' } as Record<number, string>,
+    repeated: 'Tem opções repetidas.',
+    failed: 'A enquete não foi enviada. Tente de novo.',
+    label: 'Enquete',
+    votes: (n: number) => (n === 0 ? 'Nenhum voto ainda' : n === 1 ? '1 voto' : `${n} votos`),
+    pickOne: 'Escolha uma',
+    pickMany: 'Escolha quantas quiser',
+    /** `when` já vem pronto no idioma ("em 3 horas"). */
+    closes: (when: string) => `Fecha ${when}`,
+    closingSoon: 'Fecha em menos de um minuto',
+    closed: 'Encerrada',
+    close: 'Encerrar enquete',
+    closeTitle: 'Encerrar a enquete?',
+    closeDescription: 'Ninguém mais vai poder votar. Os votos ficam.',
+    closeConfirm: 'Encerrar',
+    /** Leitor de tela: a opção, quantos votos e a parte do total. */
+    optionLabel: (text: string, votes: number, percent: number) => `${text}: ${votes === 1 ? '1 voto' : `${votes} votos`}, ${percent}%`,
+    yourVote: 'Seu voto',
+    winner: 'Mais votada',
+  },
   /** Menção a cargo ou canal que não dá pra mostrar pelo nome. */
   mention: {
     role: 'cargo',

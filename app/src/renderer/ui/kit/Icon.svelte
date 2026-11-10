@@ -12,6 +12,7 @@
   import BellOff from '@lucide/svelte/icons/bell-off'
   import Calendar from '@lucide/svelte/icons/calendar'
   import Camera from '@lucide/svelte/icons/camera'
+  import ChartBarBig from '@lucide/svelte/icons/chart-bar-big'
   import Check from '@lucide/svelte/icons/check'
   import ChevronDown from '@lucide/svelte/icons/chevron-down'
   import ChevronLeft from '@lucide/svelte/icons/chevron-left'
@@ -203,6 +204,7 @@
     photo: Camera,
     pin: Pin,
     'pin-off': PinOff,
+    poll: ChartBarBig,
     pip: PictureInPicture,
     plus: Plus,
     reply: Reply,

@@ -6,6 +6,7 @@ import {
   type Embed,
   type Message,
   type MessageRef,
+  type Poll,
   type Reaction,
 } from '../../shared/protocol'
 import { randomToken, resignProxyUrl, signFileUrl, type FileScope } from './auth'
@@ -29,7 +30,18 @@ export interface MessageRow {
   pinned_at: number | null
   embeds: string
   fts_id: number | null
+  /** Enquete (JSON de `StoredPoll`), ou null. */
+  poll: string | null
   [key: string]: SqlStorageValue
+}
+
+/** A enquete como fica guardada na mensagem; os votos ficam em `poll_votes`. */
+export interface StoredPoll {
+  options: string[]
+  multiple: boolean
+  closesAt: number | null
+  /** Encerrada antes da hora, nesse momento (ms). */
+  closedAt: number | null
 }
 
 export interface AttachmentRow {
@@ -56,6 +68,7 @@ export interface NewMessage {
   mentionEveryone: boolean
   /** O `nonce` que o app mandou junto: um reenvio da mesma mensagem não duplica. */
   nonce?: string
+  poll?: StoredPoll | null
 }
 
 /** Colunas que a 0.5 não tinha (entram com ALTER TABLE no banco antigo). */
@@ -70,6 +83,8 @@ const MESSAGE_COLUMNS: [string, string][] = [
   ['fts_id', 'INTEGER'],
   // 1.15: o nonce do envio (reenvio depois de uma queda não duplica).
   ['nonce', 'TEXT'],
+  // 1.18: enquete (JSON), só nas mensagens que são uma.
+  ['poll', 'TEXT'],
 ]
 
 export const SEARCH_PAGE = 25
@@ -97,6 +112,26 @@ export function validEmoji(value: unknown): string | null {
   if (!/[\p{Extended_Pictographic}\p{Regional_Indicator}⃣]/u.test(value)) return null
   return value
 }
+
+/** A enquete guardada numa mensagem (null: não é enquete, ou o JSON não presta). */
+export function parsePoll(text: string | null | undefined): StoredPoll | null {
+  if (!text) return null
+  try {
+    const value = JSON.parse(text) as Partial<StoredPoll> | null
+    if (!value || !Array.isArray(value.options) || value.options.some((o) => typeof o !== 'string')) return null
+    return {
+      options: value.options,
+      multiple: value.multiple === true,
+      closesAt: typeof value.closesAt === 'number' ? value.closesAt : null,
+      closedAt: typeof value.closedAt === 'number' ? value.closedAt : null,
+    }
+  } catch {
+    return null
+  }
+}
+
+/** Já não aceita voto: encerrada por alguém, ou o prazo passou. */
+export const pollClosed = (poll: StoredPoll, now = Date.now()) => poll.closedAt !== null || (poll.closesAt !== null && poll.closesAt <= now)
 
 export function parseJsonList(text: string | null): string[] {
   if (!text) return []
@@ -171,6 +206,13 @@ export class MessageStore {
       user_id TEXT NOT NULL,
       created_at INTEGER NOT NULL,
       PRIMARY KEY (message_id, emoji, user_id)
+    )`)
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS poll_votes (
+      message_id TEXT NOT NULL,
+      option INTEGER NOT NULL,
+      user_id TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      PRIMARY KEY (message_id, user_id, option)
     )`)
     // Busca sem acento ("joao" acha "João").
     this.sql.exec(
@@ -290,6 +332,17 @@ export class MessageStore {
       )
     }
 
+    // Enquetes: os votos de todas as da página numa busca só.
+    const polls = new Map<string, Poll>()
+    const stored = rows.flatMap((r) => {
+      const poll = parsePoll(r.poll)
+      return poll ? [[r.id, poll] as const] : []
+    })
+    if (stored.length > 0) {
+      const votes = this.votes(stored.map(([id]) => id))
+      for (const [id, poll] of stored) polls.set(id, toPoll(poll, votes.get(id)))
+    }
+
     return rows.map((r) => ({
       id: r.id,
       channelId: r.channel_id,
@@ -306,6 +359,7 @@ export class MessageStore {
       mentionEveryone: r.mention_everyone === 1,
       pinned: r.pinned_at !== null,
       embeds: embeds.get(r.id) ?? [],
+      ...(polls.has(r.id) ? { poll: polls.get(r.id) } : {}),
     }))
   }
 
@@ -420,8 +474,8 @@ export class MessageStore {
 
   insert(m: NewMessage, attachmentIds: string[], now = Date.now()): MessageRow {
     this.sql.exec(
-      `INSERT INTO messages (id, channel_id, author_id, content, created_at, reply_to, mentions, mention_roles, mention_everyone, nonce)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO messages (id, channel_id, author_id, content, created_at, reply_to, mentions, mention_roles, mention_everyone, nonce, poll)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       m.id,
       m.channelId,
       m.authorId,
@@ -432,6 +486,7 @@ export class MessageStore {
       JSON.stringify(m.mentionRoles),
       m.mentionEveryone ? 1 : 0,
       m.nonce ?? null,
+      m.poll ? JSON.stringify(m.poll) : null,
     )
     if (attachmentIds.length > 0) {
       this.sql.exec(
@@ -541,6 +596,7 @@ export class MessageStore {
     this.files.delete(files.map((f) => f.id))
     this.sql.exec(`DELETE FROM attachments WHERE message_id ${IN_LIST}`, ids)
     this.sql.exec(`DELETE FROM reactions WHERE message_id ${IN_LIST}`, ids)
+    this.sql.exec(`DELETE FROM poll_votes WHERE message_id ${IN_LIST}`, ids)
     for (const r of rows) this.unindex(r.fts_id)
     this.sql.exec(`DELETE FROM messages WHERE id ${IN_LIST}`, ids)
     return files.reduce((sum, f) => sum + f.size, 0)
@@ -598,6 +654,56 @@ export class MessageStore {
       userId,
       now,
     )
+    return true
+  }
+
+  // ---------- Enquetes ----------
+
+  /** Os votos de cada enquete: mensagem -> opção -> quem votou, na ordem em que votaram. */
+  private votes(messageIds: string[]): Map<string, Map<number, string[]>> {
+    const out = new Map<string, Map<number, string[]>>()
+    for (const v of this.sql
+      .exec<{ message_id: string; option: number; user_id: string }>(
+        `SELECT message_id, option, user_id FROM poll_votes WHERE message_id ${IN_LIST} ORDER BY created_at, rowid`,
+        list(messageIds),
+      )
+      .toArray()) {
+      const byOption = out.get(v.message_id) ?? new Map<number, string[]>()
+      byOption.set(v.option, [...(byOption.get(v.option) ?? []), v.user_id])
+      out.set(v.message_id, byOption)
+    }
+    return out
+  }
+
+  /** A enquete de uma mensagem como o app vê (null: a mensagem não é enquete). */
+  poll(row: MessageRow): Poll | null {
+    const stored = parsePoll(row.poll)
+    return stored ? toPoll(stored, this.votes([row.id]).get(row.id)) : null
+  }
+
+  /**
+   * Troca o voto de alguém pelas opções marcadas (nenhuma: tira o voto). `closed`: a enquete já
+   * encerrou; `invalid`: opção que não existe, ou mais de uma numa enquete de voto único.
+   */
+  vote(row: MessageRow, userId: string, options: unknown, now = Date.now()): 'ok' | 'closed' | 'invalid' {
+    const poll = parsePoll(row.poll)
+    if (!poll || !Array.isArray(options)) return 'invalid'
+    if (pollClosed(poll, now)) return 'closed'
+    const picked = [...new Set(options)]
+    if (picked.some((o) => !Number.isInteger(o) || o < 0 || o >= poll.options.length)) return 'invalid'
+    if (picked.length > 1 && !poll.multiple) return 'invalid'
+    this.sql.exec('DELETE FROM poll_votes WHERE message_id = ? AND user_id = ?', row.id, userId)
+    for (const option of picked as number[]) {
+      this.sql.exec('INSERT INTO poll_votes (message_id, option, user_id, created_at) VALUES (?, ?, ?, ?)', row.id, option, userId, now)
+    }
+    return 'ok'
+  }
+
+  /** Encerra a enquete agora. `false`: não é enquete, ou já estava encerrada. */
+  closePoll(row: MessageRow, now = Date.now()): boolean {
+    const poll = parsePoll(row.poll)
+    if (!poll || pollClosed(poll, now)) return false
+    this.sql.exec('UPDATE messages SET poll = ? WHERE id = ?', JSON.stringify({ ...poll, closedAt: now }), row.id)
     return true
   }
 
@@ -716,6 +822,15 @@ export class MessageStore {
     this.sql.exec(`DELETE FROM attachments WHERE id ${IN_LIST}`, list(ids))
     this.files.delete(ids)
     return orphans.reduce((sum, o) => sum + o.size, 0)
+  }
+}
+
+function toPoll(stored: StoredPoll, votes: Map<number, string[]> | undefined): Poll {
+  return {
+    options: stored.options.map((text, i) => ({ text, userIds: votes?.get(i) ?? [] })),
+    multiple: stored.multiple,
+    closesAt: stored.closesAt,
+    closed: stored.closedAt !== null,
   }
 }
 

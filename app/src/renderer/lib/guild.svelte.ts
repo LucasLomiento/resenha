@@ -12,6 +12,7 @@ import {
   type Invite,
   type Member,
   type Message,
+  type NewPoll,
   type NotifyLevel,
   type NotifySettings,
   type Overwrite,
@@ -484,6 +485,12 @@ export class GuildState {
         return
       }
 
+      case 'chat.poll': {
+        const found = this.messages[msg.channelId]?.find((m) => m.id === msg.id)
+        if (found) found.poll = msg.poll
+        return
+      }
+
       case 'read.state':
         this.readStates[msg.state.channelId] = msg.state
         this.host.seen(`channel:${msg.state.channelId}`, msg.state.lastReadId)
@@ -674,9 +681,10 @@ export class GuildState {
     await this.loadHistory(channelId)
   }
 
-  sendMessage(channelId: string, content: string, attachmentIds: string[], replyTo: string | null = null): Promise<void> {
+  /** `poll`: a mensagem é uma enquete, com a pergunta no `content`. */
+  sendMessage(channelId: string, content: string, attachmentIds: string[], replyTo: string | null = null, poll?: NewPoll): Promise<void> {
     const nonce = nextId()
-    const msg: ClientMessage = { t: 'chat.send', channelId, content, attachmentIds, nonce, replyTo }
+    const msg: ClientMessage = { t: 'chat.send', channelId, content, attachmentIds, nonce, replyTo, ...(poll ? { poll } : {}) }
     return new Promise((resolve, reject) => {
       if (!this.send(msg)) return reject(new Error(m.lib.connection.offline))
       this.sends.set(nonce, { msg, resolve, reject, timer: this.sendTimer(nonce), until: Date.now() + SEND_GIVE_UP })
@@ -715,6 +723,15 @@ export class GuildState {
 
   pin(id: string, on: boolean) {
     this.send({ t: 'chat.pin', id, on })
+  }
+
+  /** Meu voto numa enquete: as opções marcadas (nenhuma tira o voto). */
+  vote(id: string, options: number[]) {
+    this.send({ t: 'chat.vote', id, options })
+  }
+
+  closePoll(id: string) {
+    this.send({ t: 'chat.poll.close', id })
   }
 
   async pins(channelId: string): Promise<Message[]> {

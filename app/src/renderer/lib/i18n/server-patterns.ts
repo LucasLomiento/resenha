@@ -16,4 +16,8 @@ export const SERVER_PATTERNS: { re: RegExp; key: DynamicKey }[] = [
   { re: /^O limite é de (\d+) cargos\.$/, key: 'roleLimit' },
   { re: /^O mapa já tem (\d+) marcadores\. Apague algum antes\.$/, key: 'mapPinLimit' },
   { re: /^Os pronomes podem ter até (\d+) caracteres\.$/, key: 'pronounsTooLong' },
+  { re: /^A enquete precisa de pelo menos (\d+) opções\.$/, key: 'pollMinOptions' },
+  { re: /^A enquete pode ter até (\d+) opções\.$/, key: 'pollMaxOptions' },
+  { re: /^Cada opção da enquete precisa ter de 1 a (\d+) caracteres\.$/, key: 'pollOptionLength' },
+  { re: /^A pergunta da enquete passa de (\d+) caracteres\.$/, key: 'pollQuestionLength' },
 ]

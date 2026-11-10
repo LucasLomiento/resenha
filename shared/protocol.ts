@@ -14,6 +14,13 @@ export const MAX_PINS_PER_CHANNEL = 50
 export const MAX_GUILDS_PER_USER = 100
 export const MAX_MAP_PINS = 200
 export const MAX_MAP_PIN_LABEL = 60
+/** Enquete: de 2 a 10 opções; a pergunta é o texto da mensagem (até 300 caracteres). */
+export const MIN_POLL_OPTIONS = 2
+export const MAX_POLL_OPTIONS = 10
+export const MAX_POLL_OPTION_LENGTH = 80
+export const MAX_POLL_QUESTION_LENGTH = 300
+/** Prazos que o app oferece, em horas (0 = fica aberta até alguém encerrar). */
+export const POLL_HOURS = [0, 1, 4, 8, 24, 72, 168] as const
 /** O que o app pode registrar como incidente (`t: 'incident'`); vai pro registro como `app:<tipo>`. */
 export const APP_INCIDENTS = ['signal-loop', 'send-limit', 'reconnect-loop'] as const
 export type AppIncident = (typeof APP_INCIDENTS)[number]
@@ -328,6 +335,34 @@ export interface Reaction {
   userIds: string[]
 }
 
+/**
+ * Enquete numa mensagem de servidor. A pergunta é o `content` da mensagem (app antigo mostra
+ * só ela); os votos são abertos, como as reações.
+ */
+export interface Poll {
+  options: PollOption[]
+  /** Dá pra marcar mais de uma opção. */
+  multiple: boolean
+  /** Fecha sozinha nessa hora (ms); null = só quando alguém encerrar. */
+  closesAt: number | null
+  /** Encerrada antes da hora por quem criou (ou por quem modera as mensagens). */
+  closed: boolean
+}
+
+export interface PollOption {
+  text: string
+  /** Quem votou nela, na ordem. */
+  userIds: string[]
+}
+
+/** O que o app manda pra criar uma enquete (junto do `chat.send`, com a pergunta no `content`). */
+export interface NewPoll {
+  options: string[]
+  multiple: boolean
+  /** Um dos `POLL_HOURS`. */
+  hours: number
+}
+
 export interface MessageRef {
   id: string
   authorId: string
@@ -351,6 +386,8 @@ export interface Message {
   mentionEveryone: boolean
   pinned: boolean
   embeds: Embed[]
+  /** Só vem quando a mensagem é uma enquete. */
+  poll?: Poll
 }
 
 /** Até onde cada pessoa leu em cada canal, e quantas menções ainda não viu. */
@@ -540,7 +577,13 @@ export type ClientMessage =
       attachmentIds: string[]
       nonce: string
       replyTo?: string | null
+      /** Enquete: o `content` é a pergunta (obrigatório) e não vai anexo. */
+      poll?: NewPoll
     }
+  /** Meu voto numa enquete: as opções marcadas (índices); vazio tira o voto. */
+  | { t: 'chat.vote'; id: string; options: number[] }
+  /** Encerra uma enquete antes da hora (quem criou, ou quem pode apagar mensagens dos outros). */
+  | { t: 'chat.poll.close'; id: string }
   | { t: 'chat.edit'; id: string; content: string }
   | { t: 'chat.delete'; id: string }
   | { t: 'chat.history'; reqId: string; channelId: string; before?: string; around?: string }
@@ -680,6 +723,8 @@ export type ServerMessage =
       hasNewer?: boolean
     }
   | { t: 'chat.reactions'; id: string; channelId: string; reactions: Reaction[] }
+  /** Alguém votou, ou a enquete foi encerrada. */
+  | { t: 'chat.poll'; id: string; channelId: string; poll: Poll }
   | { t: 'chat.pins'; reqId: string; channelId: string; messages: Message[] }
   | { t: 'chat.search'; reqId: string; messages: Message[]; total: number }
   | { t: 'read.state'; state: ReadState }
