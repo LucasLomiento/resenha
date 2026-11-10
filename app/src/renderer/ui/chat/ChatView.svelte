@@ -99,6 +99,9 @@
   let lastTarget: string | undefined
   let lastFirstId: string | undefined
   let lastCount = 0
+  let lastNewer = false
+  /** A conversa que já foi posta no lugar com mensagens na tela (na "Novas" ou no fim). */
+  let positioned: string | undefined
   let atBottom = true
   let anchor = 0
 
@@ -116,19 +119,29 @@
     const newer = target?.hasNewer
     tick().then(() => {
       if (!scroller) return
-      if (id !== lastTarget) {
-        // Abriu a conversa: vai pra linha de "novas" (se tiver), senão pro fim.
+      if (id !== lastTarget || (id !== positioned && count > 0)) {
+        // Abriu a conversa: vai pra linha de "novas" (se tiver), senão pro fim. Vale também pra
+        // primeira leva de mensagens de uma conversa que abriu vazia (ainda carregando): sem
+        // isso, canal aberto pela primeira vez na sessão ia sempre pro fim e a "Novas" ficava
+        // fora da tela.
         const divider = scroller.querySelector('.new-divider') as HTMLElement | null
         if (divider) divider.scrollIntoView({ block: 'center' })
         else scroller.scrollTop = scroller.scrollHeight
+        if (count > 0) positioned = id
       } else if (firstId !== lastFirstId && count > lastCount && lastFirstId) {
         scroller.scrollTop = scroller.scrollHeight - anchor
-      } else if (atBottom && !newer && !highlighted) {
+      } else if (atBottom && !newer && !highlighted && !(lastNewer && count > 0)) {
+        // (Menos no passo em que as mensagens antigas acabaram de alcançar o presente: quem vinha
+        // lendo pra frente continua onde está, em vez de pular o último pedaço.)
         scroller.scrollTop = scroller.scrollHeight
       }
       lastTarget = id
       lastFirstId = firstId
       lastCount = count
+      lastNewer = !!newer
+      // As mensagens carregadas não enchem a área (linhas curtas, monitor alto): sem barra de
+      // rolagem o "carregar mais" nunca disparava, e o começo da conversa ficava inalcançável.
+      if (target && scroller.scrollHeight <= scroller.clientHeight + 300 && target.hasMore && !target.loading && messages[0]) target.loadMore()
     })
   })
 

@@ -894,6 +894,11 @@ export type HomeServerMessage =
       presence: { status: Status; text: string | null }
       /** Presença dos amigos. */
       presences: Record<string, Presence>
+      /**
+       * A conta tem celular com push (1.18.1). Sem, o app do computador nem manda o `attention`
+       * (só servia pra segurar o push); sem o campo (servidor antigo), manda como antes.
+       */
+      push?: boolean
       /** Voltou na chamada privada em que estava (a conexão anterior ainda estava nela). */
       resumed?: boolean
       /** Como está a chamada do `auth.call` (null: acabou). */
@@ -934,6 +939,8 @@ export type HomeServerMessage =
    * `failed` (o Firebase recusou por outro motivo).
    */
   | { t: 'push.test'; result: PushTestResult }
+  /** A conta passou a ter (ou deixou de ter) celular com push: o computador passa a dizer se está olhando. */
+  | { t: 'push.devices'; has: boolean }
   /** Só pro dono: o uso do Cloudflare está alto hoje (ver PlatformAlert). */
   | { t: 'platform.alert'; alert: PlatformAlert }
   | { t: 'session.revoked' }

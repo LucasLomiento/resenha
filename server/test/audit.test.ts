@@ -304,6 +304,20 @@ describe('servidor (Guild)', () => {
     expect(await back.closed()).toBe(4008)
   })
 
+  it('banir apagando mensagens diz qual é a mais nova que sobrou no canal (a bolinha de não lida não fica presa)', async () => {
+    const { friend, a, b, text } = await world()
+    a.send({ t: 'chat.send', channelId: text.id, content: 'antes do spam', attachmentIds: [], nonce: '0' })
+    const kept = (await a.next('chat.message', (m) => m.nonce === '0')).message
+    b.send({ t: 'chat.send', channelId: text.id, content: 'spam 1', attachmentIds: [], nonce: '1' })
+    b.send({ t: 'chat.send', channelId: text.id, content: 'spam 2', attachmentIds: [], nonce: '2' })
+    await a.next('chat.message', (m) => m.message.content === 'spam 2')
+    a.drain()
+    a.send({ t: 'member.ban', userId: friend.user.id, reason: '', deleteMessages: true })
+    const first = await a.next('chat.deleted')
+    const second = await a.next('chat.deleted')
+    expect([first.last, second.last]).toEqual([kept.id, kept.id])
+  })
+
   it('quem passa a ver uma sala de voz recebe quem está nela', async () => {
     const { guild, friend, a, b, readyA } = await world()
     a.send({ t: 'role.create', name: 'VIP' })

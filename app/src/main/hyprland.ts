@@ -122,6 +122,8 @@ export function hyprEvent(line: string): { action: ShortcutAction } | { talk: bo
 let wanted = {} as DesktopPrefs['shortcuts']
 let onAction: (action: ShortcutAction) => void = () => {}
 let onTalk: (down: boolean) => void = () => {}
+/** Avisado a cada vez que os binds são refeitos (config recarregada, idioma trocado, Hyprland reiniciado). */
+let onResult: (failed: ShortcutId[]) => void = () => {}
 let events: Socket | null = null
 let stopped = false
 /** Uma passada por vez (mudança nas configurações e config recarregada podem chegar juntas). */
@@ -135,17 +137,25 @@ export function setHyprShortcuts(
   shortcuts: DesktopPrefs['shortcuts'],
   dispatch: (action: ShortcutAction) => void,
   talk: (down: boolean) => void = () => {},
+  result: (failed: ShortcutId[]) => void = () => {},
 ): Promise<ShortcutId[]> {
   wanted = shortcuts
   onAction = dispatch
   onTalk = talk
+  onResult = result
   stopped = false
   listen()
   return reapply()
 }
 
 function reapply(): Promise<ShortcutId[]> {
-  queue = queue.then(apply, apply)
+  // O resultado vai sempre pra quem pediu: uma tecla que passou a ter uso na config do Hyprland
+  // (ou deixou de ter) depois de o app abrir era recusada (ou aceita) sem a interface saber, e a
+  // tecla de falar ficava muda com o aviso dizendo "segure a tecla".
+  queue = queue.then(apply, apply).then((failed) => {
+    onResult(failed)
+    return failed
+  })
   return queue
 }
 
@@ -224,6 +234,7 @@ export function clearHyprShortcuts() {
   stopped = true
   // O socket fecha depois, com a janela já fechada: ninguém mais pra avisar.
   onTalk = () => {}
+  onResult = () => {}
   events?.destroy()
   events = null
   // Perfil de teste (e2e, capturas) não cria binds: os que estão lá são do app de verdade aberto.

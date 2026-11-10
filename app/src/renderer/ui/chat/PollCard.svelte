@@ -23,11 +23,30 @@
 
   const percent = (votes: number) => (voters === 0 ? 0 : Math.round((votes / voters) * 100))
 
+  /**
+   * O que eu pedi por último e o servidor ainda não confirmou. Dois cliques rápidos numa enquete
+   * de várias respostas partiam os dois do voto confirmado, e o segundo apagava o primeiro.
+   */
+  let asked = $state<number[] | null>(null)
+  let askedTimer: ReturnType<typeof setTimeout> | undefined
+  const marked = $derived(asked ?? mine)
+
+  // O servidor confirmou exatamente o que eu pedi: volta a valer o dele. (Uma confirmação
+  // intermediária, com outro clique ainda a caminho, não desfaz o que está pedido.)
+  $effect(() => {
+    if (asked && [...asked].sort((a, b) => a - b).join() === mine.join()) asked = null
+  })
+  $effect(() => () => clearTimeout(askedTimer))
+
   function toggle(index: number) {
     if (closed) return
-    const marked = mine.includes(index)
-    if (poll.multiple) target.vote(message.id, marked ? mine.filter((i) => i !== index) : [...mine, index])
-    else target.vote(message.id, marked ? [] : [index])
+    const on = marked.includes(index)
+    const next = poll.multiple ? (on ? marked.filter((i) => i !== index) : [...marked, index]) : on ? [] : [index]
+    asked = next
+    // Sem resposta (voto recusado, conexão fora): volta a mostrar o que o servidor tem.
+    clearTimeout(askedTimer)
+    askedTimer = setTimeout(() => (asked = null), 4000)
+    target.vote(message.id, next)
   }
 
   /** "em 3 horas", "em 2 dias": sempre arredondando pra cima, pra não dizer "em 0 minutos". */
@@ -75,7 +94,7 @@
     {#each poll.options as option, i (i)}
       {@const votes = option.userIds.length}
       {@const share = percent(votes)}
-      {@const voted = mine.includes(i)}
+      {@const voted = marked.includes(i)}
       {@const winner = closed && votes > 0 && votes === top}
       <button
         class="option"

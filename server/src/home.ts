@@ -245,6 +245,11 @@ export class Home extends DurableObject<Env> {
     return true
   }
 
+  /** A conta tem celular que recebe push (e o servidor tem a chave pra mandar)? */
+  private hasPush(): boolean {
+    return this.pusher.enabled && this.sql.exec('SELECT 1 FROM push_tokens LIMIT 1').toArray().length > 0
+  }
+
   /** Quantas vezes essa chave passou pelo `allow` na janela (sem contar mais uma). */
   private recent(key: string, window: number): number {
     const now = Date.now()
@@ -633,6 +638,7 @@ export class Home extends DurableObject<Env> {
       }),
       presence: manual,
       presences,
+      push: this.hasPush(),
       resumed: !!call,
       ...(asked ? { call: callNow ? { channelId: asked, ...callNow } : null } : {}),
       calls,
@@ -862,9 +868,16 @@ export class Home extends DurableObject<Env> {
 
       case 'push.token': {
         if (!this.allow(`push:${state.connId}`, 10, 60_000)) return
+        const had = this.hasPush()
+        // A conta passou a ter (ou deixou de ter) celular com push: o computador fica sabendo, pra
+        // passar a dizer (ou parar de dizer) se a pessoa está olhando o app.
+        const told = () => {
+          const has = this.hasPush()
+          if (has !== had) this.broadcast({ t: 'push.devices', has })
+        }
         // O aparelho troca de token de vez em quando: o desta sessão sai e o novo entra.
         this.sql.exec('DELETE FROM push_tokens WHERE session = ?', state.session)
-        if (typeof msg.token !== 'string' || !PUSH_TOKEN.test(msg.token)) return
+        if (typeof msg.token !== 'string' || !PUSH_TOKEN.test(msg.token)) return told()
         const locale = msg.locale === 'en' || msg.locale === 'es' ? msg.locale : 'pt'
         this.sql.exec(
           `INSERT INTO push_tokens (token, session, locale, preview, created_at) VALUES (?, ?, ?, ?, ?)
@@ -880,7 +893,7 @@ export class Home extends DurableObject<Env> {
           'DELETE FROM push_tokens WHERE token NOT IN (SELECT token FROM push_tokens ORDER BY created_at DESC LIMIT ?)',
           MAX_PUSH_DEVICES,
         )
-        return
+        return told()
       }
 
       case 'dm.open': {

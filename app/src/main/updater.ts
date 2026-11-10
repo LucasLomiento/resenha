@@ -25,6 +25,7 @@ import { app, session } from 'electron'
 import { autoUpdater } from 'electron-updater'
 import type { UpdateState } from '../preload/api'
 import { tm } from './i18n'
+import { terminalUpdateScript } from './update-script'
 
 let state: UpdateState = { status: 'idle' }
 let downloadedFile: string | null = null
@@ -262,14 +263,13 @@ async function installPacman(file: string, version: string) {
   const t = tm().update
   const terminal = findTerminal()
   if (!terminal) return set({ status: 'error', message: t.noTerminal(file) })
-  const quote = (text: string) => `'${text.replace(/'/g, `'\\''`)}'`
-  const script = [
-    `echo ${quote(t.terminalPrompt(version))}`,
-    // Se não der, mostra o erro em vez de fechar (e reabrir a versão velha) sem dizer nada.
-    `sudo pacman -U --noconfirm ${quote(file)} || { echo; echo ${quote(t.terminalFailed)}; read -r _; }`,
-    `setsid ${quote(process.execPath)} >/dev/null 2>&1 &`,
-    'sleep 1',
-  ].join('; ')
+  const script = terminalUpdateScript({
+    prompt: t.terminalPrompt(version),
+    failed: t.terminalFailed,
+    file,
+    exec: process.execPath,
+    systemdEnv: hasSystemdRun() ? SESSION_ENV.filter((name) => process.env[name]) : null,
+  })
   const [command, args] = outside([terminal.command, ...terminal.args, 'bash', '-c', script], { wait: false })
   spawn(command, args, { detached: true, stdio: 'ignore' }).unref()
   void exitForUpdate()

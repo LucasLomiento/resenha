@@ -251,10 +251,12 @@ export async function registerShortcuts(
   dispatch: Dispatch,
   /** A tecla do apertar pra falar desceu ou subiu. */
   talk: (down: boolean) => void,
+  /** Os recusados, a cada vez que o sistema registra de novo (não só agora). */
+  result: (failed: ShortcutId[]) => void = () => {},
 ): Promise<ShortcutId[]> {
   globalShortcut.unregisterAll()
-  if (hasHyprland()) return setHyprShortcuts(shortcuts, dispatch, talk)
-  if (usesPortalShortcuts()) return setPortalShortcuts(shortcuts, dispatch, talk)
+  if (hasHyprland()) return setHyprShortcuts(shortcuts, dispatch, talk, result)
+  if (usesPortalShortcuts()) return setPortalShortcuts(shortcuts, dispatch, talk, result)
   const failed: ShortcutId[] = []
   for (const [action, accelerator] of Object.entries(shortcuts) as [ShortcutId, string | null][]) {
     if (!accelerator) continue
@@ -287,6 +289,9 @@ const autostartFile = () => join(homedir(), '.config', 'autostart', 'resenha.des
 
 export function setAutostart(enabled: boolean) {
   if (!app.isPackaged) return // em desenvolvimento não faz sentido
+  // Perfil de teste (e2e, capturas com o app empacotado): o arquivo é o do app de verdade, e o
+  // padrão "desligado" do perfil novo apagava o início automático dele.
+  if (process.env.RESENHA_PROFILE) return
   if (process.platform === 'win32' || process.platform === 'darwin') {
     app.setLoginItemSettings({ openAtLogin: enabled, args: ['--hidden'] })
     return

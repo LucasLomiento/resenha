@@ -33,6 +33,14 @@ import { appInfo } from './app-info'
 import { Connection, connectionKey, type CloseReason, type ConnectionStatus } from './ws'
 
 /** O que o servidor precisa do resto do app (o Client implementa). */
+/** O "lido" de um canal movimentado vai pro servidor no máximo a cada tanto (o primeiro, na hora). */
+const ACK_EVERY = 3000
+/** Quantas mensagens de uma conversa ficam na memória depois de sair dela. */
+const KEEP_MESSAGES = 100
+/** Quantos "lido" vão de uma vez, e de quanto em quanto tempo o resto (o servidor aceita 30 a cada 10 s). */
+const ACK_BATCH = 25
+const ACK_BATCH_EVERY = 10_500
+
 export interface GuildHost {
   http(): Api
   token(): string
@@ -367,17 +375,50 @@ export class GuildState {
     const last = this.lastMessageIds[channelId]
     if (!last || (!this.unread(channelId) && !this.mentions(channelId))) return
     this.readStates[channelId] = { channelId, lastReadId: last, mentions: 0 }
-    // Canal movimentado: um aviso a cada meio segundo basta (com a última mensagem).
     this.pendingAcks[channelId] = last
-    this.ackTimer ??= setTimeout(() => {
-      this.ackTimer = null
-      for (const [id, messageId] of Object.entries(this.pendingAcks)) this.conn.send({ t: 'chat.ack', channelId: id, messageId })
-      this.pendingAcks = {}
-    }, 500)
+    // O primeiro vai na hora; com o canal movimentado, os seguintes juntam num só a cada 3 s (com
+    // a última mensagem). Cada "lido" é um pedido no servidor: de meio em meio segundo, quem
+    // acompanhava uma conversa mandava quase um por mensagem recebida.
+    this.ackTimer ??= setTimeout(() => this.flushAcks(), Math.max(0, this.lastAckAt + ACK_EVERY - Date.now()))
+  }
+
+  /**
+   * Saiu da conversa: ficam na memória só as mais recentes (as antigas voltam rolando pra cima).
+   * Sem isso, cada conversa já aberta guardava tudo que chegou ao vivo e tudo que foi rolado,
+   * e reabrir um canal movimentado dias depois montava milhares de mensagens de uma vez.
+   */
+  trim(channelId: string) {
+    const list = this.messages[channelId]
+    if (!list || list.length <= KEEP_MESSAGES) return
+    if (this.hasNewer[channelId]) {
+      // Estava olhando mensagens antigas: da próxima vez abre no presente.
+      delete this.messages[channelId]
+      delete this.hasMore[channelId]
+      delete this.hasNewer[channelId]
+      this.stale.delete(channelId)
+      return
+    }
+    this.messages[channelId] = list.slice(-KEEP_MESSAGES)
+    this.hasMore[channelId] = true
+  }
+
+  /** Manda agora o que está esperando (saiu da conversa, a janela perdeu o foco). */
+  flushAcks() {
+    if (this.ackTimer) clearTimeout(this.ackTimer)
+    this.ackTimer = null
+    const waiting = Object.entries(this.pendingAcks)
+    if (waiting.length === 0) return
+    // O servidor aceita 30 a cada 10 s e descarta o resto calado ("marcar tudo como lido" num
+    // servidor com muitos canais): vai em levas.
+    for (const [id, messageId] of waiting.slice(0, ACK_BATCH)) this.conn.send({ t: 'chat.ack', channelId: id, messageId })
+    this.pendingAcks = Object.fromEntries(waiting.slice(ACK_BATCH))
+    this.lastAckAt = Date.now()
+    if (waiting.length > ACK_BATCH) this.ackTimer = setTimeout(() => this.flushAcks(), ACK_BATCH_EVERY)
   }
 
   private pendingAcks: Record<string, string> = {}
   private ackTimer: ReturnType<typeof setTimeout> | null = null
+  private lastAckAt = 0
 
   ackAll() {
     for (const c of this.channels) if (c.kind === 'text') this.ack(c.id)
@@ -478,8 +519,11 @@ export class GuildState {
       case 'chat.deleted':
         if (this.messages[msg.channelId]) this.messages[msg.channelId] = this.messages[msg.channelId].filter((m) => m.id !== msg.id)
         // A mais nova do canal foi apagada (mandou e apagou): a bolinha de não lida não fica sozinha.
-        if (msg.last !== undefined && this.lastMessageIds[msg.channelId] === msg.id) {
-          if (msg.last) this.lastMessageIds[msg.channelId] = msg.last
+        if (this.lastMessageIds[msg.channelId] === msg.id) {
+          // Sem o `last` (servidor até a 1.18.0 ao banir apagando): fica a mais nova que sobrou aqui,
+          // senão até onde eu li. Nunca um id que não existe mais (a bolinha ficava presa).
+          const left = msg.last !== undefined ? msg.last : (this.messages[msg.channelId]?.at(-1)?.id ?? this.readStates[msg.channelId]?.lastReadId ?? null)
+          if (left) this.lastMessageIds[msg.channelId] = left
           else delete this.lastMessageIds[msg.channelId]
         }
         return

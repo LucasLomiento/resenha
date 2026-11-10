@@ -65,6 +65,8 @@ let session: string | null = null
 let wanted = {} as DesktopPrefs['shortcuts']
 let onAction: (action: ShortcutAction) => void = () => {}
 let onTalk: (down: boolean) => void = () => {}
+/** Avisado a cada vez que os atalhos são registrados de novo (inclusive na troca de idioma). */
+let onResult: (failed: ShortcutId[]) => void = () => {}
 /** Respostas esperadas dos pedidos ao portal, pelo caminho do objeto Request. */
 const responses = new Map<string, (code: number, results: Record<string, Variant>) => void>()
 let tokens = 0
@@ -180,11 +182,16 @@ export function setPortalShortcuts(
   shortcuts: DesktopPrefs['shortcuts'],
   dispatch: (action: ShortcutAction) => void,
   talk: (down: boolean) => void = onTalk,
+  result: (failed: ShortcutId[]) => void = onResult,
 ): Promise<ShortcutId[]> {
   wanted = shortcuts
   onAction = dispatch
   onTalk = talk
-  queue = queue.then(apply, apply)
+  onResult = result
+  queue = queue.then(apply, apply).then((failed) => {
+    onResult(failed)
+    return failed
+  })
   return queue
 }
 
@@ -257,6 +264,7 @@ onLocaleChange(() => {
 /** Ao fechar o app: fecha a sessão (o sistema para de mandar os atalhos pra ele). */
 export function clearPortalShortcuts() {
   onTalk = () => {}
+  onResult = () => {}
   closeSession(bus)
   bus?.disconnect()
   bus = null

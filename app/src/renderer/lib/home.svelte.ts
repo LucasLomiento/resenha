@@ -22,6 +22,11 @@ import { appInfo } from './app-info'
 import { Connection, connectionKey, type CloseReason, type ConnectionStatus } from './ws'
 
 /** O que a conexão pessoal precisa do resto do app (o Client implementa). */
+/** O "lido" de uma conversa movimentada vai pro servidor no máximo a cada tanto (o primeiro, na hora). */
+const ACK_EVERY = 3000
+/** Quantas mensagens de uma conversa ficam na memória depois de sair dela. */
+const KEEP_MESSAGES = 100
+
 export interface HomeHost {
   http(): Api
   token(): string
@@ -77,6 +82,8 @@ export class HomeState {
   dms = $state<DmChannel[]>([])
   /** Status dos amigos. */
   presences = $state<Record<string, Presence>>({})
+  /** A conta tem celular com push (undefined: o servidor não disse). Sem, o computador não manda o `attention`. */
+  hasPush: boolean | undefined = undefined
 
   messages = $state<Record<string, Message[]>>({})
   hasMore = $state<Record<string, boolean>>({})
@@ -212,6 +219,7 @@ export class HomeState {
         this.blocked = msg.blocked
         this.dms = msg.dms
         this.presences = msg.presences
+        this.hasPush = msg.push
         // Reconectou: as conversas carregadas continuam na tela (sem piscar) e o trecho mais
         // recente é conferido quando abrirem. A que sumiu da lista, ou estava em mensagens
         // antigas, recomeça do zero.
@@ -307,7 +315,9 @@ export class HomeState {
             waiting.resolve()
           }
         }
-        if (this.messages[channelId]) this.messages[channelId] = mergeMessages(this.messages[channelId], [message])
+        // Olhando mensagens antigas (pulou pra uma resposta citada), a nova não entra colada nelas:
+        // deixava um buraco entre o trecho antigo e o fim, e o "ver as recentes" sumia.
+        if (this.messages[channelId] && !this.hasNewer[channelId]) this.messages[channelId] = mergeMessages(this.messages[channelId], [message])
         const typing = this.typing[channelId]
         if (typing) delete typing[message.authorId]
         const dm = this.dm(channelId)
@@ -386,6 +396,12 @@ export class HomeState {
 
       case 'call.signal':
         this.host.callSignal(msg.channelId, msg.from, msg.data)
+        return
+
+      case 'push.devices':
+        this.hasPush = msg.has
+        // Passou a ter celular com push: o servidor precisa saber agora se estou olhando o app.
+        if (msg.has) this.conn.send({ t: 'attention', on: this.host.attention() })
         return
 
       case 'push.test':
@@ -576,8 +592,43 @@ export class HomeState {
     if (!dm?.lastMessageId || (dm.unread === 0 && dm.lastReadId === dm.lastMessageId)) return
     dm.unread = 0
     dm.lastReadId = dm.lastMessageId
-    this.conn.send({ t: 'dm.ack', channelId, messageId: dm.lastMessageId })
+    this.pendingAcks[channelId] = dm.lastMessageId
+    // O primeiro vai na hora; numa conversa movimentada, os seguintes juntam num só a cada 3 s.
+    this.ackTimer ??= setTimeout(() => this.flushAcks(), Math.max(0, this.lastAckAt + ACK_EVERY - Date.now()))
   }
+
+  /**
+   * Saiu da conversa: ficam na memória só as mais recentes (as antigas voltam rolando pra cima).
+   * Sem isso, cada conversa já aberta guardava tudo que chegou ao vivo e tudo que foi rolado,
+   * e reabrir um canal movimentado dias depois montava milhares de mensagens de uma vez.
+   */
+  trim(channelId: string) {
+    const list = this.messages[channelId]
+    if (!list || list.length <= KEEP_MESSAGES) return
+    if (this.hasNewer[channelId]) {
+      // Estava olhando mensagens antigas: da próxima vez abre no presente.
+      delete this.messages[channelId]
+      delete this.hasMore[channelId]
+      delete this.hasNewer[channelId]
+      this.stale.delete(channelId)
+      return
+    }
+    this.messages[channelId] = list.slice(-KEEP_MESSAGES)
+    this.hasMore[channelId] = true
+  }
+
+  /** Manda agora o "lido" que está esperando (saiu da conversa, a janela perdeu o foco). */
+  flushAcks() {
+    if (this.ackTimer) clearTimeout(this.ackTimer)
+    this.ackTimer = null
+    for (const [channelId, messageId] of Object.entries(this.pendingAcks)) this.conn.send({ t: 'dm.ack', channelId, messageId })
+    if (Object.keys(this.pendingAcks).length > 0) this.lastAckAt = Date.now()
+    this.pendingAcks = {}
+  }
+
+  private pendingAcks: Record<string, string> = {}
+  private ackTimer: ReturnType<typeof setTimeout> | null = null
+  private lastAckAt = 0
 
   typingStart(channelId: string) {
     const now = Date.now()

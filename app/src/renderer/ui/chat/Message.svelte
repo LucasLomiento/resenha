@@ -267,10 +267,17 @@
           </div>
         {/if}
       {:else if message.poll}
-        <PollCard {message} {target} />
+        <svelte:boundary onerror={(err) => console.error('[chat] a enquete não desenhou', message.id, err)}>
+          <PollCard {message} {target} />
+          {#snippet failed()}<div class="content"><span class="plain selectable">{message.content}</span></div>{/snippet}
+        </svelte:boundary>
       {:else if message.content}
         <div class="content">
-          <Markdown content={message.content} names={{ ...target.names, openUser: (id, anchor) => openProfile(id, target.guild?.id ?? null, anchor) }} />
+          <!-- Se o desenho de uma mensagem falhar, ela aparece como texto puro e o resto do canal continua de pé. -->
+          <svelte:boundary onerror={(err) => console.error('[chat] a mensagem não desenhou', message.id, err)}>
+            <Markdown content={message.content} names={{ ...target.names, openUser: (id, anchor) => openProfile(id, target.guild?.id ?? null, anchor) }} />
+            {#snippet failed()}<span class="plain selectable">{message.content}</span>{/snippet}
+          </svelte:boundary>
           {#if message.editedAt}<span class="edited" use:tooltip={formatFull(message.editedAt)}>{t.edited}</span>{/if}
           {#if grouped && message.pinned}<span class="pin inline" use:tooltip={t.pinned}><Icon name="pin" size={12} /></span>{/if}
         </div>
@@ -390,6 +397,15 @@
 {/if}
 
 <style>
+  /* Mensagem que não deu pra desenhar: o texto como foi escrito. */
+  .plain {
+    color: #e4e4e8;
+    font-size: var(--text-lg);
+    line-height: 1.5;
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
+  }
+
   /* Recuada 8 px dos dois lados, com cantos: o hover vira um cartão, não uma faixa de ponta a ponta. */
   article {
     position: relative;

@@ -42,6 +42,9 @@ for (const [name, language] of Object.entries(LANGUAGES)) hljs.registerLanguage(
 hljs.registerLanguage('console', shell)
 hljs.registerAliases(['shell', 'zsh'], { languageName: 'bash' })
 
+/** Quantos trechos um dentro do outro o bloco pintado pode ter (código de verdade não passa de uns 10). */
+const MAX_DEPTH = 40
+
 const ENTITIES: Record<string, string> = { '&amp;': '&', '&lt;': '<', '&gt;': '>', '&quot;': '"', '&#x27;': "'" }
 
 /**
@@ -63,6 +66,9 @@ export function toTree(html: string): CodeNode[] | null {
     if (!m) return null
     if (m[1] !== undefined) {
       flush()
+      // Trecho dentro de trecho sem fim (um "`${" repetido 150 vezes dá 150 níveis): desenhar isso
+      // estourava a pilha e derrubava a lista de mensagens. Fundo assim, o bloco fica sem cor.
+      if (stack.length > MAX_DEPTH) return null
       const node = { cls: m[1], children: [] as CodeNode[] }
       stack.at(-1)!.push(node)
       stack.push(node.children)

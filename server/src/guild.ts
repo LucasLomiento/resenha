@@ -2957,7 +2957,12 @@ export class Guild extends DurableObject<Env> {
       if (rows.length === 0) break
       this.store.removeRows(rows)
       this.dropMentions(rows.map((r) => r.id))
-      for (const r of rows) this.broadcast({ t: 'chat.deleted', id: r.id, channelId: r.channel_id }, { channelId: r.channel_id })
+      // Com a mais nova que sobrou em cada canal (como no apagar de uma só): sem isso o app ficava
+      // com o id de uma mensagem apagada como "a última" e a bolinha de não lida não saía.
+      const last = this.store.lastIds([...new Set(rows.map((r) => r.channel_id))])
+      for (const r of rows) {
+        this.broadcast({ t: 'chat.deleted', id: r.id, channelId: r.channel_id, last: last[r.channel_id] ?? null }, { channelId: r.channel_id })
+      }
     }
     await this.reportStorage()
   }

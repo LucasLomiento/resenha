@@ -389,6 +389,26 @@ describe('push: o aviso sai do celular quando a pessoa vê', () => {
     expect(dismissed(google)).toEqual([`call:${channelId}`])
   })
 
+  it('o computador fica sabendo se a conta tem celular com push (sem celular, ele nem precisa dizer se está olhando)', async () => {
+    const { friend } = await world()
+    await fakePush(friend.user.id)
+    const desktop = await homeSocket(friend.user.id, friend.token)
+    expect((await desktop.next('ready')).push).toBe(false)
+    // O celular liga o push: o computador é avisado na hora (e passa a mandar o `attention`).
+    const phone = await homeSocket(friend.user.id, friend.token, { mobile: true })
+    await phone.next('ready')
+    phone.send({ t: 'push.token', token: TOKEN_A })
+    expect((await desktop.next('push.devices')).has).toBe(true)
+    // Trocar o token (o aparelho continua lá) não avisa de novo.
+    phone.send({ t: 'push.token', token: TOKEN_B })
+    await desktop.nothing('push.devices')
+    const again = await homeSocket(friend.user.id, friend.token)
+    expect((await again.next('ready')).push).toBe(true)
+    // Desligou o push no celular: volta a não ter.
+    phone.send({ t: 'push.token', token: null })
+    expect((await desktop.next('push.devices')).has).toBe(false)
+  })
+
   it('servidor: o canal lido sai do celular; quem não tem celular para de ser perguntado por um tempo', async () => {
     const { owner, friend, guild, a, b, text } = await world()
     const google = await fakePush(friend.user.id)

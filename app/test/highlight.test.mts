@@ -65,3 +65,18 @@ test('sem linguagem ou com uma desconhecida, o bloco fica sem cor', () => {
   assert.equal(supports('constructor'), false)
   assert.equal(supports('__proto__'), false)
 })
+
+test('código que aninha sem fim (interpolação dentro de interpolação) fica sem cor, em vez de virar centenas de trechos um dentro do outro', () => {
+  const depth = (nodes: CodeNode[]): number => 1 + Math.max(0, ...nodes.map((n) => (typeof n === 'string' ? 0 : depth(n.children))))
+  for (const [lang, code] of [
+    ['js', '`${'.repeat(150)],
+    ['py', 'f"{'.repeat(150)],
+    ['bash', '"$('.repeat(150)],
+  ] as const) {
+    const tree = highlight(lang, code)
+    assert.ok(tree === null || depth(tree) <= 45, `${lang}: profundidade ${tree ? depth(tree) : 0}`)
+  }
+  // Aninhado normal continua pintado.
+  const ok = highlight('js', 'const a = `x ${b + `y ${c}`} z`')
+  assert.ok(ok && depth(ok) >= 3)
+})

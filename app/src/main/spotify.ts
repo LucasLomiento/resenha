@@ -591,6 +591,9 @@ let wanted = 0
  * que o bot liga; no Windows, o stdout do librespot (`path` null).
  */
 let pcm: { stream: Readable; path: string | null } | null = null
+/** Todo librespot vivo e todo canal de som aberto (inclusive os que estão sendo desligados): o `spotifyKill` leva todos. */
+const alive = new Set<ChildProcess>()
+const pcms = new Set<{ stream: Readable; path: string | null }>()
 /**
  * Windows: o som vem pelo stdout do librespot. Lá o stdout de um filho é um pipe de 64 KB (no
  * Linux é um socket com ~200 KB de folga, por isso o FIFO), e não tem FIFO nem garantia de que o
@@ -653,11 +656,13 @@ function openPcm(): string | null {
   socket.on('readable', pump)
   socket.on('error', (err) => console.warn('spotify: o som parou de chegar', err.message))
   pcm = { stream: socket, path }
+  pcms.add(pcm)
   return path
 }
 
 function closePcm(which: typeof pcm) {
   if (!which) return
+  pcms.delete(which)
   which.stream.destroy()
   if (which.path) rmSync(which.path, { force: true })
   if (pcm === which) pcm = null
@@ -717,9 +722,12 @@ function launch(bin: string, token: string | null): Promise<boolean> {
       out.on('readable', pump)
       out.on('error', (err) => console.warn('spotify: o som parou de chegar', err.message))
       pcm = { stream: out, path: null }
+      pcms.add(pcm)
     }
     const born = generation
     child = proc
+    alive.add(proc)
+    proc.once('exit', () => alive.delete(proc))
     let log = ''
     let settled = false
     let failure: MusicError | null = null
@@ -894,9 +902,13 @@ async function shutDown(proc: ChildProcess | null, device: string | null, fifo: 
 export function spotifyKill() {
   generation++
   live = false
-  for (const proc of [child, running]) proc?.kill('SIGTERM')
+  // Todos os que estão vivos, não só o de agora: o que está sendo desligado (esperando o Spotify
+  // responder ao "pausar", até 15 s com a internet ruim) já saiu do `child`/`running`, e fechar
+  // o app nesse meio deixava ele órfão como aparelho "Resenha", com o FIFO pra trás.
+  for (const proc of new Set([child, running, ...alive])) proc?.kill('SIGTERM')
   child = running = null
   deviceId = null
+  for (const open of [...pcms]) closePcm(open)
   closePcm(pcm)
 }
 

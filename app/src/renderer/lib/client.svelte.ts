@@ -117,6 +117,8 @@ class Client implements GuildHost, HomeHost {
   phase = $state<'boot' | 'login' | 'app'>('boot')
   platform = $state<PlatformInfo | null>(null)
   desktop = $state<DesktopPrefs | null>(null)
+  /** Atalhos globais que o sistema recusou (a página de Atalhos mostra; muda sozinho se o sistema registrar de novo). */
+  shortcutFailures = $state<ShortcutId[]>([])
   update = $state<UpdateState>({ status: 'idle' })
 
   home = $state<HomeState | null>(null)
@@ -211,6 +213,9 @@ class Client implements GuildHost, HomeHost {
       window.addEventListener(event, () => this.activity(), { passive: true, capture: true })
     }
     window.addEventListener('focus', () => this.activity())
+    // Saiu da frente do app: o "lido" que estava esperando pra ir junto com o próximo vai agora.
+    window.addEventListener('blur', () => this.flushAcks())
+    window.addEventListener('pagehide', () => this.flushAcks())
     window.addEventListener('online', () => this.nudge())
     // Voltou pra frente (celular) ou o PC acordou: confere já se as conexões estão vivas (uma conexão
     // morta que parece aberta só seria percebida no próximo ping, uns 30 s depois).
@@ -238,6 +243,7 @@ class Client implements GuildHost, HomeHost {
     window.resenha.onPushToTalk?.((down) => this.call.pressTalk(down))
     // Os atalhos que o sistema recusou ao abrir (o registro termina um pouco depois da janela).
     if (this.desktop) void window.resenha.desktop.failed().then((failed) => this.syncTalk(failed))
+    window.resenha.desktop.onFailed?.((failed) => this.syncTalk(failed))
     this.rejoin = await takeRejoin()
     this.update = await window.resenha.update.state()
     window.resenha.update.onState((state) => (this.update = state))
@@ -526,6 +532,10 @@ class Client implements GuildHost, HomeHost {
     const looking = document.hasFocus() && Date.now() - this.lastInput < LOOKING_FOR
     if (looking === this.looking) return
     this.looking = looking
+    // Só interessa pra segurar o push do celular: conta sem celular nem manda (eram duas
+    // mensagens a cada ida e volta de janela, pra todo mundo). Se um celular entrar, o servidor
+    // avisa (`push.devices`) e o estado de agora vai na hora.
+    if (this.home?.hasPush === false) return
     // Sem aviso se a conexão estiver fora: o `auth` da volta já leva isso.
     this.home?.sendQuiet({ t: 'attention', on: looking })
   }
@@ -562,9 +572,12 @@ class Client implements GuildHost, HomeHost {
       status = pending.status
       text = pending.text
     }
+    // Só quando muda: isto roda em todo `ready` da conexão pessoal, e cada servidor já recebeu o
+    // status no `auth` dele (era um `presence` por servidor a cada queda, sem nada novo).
+    const changed = status !== this.status || text !== this.statusText
     this.status = status
     this.statusText = text
-    this.pushPresence()
+    if (changed) this.pushPresence()
   }
 
   /** Reinicia pra instalar a versão nova; estando numa call, o app volta pra ela quando abrir. */
@@ -753,8 +766,18 @@ class Client implements GuildHost, HomeHost {
     return this.call.guildId === guildId ? this.call.channelId : null
   }
 
+  /**
+   * A conversa da rota está mesmo na tela: janela em foco, no chat (não na grade da call, no mapa
+   * nem na transmissão) e, no celular, com o conteúdo aberto (não a lista). Só aí ela conta como
+   * lida. Antes cada lugar conferia um pedaço: tocar num servidor no trilho do celular marcava o
+   * último canal como lido sem mostrar, e reconectar com a call na tela marcava o canal de trás.
+   */
+  private get onScreen(): boolean {
+    return document.hasFocus() && this.view === 'chat' && (!ui.compact || ui.pane === 'main')
+  }
+
   viewing(a: string, b?: string): boolean {
-    if (!document.hasFocus() || this.view !== 'chat') return false
+    if (!this.onScreen) return false
     if (b === undefined) return this.route.kind === 'dm' && this.route.channelId === a
     return this.route.kind === 'guild' && this.route.guildId === a && this.route.channelId === b
   }
@@ -1002,17 +1025,37 @@ class Client implements GuildHost, HomeHost {
   }
 
   set view(view: 'chat' | 'stream' | 'call' | 'map') {
+    const back = this.#view !== 'chat' && view === 'chat'
     this.#view = view
     // No celular, abrir a call, a transmissão ou o mapa mostra o conteúdo.
     if (view !== 'chat') ui.pane = 'main'
+    // Voltou da call, do mapa ou da transmissão pro chat: o que está na tela agora conta como lido.
+    else if (back) this.focused()
   }
 
-  /** Abre uma conversa (canal, mensagem privada ou amigos); no celular, mostra o conteúdo. */
-  navigate(route: Route) {
+  /** O "lido" que estava esperando (agrupado) vai agora: saiu da conversa ou da frente do app. */
+  private flushAcks() {
+    for (const guild of Object.values(this.guilds)) guild.flushAcks()
+    this.home?.flushAcks()
+  }
+
+  /**
+   * Abre uma conversa (canal, mensagem privada ou amigos); no celular, mostra o conteúdo.
+   * `show: false`: só troca a rota e fica na lista (tocar num servidor no trilho do celular).
+   */
+  navigate(route: Route, show = true) {
+    this.flushAcks()
     this.markRead(route)
+    // A conversa de antes solta as mensagens antigas da memória (ver `trim`).
+    const left = this.route
+    if (left.kind === 'guild' && left.channelId && !(route.kind === 'guild' && route.channelId === left.channelId)) {
+      this.guilds[left.guildId]?.trim(left.channelId)
+    } else if (left.kind === 'dm' && !(route.kind === 'dm' && route.channelId === left.channelId)) {
+      this.home?.trim(left.channelId)
+    }
     this.route = route
     this.view = 'chat'
-    ui.pane = 'main'
+    if (show) ui.pane = 'main'
     if (route.kind === 'guild') {
       const guild = this.guilds[route.guildId]
       if (guild) this.ensureChannel(guild)
@@ -1047,12 +1090,13 @@ class Client implements GuildHost, HomeHost {
     this.navigate({ kind: 'home' })
   }
 
-  openGuild(guildId: string) {
+  /** `show: false`: no celular, fica na lista de canais (o canal só conta como lido quando abrir). */
+  openGuild(guildId: string, show = true) {
     const guild = this.guilds[guildId]
     if (!guild) return
     const last = this.lastChannels[guildId]
     const channel = guild.channel(last)?.kind === 'text' && guild.can(last, 1) ? last : guild.firstTextChannel?.id ?? null
-    this.navigate({ kind: 'guild', guildId, channelId: channel })
+    this.navigate({ kind: 'guild', guildId, channelId: channel }, show)
   }
 
   /** Abre o mapa compartilhado do servidor (o aberto agora, se não disser qual) no painel principal. */
@@ -1105,7 +1149,7 @@ class Client implements GuildHost, HomeHost {
     if (!channelId) return
     if (!guild.messages[channelId]) guild.loadHistory(channelId)
     else guild.refresh(channelId)
-    if (document.hasFocus()) guild.ack(channelId)
+    if (this.onScreen) guild.ack(channelId)
   }
 
   private openDmChannel(channelId: string) {
@@ -1113,7 +1157,7 @@ class Client implements GuildHost, HomeHost {
     if (!home?.loaded) return
     if (!home.messages[channelId]) home.loadHistory(channelId)
     else home.refresh(channelId)
-    if (document.hasFocus()) home.ack(channelId)
+    if (this.onScreen) home.ack(channelId)
   }
 
   /** Abre (ou cria) a conversa privada com alguém. */
@@ -1130,7 +1174,7 @@ class Client implements GuildHost, HomeHost {
   /** Volta o foco pra janela: marca como lido o que está aberto. */
   focused() {
     const route = this.route
-    if (this.view !== 'chat') return
+    if (!this.onScreen) return
     if (route.kind === 'guild' && route.channelId) this.guilds[route.guildId]?.ack(route.channelId)
     if (route.kind === 'dm') this.home?.ack(route.channelId)
   }
@@ -1307,7 +1351,10 @@ class Client implements GuildHost, HomeHost {
    * pro microfone sempre aberto pegaria de surpresa quem conta com a tecla.
    */
   private syncTalk(failed?: ShortcutId[]) {
-    if (failed) this.call.talkBroken = failed.includes('push-to-talk')
+    if (failed) {
+      this.shortcutFailures = failed
+      this.call.talkBroken = failed.includes('push-to-talk')
+    }
     this.call.setPushToTalk(!!this.platform?.pushToTalk && !!this.desktop?.shortcuts['push-to-talk'])
   }
 }

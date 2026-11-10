@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { ResenhaApi, ShortcutAction, UpdateState } from './api'
+import type { ResenhaApi, ShortcutAction, ShortcutId, UpdateState } from './api'
 
 /** O que cada aviso do sistema faz ao ser clicado, pela etiqueta (sem etiqueta, uma só dele). */
 const noticeClicks = new Map<string, () => void>()
@@ -82,6 +82,9 @@ const api: ResenhaApi = {
     get: () => ipcRenderer.invoke('desktop:get'),
     set: (patch) => ipcRenderer.invoke('desktop:set', patch),
     failed: () => ipcRenderer.invoke('desktop:failed'),
+    onFailed: (callback) => {
+      ipcRenderer.on('shortcuts:failed', (_event, failed: unknown) => callback(Array.isArray(failed) ? (failed as ShortcutId[]) : []))
+    },
   },
   callState: (state) => ipcRenderer.send('call-state', state),
   unread: (count) => ipcRenderer.send('unread', count),

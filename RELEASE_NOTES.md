@@ -1,15 +1,13 @@
-## 1.18.0: enquetes, apertar pra falar e código colorido
+## 1.18.1: uma mensagem não trava mais o chat de ninguém
 
-- **Enquetes nos canais.** O botão novo ao lado do clipe abre "Nova enquete": a pergunta, de 2 a 10 opções, uma resposta ou várias, e um prazo (ou sem prazo). Todo mundo vê o resultado na hora e quem votou em quê; quem criou (ou quem modera) encerra quando quiser.
-- **Apertar pra falar.** Em Configurações → Atalhos, escolha a "Tecla de falar": o microfone só abre enquanto você segura ela, mesmo com um jogo em foco. Funciona no Linux com Wayland (Hyprland, KDE, GNOME); onde o sistema não deixa, a opção nem aparece.
-- **Código colorido no chat.** Bloco de código com a linguagem (` ```js `, `py`, `sh`, `json`…) ganha cores, e passando o mouse aparece o botão de copiar.
-- **Calls mais firmes.** Uma resposta repetida da conexão podia deixar a call renegociando sem parar; não deixa mais. Quem saía da call com a internet caída não fica mais "preso" na lista da sala. Atender logo depois de clicar numa sala funciona, e atender uma ligação que já acabou não liga de volta sozinho.
-- **Arraste os servidores no trilho** pra pôr na ordem que quiser (a ordem fica guardada no seu computador).
-- **Câmera e tela respeitam a permissão da sala**: sem a permissão de vídeo, os botões ficam apagados (antes a câmera ligava e ninguém via).
-- **O celular avisa na hora** mesmo que o computador tenha dormido com o Resenha aberto (antes podia segurar o aviso por uns 6 minutos).
-- **Mensagens depois de uma queda**: o reenvio automático não bagunça mais as não lidas, e uma mensagem só com imagem não volta com "o anexo não está mais disponível". Mensagem de voz tenta de novo antes de desistir, em vez de perder a gravação.
-- **Servidor mais econômico e mais difícil de derrubar**: menos chamadas internas a cada mensagem e a cada reconexão, e vários freios novos contra app em laço e contra quem tenta gastar o limite do dia de propósito.
-- Quem ainda estiver na 1.17 numa sala pelo Cloudflare vê a transmissão pela conexão direta até atualizar.
+- **Uma mensagem não trava nem derruba mais o chat.** Certas mensagens (muitos emojis seguidos de texto, milhares de asteriscos, ou um bloco de código montado de propósito) congelavam o app de quem abria o canal, ou faziam o canal parar de mostrar mensagens. Corrigido, e se uma mensagem falhar ao aparecer, só ela vira texto puro.
+- **Lido só quando você viu.** No celular, tocar num servidor não marca mais o último canal como lido sem abrir. No computador, reconectar com a call ou o mapa na tela não marca o canal de trás.
+- **Enquete**: clicar rápido em duas opções (com várias respostas) não perde mais um dos votos.
+- **Chat**: abrir um canal com mensagens novas vai pra linha "Novas" já na primeira vez; canal com poucas mensagens carrega as antigas mesmo sem barra de rolagem; numa conversa privada, pular pra uma mensagem antiga não deixa mais um buraco quando chega mensagem nova; a bolinha de não lida não fica presa depois de um banimento que apaga mensagens.
+- **Atualização no Linux sem agente de senha**: o terminal que pede a senha fechava com erro e o app não voltava. Agora instala e reabre, mesmo se você fechar o terminal.
+- **Apertar pra falar**: se a tecla passar a ter outro uso no sistema com o app aberto, a página de Atalhos mostra na hora, e a dica do microfone lembra qual tecla segurar.
+- **Movido de sala** por um moderador: o som com todo mundo volta em seguida, sem esperar alguns segundos.
+- **Menos pedidos ao servidor** (presença dos amigos, "lido", status) e mais consertos pequenos: sair da conta no meio da call limpa a bandeja, e fechar a janela transmitindo (no Windows) não deixa o app rodando escondido.
 
 ## Como atualizar
 

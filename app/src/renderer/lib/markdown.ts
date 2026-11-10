@@ -22,11 +22,19 @@ export type Block =
 
 interface Rule {
   re: RegExp
-  make(match: RegExpExecArray, before: string): Inline | null
+  /** `depth`: quantas formatações já tem por fora desta. */
+  make(match: RegExpExecArray, before: string, depth: number): Inline | null
 }
 
-const wrap = (t: 'bold' | 'italic' | 'underline' | 'strike' | 'spoiler') => (m: RegExpExecArray) =>
-  ({ t, children: parseInline(m[1]) }) as Inline
+/**
+ * Formatação dentro de formatação até aqui; mais fundo que isso, o miolo fica como texto. Sem
+ * teto, 4000 asteriscos viravam 1000 negritos um dentro do outro: desenhar isso estourava a pilha
+ * e o canal parava de mostrar mensagens pra todo mundo que tinha aquela na tela.
+ */
+const MAX_INLINE_DEPTH = 8
+
+const wrap = (t: 'bold' | 'italic' | 'underline' | 'strike' | 'spoiler') => (m: RegExpExecArray, _before: string, depth: number) =>
+  ({ t, children: parseInline(m[1], depth + 1) }) as Inline
 
 /** Fim de link: pontuação final fica de fora; parêntese só se sobrar. */
 function trimUrl(raw: string): string {
@@ -71,7 +79,7 @@ const RULES: Rule[] = [
   {
     re: /_(?=\S)([\s\S]*?\S)_(?![_\w])/y,
     // nome_de_arquivo não vira itálico: o _ precisa estar no começo de palavra.
-    make: (m, before) => (/\w$/.test(before) ? null : wrap('italic')(m)),
+    make: (m, before, depth) => (/\w$/.test(before) ? null : wrap('italic')(m, before, depth)),
   },
   { re: /~~([\s\S]+?)~~/y, make: wrap('strike') },
   { re: /\|\|([\s\S]+?)\|\|/y, make: wrap('spoiler') },
@@ -80,7 +88,8 @@ const RULES: Rule[] = [
 
 const SPECIAL = /[\\`<@*_~|\nh]/
 
-export function parseInline(text: string): Inline[] {
+export function parseInline(text: string, depth = 0): Inline[] {
+  if (depth > MAX_INLINE_DEPTH) return text ? [{ t: 'text', text }] : []
   const out: Inline[] = []
   let buffer = ''
   const flush = () => {
@@ -96,7 +105,7 @@ export function parseInline(text: string): Inline[] {
         rule.re.lastIndex = i
         const m = rule.re.exec(text)
         if (!m) continue
-        const node = rule.make(m, buffer || text.slice(Math.max(0, i - 1), i))
+        const node = rule.make(m, buffer || text.slice(Math.max(0, i - 1), i), depth)
         if (!node) continue
         flush()
         // O link pode ter perdido pontuação do fim: ela volta como texto.
@@ -186,13 +195,17 @@ export function parseMarkdown(content: string): Block[] {
   return blocks
 }
 
-const EMOJI_ONLY = /^(?:\p{Extended_Pictographic}|\p{Emoji_Component}|\p{Regional_Indicator}|‍|️|⃣|\s)+$/u
+// Uma classe só. Antes eram alternativas que casavam o mesmo caractere (bandeira, ZWJ, variação e tecla
+// já são `Emoji_Component`): numa mensagem de emojis seguidos de texto o motor tentava 2^n caminhos, e
+// 14 bandeiras + uma palavra congelavam por segundos o app de todo mundo que abria o canal.
+const EMOJI_ONLY = /^[\p{Extended_Pictographic}\p{Emoji_Component}\s]+$/u
 const EMOJI_UNIT = /\p{Regional_Indicator}{2}|(?:\p{Extended_Pictographic}|[#*0-9]️?⃣)(?:️|\p{Emoji_Modifier})*(?:‍(?:\p{Extended_Pictographic})(?:️|\p{Emoji_Modifier})*)*/gu
 
 /** Mensagem só de emoji (até 27): aparece grande, como no Discord. */
 export function isJumbo(content: string): boolean {
   const text = content.trim()
-  if (!text || !EMOJI_ONLY.test(text)) return false
+  // 27 emojis, mesmo os compostos (família, bandeira de região), cabem com folga em 400.
+  if (!text || text.length > 400 || !EMOJI_ONLY.test(text)) return false
   const count = text.match(EMOJI_UNIT)?.length ?? 0
   // Número ou # solto junto do emoji ("2 🍕", "#1 🍕") não é emoji: a mensagem fica do tamanho normal.
   const rest = text.replace(EMOJI_UNIT, '').replace(/[\s️‍]/gu, '')

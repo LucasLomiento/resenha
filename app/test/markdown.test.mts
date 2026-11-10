@@ -94,3 +94,44 @@ test('copiar texto: só as menções viram nomes, o resto fica como foi escrito'
   assert.equal(copyText('def __init__(self, *args): return a * b', names), 'def __init__(self, *args): return a * b')
   assert.equal(copyText('2*3=6 `x` <@1> <@&2> <#3> ||segredo||', names), '2*3=6 `x` @Lucas @Mod #geral ||segredo||')
 })
+
+test('emoji seguido de texto não trava a conferência do "emoji grande" (era exponencial)', () => {
+  const flag = String.fromCodePoint(0x1f1e7, 0x1f1f7)
+  const heart = String.fromCodePoint(0x2764, 0xfe0f)
+  const keycap = '1' + String.fromCodePoint(0xfe0f, 0x20e3)
+  const started = performance.now()
+  for (const emoji of [flag, heart, keycap]) {
+    // 14 bandeiras + uma palavra levavam 4 s; 20, horas.
+    assert.equal(isJumbo(emoji.repeat(40) + ' brasil'), false)
+    assert.equal(isJumbo(emoji.repeat(600) + ' x'), false)
+    assert.equal(isJumbo(emoji.repeat(5)), true)
+  }
+  assert.ok(performance.now() - started < 200, `levou ${Math.round(performance.now() - started)} ms`)
+  // Muito emoji junto passa do limite de 27 (e do de tamanho): tamanho normal.
+  assert.equal(isJumbo(flag.repeat(28)), false)
+  assert.equal(isJumbo(flag.repeat(27)), true)
+})
+
+test('formatação dentro de formatação tem teto: milhares de asteriscos não viram mil negritos aninhados', () => {
+  const depth = (nodes: ReturnType<typeof parseInline>): number =>
+    1 + Math.max(0, ...nodes.map((n) => ('children' in n ? depth(n.children) : 0)))
+  for (const mark of ['*', '_', '~', '|']) {
+    const tree = parseInline(mark.repeat(4000))
+    assert.ok(depth(tree) <= 12, `${mark}: profundidade ${depth(tree)}`)
+  }
+  // O que a pessoa escreveu continua todo lá (como texto, depois do teto).
+  const text = (nodes: ReturnType<typeof parseInline>): string =>
+    nodes.map((n) => ('children' in n ? text(n.children) : 'text' in n ? n.text : '')).join('')
+  assert.ok(text(parseInline('**'.repeat(30) + 'oi' + '**'.repeat(30))).includes('oi'))
+  // Aninhado de verdade, raso, continua valendo.
+  assert.deepEqual(parseInline('**a __b *c* b__ a**'), [
+    {
+      t: 'bold',
+      children: [
+        { t: 'text', text: 'a ' },
+        { t: 'underline', children: [{ t: 'text', text: 'b ' }, { t: 'italic', children: [{ t: 'text', text: 'c' }] }, { t: 'text', text: ' b' }] },
+        { t: 'text', text: ' a' },
+      ],
+    },
+  ])
+})

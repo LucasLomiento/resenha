@@ -264,6 +264,8 @@ export interface ResenhaApi {
     set(patch: Partial<DesktopPrefs>): Promise<{ prefs: DesktopPrefs; failed: ShortcutId[] }>
     /** Os atalhos que o sistema recusou da última vez (tecla já usada, por exemplo). */
     failed(): Promise<ShortcutId[]>
+    /** Os recusados mudaram depois de o app abrir (o sistema registrou os atalhos de novo). */
+    onFailed?(callback: (failed: ShortcutId[]) => void): void
   }
   /** Bot do Spotify na call. */
   spotify: {

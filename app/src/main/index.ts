@@ -228,6 +228,11 @@ function createWindow() {
   })
   win.on('closed', () => {
     win = null
+    // A camada dos rabiscos (no Windows e no X11 é uma janela escondida do próprio Electron, viva
+    // durante a transmissão) não pode segurar o app: sem a principal ele ficava rodando sem
+    // janela nenhuma e, pela trava de instância única, não dava nem pra abrir de novo.
+    inkStop()
+    if (!quitting) app.quit()
   })
   win.webContents.on('did-finish-load', () => win?.webContents.setZoomFactor(prefs.zoom))
   // Sem menu de aplicativo (evita Ctrl+W/Ctrl+R por engano); DevTools no F12 só em desenvolvimento.
@@ -496,7 +501,11 @@ async function applyPrefs(previous: DesktopPrefs | null): Promise<ShortcutId[]> 
   setTray(prefs.tray, showWindow, dispatch)
   if (!previous || previous.autostart !== prefs.autostart) setAutostart(prefs.autostart)
   win?.webContents.setZoomFactor(prefs.zoom)
-  shortcutFailures = await registerShortcuts(prefs.shortcuts, dispatch, pushToTalk)
+  shortcutFailures = await registerShortcuts(prefs.shortcuts, dispatch, pushToTalk, (failed) => {
+    // Registrados de novo depois (config do Hyprland recarregada, idioma trocado): a interface acompanha.
+    shortcutFailures = failed
+    if (win && !win.isDestroyed()) win.webContents.send('shortcuts:failed', failed)
+  })
   return shortcutFailures
 }
 
@@ -609,6 +618,11 @@ handle('session:get', async (): Promise<SavedSession | null> => {
 
 handle('session:set', (_event, value: SavedSession | null) => {
   if (!value) {
+    // Saiu da conta (ou a sessão acabou) no meio de uma call: a tela de entrada não tem quem
+    // atualize a bandeja, o selo e o atualizador, que ficavam em "na call" até o próximo login.
+    showCallState({ inCall: false, muted: false, deafened: false, sharing: false, speaking: false }, win, showWindow, dispatch)
+    setUpdaterCall(false)
+    app.setBadgeCount(0)
     rmSync(unreadableFile(), { force: true })
     return rmSync(sessionFile(), { force: true })
   }

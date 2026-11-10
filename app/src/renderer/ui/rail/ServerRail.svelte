@@ -156,8 +156,9 @@
         aria-label={guild.info.name}
         use:tooltip={{ text: guild.info.name, placement: 'right' }}
         onclick={() => {
-          client.openGuild(guild.id)
+          // No celular fica na lista de canais; o canal só abre (e conta como lido) ao tocar nele.
           ui.pane = 'nav'
+          client.openGuild(guild.id, false)
         }}
         oncontextmenu={(e) => {
           e.preventDefault()

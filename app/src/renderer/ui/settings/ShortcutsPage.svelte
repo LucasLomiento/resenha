@@ -17,9 +17,13 @@
   /** A tecla de falar foi recusada por faltar modificador (fora do Hyprland a tecla sozinha deixaria de digitar). */
   let needsMod = $state(false)
 
-  // Recusados ao abrir o app (no Hyprland, tecla que a config já usa).
+  // Recusados ao abrir o app (no Hyprland, tecla que a config já usa), e de novo sempre que o
+  // sistema registrar os atalhos outra vez (a config recarregada pode liberar ou tomar uma tecla).
   onMount(async () => {
     if (client.desktop) failed = await window.resenha.desktop.failed()
+  })
+  $effect(() => {
+    failed = client.shortcutFailures
   })
 
   // O Esc (pilha de camadas) cancela a gravação pelo ui.recordingShortcut.
