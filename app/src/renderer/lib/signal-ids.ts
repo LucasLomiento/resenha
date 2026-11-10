@@ -51,3 +51,24 @@ export function signalRoute(
   if (newerPeer(pc, peer.remoteId) === false) return 'drop'
   return peer.described ? 'recreate' : 'follow'
 }
+
+// ---------- Esperas da negociação (ficam aqui pra dar pra testar no Node) ----------
+
+/** Espera antes de refazer o ICE depois de cada falha seguida (a última vale dali em diante). */
+const RESTART_WAIT = [0, 5_000, 15_000, 30_000, 60_000]
+/** Depois da lista, a espera dobra a cada falha até esse teto (dois PCs sem caminho direto refaziam o ICE a cada minuto pra sempre). */
+const RESTART_MAX = 10 * 60_000
+/** Reenvio de oferta sem resposta: a espera começa nisso e dobra até o teto. */
+const RESEND_FIRST = 5_000
+const RESEND_MAX = 5 * 60_000
+
+/** Quanto esperar antes de refazer o ICE depois da enésima falha seguida (0 = a primeira). */
+export function restartWait(failures: number): number {
+  if (failures < RESTART_WAIT.length) return RESTART_WAIT[failures]
+  return Math.min(RESTART_WAIT[RESTART_WAIT.length - 1] * 2 ** (failures - RESTART_WAIT.length + 1), RESTART_MAX)
+}
+
+/** Quanto esperar antes do enésimo reenvio da mesma oferta (0 = o primeiro). */
+export function resendWait(resends: number): number {
+  return Math.min(RESEND_FIRST * 2 ** Math.min(resends, 20), RESEND_MAX)
+}

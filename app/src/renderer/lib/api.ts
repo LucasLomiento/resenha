@@ -278,8 +278,9 @@ export class Api {
     return this.request<{ allowed: boolean }>('/api/media/usage', { method: 'POST', json: { bytes } })
   }
 
-  sfuSession() {
-    return this.request<{ sessionId: string; token: string }>('/api/media/sessions', { method: 'POST', json: {} })
+  /** `room`: a sala pelo Cloudflare em que a pessoa está (o servidor só abre sessão pra quem está numa). */
+  sfuSession(room: { guild: string; channel: string }) {
+    return this.request<{ sessionId: string; token: string }>('/api/media/sessions', { method: 'POST', json: room })
   }
 
   sfuPush(session: { sessionId: string; token: string }, sdp: string, tracks: { mid: string; trackName: string }[]) {

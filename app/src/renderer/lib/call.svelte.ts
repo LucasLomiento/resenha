@@ -200,7 +200,7 @@ export class Call {
   /** connId -> esperando quem assiste responder se conseguiu puxar do SFU. */
   private sfuWaiting = new Map<string, ReturnType<typeof setTimeout>>()
   /** A tela que eu assisto pelo SFU. */
-  private sfuWatch: { connId: string; viewer: SfuViewer } | null = null
+  private sfuWatch: { connId: string; viewer: SfuViewer; session: string } | null = null
   /** Bytes que passaram pelo Cloudflare (TURN e SFU) e ainda não foram contados no servidor. */
   private mediaBytes = 0
   private mediaReportAt = 0
@@ -689,6 +689,9 @@ export class Call {
     const watched = this.watching
     if (watched && watched !== me && others.some((m) => m.connId === watched && !m.sharing)) {
       this.watching = null
+      // A cópia que vinha do SFU acabou junto: sem fechar, a próxima transmissão da mesma pessoa
+      // era ignorada (ficava em "Conectando…") e a conexão com o Cloudflare seguia aberta.
+      if (this.sfuWatch?.connId === watched) this.stopSfuWatch()
       this.dropScreen(watched)
       playSound('stream-end')
     }
@@ -1283,7 +1286,9 @@ export class Call {
     this.sfuStarting = true
     try {
       if (!(await this.sfuAvailable(api)) || this.localScreen !== stream) return
-      const publisher = await SfuPublisher.start(api, stream, this.videoOptions(), this.ice.servers)
+      const room = this.sfuRoom()
+      if (!room) return
+      const publisher = await SfuPublisher.start(api, room, stream, this.videoOptions(), this.ice.servers)
       if (this.localScreen !== stream || !this.anyWatcher() || !this.relayAsked) return publisher.close()
       this.sfuShare = publisher
       // Quem já assiste continua com a cópia direta até confirmar que puxou do SFU.
@@ -1373,18 +1378,26 @@ export class Call {
     const api = this.deps.api()
     // Sala direta: a tela vem direto (quem compartilha com app antigo ainda oferece o SFU).
     if (!this.relayAsked || this.watching !== connId || !api || !this.ice) return peer.replySfu(false)
-    if (this.sfuWatch?.connId === connId) return peer.replySfu(true)
+    // Já estou puxando essa mesma publicação. Outra sessão (ele parou e voltou a transmitir) puxa de novo.
+    if (this.sfuWatch?.connId === connId && this.sfuWatch.session === info.session) return peer.replySfu(true)
+    const room = this.sfuRoom()
+    if (!room) return peer.replySfu(false)
     try {
-      const viewer = await SfuViewer.start(api, info, this.ice.servers)
+      const viewer = await SfuViewer.start(api, room, info, this.ice.servers)
       if (this.watching !== connId) return viewer.close()
       this.stopSfuWatch()
-      this.sfuWatch = { connId, viewer }
+      this.sfuWatch = { connId, viewer, session: info.session }
       this.screens = { ...this.screens, [connId]: viewer.stream }
       peer.replySfu(true)
     } catch (err) {
       console.warn('[sfu] não deu pra puxar a tela; segue direta', err)
       peer.replySfu(false)
     }
+  }
+
+  /** A sala desta call, pro servidor conferir que ela passa pelo Cloudflare (chamada privada não tem). */
+  private sfuRoom(): { guild: string; channel: string } | null {
+    return this.guildId && this.channelId ? { guild: this.guildId, channel: this.channelId } : null
   }
 
   private stopSfuWatch() {

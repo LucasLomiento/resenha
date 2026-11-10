@@ -203,6 +203,7 @@ export default {
 
     // Tela pelo SFU
     'O servidor não tem o SFU configurado.': "This server doesn't have the SFU set up.",
+    'A tela pelo Cloudflare só vale numa sala que passa por ele.': 'Screen sharing through Cloudflare only works in a room that goes through it.',
     'A cota de mídia do mês acabou: a tela vai direto (P2P).': "This month's media quota is used up: screen sharing goes direct (P2P).",
     'Sessão de outra pessoa.': 'That session belongs to someone else.',
     'SFU não devolveu a sessão.': "The SFU didn't return a session.",

@@ -47,6 +47,9 @@ function connected(pc: RTCPeerConnection): Promise<void> {
   })
 }
 
+/** A sala de voz (pelo Cloudflare) da transmissão: o servidor só abre sessão no SFU pra quem está numa. */
+export type SfuRoom = { guild: string; channel: string }
+
 /** Quem compartilha: publica a tela (vídeo e som) uma vez no SFU. */
 export class SfuPublisher {
   private mark: StatsMark = { bytes: 0, at: 0, jbDelay: 0, jbCount: 0 }
@@ -63,11 +66,11 @@ export class SfuPublisher {
     private codec: VideoSendOptions['codec'],
   ) {}
 
-  static async start(api: Api, stream: MediaStream, options: VideoSendOptions, ice: RTCIceServer[]): Promise<SfuPublisher> {
+  static async start(api: Api, room: SfuRoom, stream: MediaStream, options: VideoSendOptions, ice: RTCIceServer[]): Promise<SfuPublisher> {
     const [videoTrack] = stream.getVideoTracks()
     const [audioTrack] = stream.getAudioTracks()
     if (!videoTrack) throw new Error('sem vídeo pra publicar')
-    const session = await api.sfuSession()
+    const session = await api.sfuSession(room)
     const pc = new RTCPeerConnection({ iceServers: iceFrom(ice), bundlePolicy: 'max-bundle' })
     try {
       const video = pc.addTransceiver(videoTrack, { direction: 'sendonly', streams: [stream] })
@@ -138,8 +141,8 @@ export class SfuViewer {
     private mids: string[],
   ) {}
 
-  static async start(api: Api, info: SfuScreen, ice: RTCIceServer[]): Promise<SfuViewer> {
-    const session = await api.sfuSession()
+  static async start(api: Api, room: SfuRoom, info: SfuScreen, ice: RTCIceServer[]): Promise<SfuViewer> {
+    const session = await api.sfuSession(room)
     const pc = new RTCPeerConnection({ iceServers: iceFrom(ice), bundlePolicy: 'max-bundle' })
     const viewer = new SfuViewer(api, pc, session, [])
     pc.ontrack = (event) => {

@@ -63,6 +63,8 @@ const INVITE_USES = [1, 5, 10, 25, 50, 100]
 /** Freios anotados: os mais novos que ficam, e no máximo quantos por hora. */
 const MAX_INCIDENTS = 500
 const MAX_INCIDENTS_HOUR = 60
+/** Com a cota de mídia no fim, de quanto em quanto tempo tenta revogar as credenciais do TURN que sobraram. */
+const TURN_REVOKE_EVERY = 10 * MINUTE
 /** E por conta, dentro desse teto. */
 const MAX_INCIDENTS_USER_HOUR = 10
 /** Versão do app como o app manda ("1.16.1"; o resto é descartado). */
@@ -345,10 +347,16 @@ export class Directory extends DurableObject<Env> {
       : Math.max(row?.bytes ?? 0, row?.measured ?? 0)
     this.ctx.waitUntil(this.measureMedia())
     const allowed = bytes < MEDIA_BUDGET
-    // A cota acabou: as credenciais do TURN que ainda valem param de valer (uma vez por mês).
-    if (!allowed && this.meta('turn_revoked') !== month) {
-      this.setMeta('turn_revoked', month)
-      this.ctx.waitUntil(this.revokeTurnCredentials())
+    // A cota acabou: as credenciais do TURN que ainda valem param de valer. Enquanto sobrar alguma
+    // (a revogação falhou, ou a credencial foi anotada depois da passada), tenta de novo a cada
+    // 10 min: até a 1.17 era uma passada só por mês, e o que escapava valia até 24 h.
+    if (!allowed) {
+      const now = Date.now()
+      const live = this.sql.exec('SELECT 1 FROM turn_credentials WHERE expires_at > ? LIMIT 1', now).toArray().length > 0
+      if (live && now - (Number(this.meta('turn_revoke_at')) || 0) >= TURN_REVOKE_EVERY) {
+        this.setMeta('turn_revoke_at', String(now))
+        this.ctx.waitUntil(this.revokeTurnCredentials())
+      }
     }
     return { month, bytes, allowed }
   }

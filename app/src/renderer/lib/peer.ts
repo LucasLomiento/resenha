@@ -4,10 +4,8 @@ import { setSink } from './devices'
 import type { PathSample } from './route'
 import { audioMidsOf, candidateFamily, ipFamily, keepFamily, tuneScreenOpus, type IpFamily } from './sdp'
 import type { ScreenMode, VideoCodec } from './settings.svelte'
-import { peerId } from './signal-ids'
+import { peerId, resendWait, restartWait } from './signal-ids'
 
-/** Espera antes de refazer o ICE depois de cada falha seguida (a última vale dali em diante). */
-const RESTART_WAIT = [0, 5_000, 15_000, 30_000, 60_000]
 
 /** Sinalização sem os ids das conexões (o Peer põe na hora de mandar). */
 type Signal = SignalData extends infer T ? (T extends unknown ? Omit<T, 'pc' | 'ack'> : never) : never
@@ -173,6 +171,8 @@ export class Peer {
   closed = false
   /** Quando mandei a última oferta (pra reenviar se a resposta se perder). */
   private offerSentAt = 0
+  /** Quantas vezes a oferta de agora já foi reenviada sem resposta. */
+  private offerResends = 0
   /** Falhas seguidas do ICE (sem conectar no meio) e o próximo reinício marcado. */
   private failures = 0
   private restartTimer: ReturnType<typeof setTimeout> | null = null
@@ -299,7 +299,7 @@ export class Peer {
       // Sem caminho direto (chamada privada só tem o STUN), refazer o ICE na hora a cada falha
       // não acabava nunca: o primeiro é na hora, os seguintes esperam cada vez mais.
       if (this.restartTimer) return
-      const wait = RESTART_WAIT[Math.min(this.failures++, RESTART_WAIT.length - 1)]
+      const wait = restartWait(this.failures++)
       this.restartTimer = setTimeout(() => {
         this.restartTimer = null
         if (!this.closed && this.pc.connectionState === 'failed') this.pc.restartIce()
@@ -370,7 +370,11 @@ export class Peer {
    */
   resendOffer(force = false) {
     if (this.closed || this.pc.signalingState !== 'have-local-offer') return
-    if (!force && Date.now() - this.offerSentAt < 5000) return
+    // Cada reenvio espera o dobro do anterior (5 s, 10 s, 20 s… até 5 min): quem está na lista mas
+    // não responde (app travado, conexão que o servidor ainda não tirou) recebia a oferta a cada
+    // 6 s pra sempre, e cada uma é um pedido no servidor.
+    if (!force && Date.now() - this.offerSentAt < resendWait(this.offerResends)) return
+    this.offerResends = force ? 0 : this.offerResends + 1
     this.sendDescription()
   }
 
@@ -432,10 +436,20 @@ export class Peer {
         this.ignoreOffer = !this.polite && collision
         if (this.ignoreOffer) return
 
+        // Resposta repetida (a oferta foi reenviada e o outro lado respondeu cada cópia): fora de
+        // `have-local-offer` não tem oferta minha esperando. Aplicar dava erro e deixava o
+        // `settingAnswer` ligado: na colisão seguinte, quem não cede aceitava a oferta do outro por
+        // cima da dele, os dois respondiam, as respostas falhavam e a negociação girava em falso.
+        if (description.type === 'answer' && this.pc.signalingState !== 'have-local-offer') return
         this.settingAnswer = description.type === 'answer'
-        await this.pc.setRemoteDescription(description)
+        try {
+          await this.pc.setRemoteDescription(description)
+        } finally {
+          this.settingAnswer = false
+        }
         this.described = true
-        this.settingAnswer = false
+        // O outro lado respondeu: a próxima oferta sem resposta volta a ser reenviada logo.
+        this.offerResends = 0
         await this.flushCandidates()
         if (description.type === 'offer') {
           await this.setLocal('answer')

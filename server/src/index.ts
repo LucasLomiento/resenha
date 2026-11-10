@@ -332,13 +332,30 @@ interface MediaUsage {
  * Rotas do SFU e da cota de mídia. O app só chega aqui logado; cada sessão do SFU
  * vem com um token que prova que é dessa pessoa.
  */
+/** A pessoa é do servidor, pode entrar nessa sala de voz e a sala passa pelo Cloudflare? */
+async function relayRoom(
+  env: Env,
+  dir: { isMember(guildId: string, userId: string): Promise<boolean> },
+  me: string,
+  guildId: unknown,
+  channelId: unknown,
+): Promise<boolean> {
+  const g = validId(guildId)
+  const c = validId(channelId)
+  return !!g && !!c && (await dir.isMember(g, me)) && (await guild(env, g).relayAccess(me, c))
+}
+
 async function mediaRoute(
   request: Request,
   env: Env,
   pathname: string,
   method: string,
   me: string,
-  dir: { mediaUsage(): Promise<MediaUsage>; addMediaUsage(userId: string, bytes: number): Promise<MediaUsage> },
+  dir: {
+    mediaUsage(): Promise<MediaUsage>
+    addMediaUsage(userId: string, bytes: number): Promise<MediaUsage>
+    isMember(guildId: string, userId: string): Promise<boolean>
+  },
 ): Promise<Response> {
   const config = sfuConfig(env)
   if (pathname === '/api/media' && method === 'GET') {
@@ -350,13 +367,22 @@ async function mediaRoute(
     const usage = await dir.addMediaUsage(me, Number(body.bytes))
     return json({ allowed: usage.allowed })
   }
+  // Sessão nova no SFU: só pra quem está numa sala pelo Cloudflare (o app diz qual desde a 1.18).
+  // Até a 1.17 qualquer conta abria uma, publicava e puxava a própria faixa, gastando a cota do mês.
+  let opening: Record<string, unknown> | null = null
+  if (pathname === '/api/media/sessions' && method === 'POST') {
+    if (await limited(env.USER_LIMITER, `sfu:${me}`)) return error(429, 'Muitos pedidos. Espere um pouco.')
+    opening = await readJson(request)
+    if (!(await relayRoom(env, dir, me, opening.guild, opening.channel))) {
+      return error(403, 'A tela pelo Cloudflare só vale numa sala que passa por ele.')
+    }
+  }
   if (!config) return error(503, 'O servidor não tem o SFU configurado.')
   // Fechar (parar de puxar ou publicar) sempre vale, até com a cota no fim: é o que economiza.
   if (!/\/close$/.test(pathname) && !(await dir.mediaUsage()).allowed) return error(503, 'A cota de mídia do mês acabou: a tela vai direto (P2P).')
   const sfu = new Sfu(config)
   try {
-    if (pathname === '/api/media/sessions' && method === 'POST') {
-      if (await limited(env.USER_LIMITER, `sfu:${me}`)) return error(429, 'Muitos pedidos. Espere um pouco.')
+    if (opening) {
       const sessionId = await sfu.newSession()
       return json({ sessionId, token: await sessionToken(env.FILE_SECRET, me, sessionId) })
     }
@@ -514,17 +540,11 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
     if (await limited(env.USER_LIMITER, `ice:${me}`)) return error(429, 'Muitos pedidos. Espere um pouco.')
     // Passou da cota de mídia do mês: só STUN (tudo P2P).
     if (!env.TURN_KEY_ID || !(await dir.mediaUsage()).allowed) return json({ iceServers: STUN_ONLY })
-    // App 1.15+ diz a sala: o TURN só vai pra quem vai entrar numa sala pelo Cloudflare (e pode
-    // entrar nela). Sem a sala é o app antigo, que continua recebendo como antes.
-    const guildId = url.searchParams.get('guild')
-    const channelId = url.searchParams.get('channel')
-    if (guildId !== null || channelId !== null) {
-      const allowed =
-        !!validId(guildId) &&
-        !!validId(channelId) &&
-        (await dir.isMember(guildId!, me)) &&
-        (await guild(env, guildId!).relayAccess(me, channelId!))
-      if (!allowed) return json({ iceServers: STUN_ONLY })
+    // O TURN só vai pra quem vai entrar numa sala pelo Cloudflare (e pode entrar nela): o app diz a
+    // sala desde a 1.15. Até a 1.17 o pedido sem sala (app até a 1.14) ainda recebia, e qualquer
+    // conta tirava uma credencial e gastava a cota do mês; agora leva só o STUN (a call vai direta).
+    if (!(await relayRoom(env, dir, me, url.searchParams.get('guild'), url.searchParams.get('channel')))) {
+      return json({ iceServers: STUN_ONLY })
     }
     const { servers, turnUser } = await getIceServers(env)
     // Anotada pra ser revogada se a cota do mês acabar antes de ela vencer.

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { newerPeer, peerId, signalRoute } from '../src/renderer/lib/signal-ids.ts'
+import { newerPeer, peerId, resendWait, restartWait, signalRoute } from '../src/renderer/lib/signal-ids.ts'
 
 const id = (at: number, rand = 'abcd') => `${at.toString(36)}.${rand}`
 
@@ -46,4 +46,17 @@ test('a conexão presa da 1.16: aprendeu uma id do outro lado que ele trocou log
   const a2 = id(150)
   const b2 = id(120, 'bbbb')
   assert.equal(signalRoute({ id: b2, remoteId: a1, described: false }, { pc: a2, ack: b2 }), 'follow')
+})
+
+test('ICE refeito: a espera cresce a cada falha seguida e para em 10 min (não fica de minuto em minuto pra sempre)', () => {
+  assert.deepEqual([0, 1, 2, 3, 4].map(restartWait), [0, 5_000, 15_000, 30_000, 60_000])
+  assert.deepEqual([5, 6, 7, 8, 9, 50].map(restartWait), [120_000, 240_000, 480_000, 600_000, 600_000, 600_000])
+})
+
+test('oferta sem resposta: cada reenvio espera o dobro, até 5 min', () => {
+  assert.deepEqual([0, 1, 2, 3, 4, 5, 6, 7, 1000].map(resendWait), [5_000, 10_000, 20_000, 40_000, 80_000, 160_000, 300_000, 300_000, 300_000])
+  // Uma hora sem resposta: 16 reenvios, não os 600 de antes.
+  let sent = 0
+  for (let t = 0, resends = 0; t < 3_600_000; t += resendWait(resends++)) sent++
+  assert.ok(sent <= 17, String(sent))
 })

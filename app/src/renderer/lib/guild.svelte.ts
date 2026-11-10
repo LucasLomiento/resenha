@@ -48,6 +48,8 @@ export interface GuildHost {
   voice(guild: GuildState): void
   voiceForced(guild: GuildState, channelId: string | null): void
   signal(guild: GuildState, from: string, data: SignalData): void
+  /** A sala de voz deste servidor em que o app está agora (null: nenhuma). Vai no `auth`. */
+  voiceChannel(guildId: string): string | null
   /** A pessoa está olhando esse canal agora (janela em foco). */
   viewing(guildId: string, channelId: string): boolean
   /** Leu o canal até ali (aqui ou em outro aparelho): o aviso dele sai da tela. */
@@ -129,7 +131,7 @@ export class GuildState {
     this.info = info
     this.conn = new Connection<ServerMessage, ClientMessage>(
       () => host.http().wsUrl(`/api/g/${encodeURIComponent(this.id)}/ws`),
-      () => ({ t: 'auth', token: host.token(), ...host.presence(), key: this.key, ...appInfo }),
+      () => ({ t: 'auth', token: host.token(), ...host.presence(), key: this.key, voice: host.voiceChannel(this.id), ...appInfo }),
       {
         message: (msg) => this.handle(msg),
         status: (status) => (this.status = status),

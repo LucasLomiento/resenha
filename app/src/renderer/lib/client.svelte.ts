@@ -724,6 +724,11 @@ class Client implements GuildHost, HomeHost {
     return this.dmMessage(target, message)
   }
 
+  /** A sala de voz desse servidor em que estou (vai no `auth`: o servidor só me retoma na call em que eu digo estar). */
+  voiceChannel(guildId: string): string | null {
+    return this.call.guildId === guildId ? this.call.channelId : null
+  }
+
   viewing(a: string, b?: string): boolean {
     if (!document.hasFocus() || this.view !== 'chat') return false
     if (b === undefined) return this.route.kind === 'dm' && this.route.channelId === a
