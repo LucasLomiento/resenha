@@ -104,6 +104,8 @@ const IDLE_SWEEP_EVERY = 5 * 60_000
  */
 const MAX_UPGRADES = 20
 const UPGRADE_WINDOW = 10 * 60_000
+/** Por quanto tempo a presença dos amigos guardada na memória vale sem perguntar de novo. */
+const FRIEND_STATUS_TTL = 5 * 60_000
 /**
  * Teto do dia da pessoa (todas as conexões juntas), em pedidos: cada conexão tem o dela
  * (budget.ts), e este segura quem abre várias. A soma vai pro banco a cada 50.
@@ -168,6 +170,9 @@ export class Home extends DurableObject<Env> {
   private ghosts = new Map<string, Ghost>()
   /** Sockets que já saíram (o fechamento e o erro podem chegar os dois). */
   private retired = new WeakSet<WebSocket>()
+  /** A presença de cada amigo como este objeto sabe (só na memória, ver `friendPresences`). */
+  private friendStatus: Map<string, { presence: Presence; at: number }> | null = null
+  private friendStatusAt = 0
   /** O prazo do `auth` de cada conexão que ainda não entrou. */
   private authTimers = new Map<WebSocket, ReturnType<typeof setTimeout>>()
   /** Conexões que estouraram o orçamento com uma mensagem essencial: fecham depois de ela ser tratada. */
@@ -428,7 +433,40 @@ export class Home extends DurableObject<Env> {
 
   /** Um amigo mudou de status. */
   friendPresence(userId: string, presence: Presence) {
+    this.friendStatus?.set(userId, { presence, at: Date.now() })
     if (this.friendIds().includes(userId)) this.broadcast({ t: 'presence', userId, presence })
+  }
+
+  /**
+   * A presença dos amigos pro `ready`. Toda mudança de um amigo chega aqui (`friendPresence`,
+   * com ou sem aparelho conectado), então enquanto este objeto está acordado ele sabe a de cada
+   * um sem perguntar: só pergunta a de quem ainda não conhece. Até a 1.18.0 cada reconexão
+   * perguntava a todos (um pedido por amigo, a cada queda de 10 a 60 min de cada pessoa). A
+   * memória some quando o objeto dorme, e a próxima conexão pergunta tudo de novo; por garantia,
+   * também depois de 5 min.
+   */
+  private async friendPresences(friendIds: string[]): Promise<Record<string, Presence>> {
+    const now = Date.now()
+    if (!this.friendStatus || now - this.friendStatusAt > FRIEND_STATUS_TTL) {
+      this.friendStatus = new Map()
+      this.friendStatusAt = now
+    }
+    const cache = this.friendStatus
+    await Promise.allSettled(
+      friendIds
+        .filter((id) => !cache.has(id))
+        .map(async (id) => {
+          const presence = await home(this.env, id).presence()
+          // Uma mudança que chegou enquanto a pergunta ia e voltava é mais nova que a resposta.
+          if ((cache.get(id)?.at ?? 0) < now) cache.set(id, { presence, at: now })
+        }),
+    )
+    const out: Record<string, Presence> = {}
+    for (const id of friendIds) {
+      const known = cache.get(id)?.presence
+      if (known && known.status !== 'offline') out[id] = known
+    }
+    return out
   }
 
   // ---------- HTTP e WebSocket ----------
@@ -579,13 +617,7 @@ export class Home extends DurableObject<Env> {
     const friendIds = snapshot.friends.filter((f) => f.state === 'friends').map((f) => f.user.id)
     this.setMeta('friends', JSON.stringify(friendIds))
     const peers = new Map(snapshot.peers.map((u) => [u.id, u]))
-    const presences: Record<string, Presence> = {}
-    await Promise.allSettled(
-      friendIds.map(async (id) => {
-        const p = await home(this.env, id).presence()
-        if (p.status !== 'offline') presences[id] = p
-      }),
-    )
+    const presences = await this.friendPresences(friendIds)
     const calls = await this.activeCalls(asked && callNow ? { channelId: asked, ...callNow } : null)
     if (ws.readyState !== WebSocket.OPEN) return
     this.send(ws, {
@@ -721,6 +753,13 @@ export class Home extends DurableObject<Env> {
   private async dropConnection(ws: WebSocket, state: HomeConn, unexpected: boolean) {
     if (state.pending || !state.userId || state.replaced || this.retired.has(ws)) return
     this.retired.add(ws)
+    // A chamada sai do próprio socket (ver o mesmo trecho no Guild): se o objeto dormir antes de o
+    // aviso de fechamento chegar, a conexão não é tratada de novo com a chamada de antes.
+    try {
+      ws.serializeAttachment({ ...state, call: null, replaced: true } satisfies HomeConn)
+    } catch {
+      // o socket já foi embora
+    }
     // A mesma instância do app já voltou por outra conexão: ela ficou com tudo.
     if (this.sockets().some((s) => s !== ws && this.state(s).connId === state.connId)) return
     if (unexpected && state.resumable) return this.holdGhost(state)
@@ -1429,7 +1468,9 @@ export class Home extends DurableObject<Env> {
     const mine = this.presence()
     await Promise.allSettled(
       added.map(async (id) => {
+        const asked = Date.now()
         const theirs = await home(this.env, id).presence()
+        if ((this.friendStatus?.get(id)?.at ?? 0) < asked) this.friendStatus?.set(id, { presence: theirs, at: asked })
         if (theirs.status !== 'offline') this.broadcast({ t: 'presence', userId: id, presence: theirs })
         if (mine.status !== 'offline') await home(this.env, id).friendPresence(this.userId, mine)
       }),

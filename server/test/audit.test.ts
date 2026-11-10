@@ -1,5 +1,5 @@
 import { env, evictAllDurableObjects, runDurableObjectAlarm, runInDurableObject } from 'cloudflare:test'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, onTestFinished } from 'vitest'
 import { DEFAULT_PERMISSIONS, P, dmChannelId } from '../../shared/protocol'
 import { api, call, guildSocket, homeSocket, invite, post, signup, tick, upload, world } from './helpers'
 
@@ -156,6 +156,64 @@ describe('custo de pedidos', () => {
     }
   })
 
+  it('reconectar não pergunta de novo a presença de cada amigo: o Home lembra enquanto está acordado, e acompanha as mudanças', async () => {
+    const { owner, friend } = await world()
+    expect((await post('/api/friends', { username: 'duarte' }, owner.token)).body).toBe('outgoing')
+    expect((await post(`/api/friends/${owner.user.id}/accept`, {}, friend.token)).status).toBe(200)
+    const stubB = env.HOME.get(env.HOME.idFromName(friend.user.id))
+    // Conta as vezes em que o Home do Duarte é perguntado (no protótipo: a chamada entre objetos
+    // só enxerga método da classe). Desfeito no fim, porque a classe vale pro arquivo inteiro.
+    const asked = { n: 0 }
+    type Proto = { presence: (this: { userId: string }) => unknown }
+    let proto: Proto | null = null
+    let original: Proto['presence'] | null = null
+    await runInDurableObject(stubB, (instance) => {
+      proto = Object.getPrototypeOf(instance) as Proto
+      original = proto.presence
+      const real = original
+      const counted = friend.user.id
+      proto.presence = function () {
+        if (this.userId === counted) asked.n++
+        return real.call(this)
+      }
+    })
+    onTestFinished(() => {
+      if (proto && original) proto.presence = original
+    })
+    const homeB = await homeSocket(friend.user.id, friend.token)
+    await homeB.next('ready')
+    // (O próprio Home do Duarte também chama o método por dentro: o que conta é a diferença
+    // em volta de cada conexão do Lucas.)
+    const connect = async () => {
+      const before = asked.n
+      const socket = await homeSocket(owner.user.id, owner.token)
+      const ready = await socket.next('ready')
+      return { socket, presence: ready.presences[friend.user.id], asked: asked.n - before }
+    }
+    const first = await connect()
+    expect(first).toMatchObject({ presence: { status: 'online' }, asked: 1 })
+    // A conexão do Lucas cai e volta (acontece a cada 10 a 60 min com todo mundo): nenhuma pergunta nova.
+    first.socket.drop()
+    const second = await connect()
+    expect(second).toMatchObject({ presence: { status: 'online' }, asked: 0 })
+    // O Duarte muda de status: chega pro Lucas na hora, e o que o Home lembra acompanha.
+    homeB.send({ t: 'presence', status: 'dnd', text: 'jogando' })
+    expect((await second.socket.next('presence', (m) => m.userId === friend.user.id)).presence).toEqual({ status: 'dnd', text: 'jogando' })
+    const third = await connect()
+    expect(third).toMatchObject({ presence: { status: 'dnd', text: 'jogando' }, asked: 0 })
+    // Ficando invisível, some da lista de quem reconecta (sem perguntar).
+    homeB.send({ t: 'presence', status: 'invisible', text: null })
+    await third.socket.next('presence', (m) => m.userId === friend.user.id && m.presence.status === 'offline')
+    const fourth = await connect()
+    expect(fourth.presence).toBeUndefined()
+    expect(fourth.asked).toBe(0)
+    // O servidor dormiu (a memória some): a próxima conexão pergunta de novo, e vem certo.
+    await evictAllDurableObjects()
+    const fifth = await connect()
+    expect(fifth.presence).toBeUndefined()
+    expect(fifth.asked).toBeGreaterThanOrEqual(1)
+  })
+
   it('incidente do app: um a cada 10 min por pessoa, mesmo com várias conexões', async () => {
     const { owner } = await world()
     const one = await homeSocket(owner.user.id, owner.token)
@@ -189,6 +247,38 @@ describe('mídia pelo Cloudflare', () => {
     expect((await open(friend.token, { guild: guild.id, channel: 'nao-existe' })).status).toBe(403)
     expect((await open(friend.token, { guild: 'outro', channel: voice.id })).status).toBe(403)
     expect((await open(friend.token, { guild: { $ne: 1 }, channel: [voice.id] })).status).toBe(403)
+  })
+})
+
+describe('faixas abertas no SFU', () => {
+  it('ficam anotadas no Directory (pra fechar se a cota do mês acabar) e saem quando fecham ou ficam velhas', async () => {
+    await world()
+    const stub = env.DIRECTORY.get(env.DIRECTORY.idFromName('directory'))
+    const rows = () =>
+      runInDurableObject(stub, (_, state) =>
+        state.storage.sql
+          .exec<{ session_id: string; mid: string }>('SELECT session_id, mid FROM sfu_tracks ORDER BY session_id, mid')
+          .toArray()
+          .map((r) => `${r.session_id}:${r.mid}`),
+      )
+    type Dir = { recordSfu(session: unknown, mids: unknown): void; forgetSfu(session: unknown, mids: unknown): void }
+    await runInDurableObject(stub, (instance) => {
+      const dir = instance as unknown as Dir
+      dir.recordSfu('sessao-a', ['0', '1'])
+      dir.recordSfu('sessao-b', ['0'])
+      // Lixo no lugar dos ids não entra.
+      dir.recordSfu({ x: 1 }, ['0'])
+      dir.recordSfu('sessao-c', 'nao-e-lista')
+      dir.recordSfu('sessao-c', [7, 'x'.repeat(40)])
+    })
+    expect(await rows()).toEqual(['sessao-a:0', 'sessao-a:1', 'sessao-b:0'])
+    await runInDurableObject(stub, (instance, state) => {
+      ;(instance as unknown as Dir).forgetSfu('sessao-a', ['1'])
+      // Uma sessão de ontem (o app fechou sem avisar) sai na próxima anotação.
+      state.storage.sql.exec("UPDATE sfu_tracks SET at = ? WHERE session_id = 'sessao-b'", Date.now() - 25 * 3_600_000)
+      ;(instance as unknown as Dir).recordSfu('sessao-d', ['0'])
+    })
+    expect(await rows()).toEqual(['sessao-a:0', 'sessao-d:0'])
   })
 })
 

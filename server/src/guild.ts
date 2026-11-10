@@ -1697,6 +1697,16 @@ export class Guild extends DurableObject<Env> {
   private dropConnection(ws: WebSocket, state: ConnState, unexpected: boolean) {
     if (state.pending || !state.userId || state.replaced || this.retired.has(ws)) return
     this.retired.add(ws)
+    // O que a conexão tinha (call, mapa) sai do próprio socket: quando é o servidor que fecha (a
+    // varredura, o orçamento, a sessão encerrada), o aviso de fechamento ainda vem depois, e se o
+    // objeto dormir nesse meio o `retired` (só na memória) some. Sem isso a conexão era tratada de
+    // novo com a call de antes: a pessoa reaparecia na sala por 30 s, ou voltava pra call de que
+    // um moderador tinha tirado ela.
+    try {
+      ws.serializeAttachment({ ...state, voice: null, map: undefined, street: undefined, replaced: true } satisfies ConnState)
+    } catch {
+      // o socket já foi embora
+    }
     // A mesma instância do app já voltou por outra conexão: ela ficou com tudo.
     if (this.sockets().some((s) => s !== ws && this.state(s).connId === state.connId)) return
     if (unexpected && state.resumable && this.member(state.userId)) return this.holdGhost(state)

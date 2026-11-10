@@ -397,7 +397,10 @@ async function mediaRoute(
     mediaUsage(): Promise<MediaUsage>
     addMediaUsage(userId: string, bytes: number): Promise<MediaUsage>
     isMember(guildId: string, userId: string): Promise<boolean>
+    recordSfu(sessionId: string, mids: string[]): Promise<void>
+    forgetSfu(sessionId: string, mids: string[]): Promise<void>
   },
+  ctx: ExecutionContext,
 ): Promise<Response> {
   const config = sfuConfig(env)
   if (pathname === '/api/media' && method === 'GET') {
@@ -437,12 +440,17 @@ async function mediaRoute(
       const sdp = cleanSdp(body.sdp)
       const tracks = cleanLocalTracks(body.tracks)
       if (!sdp || !tracks) return error(400, 'Pedido inválido.')
-      return json(await sfu.push(sessionId, sdp, tracks))
+      const pushed = await sfu.push(sessionId, sdp, tracks)
+      // Anotadas no Directory: se a cota do mês acabar com elas no ar, ele fecha.
+      ctx.waitUntil(dir.recordSfu(sessionId, tracks.map((t) => t.mid)))
+      return json(pushed)
     }
     if (action === 'pull') {
       const tracks = cleanRemoteTracks(body.tracks)
       if (!tracks) return error(400, 'Pedido inválido.')
-      return json(await sfu.pull(sessionId, tracks))
+      const pulled = await sfu.pull(sessionId, tracks)
+      ctx.waitUntil(dir.recordSfu(sessionId, pulled.tracks.map((t) => t.mid)))
+      return json(pulled)
     }
     if (action === 'renegotiate') {
       const sdp = cleanSdp(body.sdp)
@@ -451,7 +459,10 @@ async function mediaRoute(
       return json({ ok: true })
     }
     const mids = Array.isArray(body.mids) ? body.mids.filter((x: unknown): x is string => typeof x === 'string' && x.length <= 16).slice(0, 4) : []
-    if (mids.length) await sfu.close(sessionId, mids)
+    if (mids.length) {
+      await sfu.close(sessionId, mids)
+      ctx.waitUntil(dir.forgetSfu(sessionId, mids))
+    }
     return json({ ok: true })
   } catch (err) {
     if (err instanceof SfuError) return error(err.status, err.message)
@@ -615,7 +626,7 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
   }
 
   // Mídia pelo Cloudflare (media.ts): SFU pra tela com várias pessoas assistindo.
-  if (pathname.startsWith('/api/media')) return mediaRoute(request, env, pathname, method, me, dir)
+  if (pathname.startsWith('/api/media')) return mediaRoute(request, env, pathname, method, me, dir, ctx)
 
   // Conta
   if (pathname === '/api/me' && method === 'GET') return json(auth.me)

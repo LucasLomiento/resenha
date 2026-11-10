@@ -23,7 +23,7 @@ import { columns } from './messages'
 import { conversation as conversationStub, guild as guildStub, home as homeStub } from './stubs'
 import { applyStylePatch, isAnimated, parseStyle, publicStyle, styleText } from './style'
 import { cleanLine, cleanText, color, passwordProblem, slugUsername, username as validUsername } from './validate'
-import { MAX_USAGE_REPORT, MEASURE_EVERY, MEDIA_BUDGET, analyticsConfig, measuredUsage, usageMonth } from './media'
+import { MAX_USAGE_REPORT, MEASURE_EVERY, MEDIA_BUDGET, Sfu, analyticsConfig, measuredUsage, sfuConfig, usageMonth } from './media'
 import { revokeTurn } from './turn'
 import { DAILY_REQUESTS, USAGE_EVERY, measuredRequests, nextReset, project, usageLevel, utcDay, type RequestUsage } from './usage'
 
@@ -315,6 +315,8 @@ export class Directory extends DurableObject<Env> {
     }
     // Credenciais do TURN que ainda valem: revogadas quando a cota do mês acaba.
     this.sql.exec('CREATE TABLE IF NOT EXISTS turn_credentials (username TEXT PRIMARY KEY, expires_at INTEGER NOT NULL)')
+    // Faixas abertas no SFU (publicadas ou puxadas), pra fechar se a cota do mês acabar com elas no ar.
+    this.sql.exec('CREATE TABLE IF NOT EXISTS sfu_tracks (session_id TEXT NOT NULL, mid TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY (session_id, mid))')
     // A soma do espaço das fotos lia os blobs inteiros (o tamanho vem depois deles na linha).
     this.sql.exec('CREATE INDEX IF NOT EXISTS media_size ON media (size)')
     this.sql.exec('CREATE INDEX IF NOT EXISTS users_by_created ON users (created_at)')
@@ -357,8 +359,48 @@ export class Directory extends DurableObject<Env> {
         this.setMeta('turn_revoke_at', String(now))
         this.ctx.waitUntil(this.revokeTurnCredentials())
       }
+      // E as faixas que ainda estão abertas no SFU fecham (o app de verdade para sozinho em até
+      // 5 min; isto vale pra quem não parar). Sem isso, o que já estava no ar seguia passando.
+      const open = this.sql.exec('SELECT 1 FROM sfu_tracks LIMIT 1').toArray().length > 0
+      if (open && now - (Number(this.meta('sfu_close_at')) || 0) >= TURN_REVOKE_EVERY) {
+        this.setMeta('sfu_close_at', String(now))
+        this.ctx.waitUntil(this.closeSfuTracks())
+      }
     }
     return { month, bytes, allowed }
+  }
+
+  /** O Worker abriu faixas no SFU pra alguém (publicou ou puxou): ficam anotadas até fecharem. */
+  recordSfu(sessionId: unknown, mids: unknown) {
+    if (typeof sessionId !== 'string' || sessionId.length > 128 || !Array.isArray(mids)) return
+    const now = Date.now()
+    for (const mid of mids.slice(0, 8)) {
+      if (typeof mid !== 'string' || mid.length > 16) continue
+      this.sql.exec('INSERT INTO sfu_tracks (session_id, mid, at) VALUES (?, ?, ?) ON CONFLICT (session_id, mid) DO UPDATE SET at = excluded.at', sessionId, mid, now)
+    }
+    // Sessão que acabou sem avisar (o app fechou, a conexão caiu): depois de um dia ninguém está nela.
+    this.sql.exec('DELETE FROM sfu_tracks WHERE at < ?', now - DAY)
+  }
+
+  forgetSfu(sessionId: unknown, mids: unknown) {
+    if (typeof sessionId !== 'string' || !Array.isArray(mids)) return
+    for (const mid of mids) if (typeof mid === 'string') this.sql.exec('DELETE FROM sfu_tracks WHERE session_id = ? AND mid = ?', sessionId, mid)
+  }
+
+  /** A cota do mês acabou: fecha no Cloudflare as faixas que ainda estão abertas. */
+  private async closeSfuTracks() {
+    const config = sfuConfig(this.env)
+    if (!config) return
+    const rows = this.sql.exec<{ session_id: string; mid: string }>('SELECT session_id, mid FROM sfu_tracks').toArray()
+    const bySession = new Map<string, string[]>()
+    for (const row of rows) bySession.set(row.session_id, [...(bySession.get(row.session_id) ?? []), row.mid])
+    const sfu = new Sfu(config)
+    for (const [sessionId, mids] of bySession) {
+      // Sessão que já acabou do lado de lá dá erro: sai da lista do mesmo jeito.
+      await sfu.close(sessionId, mids).catch(() => {})
+      this.sql.exec('DELETE FROM sfu_tracks WHERE session_id = ?', sessionId)
+    }
+    if (bySession.size > 0) console.log(`[mídia] cota do mês no fim: faixas de ${bySession.size} sessões do SFU fechadas`)
   }
 
   /** O Worker deu uma credencial do TURN pra alguém: fica anotada até vencer. */
@@ -1017,7 +1059,9 @@ export class Directory extends DurableObject<Env> {
   ): Promise<Result<Me>> {
     const row = this.user(userId)
     if (!row) return fail(404, 'Conta não encontrada.')
-    const limit = this.action(`profile:${userId}`, 20, MINUTE)
+    // Cada mudança vai pra cada servidor e cada amigo da pessoa (uma chamada cada): 15 em 10 min
+    // sobram pra quem está montando o perfil, e não deixam uma conta em laço gastar o dia (eram 20 por minuto).
+    const limit = this.action(`profile:${userId}`, 15, 10 * MINUTE)
     if (limit) return limit
     const sets: string[] = []
     const args: SqlStorageValue[] = []

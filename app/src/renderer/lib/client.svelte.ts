@@ -763,22 +763,40 @@ class Client implements GuildHost, HomeHost {
     if (this.call.guildId === guild.id) this.call.sync()
   }
 
+  /**
+   * Movido de sala por um moderador: o servidor já me lista na sala nova, e quem está lá manda a
+   * oferta na hora, enquanto o meu microfone ainda reabre. A sinalização que chega nesse meio
+   * fica guardada e é tratada quando a call existir de novo (até a 1.18.0 caía no vazio, e o som
+   * com metade da sala só vinha no reenvio, segundos depois).
+   */
+  private moving: { guildId: string; signals: [string, SignalData][] } | null = null
+
   voiceForced(guild: GuildState, channelId: string | null) {
-    if (this.call.guildId !== guild.id) return
+    // Também no meio de uma mudança de sala: movido de novo (ou desconectado) antes de a call voltar.
+    const midMove = this.moving?.guildId === guild.id
+    if (this.call.guildId !== guild.id && !midMove) return
     // O servidor ainda não tinha me posto na call (a entrada foi recusada, com o erro já na tela).
-    const confirmed = !!this.call.channelId && guild.voiceIn(this.call.channelId).some((v) => v.connId === guild.connId)
+    const confirmed = midMove || (!!this.call.channelId && guild.voiceIn(this.call.channelId).some((v) => v.connId === guild.connId))
     this.call.leave(false)
     if (channelId) {
       const name = guild.channel(channelId)?.name
       this.toast(name ? m.lib.client.movedTo(name) : m.lib.client.movedElsewhere, 'info')
-      this.call.join(this.guildTransport(guild, channelId))
-    } else if (confirmed) {
-      this.toast(m.lib.client.disconnected, 'info')
+      const pending = (this.moving = { guildId: guild.id, signals: [] as [string, SignalData][] })
+      void this.call.join(this.guildTransport(guild, channelId)).finally(() => {
+        if (this.moving !== pending) return // outra mudança tomou o lugar desta
+        this.moving = null
+        if (this.call.guildId !== guild.id) return
+        for (const [from, data] of pending.signals) this.call.signal(from, data)
+      })
+    } else {
+      this.moving = null
+      if (confirmed) this.toast(m.lib.client.disconnected, 'info')
     }
   }
 
   signal(guild: GuildState, from: string, data: SignalData) {
     if (this.call.guildId === guild.id) this.call.signal(from, data)
+    else if (this.moving?.guildId === guild.id && this.moving.signals.length < 300) this.moving.signals.push([from, data])
   }
 
   callState(channelId: string) {
