@@ -1,7 +1,7 @@
-import { env, runDurableObjectAlarm, runInDurableObject } from 'cloudflare:test'
+import { env, evictAllDurableObjects, runDurableObjectAlarm, runInDurableObject } from 'cloudflare:test'
 import { describe, expect, it } from 'vitest'
-import { dmChannelId } from '../../shared/protocol'
-import { api, call, guildSocket, homeSocket, post, tick, upload, world } from './helpers'
+import { DEFAULT_PERMISSIONS, P, dmChannelId } from '../../shared/protocol'
+import { api, call, guildSocket, homeSocket, invite, post, signup, tick, upload, world } from './helpers'
 
 // Correções da auditoria da 1.18 (uma por teste, com o cenário que dava errado).
 
@@ -192,6 +192,78 @@ describe('mídia pelo Cloudflare', () => {
   })
 })
 
+describe('servidor (Guild)', () => {
+  it('conexão fechada por estourar o orçamento não volta zerada depois de o servidor dormir', async () => {
+    const { guild, owner, text } = await world()
+    const key = 'chave-do-app-do-lucas-9'
+    const stub = env.GUILD.get(env.GUILD.idFromName(guild.id))
+    const first = await guildSocket(guild.id, owner.token, { key, version: '1.18.0', platform: 'linux' })
+    const ready = await first.next('ready')
+    await runInDurableObject(stub, (instance) => {
+      const now = Date.now()
+      // A janela de 1 h no teto (a de 10 min ainda tem folga).
+      ;(instance as unknown as { spentByConn: Map<string, number[]> }).spentByConn.set(ready.connId, [now, 0, now, 4000, now, 4000])
+    })
+    first.send({ t: 'typing', channelId: text.id })
+    expect(await first.closed()).toBe(4008)
+    // O app pausa uns minutos; nesse tempo o servidor dorme e a memória some.
+    await evictAllDurableObjects()
+    const back = await guildSocket(guild.id, owner.token, { key, version: '1.18.0', platform: 'linux' })
+    expect((await back.next('ready')).connId).toBe(ready.connId)
+    back.send({ t: 'typing', channelId: text.id })
+    expect(await back.closed()).toBe(4008)
+  })
+
+  it('quem passa a ver uma sala de voz recebe quem está nela', async () => {
+    const { guild, friend, a, b, readyA } = await world()
+    a.send({ t: 'role.create', name: 'VIP' })
+    const role = (await b.next('roles')).roles.find((r) => r.name === 'VIP')!
+    a.send({
+      t: 'channel.create',
+      name: 'sala fechada',
+      kind: 'voice',
+      overwrites: [
+        { id: guild.id, type: 'role', allow: 0, deny: P.VIEW_CHANNEL },
+        { id: role.id, type: 'role', allow: P.VIEW_CHANNEL, deny: 0 },
+      ],
+    })
+    const room = (await a.next('channel.upsert', (m) => m.channel.name === 'sala fechada')).channel
+    a.send({ t: 'voice.join', channelId: room.id, muted: false, deafened: false })
+    await a.next('voice.state', (m) => m.members.length === 1)
+    b.drain()
+    a.send({ t: 'member.roles', userId: friend.user.id, roles: [role.id] })
+    await b.next('channel.upsert', (m) => m.channel.id === room.id)
+    const state = await b.next('voice.state')
+    expect(state.members.map((v) => [v.connId, v.channelId])).toEqual([[readyA.connId, room.id]])
+  })
+
+  it('exceção de permissão de quem saiu do servidor não trava a edição do canal pra quem modera', async () => {
+    const { guild, friend, a, b, text } = await world()
+    const third = await signup('zeca', await invite(a))
+    await a.next('member.upsert', (m) => m.member.userId === third.user.id)
+    // O Duarte modera canais e cargos, mas não pode mencionar todo mundo.
+    a.send({ t: 'role.create', name: 'Mod' })
+    const mod = (await a.next('roles', (m) => m.roles.some((r) => r.name === 'Mod'))).roles.find((r) => r.name === 'Mod')!
+    a.send({ t: 'role.update', id: mod.id, permissions: P.MANAGE_CHANNELS | P.MANAGE_ROLES })
+    await a.next('roles', (m) => (m.roles.find((r) => r.id === mod.id)?.permissions ?? 0) !== 0)
+    a.send({ t: 'member.roles', userId: friend.user.id, roles: [mod.id] })
+    await b.next('permissions')
+    a.send({ t: 'role.update', id: guild.id, permissions: DEFAULT_PERMISSIONS & ~P.MENTION_EVERYONE })
+    await a.next('roles')
+    // O dono dá ao Zeca, só nesse canal, uma permissão que o Duarte não tem. O Zeca sai.
+    a.send({ t: 'channel.update', id: text.id, overwrites: [{ id: third.user.id, type: 'member', allow: P.MENTION_EVERYONE, deny: 0 }] })
+    await a.next('channel.upsert', (m) => m.channel.overwrites.length === 1)
+    await post(`/api/guilds/${guild.id}/leave`, {}, third.token)
+    await a.next('member.removed')
+    b.drain()
+    // O Duarte mexe em outra coisa do canal (algo que ele mesmo tem): tem que salvar.
+    b.send({ t: 'channel.update', id: text.id, overwrites: [{ id: guild.id, type: 'role', allow: 0, deny: P.ATTACH_FILES }] })
+    const saved = await b.next('channel.upsert', (m) => m.channel.id === text.id)
+    expect(saved.channel.overwrites).toEqual([{ id: guild.id, type: 'role', allow: 0, deny: P.ATTACH_FILES }])
+    await b.nothing('error')
+  })
+})
+
 describe('Worker: quem só erra não gasta os pedidos do dia', () => {
   const from = (ip: string, path: string, headers: Record<string, string> = {}) => api(path, { headers: { 'CF-Connecting-IP': ip, ...headers } })
 
@@ -208,7 +280,7 @@ describe('Worker: quem só erra não gasta os pedidos do dia', () => {
     const { owner } = await world()
     const me = (ip: string, token: string) => from(ip, '/api/me', { Authorization: `Bearer ${token}` })
     expect((await me('203.0.113.20', 'x')).status).toBe(401)
-    expect((await me('203.0.113.20', 'tem espaço e é inválido')).status).toBe(401)
+    expect((await me('203.0.113.20', 'tem espaco, invalido!')).status).toBe(401)
     const statuses: number[] = []
     for (let i = 0; i < 22; i++) statuses.push((await me('203.0.113.21', `token-inventado-numero-${i}-aaaaaaaaaaaa`)).status)
     expect(statuses.slice(0, 20).every((s) => s === 401)).toBe(true)

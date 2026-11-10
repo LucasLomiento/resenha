@@ -457,6 +457,8 @@ export class Guild extends DurableObject<Env> {
     this.sql.exec('CREATE TABLE IF NOT EXISTS voice_conns (conn_id TEXT PRIMARY KEY, state TEXT NOT NULL)')
     // Push: quem não tem celular (até quando não perguntar de novo) e os avisos que foram pro
     // celular de alguém e ainda não foram lidos (um por pessoa e canal, com a mensagem do aviso).
+    // O gasto da conexão que estourou o orçamento (ver `stopOver`), pra ela não voltar zerada.
+    this.sql.exec('CREATE TABLE IF NOT EXISTS spent (conn_id TEXT PRIMARY KEY, spent TEXT NOT NULL, at INTEGER NOT NULL)')
     this.sql.exec('CREATE TABLE IF NOT EXISTS no_push (user_id TEXT PRIMARY KEY, until INTEGER NOT NULL)')
     this.sql.exec(`CREATE TABLE IF NOT EXISTS push_open (
       user_id TEXT NOT NULL,
@@ -1101,6 +1103,9 @@ export class Guild extends DurableObject<Env> {
         if (!old.has(id) || changed.has(id)) shown.push(channels.get(id)!)
       }
       for (const id of old.keys()) if (!now.has(id)) removed.push(id)
+      // Passou a ver uma sala de voz: precisa saber quem está nela (senão ela aparecia vazia até
+      // alguém entrar, sair ou mutar).
+      if (shown.some((c) => c.kind === 'voice' && !old.has(c.id))) voiceChanged = true
       const permsChanged = removed.length > 0 || [...now].some(([id, p]) => old.get(id) !== p)
       const visible = opts.reordered ? this.visibleChannels(userId) : []
       for (const ws of sockets) {
@@ -1130,7 +1135,10 @@ export class Guild extends DurableObject<Env> {
         }
       }
     }
-    if (voiceChanged) this.broadcastVoice()
+    // Quem caiu e ainda é esperado de volta, mas perdeu o direito de estar na sala: sai agora.
+    const dropped = this.dropGhosts((s) => !!s.voice && !this.can(s.userId, s.voice.channelId, P.CONNECT))
+    if (voiceChanged || dropped.voice) this.broadcastVoice()
+    if (dropped.map) this.leftMap()
   }
 
   private broadcastMember(userId: string) {
@@ -1462,7 +1470,7 @@ export class Guild extends DurableObject<Env> {
       map: resumed.map,
       street: resumed.map ? resumed.street : undefined,
       // A mesma instância voltando (queda, pausa) continua com o que já gastou.
-      spent: merge(resumed.spent, this.spentByConn.get(connId)),
+      spent: merge(merge(resumed.spent, this.spentByConn.get(connId)), this.storedSpent(connId)),
       ...(typeof msg.version === 'string' ? { version: msg.version.slice(0, 32) } : {}),
     }
     this.save(ws, state)
@@ -1624,8 +1632,32 @@ export class Guild extends DurableObject<Env> {
     return false
   }
 
+  /** O gasto guardado de uma conexão que foi fechada por estourar o orçamento (até um dia). */
+  private storedSpent(connId: string): Spent | undefined {
+    const row = this.sql.exec<{ spent: string }>('SELECT spent FROM spent WHERE conn_id = ?', connId).toArray()[0]
+    if (!row) return undefined
+    try {
+      const value = JSON.parse(row.spent)
+      return Array.isArray(value) && value.every((n) => typeof n === 'number') ? value : undefined
+    } catch {
+      return undefined
+    }
+  }
+
   /** Fecha a conexão que estourou o orçamento (4008: o app pausa; 4004: o app antigo para). */
   private stopOver(ws: WebSocket, state: ConnState, stop: number) {
+    // O gasto vai pro banco: a pausa (5 min) é mais longa que o tempo de o servidor dormir, e só
+    // na memória a conexão voltava com o orçamento zerado. Os tetos da hora e do dia nunca
+    // acumulavam, e um app em laço gastava os 1500 de novo a cada volta.
+    const spent = merge(state.spent, this.spentByConn.get(state.connId))
+    if (spent) {
+      this.sql.exec(
+        'INSERT INTO spent (conn_id, spent, at) VALUES (?, ?, ?) ON CONFLICT (conn_id) DO UPDATE SET spent = excluded.spent, at = excluded.at',
+        state.connId,
+        JSON.stringify(spent),
+        Date.now(),
+      )
+    }
     if (stop === CLOSE_STOP_OLD) this.error(ws, 'Seu app mandou coisa demais e foi desconectado. Atualize ou abra o app de novo.')
     try {
       ws.close(stop, 'Muita coisa em pouco tempo')
@@ -1733,6 +1765,7 @@ export class Guild extends DurableObject<Env> {
       this.sql.exec('DELETE FROM audit WHERE created_at < ?', now - AUDIT_KEEP)
       for (const [key, until] of this.noPush) if (until <= now) this.noPush.delete(key)
       this.sql.exec('DELETE FROM no_push WHERE until <= ?', now)
+      this.sql.exec('DELETE FROM spent WHERE at < ?', now - DAY)
       // Aviso de canal que não existe mais, ou de quem saiu do servidor: ninguém vai ler.
       this.sql.exec('DELETE FROM push_open WHERE channel_id NOT IN (SELECT id FROM channels) OR user_id NOT IN (SELECT user_id FROM members)')
       for (const [key, sent] of this.sentNonces) if (now - sent.at > NONCE_TTL) this.sentNonces.delete(key)
@@ -2404,7 +2437,11 @@ export class Guild extends DurableObject<Env> {
     if (!this.isAdmin(userId)) {
       // Bits que mudaram em alguma exceção (nova, alterada ou removida).
       const key = (o: Overwrite) => `${o.type}:${o.id}`
-      const old = new Map(current.map((o) => [key(o), o]))
+      // Exceção de quem saiu do servidor (ou de cargo apagado) some sozinha aqui em cima: não conta
+      // como mudança de quem está editando. Contando, bastava um ex-membro com uma permissão que o
+      // moderador não tem pra ele nunca mais conseguir salvar as permissões do canal.
+      const alive = (o: Overwrite) => (o.type === 'role' ? this.roles().has(o.id) : !!this.member(o.id))
+      const old = new Map(current.filter(alive).map((o) => [key(o), o]))
       const next = new Map(clean.map((o) => [key(o), o]))
       let changed = 0
       for (const k of new Set([...old.keys(), ...next.keys()])) {
