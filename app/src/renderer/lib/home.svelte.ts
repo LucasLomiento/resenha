@@ -311,6 +311,9 @@ export class HomeState {
         const typing = this.typing[channelId]
         if (typing) delete typing[message.authorId]
         const dm = this.dm(channelId)
+        // Confirmação de um reenvio (a mensagem já tinha entrado e a outra pessoa respondeu depois):
+        // não é a mais nova da conversa, e não quer dizer que li a resposta.
+        if (dm?.lastMessageId && message.id < dm.lastMessageId) return
         if (dm) {
           dm.lastMessageId = message.id
           dm.lastMessageAt = message.createdAt

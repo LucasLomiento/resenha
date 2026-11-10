@@ -567,6 +567,12 @@ export type ClientMessage =
       /** Versão do app (1.17+; quem manda também entende o fechamento 4008, ver `CLOSE_PAUSE`). */
       version?: string
       platform?: string
+      /**
+       * A sala de voz deste servidor em que o app está (null: nenhuma), desde a 1.18. Se o app saiu
+       * da call com a conexão caída (o `voice.leave` não chegou), a conexão que volta não é posta
+       * de novo nela. Sem o campo (app antigo), a call é retomada como antes.
+       */
+      voice?: string | null
     }
   /** `auto`: ausente automático (sem mexer no PC) — não muda o status escolhido. */
   | { t: 'presence'; status: Status; text: string | null; auto?: boolean }

@@ -63,6 +63,8 @@ const INVITE_USES = [1, 5, 10, 25, 50, 100]
 /** Freios anotados: os mais novos que ficam, e no máximo quantos por hora. */
 const MAX_INCIDENTS = 500
 const MAX_INCIDENTS_HOUR = 60
+/** E por conta, dentro desse teto. */
+const MAX_INCIDENTS_USER_HOUR = 10
 /** Versão do app como o app manda ("1.16.1"; o resto é descartado). */
 const APP_VERSION = /^\d{1,3}\.\d{1,3}\.\d{1,4}(-[\w.]{1,24})?$/
 const PLATFORM = /^[a-z0-9]{2,16}$/
@@ -905,6 +907,11 @@ export class Directory extends DurableObject<Env> {
     const now = Date.now()
     const recent = this.sql.exec<{ n: number }>('SELECT COUNT(*) AS n FROM incidents WHERE at > ?', now - HOUR).one().n
     if (recent >= MAX_INCIDENTS_HOUR) return
+    // Uma conta só não enche o teto da hora (os freios dos outros continuam aparecendo).
+    if (typeof userId === 'string') {
+      const own = this.sql.exec<{ n: number }>('SELECT COUNT(*) AS n FROM incidents WHERE at > ? AND user_id = ?', now - HOUR, userId.slice(0, 64)).one().n
+      if (own >= MAX_INCIDENTS_USER_HOUR) return
+    }
     this.sql.exec(
       'INSERT INTO incidents (at, user_id, kind, detail) VALUES (?, ?, ?, ?)',
       now,
@@ -1079,6 +1086,10 @@ export class Directory extends DurableObject<Env> {
     const row = this.user(userId)
     if (!row) return fail(404, 'Conta não encontrada.')
     const style = parseStyle(row.style)
+    // Sem foto, nada muda (e nada vai pros servidores e amigos: cada um custaria uma chamada).
+    if (!row.avatar && !style?.avatarStill) return ok(this.toMe(row))
+    const limited = this.action(`media-clear:${userId}`, 10, 10 * MINUTE)
+    if (limited) return limited
     this.dropMedia(row.avatar, style?.avatarStill)
     this.sql.exec('UPDATE users SET avatar = NULL, style = ? WHERE id = ?', styleText({ ...style, avatarStill: undefined }), userId)
     const updated = this.user(userId)!
@@ -1104,6 +1115,9 @@ export class Directory extends DurableObject<Env> {
     const row = this.user(userId)
     if (!row) return fail(404, 'Conta não encontrada.')
     const style = parseStyle(row.style)
+    if (!style?.banner) return ok(this.toMe(row))
+    const limited = this.action(`media-clear:${userId}`, 10, 10 * MINUTE)
+    if (limited) return limited
     this.dropMedia(style?.banner)
     this.sql.exec('UPDATE users SET style = ? WHERE id = ?', styleText({ ...style, banner: undefined }), userId)
     const updated = this.user(userId)!
@@ -1332,12 +1346,14 @@ export class Directory extends DurableObject<Env> {
       return fail(400, 'Digite o nome do servidor pra confirmar.')
     }
     const members = this.memberIds(guildId)
+    // Primeiro o servidor em si: se a chamada falhar (deploy no meio), o registro continua aqui e
+    // dá pra excluir de novo. Na ordem contrária ele ficava órfão, com mensagens e anexos.
+    await this.guild(guildId).destroy()
     this.sql.exec('DELETE FROM members WHERE guild_id = ?', guildId)
     this.sql.exec('DELETE FROM invites WHERE guild_id = ?', guildId)
     this.sql.exec('DELETE FROM guilds WHERE id = ?', guildId)
     this.sql.exec('DELETE FROM storage WHERE scope = ?', `g:${guildId}`)
     if (row.icon) this.sql.exec('DELETE FROM media WHERE id = ?', row.icon)
-    await this.guild(guildId).destroy()
     await Promise.allSettled(members.map((m) => this.home(m).guildLeft(guildId, 'deleted')))
     return ok(null)
   }

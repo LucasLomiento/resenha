@@ -119,6 +119,8 @@ const MAX_FRAME = 64 * 1024
 const MAX_PENDING = 20
 /** Conexões autenticadas ao mesmo tempo (aparelhos e janelas do app, de sobra). */
 const MAX_CONNECTIONS = 20
+/** "Olhando o app no computador" só vale com sinal de vida nesse tempo (o app manda "ping" a cada 20 s). */
+const ATTENTION_ALIVE = 50_000
 const STATUSES: Status[] = ['online', 'idle', 'dnd', 'invisible']
 /** Token do Firebase: letras, números e pontuação simples (uns 160 caracteres hoje). */
 const PUSH_TOKEN = /^[\w:.-]{20,4096}$/
@@ -855,7 +857,8 @@ export class Home extends DurableObject<Env> {
 
       case 'incident': {
         if (!(APP_INCIDENTS as readonly unknown[]).includes(msg.kind) || typeof msg.detail !== 'string') return
-        if (!this.allow(`incident:${state.connId}`, 1, APP_INCIDENT_EVERY)) return
+        // Por pessoa: com 20 conexões, uma conta só enchia o teto de incidentes por hora de todo mundo.
+        if (!this.allow('incident', 1, APP_INCIDENT_EVERY)) return
         return directory(this.env).incident(me, `app:${msg.kind}`, `${state.version ?? 'app antigo'}; ${msg.detail.slice(0, 1000)}`)
       }
 
@@ -1047,9 +1050,13 @@ export class Home extends DurableObject<Env> {
     }
     // Apagaram uma mensagem: a última da conversa e a contagem de não lidas acompanham.
     if (event.t === 'dm.deleted') await this.messageDeleted(channelId, event)
-    if (event.t === 'dm.message') {
+    const existing = event.t === 'dm.message' ? this.dmRow(channelId) : undefined
+    // Confirmação de um reenvio (o app mandou de novo uma mensagem que já tinha entrado, e a outra
+    // pessoa respondeu nesse meio-tempo): vai só pros aparelhos. Tratar como "a mais nova" voltava
+    // a conversa pra ela e zerava as não lidas da resposta.
+    const stale = event.t === 'dm.message' && !!existing?.last_message_id && event.message.id < existing.last_message_id
+    if (event.t === 'dm.message' && !stale) {
       const mine = event.message.authorId === this.userId
-      const existing = this.sql.exec<DmRow>('SELECT * FROM dms WHERE channel_id = ?', channelId).toArray()[0]
       this.sql.exec(
         `INSERT INTO dms (channel_id, peer_id, last_message_id, last_message_at, last_read_id, unread, open)
          VALUES (?, ?, ?, ?, ?, ?, 1)
@@ -1143,9 +1150,15 @@ export class Home extends DurableObject<Env> {
    */
   private pushDevices(): PushRow[] {
     if (!this.pusher.enabled || this.manual().status === 'dnd') return []
+    // O computador que dormiu com o app em foco continua "olhando" até a varredura fechar a conexão
+    // (uns 6 min desde a 1.17), e nesse tempo o celular não avisava nada. Só vale a conexão que
+    // respondeu há pouco: o app manda "ping" a cada 20 s.
+    const alive = Date.now() - ATTENTION_ALIVE
     const looking = this.sockets().some((ws) => {
       const s = this.state(ws)
-      return !s.pending && !s.mobile && s.attention === true
+      if (s.pending || s.mobile || s.attention !== true) return false
+      const lastPing = this.ctx.getWebSocketAutoResponseTimestamp(ws)?.getTime() ?? 0
+      return Math.max(lastPing, s.connectedAt) > alive
     })
     return looking ? [] : this.sql.exec<PushRow>('SELECT * FROM push_tokens').toArray()
   }

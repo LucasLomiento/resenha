@@ -447,6 +447,10 @@ export class GuildState {
         if (this.messages[channelId] && !this.hasNewer[channelId]) {
           this.messages[channelId] = mergeMessages(this.messages[channelId], [message])
         }
+        // Confirmação de um reenvio (a mensagem já tinha entrado e outras vieram depois): não é a
+        // mais nova do canal, e não quer dizer que li as que chegaram depois dela.
+        const known = this.lastMessageIds[channelId]
+        if (known && message.id < known) return
         this.lastMessageIds[channelId] = message.id
         const typing = this.typing[channelId]
         if (typing) delete typing[message.authorId]

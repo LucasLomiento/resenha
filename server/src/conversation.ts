@@ -155,16 +155,17 @@ export class Conversation extends DurableObject<Env> {
     const requested = Array.isArray(input.attachmentIds)
       ? input.attachmentIds.filter((id): id is string => typeof id === 'string').slice(0, 10)
       : []
-    const attachments = this.store.pendingAttachments(userId, requested)
-    if (!content && attachments.length === 0) return ok(null)
     const nonce = typeof input.nonce === 'string' ? input.nonce.slice(0, 64) : undefined
-    // O app reenviou uma mensagem que já entrou (a resposta se perdeu numa queda): só confirma pra quem mandou.
+    // O app reenviou uma mensagem que já entrou (a resposta se perdeu numa queda): só confirma pra
+    // quem mandou. Antes de olhar os anexos: os de uma mensagem que já entrou não estão mais "soltos".
     const sent = nonce ? this.store.byNonce(userId, nonce) : null
     if (sent) {
       const [message] = await this.store.load([sent])
       if (message) await home(this.env, userId).dmEvent(channelId, m.peer, { t: 'dm.message', channelId, message, nonce })
       return ok(null)
     }
+    const attachments = this.store.pendingAttachments(userId, requested)
+    if (!content && attachments.length === 0) return ok(null)
     if (!this.allow(`send:${userId}`, 5, 5000)) return fail(429, 'Calma! Você está mandando mensagens rápido demais.')
 
     const reply = typeof input.replyTo === 'string' ? this.store.get(input.replyTo) : null

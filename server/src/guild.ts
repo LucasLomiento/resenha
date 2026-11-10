@@ -1395,8 +1395,11 @@ export class Guild extends DurableObject<Env> {
     if (this.saveProfile({ ...auth.me, admin: false })) this.broadcastMember(auth.me.id)
     const before = this.presenceOf(auth.me.id)
     const resumed: ReturnType<Guild['takeOver']> = key ? this.takeOver(ws, auth.me.id, connId) : { voice: null, queue: [] }
+    // O app diz que não está em call aqui (1.18+): saiu com a conexão caída e o "sair" não chegou.
+    // Sem isso a pessoa voltava pra lista da sala (e ocupava vaga) sem o app saber.
+    const left = msg.voice === null && !!resumed.voice
     // Quem estava no mapa continua nele (pros outros nada muda); o app confirma com `map.join` ou sai.
-    const voice = this.validVoice(auth.me.id, resumed.voice)
+    const voice = left ? null : this.validVoice(auth.me.id, resumed.voice)
     const state: ConnState = {
       ...pending,
       connId,
@@ -1440,7 +1443,7 @@ export class Guild extends DurableObject<Env> {
       mapViewers: this.mapViewers(),
     })
     for (const queued of resumed.queue) this.raw(ws, queued)
-    if (resumed.voice && !voice) this.send(ws, { t: 'voice.forced', channelId: null })
+    if (resumed.voice && !voice && !left) this.send(ws, { t: 'voice.forced', channelId: null })
     if (resumed.voice) this.broadcastVoice()
     this.announcePresence(state.userId, before)
   }
@@ -1649,8 +1652,12 @@ export class Guild extends DurableObject<Env> {
     if (this.spentByConn.size > 500) this.spentByConn.clear()
 
     // O resto não precisa de minuto em minuto (o alarme roda o dia todo com alguém conectado).
+    // A hora fica no banco: o objeto hiberna entre um alarme e outro, e com ela só na memória a
+    // limpeza "de hora em hora" rodava em todo alarme (varrendo os pedaços de arquivo a cada vez).
+    if (this.cleanedAt === 0) this.cleanedAt = Number(this.meta('cleaned_at')) || 0
     if (now - this.cleanedAt >= CLEANUP_EVERY) {
       this.cleanedAt = now
+      this.setMeta('cleaned_at', String(now))
       if (this.store.removeOrphans(now - ORPHAN_TTL) > 0) await this.reportStorage()
       this.sql.exec('DELETE FROM slowmode WHERE last_at < ?', now - 6 * 60 * MINUTE)
       this.sql.exec('DELETE FROM audit WHERE created_at < ?', now - AUDIT_KEEP)
@@ -1980,6 +1987,9 @@ export class Guild extends DurableObject<Env> {
             music: this.playsMusic(userId, channel.id) ? cleanMusic(msg.music === undefined ? same?.music : msg.music) : null,
           },
         })
+        // A varredura passa a ser de minuto em minuto já (ela pode estar no passo de 5 min de quem
+        // não está em call): é ela que mantém a call em dia no banco pra sobreviver a um reinício.
+        if (!state.voice) await armAlarm(this.ctx.storage, Date.now() + SWEEP_EVERY)
         return this.broadcastVoice()
       }
 
@@ -2023,6 +2033,10 @@ export class Guild extends DurableObject<Env> {
       }
 
       case 'map.join':
+        // Com alguém no mapa a varredura é de minuto em minuto (quem some dele sai logo).
+        if (!state.map) await armAlarm(this.ctx.storage, Date.now() + SWEEP_EVERY)
+        return this.handleMap(ws, state, msg)
+
       case 'map.leave':
       case 'map.street':
       case 'map.pin.add':
@@ -2057,17 +2071,19 @@ export class Guild extends DurableObject<Env> {
     if (poll && content.length > MAX_POLL_QUESTION_LENGTH) {
       return this.error(ws, `A pergunta da enquete passa de ${MAX_POLL_QUESTION_LENGTH} caracteres.`, nonce)
     }
-    const attachments = poll ? [] : this.store.pendingAttachments(userId, requested)
-    if (!content && attachments.length === 0) {
-      // Só com anexo que venceu (ou de outra pessoa): avisa, e o app devolve pro campo.
-      return requested.length > 0 ? this.error(ws, 'O anexo não está mais disponível. Envie de novo.', nonce) : undefined
-    }
     // O app reenviou uma mensagem que já entrou (a resposta se perdeu numa queda): não duplica.
+    // Antes de olhar os anexos: os de uma mensagem que já entrou não estão mais "soltos", e o
+    // reenvio de uma só com imagem voltava como "o anexo não está mais disponível".
     const sent = nonce ? this.store.byNonce(userId, nonce) : null
     if (sent) {
       const [message] = await this.store.load([sent])
       if (message) this.send(ws, { t: 'chat.message', message, nonce })
       return
+    }
+    const attachments = poll ? [] : this.store.pendingAttachments(userId, requested)
+    if (!content && attachments.length === 0) {
+      // Só com anexo que venceu (ou de outra pessoa): avisa, e o app devolve pro campo.
+      return requested.length > 0 ? this.error(ws, 'O anexo não está mais disponível. Envie de novo.', nonce) : undefined
     }
 
     if (!this.allow(`send:${userId}`, 5, 5000)) return this.error(ws, 'Calma! Você está mandando mensagens rápido demais.', nonce)
