@@ -2,6 +2,7 @@
   import { client } from '../lib/client.svelte'
   import { otherRtt } from '../lib/call.svelte'
   import { listDevices, namedDevices } from '../lib/devices'
+  import { describeAccelerator } from '../lib/shortcuts'
   import { m } from '../lib/i18n.svelte'
   import { micProfile, setMicProfile } from '../lib/mic-profile'
   import { settings } from '../lib/settings.svelte'
@@ -103,6 +104,13 @@
     if (call.sharing) ui.sharePanel = !ui.sharePanel
     else if (client.canVideo) ui.share = true
   }
+
+  /** Com o apertar pra falar valendo, a dica do microfone lembra a tecla de segurar. */
+  const talkKey = $derived(
+    call.pushToTalk && client.desktop?.shortcuts['push-to-talk']
+      ? describeAccelerator(client.desktop.shortcuts['push-to-talk'], client.platform?.platform ?? '')
+      : null,
+  )
 
   /** Sem a permissão "Vídeo" na sala, câmera e tela ficam apagadas, dizendo por quê. */
   const noVideo = $derived(!client.canVideo)
@@ -230,7 +238,8 @@
     <div class="split" oncontextmenu={(e) => (e.preventDefault(), openDevices('input', e.currentTarget as HTMLElement))} role="group">
       <IconButton
         icon={call.muted ? 'mic-off' : 'mic'}
-        label={call.muted ? t.unmute : t.mute}
+        label={talkKey && !call.muted ? t.talkHint(talkKey) : call.muted ? t.unmute : t.mute}
+        aria-label={call.muted ? t.unmute : t.mute}
         tone="danger"
         active={call.muted}
         aria-pressed={call.muted}

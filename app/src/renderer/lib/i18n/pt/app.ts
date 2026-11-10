@@ -75,6 +75,8 @@ export default {
     status: (label: string) => `Status: ${label}`,
     mute: 'Mutar',
     unmute: 'Desmutar',
+    /** Dica do microfone com o apertar pra falar valendo: a tecla de segurar. */
+    talkHint: (key: string) => `Apertar pra falar: segure ${key}`,
     deafen: 'Ensurdecer',
     undeafen: 'Voltar a ouvir',
     settings: 'Configurações',
