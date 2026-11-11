@@ -1,13 +1,7 @@
-## 1.18.1: uma mensagem não trava mais o chat de ninguém
+## 1.18.2: o microfone só na bandeja, com ícones novos
 
-- **Uma mensagem não trava nem derruba mais o chat.** Certas mensagens (muitos emojis seguidos de texto, milhares de asteriscos, ou um bloco de código montado de propósito) congelavam o app de quem abria o canal, ou faziam o canal parar de mostrar mensagens. Corrigido, e se uma mensagem falhar ao aparecer, só ela vira texto puro.
-- **Lido só quando você viu.** No celular, tocar num servidor não marca mais o último canal como lido sem abrir. No computador, reconectar com a call ou o mapa na tela não marca o canal de trás.
-- **Enquete**: clicar rápido em duas opções (com várias respostas) não perde mais um dos votos.
-- **Chat**: abrir um canal com mensagens novas vai pra linha "Novas" já na primeira vez; canal com poucas mensagens carrega as antigas mesmo sem barra de rolagem; numa conversa privada, pular pra uma mensagem antiga não deixa mais um buraco quando chega mensagem nova; a bolinha de não lida não fica presa depois de um banimento que apaga mensagens.
-- **Atualização no Linux sem agente de senha**: o terminal que pede a senha fechava com erro e o app não voltava. Agora instala e reabre, mesmo se você fechar o terminal.
-- **Apertar pra falar**: se a tecla passar a ter outro uso no sistema com o app aberto, a página de Atalhos mostra na hora, e a dica do microfone lembra qual tecla segurar.
-- **Movido de sala** por um moderador: o som com todo mundo volta em seguida, sem esperar alguns segundos.
-- **Menos pedidos ao servidor** (presença dos amigos, "lido", status) e mais consertos pequenos: sair da conta no meio da call limpa a bandeja, e fechar a janela transmitindo (no Windows) não deixa o app rodando escondido.
+- **KDE (e o resto do Linux):** na call, o microfone não aparece mais na barra de título da janela nem no Alt+Tab. No KDE o ícone da janela é um só (título, Alt+Tab e barra de tarefas) e não existe selo só no botão, como no Windows; então o estado da call fica no ícone do Resenha na bandeja do sistema, no painel lá embaixo.
+- **Ícones novos de estado**, no estilo do Discord, na bandeja e no selo da barra de tarefas do Windows: bolinha escura com o microfone verde na call, anel verde em volta enquanto você fala, e o microfone ou o fone riscados em vermelho quando está mutado ou ensurdecido.
 
 ## Como atualizar
 

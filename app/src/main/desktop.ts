@@ -51,11 +51,6 @@ function alertName(state: CallState) {
   return null
 }
 
-/** Ícone que não pisca: o aviso, ou o microfone verde enquanto está na call. */
-function steadyName(state: CallState) {
-  return alertName(state) ?? (state.inCall ? 'tray-call' : null)
-}
-
 /** Ensurdecido > mutado > falando (verde claro) > na call (verde) > normal. */
 function iconName(state: CallState) {
   return alertName(state) ?? (state.inCall ? (state.speaking ? 'tray-speaking' : 'tray-call') : 'tray')
@@ -143,16 +138,11 @@ export function showCallState(state: CallState, win: BrowserWindow | null, show:
       tray.setContextMenu(trayMenu(state, show, dispatch))
     }
   }
-  if (!win) return
-
-  // Linux: a janela também troca de ícone (barra de tarefas do KDE e afins). Falando não troca,
-  // porque acende e apaga várias vezes por segundo.
-  if (process.platform === 'linux') {
-    const steady = steadyName(state)
-    if (steady !== steadyName(previous)) win.setIcon(steady ? image(steady, 64) : appIcon())
-    return
-  }
-  if (process.platform !== 'win32') return
+  // Linux: a janela fica sempre com o ícone do app. No KDE o ícone da janela é um só (barra de
+  // título, Alt+Tab e botão da barra de tarefas) e não existe selo só no botão, como no Windows:
+  // até a 1.18 o microfone ia parar no título e no Alt+Tab (achado pelo Duarte). O estado fica na
+  // bandeja, que no KDE é a do painel, lá embaixo.
+  if (!win || process.platform !== 'win32') return
 
   // Windows: selo no ícone da barra de tarefas (verde na call, verde claro falando, vermelho mutado)
   // e botões na miniatura.
